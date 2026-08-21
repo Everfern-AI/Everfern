@@ -18,25 +18,30 @@ import { useState, useEffect, useRef } from 'react';
  */
 export function useAutoCollapse(
   isLive: boolean,
-  autoCollapseEnabled: boolean,
+  autoCollapseEnabled: boolean = true,
   duration?: number
 ): [boolean, (expanded: boolean) => void] {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(isLive);
   const prevIsLive = useRef(isLive);
 
   useEffect(() => {
     let timer: NodeJS.Timeout | null = null;
-    // Detect transition from live (true) to complete (false)
-    if (prevIsLive.current && !isLive && autoCollapseEnabled) {
+
+    // While live/running, ensure the component remains open
+    if (isLive) {
+      setExpanded(true);
+    }
+    // Detect transition from live (true) to complete (false) -> close once done
+    else if (prevIsLive.current && !isLive && autoCollapseEnabled) {
       if (duration && duration > 0) {
         timer = setTimeout(() => {
           setExpanded(false);
         }, duration);
       } else {
-        setExpanded(false); // Auto-collapse immediately
+        setExpanded(false); // Auto-collapse immediately once done
       }
     }
-    
+
     // Update previous state for next comparison
     prevIsLive.current = isLive;
 

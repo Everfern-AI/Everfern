@@ -53,6 +53,28 @@ export function buildAskUserQuestionToolCall(
 }
 
 /**
+ * Extract tool names executed specifically during the current user turn (after the latest user message).
+ * Prevents historical tools (like `present_files` or `task_complete` from a previous turn) from prematurely
+ * terminating subsequent turns.
+ */
+function getCurrentTurnExecutedTools(messages: any[]): string[] {
+  if (!Array.isArray(messages) || messages.length === 0) return [];
+  let lastUserIdx = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    const role = (m as any)?.role || (m as any)?._getType?.() || (m as any)?.type;
+    if (role === 'user' || role === 'human') {
+      lastUserIdx = i;
+      break;
+    }
+  }
+  const turnMsgs = lastUserIdx >= 0 ? messages.slice(lastUserIdx + 1) : messages;
+  return turnMsgs
+    .filter((m: any) => m.role === 'tool' || m.tool_calls)
+    .flatMap((m: any) => m.tool_calls ? m.tool_calls.map((tc: any) => tc.name || tc.function?.name) : (m.tool_name ? [m.tool_name] : []));
+}
+
+/**
  * Create a checkpoint for the current agent state.
  *
  * Implements error handling that logs but doesn't break execution as per
@@ -84,7 +106,8 @@ async function createAgentCheckpoint(
       runner.telemetry.warn(`[Brain] Checkpoint creation failed for step: ${stepDescription}. Execution continues.`);
       console.warn(`[Brain] Checkpoint failed: ${stepDescription} (taskId: ${taskId})`);
     } else {
-      // Successful checkpoint (debug only)
+      // Successful checkpoint
+      runner.telemetry.info(`[Brain] Checkpoint created: id=${checkpoint.id} task=${taskId} step=${checkpoint.stepNumber} (${stepDescription})`);
       console.debug(`[Brain] Checkpoint created: id=${checkpoint.id} task=${taskId} step=${checkpoint.stepNumber} (${stepDescription})`);
     }
 
@@ -571,11 +594,9 @@ export const createBrainNode = (
       console.log('[Brain] Form response continuation — specialists finished or brain coordination needed. Proceeding to LLM synthesis.');
     }
 
-    // Fast-path completion: if deliverables were presented or task_complete called, complete cleanly
-    const pastTools = (state.messages || [])
-      .filter((m: any) => m.role === 'tool' || m.tool_calls)
-      .flatMap((m: any) => m.tool_calls ? m.tool_calls.map((tc: any) => tc.name) : (m.tool_name ? [m.tool_name] : []));
-    const alreadyDelivered = pastTools.includes('present_files') || pastTools.includes('task_complete');
+    // Fast-path completion: if deliverables were presented or task_complete called in the current turn, complete cleanly
+    const currentTurnTools = getCurrentTurnExecutedTools(state.messages || []);
+    const alreadyDelivered = currentTurnTools.includes('present_files') || currentTurnTools.includes('task_complete');
 
     if (alreadyDelivered && !hasPendingTools) {
       runner.telemetry.info(`[Brain] Mission deliverables completed on step ${state.iterations}`);
@@ -755,12 +776,8 @@ export const createBrainNode = (
     }
 
     // Fast-path completion bypass (Claude Cowork pattern)
-    // If routing decided complete_task or a deliverable was presented, skip redundant LLM validation call
-    const executedTools = (state.messages || [])
-      .filter((m: any) => m.role === 'tool' || m.tool_calls)
-      .flatMap((m: any) => m.tool_calls ? m.tool_calls.map((tc: any) => tc.name) : (m.tool_name ? [m.tool_name] : []));
-
-    const deliveredOrCompleted = executedTools.includes('present_files') || executedTools.includes('task_complete');
+    // If routing decided complete_task or a deliverable was presented in the current turn, skip redundant LLM validation call
+    const deliveredOrCompleted = currentTurnTools.includes('present_files') || currentTurnTools.includes('task_complete');
 
     let signal: any = null;
     if (routingDecision && routingDecision.decision === 'complete_task') {

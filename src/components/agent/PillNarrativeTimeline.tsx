@@ -596,6 +596,12 @@ export default function PillNarrativeTimeline({
 
       if (shouldCollapse && !collapsedTasks.has(task.id)) {
         setCollapsedTasks((prev) => new Set(prev).add(task.id));
+      } else if (!isCompleted && collapsedTasks.has(task.id)) {
+        setCollapsedTasks((prev) => {
+          const next = new Set(prev);
+          next.delete(task.id);
+          return next;
+        });
       }
 
       return task;

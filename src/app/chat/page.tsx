@@ -1259,6 +1259,23 @@ export default function ChatPage() {
     };
 
     const openToolDetailTab = (mappedToolCall: any) => {
+        if (!mappedToolCall) return;
+
+        // If this is a write/edit tool and has an error, do NOT open the detail panel
+        const toolLower = (mappedToolCall?.toolName || '').toLowerCase();
+        const isWriteOrEdit = toolLower.includes('write') || toolLower.includes('edit') || toolLower.includes('replace');
+        const hasError = mappedToolCall?.status === 'error' || 
+          mappedToolCall?.status === 'failed' || 
+          mappedToolCall?.result?.success === false || 
+          mappedToolCall?.result?.isError === true || 
+          !!mappedToolCall?.error || 
+          (typeof mappedToolCall?.result?.output === 'string' && mappedToolCall?.result?.output.trim().startsWith('Error:'));
+
+        if (isWriteOrEdit && hasError) {
+          console.warn('[ToolDetail] Suppressed opening panel for failed write/edit tool:', mappedToolCall);
+          return;
+        }
+
         setSelectedToolCall(mappedToolCall);
         setActiveToolDetailTabId(mappedToolCall.id);
         setToolDetailTabs(prev => {
@@ -1288,6 +1305,18 @@ export default function ChatPage() {
         ) {
             return;
         }
+
+        const isWriteOrEdit = toolLower.includes('write') || toolLower.includes('edit') || toolLower.includes('replace');
+        const hasError = tc.status === 'error' || 
+          tc.status === 'failed' || 
+          tc.result?.success === false || 
+          tc.result?.isError === true || 
+          (typeof tc.result?.output === 'string' && tc.result.output.trim().startsWith('Error:'));
+
+        if (isWriteOrEdit && hasError) {
+            return;
+        }
+
         openToolDetailTab(mapToolCallForDetail(tc));
     };
 
@@ -7363,7 +7392,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
 
                                                                 {/* Project Composer Card */}
                                                                 <PromptWrapper isCloudUsageOver={isCloudUsageOver} onUpgrade={() => setShowSettings(true)} plan={userPlan}>
-                                                                    <div style={{ backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-surface)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 18, display: "flex", flexDirection: "column", minHeight: 120, transition: "all 0.3s ease", position: "relative", overflow: "visible", boxShadow: (isRecording || showVoiceAssistant) ? "none" : "0 8px 32px -4px rgba(0,0,0,0.3), 0 2px 8px -2px rgba(0,0,0,0.2)", borderTop: (isRecording || showVoiceAssistant) ? "none" : "1px solid rgba(255,255,255,0.15)" }}>
+                                                                    <div style={{ backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-surface)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 18, display: "flex", flexDirection: "column", minHeight: 120, transition: "all 0.3s ease", position: "relative", overflow: "visible", boxShadow: (isRecording || showVoiceAssistant) ? "none" : "var(--composer-shadow)", borderTop: (isRecording || showVoiceAssistant) ? "none" : "var(--composer-border-top)" }}>
                                                                         {renderSubagentSpawnAttachment()}
                                                                         {renderAttachmentStrip()}
                                                                         {isRecording && recordingSource === 'button' ? (
@@ -7664,7 +7693,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
 
                                                             <PromptWrapper isCloudUsageOver={isCloudUsageOver} onUpgrade={() => setShowSettings(true)} plan={userPlan}>
                                                                 {/* Progressive input container */}
-                                                                <div className="" style={{ backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-subtle)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 18, display: "flex", flexDirection: "column", minHeight: 120, transition: "all 0.3s ease", position: "relative", overflow: "visible", boxShadow: (isRecording || showVoiceAssistant) ? "none" : "0 8px 32px -4px rgba(0,0,0,0.3), 0 2px 8px -2px rgba(0,0,0,0.2)", borderTop: (isRecording || showVoiceAssistant) ? "none" : "1px solid rgba(255,255,255,0.15)" }}>
+                                                                <div className="" style={{ backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-subtle)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 18, display: "flex", flexDirection: "column", minHeight: 120, transition: "all 0.3s ease", position: "relative", overflow: "visible", boxShadow: (isRecording || showVoiceAssistant) ? "none" : "var(--composer-shadow)", borderTop: (isRecording || showVoiceAssistant) ? "none" : "var(--composer-border-top)" }}>
                                                                     {renderSubagentSpawnAttachment()}
                                                                     {renderAttachmentStrip()}
                                                                     {isRecording && recordingSource === 'button' ? (
@@ -8480,7 +8509,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                             {renderLocalSlowHardwarePopup()}
 
                                             <PromptWrapper isCloudUsageOver={isCloudUsageOver} onUpgrade={() => setShowSettings(true)} plan={userPlan}>
-                                                <div style={{ width: "100%", backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-surface)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 18, position: "relative", display: "flex", flexDirection: "column", minHeight: 100, transition: "all 0.3s ease", overflow: "visible", boxShadow: (isRecording || showVoiceAssistant) ? "none" : "0 8px 32px -4px rgba(0,0,0,0.3), 0 2px 8px -2px rgba(0,0,0,0.2)", borderTop: (isRecording || showVoiceAssistant) ? "none" : "1px solid rgba(255,255,255,0.15)" }}>
+                                                <div style={{ width: "100%", backgroundColor: (isRecording || showVoiceAssistant) ? "transparent" : "var(--color-bg-surface)", border: (isRecording || showVoiceAssistant) ? "none" : "1px solid var(--color-border)", borderRadius: 18, position: "relative", display: "flex", flexDirection: "column", minHeight: 100, transition: "all 0.3s ease", overflow: "visible", boxShadow: (isRecording || showVoiceAssistant) ? "none" : "var(--composer-shadow)", borderTop: (isRecording || showVoiceAssistant) ? "none" : "var(--composer-border-top)" }}>
                                                     {/* Memory Preference Banner */}
                                                     {memoryPreferenceBanner && !memoryPreferenceBanner.dismissed && (
                                                         <motion.div

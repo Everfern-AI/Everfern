@@ -913,8 +913,8 @@ export function translateLinuxPathToHost(linuxPath: string): string {
       return `${drive}:${rest}`;
     }
 
-    // Check if it is already a WSL localhost path
-    if (cleanPath.startsWith('//wsl.localhost/') || cleanPath.startsWith('//wsl/')) {
+    // Check if it is already a UNC path (e.g. \\wsl.localhost\..., \\wsl$\..., \\server\share\...)
+    if (cleanPath.startsWith('//')) {
       return cleanPath.replace(/\//g, '\\');
     }
 

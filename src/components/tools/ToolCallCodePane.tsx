@@ -3,8 +3,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Eye,
-  Code2,
   Copy,
   Check,
   ChevronDown,
@@ -13,7 +11,8 @@ import {
   X,
   FileCode,
 } from 'lucide-react';
-import { MarkdownRenderer } from '../common/MarkdownComponents';
+
+import { useTheme } from '@/components/ThemeProvider';
 
 /* ============================================================
    TYPES & PROPS
@@ -29,6 +28,7 @@ export interface ToolCallCodePaneProps {
   isExpanded?: boolean;
   onToggleExpand?: () => void;
   activeChunkIndex?: number;
+  className?: string;
 }
 
 export interface DiffLine {
@@ -40,56 +40,78 @@ export interface DiffLine {
 }
 
 /* ============================================================
-   TOKENIZER / SYNTAX HIGHLIGHTER (MATCHES REFERENCE IMAGE)
+   TOKENIZER / SYNTAX HIGHLIGHTER (LIGHT & DARK PALETTES)
    ============================================================ */
 
-const PALETTE = {
-  keyword: '#c084fc',     // Purple / Violet (import, export, interface, extends, function, return, readonly)
-  string: '#4ade80',      // Vibrant Green ("use client", "react", "lucide-react", "div")
-  type: '#38bdf8',        // Sky Blue / Cyan (WebSearchResult, WebSearchProps, ComponentProps, string, number, boolean, T)
-  prop: '#f87171',        // Coral / Salmon (query, results, visibleResults, title, domain, url, snippet, className)
-  fn: '#60a5fa',          // Blue / Cyan (useState, take, slice, cn)
-  component: '#fb923c',   // Orange (SearchIcon, ExternalLink, ChevronDown, ShimmerLabel, motion, AnimatePresence)
-  number: '#38bdf8',      // Cyan (0, 1, 2, etc.)
-  punctuation: '#e4e4e7', // Light Gray / White ({ } ( ) [ ] ; , : | ? .)
-  comment: '#71717a',     // Muted Gray (//, /* */, #)
+export const DARK_PALETTE = {
+  keyword: '#c084fc',     // Lilac / Purple
+  module: '#f87171',      // Coral / Salmon
+  prop: '#f87171',        // Coral / Salmon
+  identifier: '#fdba74',  // Warm Peach / Orange
+  component: '#fdba74',   // Warm Peach / Orange
+  string: '#4ade80',      // Vibrant Emerald Green
+  number: '#38bdf8',      // Bright Sky Blue / Cyan
+  type: '#38bdf8',        // Sky Blue
+  comment: '#71717a',     // Muted Slate / Grey
+  punctuation: '#e4e4e7', // Light Gray / Off-white
   text: '#e4e4e7',        // Default text
 };
 
-export function tokenizeCodeLine(line: string, ext: string = 'tsx'): React.ReactNode[] {
+export const LIGHT_PALETTE = {
+  keyword: '#7c3aed',     // Deep Violet / Lilac
+  module: '#dc2626',      // Crimson / Coral
+  prop: '#dc2626',        // Crimson / Coral
+  identifier: '#c2410c',  // Warm Amber / Peach
+  component: '#c2410c',   // Warm Amber / Peach
+  string: '#15803d',      // Rich Emerald Green
+  number: '#0284c7',      // Bright Sky Blue
+  type: '#0284c7',        // Sky Blue
+  comment: '#71717a',     // Muted Slate / Grey
+  punctuation: '#27272a', // Dark Charcoal
+  text: '#18181b',        // Dark Charcoal
+};
+
+// Export PALETTE for backwards compatibility
+export const PALETTE = DARK_PALETTE;
+
+function useSafeTheme(): { theme: 'light' | 'dark' } {
+  try {
+    return useTheme();
+  } catch {
+    return { theme: 'dark' };
+  }
+}
+
+export function tokenizeCodeLine(line: string, ext: string = 'py', isDark: boolean = true): React.ReactNode[] {
+  const palette = isDark ? DARK_PALETTE : LIGHT_PALETTE;
+
   if (!line) {
     return [<span key="empty">&nbsp;</span>];
   }
 
-  // Quick check for comment lines
   const trimmed = line.trim();
-  if (trimmed.startsWith('//') || (ext === 'py' && trimmed.startsWith('#'))) {
-    return [<span key="comment" style={{ color: PALETTE.comment }}>{line}</span>];
-  }
 
-  // Directives like "use client"; or "use strict";
-  if (trimmed.startsWith('"use client"') || trimmed.startsWith("'use client'") || trimmed.startsWith('"use strict"') || trimmed.startsWith("'use strict'")) {
-    const quoteEnd = line.indexOf(';', line.indexOf('use'));
-    if (quoteEnd !== -1) {
-      return [
-        <span key="str" style={{ color: PALETTE.string }}>{line.slice(0, quoteEnd)}</span>,
-        <span key="semi" style={{ color: PALETTE.punctuation }}>{line.slice(quoteEnd)}</span>,
-      ];
-    }
-    return [<span key="str" style={{ color: PALETTE.string }}>{line}</span>];
+  // Full line comment
+  if (trimmed.startsWith('#') || trimmed.startsWith('//') || trimmed.startsWith('/*')) {
+    return [<span key="comment" style={{ color: palette.comment }}>{line}</span>];
   }
 
   const tokens: React.ReactNode[] = [];
   let remaining = line;
   let keyIndex = 0;
 
-  // Regex patterns
-  const re = /^(?:\/\/.*$|\/\*.*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\b(?:import|export|from|default|const|let|var|function|class|extends|implements|interface|type|enum|namespace|module|return|if|else|for|while|do|switch|case|break|continue|try|catch|finally|throw|new|this|typeof|instanceof|void|delete|in|of|async|await|yield|get|set|static|public|private|protected|as|declare|readonly|def|elif|pass|raise|with|lambda)\b|\b(?:string|number|boolean|any|void|never|unknown|null|undefined|object|Array|Promise|React|Record|Map|Set|Date|Error|RegExp|JSON|ComponentProps|Omit|Pick|Partial|Required|Readonly|JSX|HTMLProps)\b|\b[A-Z][a-zA-Z0-9_$]*\b|\b[a-zA-Z0-9_$]+(?=\s*\??\s*:)|[a-zA-Z0-9_$]+(?=\s*\()|\b\d+(?:\.\d+)?\b|[{}()\[\];,:.?|&!=+\-*/<>]+|\s+|[a-zA-Z0-9_$]+)/;
+  // Check if we are in Python `from ... import ...` context
+  const isFromImportLine = /^\s*from\s+[\w.]+\s+import\b/.test(line);
+  let passedFrom = false;
+  let passedImport = false;
+
+  // Regex for token matching
+  const tokenRegex = /^(?:#.*$|\/\/.*$|\/\*.*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\b(?:from|import|def|class|return|if|elif|else|while|for|in|try|except|finally|with|as|lambda|pass|raise|async|await|yield|break|continue|global|nonlocal|assert|del|export|default|const|let|var|function|extends|implements|interface|type|enum|namespace|module|new|this|typeof|instanceof|void|delete|of|get|set|static|public|private|protected|declare|readonly)\b|\b(?:string|number|boolean|any|never|unknown|null|undefined|object|Array|Promise|React|Record|Map|Set|Date|Error|RegExp|JSON|ComponentProps|Omit|Pick|Partial|Required|Readonly|JSX|HTMLProps|int|float|str|bool|list|dict|tuple|set|bytes|None|True|False)\b|\b\d+(?:\.\d+)?\b|[a-zA-Z0-9_$]+(?=\s*=)|[a-zA-Z0-9_$]+(?=\s*\??\s*:)|[a-zA-Z0-9_$]+|[{}()\[\];,:.?|&!=+\-*/<>]+|\s+)/;
 
   while (remaining.length > 0) {
-    const match = remaining.match(re);
+    const match = remaining.match(tokenRegex);
     if (!match) {
-      tokens.push(<span key={keyIndex++} style={{ color: PALETTE.text }}>{remaining[0]}</span>);
+      tokens.push(<span key={keyIndex++} style={{ color: palette.text }}>{remaining[0]}</span>);
       remaining = remaining.slice(1);
       continue;
     }
@@ -97,58 +119,50 @@ export function tokenizeCodeLine(line: string, ext: string = 'tsx'): React.React
     const token = match[0];
     remaining = remaining.slice(token.length);
 
-    // 1. Comments
-    if (token.startsWith('//') || token.startsWith('/*')) {
-      tokens.push(<span key={keyIndex++} style={{ color: PALETTE.comment }}>{token}</span>);
+    // Comments at end of line
+    if (token.startsWith('#') || token.startsWith('//') || token.startsWith('/*')) {
+      tokens.push(<span key={keyIndex++} style={{ color: palette.comment }}>{token}</span>);
     }
-    // 2. Strings
+    // Strings
     else if ((token.startsWith('"') && token.endsWith('"')) || (token.startsWith("'") && token.endsWith("'")) || (token.startsWith('`') && token.endsWith('`'))) {
-      tokens.push(<span key={keyIndex++} style={{ color: PALETTE.string }}>{token}</span>);
+      tokens.push(<span key={keyIndex++} style={{ color: palette.string }}>{token}</span>);
     }
-    // 3. Keywords
-    else if (/^(import|export|from|default|const|let|var|function|class|extends|implements|interface|type|enum|namespace|module|return|if|else|for|while|do|switch|case|break|continue|try|catch|finally|throw|new|this|typeof|instanceof|void|delete|in|of|async|await|yield|get|set|static|public|private|protected|as|declare|readonly|def|elif|pass|raise|with|lambda)$/.test(token)) {
-      tokens.push(<span key={keyIndex++} style={{ color: PALETTE.keyword }}>{token}</span>);
+    // Keywords
+    else if (/^(from|import|def|class|return|if|elif|else|while|for|in|try|except|finally|with|as|lambda|pass|raise|async|await|yield|break|continue|global|nonlocal|assert|del|export|default|const|let|var|function|extends|implements|interface|type|enum|namespace|module|new|this|typeof|instanceof|void|delete|of|get|set|static|public|private|protected|declare|readonly)$/.test(token)) {
+      if (token === 'from') passedFrom = true;
+      if (token === 'import') passedImport = true;
+      tokens.push(<span key={keyIndex++} style={{ color: palette.keyword }}>{token}</span>);
     }
-    // 4. Built-in types
-    else if (/^(string|number|boolean|any|void|never|unknown|null|undefined|object|Array|Promise|React|Record|Map|Set|Date|Error|RegExp|JSON|ComponentProps|Omit|Pick|Partial|Required|Readonly|JSX|HTMLProps)$/.test(token)) {
-      tokens.push(<span key={keyIndex++} style={{ color: PALETTE.type }}>{token}</span>);
+    // Module path segment in `from <module> import`
+    else if (isFromImportLine && passedFrom && !passedImport && /^[a-zA-Z0-9_$]+$/.test(token)) {
+      tokens.push(<span key={keyIndex++} style={{ color: palette.module }}>{token}</span>);
     }
-    // 5. PascalCase identifiers (Type names or Components)
-    else if (/^[A-Z][a-zA-Z0-9_$]*$/.test(token)) {
-      // Single letters like T, K, V are generic types -> Sky Blue
-      if (token.length <= 2) {
-        tokens.push(<span key={keyIndex++} style={{ color: PALETTE.type }}>{token}</span>);
-      }
-      // Common component names or props
-      else if (token.endsWith('Props') || token.endsWith('Result') || token.endsWith('Type') || token.endsWith('State') || token.endsWith('Interface')) {
-        tokens.push(<span key={keyIndex++} style={{ color: PALETTE.type }}>{token}</span>);
-      } else {
-        tokens.push(<span key={keyIndex++} style={{ color: PALETTE.component }}>{token}</span>);
-      }
+    // Built-in types
+    else if (/^(string|number|boolean|any|never|unknown|null|undefined|object|Array|Promise|React|Record|Map|Set|Date|Error|RegExp|JSON|ComponentProps|Omit|Pick|Partial|Required|Readonly|JSX|HTMLProps|int|float|str|bool|list|dict|tuple|set|bytes|None|True|False)$/.test(token)) {
+      tokens.push(<span key={keyIndex++} style={{ color: palette.type }}>{token}</span>);
     }
-    // 6. Numbers
+    // Numbers
     else if (/^\d+(?:\.\d+)?$/.test(token)) {
-      tokens.push(<span key={keyIndex++} style={{ color: PALETTE.number }}>{token}</span>);
+      tokens.push(<span key={keyIndex++} style={{ color: palette.number }}>{token}</span>);
     }
-    // 7. Punctuation & Operators
+    // Punctuation & Operators
     else if (/^[{}()\[\];,:.?|&!=+\-*/<>]+$/.test(token)) {
-      tokens.push(<span key={keyIndex++} style={{ color: PALETTE.punctuation }}>{token}</span>);
+      tokens.push(<span key={keyIndex++} style={{ color: palette.punctuation }}>{token}</span>);
     }
-    // 8. Properties (if followed by ? : or :)
+    // Named arguments (e.g. parent=, fontSize=, leading=, textColor=) or object properties (key:)
+    else if (remaining.trim().startsWith('=') && !remaining.trim().startsWith('==')) {
+      tokens.push(<span key={keyIndex++} style={{ color: palette.prop }}>{token}</span>);
+    }
     else if (remaining.trim().startsWith(':') || remaining.trim().startsWith('?:')) {
-      tokens.push(<span key={keyIndex++} style={{ color: PALETTE.prop }}>{token}</span>);
+      tokens.push(<span key={keyIndex++} style={{ color: palette.prop }}>{token}</span>);
     }
-    // 9. Function calls (if followed by ()
-    else if (remaining.trim().startsWith('(')) {
-      tokens.push(<span key={keyIndex++} style={{ color: PALETTE.fn }}>{token}</span>);
-    }
-    // 10. Parameters / Identifiers
+    // Identifiers, Function calls, Classes, Imported items, Variables (e.g. letter, styles, title_style, ParagraphStyle)
     else if (/^[a-zA-Z0-9_$]+$/.test(token)) {
-      tokens.push(<span key={keyIndex++} style={{ color: PALETTE.prop }}>{token}</span>);
+      tokens.push(<span key={keyIndex++} style={{ color: palette.identifier }}>{token}</span>);
     }
-    // 11. Whitespace or generic
+    // Whitespace / fallback
     else {
-      tokens.push(<span key={keyIndex++} style={{ color: PALETTE.text }}>{token}</span>);
+      tokens.push(<span key={keyIndex++} style={{ color: palette.text }}>{token}</span>);
     }
   }
 
@@ -168,9 +182,8 @@ export function ToolCallCodePane({
   onClose,
   isExpanded = false,
   onToggleExpand,
-  activeChunkIndex = 0,
+  className = '',
 }: ToolCallCodePaneProps) {
-  const [viewMode, setViewMode] = useState<'code' | 'preview'>('code');
   const [copied, setCopied] = useState(false);
   const [showCopyMenu, setShowCopyMenu] = useState(false);
   const copyMenuRef = useRef<HTMLDivElement>(null);
@@ -206,29 +219,61 @@ export function ToolCallCodePane({
     ''
   );
 
-  const filename = useMemo(() => {
+  // Clean and format filename and extension
+  const { displayTitle, ext } = useMemo(() => {
+    let rawFilename = '';
+    let rawExt = 'py';
+
     if (rawPath) {
-      return rawPath.split(/[/\\]/).pop() || rawPath;
+      const parts = rawPath.split(/[/\\]/);
+      rawFilename = parts[parts.length - 1] || rawPath;
+    } else if (toolNameLower.includes('search')) {
+      rawFilename = 'Web search';
+      rawExt = 'tsx';
+    } else if (isWrite) {
+      rawFilename = 'Write';
+      rawExt = 'ts';
+    } else if (isEdit) {
+      rawFilename = 'Edit';
+      rawExt = 'ts';
+    } else if (isRead) {
+      rawFilename = 'View';
+      rawExt = 'ts';
+    } else {
+      rawFilename = toolName || 'Code';
+      rawExt = 'py';
     }
-    if (toolNameLower.includes('search')) return 'Web search';
-    if (isWrite) return 'Write';
-    if (isEdit) return 'Edit';
-    if (isRead) return 'View';
-    return toolName || 'Code';
+
+    if (rawFilename.includes('.')) {
+      const dotIndex = rawFilename.lastIndexOf('.');
+      rawExt = rawFilename.slice(dotIndex + 1).toLowerCase();
+      rawFilename = rawFilename.slice(0, dotIndex);
+    }
+
+    // Format display title (e.g. "build_pdf" -> "Build pdf")
+    let formattedTitle = rawFilename;
+    if (rawFilename.includes('_') || rawFilename.includes('-')) {
+      formattedTitle = rawFilename
+        .replace(/[_-]/g, ' ')
+        .replace(/^\w/, (c) => c.toUpperCase());
+    } else if (/^[a-z]+[A-Z]/.test(rawFilename)) {
+      // CamelCase -> keep as is or preserve
+      formattedTitle = rawFilename;
+    } else if (rawFilename.length > 0) {
+      formattedTitle = rawFilename.charAt(0).toUpperCase() + rawFilename.slice(1);
+    }
+
+    return {
+      displayTitle: formattedTitle || 'Code',
+      ext: rawExt || 'py',
+    };
   }, [rawPath, toolNameLower, isWrite, isEdit, isRead, toolName]);
 
-  const ext = useMemo(() => {
-    if (rawPath.includes('.')) {
-      return rawPath.split('.').pop()?.toLowerCase() || 'tsx';
-    }
-    return 'tsx';
-  }, [rawPath]);
-
-  // Format header title label: "{Title} · {EXT}"
+  // Format header title label: "{Title} · {EXT}" (e.g. "Build pdf · PY")
   const headerLabel = useMemo(() => {
     const extUpper = ext.toUpperCase();
-    return `${filename} · ${extUpper}`;
-  }, [filename, ext]);
+    return `${displayTitle} · ${extUpper}`;
+  }, [displayTitle, ext]);
 
   // Extract content & compute diffs
   const { content, diffLines, chunks, isMultiChunk, fullTextToCopy } = useMemo(() => {
@@ -363,6 +408,42 @@ export function ToolCallCodePane({
     } catch {}
   };
 
+  const { theme } = useSafeTheme();
+  const isDark = theme === 'dark';
+
+  // Dynamic theme colors
+  const containerBg = isDark ? '#161618' : '#ffffff';
+  const containerBorder = isDark ? '#27272a' : 'var(--color-border, #e5e5e0)';
+  const containerShadow = isDark
+    ? 'var(--glossy-inner), 0 12px 36px -4px rgba(0, 0, 0, 0.45)'
+    : 'var(--glossy-inner), 0 10px 30px -4px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04)';
+
+  const headerBg = isDark ? '#161618' : 'var(--color-bg-subtle, #f7f6f1)';
+  const headerBorder = isDark ? '#27272a' : 'var(--color-border, #e5e5e0)';
+  const headerTitleColor = isDark ? '#f4f4f5' : '#18181b';
+  const headerIconColor = isDark ? '#a1a1aa' : '#71717a';
+
+  const pillBg = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)';
+  const pillBorder = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)';
+  const pillTextColor = isDark ? '#e4e4e7' : '#18181b';
+  const pillDividerColor = isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.10)';
+
+  const menuBg = isDark ? '#1c1c1f' : '#ffffff';
+  const menuBorder = isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.1)';
+  const menuShadow = isDark ? '0 10px 25px rgba(0, 0, 0, 0.5)' : '0 10px 25px rgba(0, 0, 0, 0.12)';
+  const menuItemColor = isDark ? '#e4e4e7' : '#18181b';
+  const menuItemHoverBg = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)';
+
+  const codeBg = isDark ? '#161618' : '#ffffff';
+  const codeDefaultColor = isDark ? '#e4e4e7' : '#18181b';
+  const gutterColorDefault = isDark ? '#52525b' : '#a1a1aa';
+  const gutterIndicatorColor = isDark ? '#52525b' : '#cbd5e1';
+
+  const addedBg = isDark ? 'rgba(34, 197, 94, 0.06)' : 'rgba(34, 197, 94, 0.10)';
+  const removedBg = isDark ? 'rgba(239, 68, 68, 0.06)' : 'rgba(239, 68, 68, 0.10)';
+  const addedColor = isDark ? '#4ade80' : '#15803d';
+  const removedColor = isDark ? '#f87171' : '#dc2626';
+
   const handleCopyPath = async () => {
     if (!rawPath) return;
     try {
@@ -373,117 +454,63 @@ export function ToolCallCodePane({
     } catch {}
   };
 
-  const isMarkdownOrHtml = ext === 'md' || ext === 'markdown' || ext === 'html' || ext === 'htm';
-
   return (
     <div
+      className={className}
       style={{
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
         width: '100%',
-        background: '#18181b',
-        color: '#e4e4e7',
+        background: containerBg,
+        borderRadius: 16,
+        border: `1px solid ${containerBorder}`,
+        boxShadow: containerShadow,
+        color: codeDefaultColor,
         fontFamily: '"Geist", "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
         overflow: 'hidden',
         boxSizing: 'border-box',
       }}
     >
-      {/* ── TOP HEADER BAR (EXACT AS IMAGE) ── */}
+      {/* ── TOP HEADER BAR (EXACT AS REFERENCE IMAGE) ── */}
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '10px 14px',
-          background: '#18181b',
-          borderBottom: '1px solid #27272a',
+          padding: '12px 18px',
+          background: headerBg,
+          borderBottom: `1px solid ${headerBorder}`,
           userSelect: 'none',
           gap: 12,
           flexShrink: 0,
         }}
       >
-        {/* Left Side: Toggle Pill + Title */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-          {/* Eye / Code Segmented Pill */}
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              background: 'rgba(255, 255, 255, 0.04)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              borderRadius: 6,
-              padding: 2,
-              gap: 2,
-              flexShrink: 0,
-            }}
-          >
-            <button
-              onClick={() => setViewMode('preview')}
-              title="Preview view"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 26,
-                height: 24,
-                borderRadius: 4,
-                border: 'none',
-                background: viewMode === 'preview' ? 'rgba(255, 255, 255, 0.12)' : 'transparent',
-                color: viewMode === 'preview' ? '#ffffff' : '#71717a',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              <Eye size={14} strokeWidth={1.75} />
-            </button>
-            <button
-              onClick={() => setViewMode('code')}
-              title="Code view"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 26,
-                height: 24,
-                borderRadius: 4,
-                border: 'none',
-                background: viewMode === 'code' ? 'rgba(255, 255, 255, 0.12)' : 'transparent',
-                color: viewMode === 'code' ? '#ffffff' : '#71717a',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              <Code2 size={14} strokeWidth={1.75} />
-            </button>
-          </div>
-
-          {/* Title Label: "Web search · TSX" */}
-          <div
-            style={{
-              fontSize: 13.5,
-              fontWeight: 500,
-              color: '#e4e4e7',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              letterSpacing: '-0.01em',
-            }}
-          >
-            {headerLabel}
-          </div>
+        {/* Left Side: Title Label (e.g. "Build pdf · PY") */}
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 500,
+            color: headerTitleColor,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            letterSpacing: '-0.01em',
+          }}
+        >
+          {headerLabel}
         </div>
 
-        {/* Right Side: Copy Pill, Maximize, Close */}
+        {/* Right Side: Copy Button Pill + Maximize + Close */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-          {/* Split Copy Button with Dropdown */}
+          {/* Split Copy Button with Dropdown Chevron */}
           <div style={{ position: 'relative' }} ref={copyMenuRef}>
             <div
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
-                background: 'rgba(255, 255, 255, 0.06)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
+                background: pillBg,
+                border: `1px solid ${pillBorder}`,
                 borderRadius: 6,
                 overflow: 'hidden',
               }}
@@ -493,24 +520,25 @@ export function ToolCallCodePane({
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 4,
-                  padding: '4px 8px',
+                  gap: 5,
+                  padding: '5px 10px',
                   background: 'transparent',
                   border: 'none',
-                  color: copied ? '#4ade80' : '#e4e4e7',
-                  fontSize: 12,
+                  color: copied ? addedColor : pillTextColor,
+                  fontSize: 12.5,
                   fontWeight: 500,
                   cursor: 'pointer',
                   transition: 'background 0.15s',
+                  fontFamily: 'inherit',
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)')}
+                onMouseEnter={(e) => (e.currentTarget.style.background = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)')}
                 onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
               >
-                {copied ? <Check size={12} color="#4ade80" /> : null}
+                {copied ? <Check size={12} color={addedColor} /> : null}
                 <span>{copied ? 'Copied' : 'Copy'}</span>
               </button>
 
-              <div style={{ width: 1, height: 12, background: 'rgba(255, 255, 255, 0.12)' }} />
+              <div style={{ width: 1, height: 14, background: pillDividerColor }} />
 
               <button
                 onClick={() => setShowCopyMenu((v) => !v)}
@@ -518,17 +546,17 @@ export function ToolCallCodePane({
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  padding: '4px 6px',
+                  padding: '5px 7px',
                   background: 'transparent',
                   border: 'none',
-                  color: '#a1a1aa',
+                  color: headerIconColor,
                   cursor: 'pointer',
                   transition: 'background 0.15s',
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)')}
+                onMouseEnter={(e) => (e.currentTarget.style.background = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)')}
                 onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
               >
-                <ChevronDown size={12} />
+                <ChevronDown size={13} />
               </button>
             </div>
 
@@ -545,12 +573,12 @@ export function ToolCallCodePane({
                     top: 'calc(100% + 4px)',
                     right: 0,
                     zIndex: 100,
-                    background: '#1c1c1f',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    background: menuBg,
+                    border: menuBorder,
                     borderRadius: 8,
                     padding: '4px',
                     minWidth: 160,
-                    boxShadow: '0 10px 25px rgba(0, 0, 0, 0.5)',
+                    boxShadow: menuShadow,
                   }}
                 >
                   <button
@@ -564,15 +592,15 @@ export function ToolCallCodePane({
                       background: 'transparent',
                       border: 'none',
                       borderRadius: 4,
-                      color: '#e4e4e7',
+                      color: menuItemColor,
                       fontSize: 12,
                       textAlign: 'left',
                       cursor: 'pointer',
                     }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)')}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = menuItemHoverBg)}
                     onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                   >
-                    <Copy size={13} color="#a1a1aa" />
+                    <Copy size={13} color={headerIconColor} />
                     <span>Copy Content</span>
                   </button>
 
@@ -588,15 +616,15 @@ export function ToolCallCodePane({
                         background: 'transparent',
                         border: 'none',
                         borderRadius: 4,
-                        color: '#e4e4e7',
+                        color: menuItemColor,
                         fontSize: 12,
                         textAlign: 'left',
                         cursor: 'pointer',
                       }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)')}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = menuItemHoverBg)}
                       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                     >
-                      <FileCode size={13} color="#a1a1aa" />
+                      <FileCode size={13} color={headerIconColor} />
                       <span>Copy File Path</span>
                     </button>
                   )}
@@ -619,20 +647,20 @@ export function ToolCallCodePane({
                 borderRadius: 6,
                 border: 'none',
                 background: 'transparent',
-                color: '#a1a1aa',
+                color: headerIconColor,
                 cursor: 'pointer',
                 transition: 'all 0.15s ease',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
-                e.currentTarget.style.color = '#ffffff';
+                e.currentTarget.style.background = isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.05)';
+                e.currentTarget.style.color = isDark ? '#ffffff' : '#000000';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.color = '#a1a1aa';
+                e.currentTarget.style.color = headerIconColor;
               }}
             >
-              {isExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+              {isExpanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
             </button>
           )}
 
@@ -649,163 +677,144 @@ export function ToolCallCodePane({
               borderRadius: 6,
               border: 'none',
               background: 'transparent',
-              color: '#a1a1aa',
+              color: headerIconColor,
               cursor: 'pointer',
               transition: 'all 0.15s ease',
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
-              e.currentTarget.style.color = '#ffffff';
+              e.currentTarget.style.background = isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.05)';
+              e.currentTarget.style.color = isDark ? '#ffffff' : '#000000';
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.color = '#a1a1aa';
+              e.currentTarget.style.color = headerIconColor;
             }}
           >
-            <X size={15} />
+            <X size={16} />
           </button>
         </div>
       </div>
 
-      {/* ── BODY CONTENT: CODE VIEW OR PREVIEW (EXACT AS IMAGE) ── */}
+      {/* ── CODE CONTENT BODY (LIGHT & DARK THEMES) ── */}
       <div
         style={{
           flex: 1,
           overflowY: 'auto',
           overflowX: 'auto',
-          background: '#161618',
+          background: codeBg,
           position: 'relative',
         }}
       >
-        {viewMode === 'preview' ? (
-          /* Preview Mode (Markdown/HTML/Text) */
-          <div style={{ padding: '20px 24px', maxWidth: 800, margin: '0 auto' }}>
-            {isMarkdownOrHtml ? (
-              <MarkdownRenderer content={content || output} />
-            ) : (
-              <div style={{ color: '#a1a1aa', fontSize: 13, lineHeight: 1.6 }}>
-                <p style={{ margin: '0 0 12px', fontWeight: 600, color: '#e4e4e7' }}>File Information</p>
-                <div style={{ background: '#1c1c1f', borderRadius: 8, padding: 14, border: '1px solid #27272a' }}>
-                  <div style={{ marginBottom: 6 }}><span style={{ color: '#71717a' }}>Path: </span>{rawPath || filename}</div>
-                  <div style={{ marginBottom: 6 }}><span style={{ color: '#71717a' }}>Type: </span>{ext.toUpperCase()}</div>
-                  <div><span style={{ color: '#71717a' }}>Lines: </span>{diffLines.length}</div>
-                </div>
-              </div>
-            )}
-          </div>
-        ) : (
-          /* Code View (Pixel-perfect matching reference image) */
-          <div
-            style={{
-              padding: '12px 0 32px 0',
-              fontFamily: '"JetBrains Mono", "Fira Code", "Geist Mono", Consolas, monospace',
-              fontSize: 13,
-              lineHeight: '22px',
-              tabSize: 2,
-              minWidth: 'fit-content',
-            }}
-          >
-            {diffLines.length === 0 ? (
-              <div style={{ padding: '24px', color: '#71717a', fontStyle: 'italic' }}>
-                No code content available.
-              </div>
-            ) : (
-              diffLines.map((dl, idx) => {
-                const isAdded = dl.type === 'added';
-                const isRemoved = dl.type === 'removed';
+        <div
+          style={{
+            padding: '14px 0 28px 0',
+            fontFamily: '"JetBrains Mono", "Fira Code", "Geist Mono", SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+            fontSize: 13,
+            lineHeight: '22px',
+            tabSize: 2,
+            minWidth: 'fit-content',
+          }}
+        >
+          {diffLines.length === 0 ? (
+            <div style={{ padding: '24px', color: headerIconColor, fontStyle: 'italic' }}>
+              No code content available.
+            </div>
+          ) : (
+            diffLines.map((dl, idx) => {
+              const isAdded = dl.type === 'added';
+              const isRemoved = dl.type === 'removed';
 
-                // Row background for additions/deletions
-                const rowBg = isAdded
-                  ? 'rgba(34, 197, 94, 0.08)'
-                  : isRemoved
-                  ? 'rgba(239, 68, 68, 0.08)'
-                  : 'transparent';
+              // Row background for additions/deletions in diff mode
+              const rowBg = isAdded
+                ? addedBg
+                : isRemoved
+                ? removedBg
+                : 'transparent';
 
-                // Gutter number color
-                const gutterColor = isAdded
-                  ? '#4ade80'
-                  : isRemoved
-                  ? '#f87171'
-                  : '#52525b';
+              // Gutter line number color
+              const gutterColor = isAdded
+                ? addedColor
+                : isRemoved
+                ? removedColor
+                : gutterColorDefault;
 
-                // Active gutter indicator line (similar to lines 19-22 in the image)
-                const showIndicator = idx >= 18 && idx <= 22;
+              // Active indicator bar on the left gutter edge (visible like lines 11-13 in reference)
+              const showIndicator = idx >= 10 && idx <= 13;
 
-                return (
+              return (
+                <div
+                  key={idx}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'stretch',
+                    background: rowBg,
+                    minHeight: 22,
+                  }}
+                >
+                  {/* Line Number Gutter */}
                   <div
-                    key={idx}
                     style={{
-                      display: 'flex',
-                      alignItems: 'stretch',
-                      background: rowBg,
-                      minHeight: 22,
+                      width: 46,
+                      flexShrink: 0,
+                      textAlign: 'right',
+                      paddingRight: 14,
+                      paddingLeft: 8,
+                      color: gutterColor,
+                      userSelect: 'none',
+                      fontSize: 12.5,
+                      position: 'relative',
                     }}
                   >
-                    {/* Line Number Gutter */}
-                    <div
-                      style={{
-                        width: 46,
-                        flexShrink: 0,
-                        textAlign: 'right',
-                        paddingRight: 14,
-                        paddingLeft: 8,
-                        color: gutterColor,
-                        userSelect: 'none',
-                        fontSize: 12.5,
-                        position: 'relative',
-                      }}
-                    >
-                      {/* Vertical indicator bar on left gutter (e.g. lines 19-22 in reference) */}
-                      {showIndicator && (
-                        <div
-                          style={{
-                            position: 'absolute',
-                            left: 2,
-                            top: 0,
-                            bottom: 0,
-                            width: 2,
-                            background: '#52525b',
-                            borderRadius: 1,
-                          }}
-                        />
-                      )}
-                      {dl.lineNumber || idx + 1}
-                    </div>
-
-                    {/* Diff prefix if applicable */}
-                    {(isAdded || isRemoved) && (
+                    {/* Leftmost vertical indicator bar */}
+                    {showIndicator && (
                       <div
                         style={{
-                          width: 14,
-                          flexShrink: 0,
-                          textAlign: 'center',
-                          color: isAdded ? '#4ade80' : '#f87171',
-                          fontWeight: 600,
-                          userSelect: 'none',
+                          position: 'absolute',
+                          left: 2,
+                          top: 0,
+                          bottom: 0,
+                          width: 2,
+                          background: gutterIndicatorColor,
+                          borderRadius: 1,
                         }}
-                      >
-                        {isAdded ? '+' : '-'}
-                      </div>
+                      />
                     )}
+                    {dl.lineNumber || idx + 1}
+                  </div>
 
-                    {/* Syntax Highlighted Code Line */}
+                  {/* Diff prefix if applicable */}
+                  {(isAdded || isRemoved) && (
                     <div
                       style={{
-                        paddingLeft: (isAdded || isRemoved) ? 6 : 14,
-                        paddingRight: 24,
-                        whiteSpace: 'pre',
-                        color: '#e4e4e7',
-                        flex: 1,
+                        width: 14,
+                        flexShrink: 0,
+                        textAlign: 'center',
+                        color: isAdded ? addedColor : removedColor,
+                        fontWeight: 600,
+                        userSelect: 'none',
                       }}
                     >
-                      {tokenizeCodeLine(dl.content, ext)}
+                      {isAdded ? '+' : '-'}
                     </div>
+                  )}
+
+                  {/* Syntax Highlighted Code Line */}
+                  <div
+                    style={{
+                      paddingLeft: (isAdded || isRemoved) ? 6 : 14,
+                      paddingRight: 24,
+                      whiteSpace: 'pre',
+                      color: codeDefaultColor,
+                      flex: 1,
+                    }}
+                  >
+                    {tokenizeCodeLine(dl.content, ext, isDark)}
                   </div>
-                );
-              })
-            )}
-          </div>
-        )}
+                </div>
+              );
+            })
+          )}
+        </div>
       </div>
     </div>
   );

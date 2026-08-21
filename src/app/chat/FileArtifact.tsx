@@ -292,7 +292,13 @@ export default function FileArtifact({ path, description, chatId, onOpenArtifact
                             backgroundColor: isDark 
                                 ? (isDownloadHovered ? '#2c2c2c' : '#222222') 
                                 : (isDownloadHovered ? '#e4e4e7' : '#f4f4f5'),
-                            border: isDark 
+                            borderTop: isDark 
+                                ? (isDownloadHovered ? '1px solid rgba(255, 255, 255, 0.16)' : '1px solid rgba(255, 255, 255, 0.08)') 
+                                : (isDownloadHovered ? '1px solid rgba(0, 0, 0, 0.14)' : '1px solid rgba(0, 0, 0, 0.08)'),
+                            borderBottom: isDark 
+                                ? (isDownloadHovered ? '1px solid rgba(255, 255, 255, 0.16)' : '1px solid rgba(255, 255, 255, 0.08)') 
+                                : (isDownloadHovered ? '1px solid rgba(0, 0, 0, 0.14)' : '1px solid rgba(0, 0, 0, 0.08)'),
+                            borderLeft: isDark 
                                 ? (isDownloadHovered ? '1px solid rgba(255, 255, 255, 0.16)' : '1px solid rgba(255, 255, 255, 0.08)') 
                                 : (isDownloadHovered ? '1px solid rgba(0, 0, 0, 0.14)' : '1px solid rgba(0, 0, 0, 0.08)'),
                             borderRight: 'none',
@@ -321,7 +327,13 @@ export default function FileArtifact({ path, description, chatId, onOpenArtifact
                             backgroundColor: isDark 
                                 ? (isArrowHovered ? '#2c2c2c' : '#222222') 
                                 : (isArrowHovered ? '#e4e4e7' : '#f4f4f5'),
-                            border: isDark 
+                            borderTop: isDark 
+                                ? (isArrowHovered ? '1px solid rgba(255, 255, 255, 0.16)' : '1px solid rgba(255, 255, 255, 0.08)') 
+                                : (isArrowHovered ? '1px solid rgba(0, 0, 0, 0.14)' : '1px solid rgba(0, 0, 0, 0.08)'),
+                            borderBottom: isDark 
+                                ? (isArrowHovered ? '1px solid rgba(255, 255, 255, 0.16)' : '1px solid rgba(255, 255, 255, 0.08)') 
+                                : (isArrowHovered ? '1px solid rgba(0, 0, 0, 0.14)' : '1px solid rgba(0, 0, 0, 0.08)'),
+                            borderRight: isDark 
                                 ? (isArrowHovered ? '1px solid rgba(255, 255, 255, 0.16)' : '1px solid rgba(255, 255, 255, 0.08)') 
                                 : (isArrowHovered ? '1px solid rgba(0, 0, 0, 0.14)' : '1px solid rgba(0, 0, 0, 0.08)'),
                             borderLeft: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid rgba(0, 0, 0, 0.06)',

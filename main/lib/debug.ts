@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events';
 import { BrowserWindow } from 'electron';
+import { getAppIconPath, setupWindowIcon } from './app-icon';
 
 export const DebugEmitter = new EventEmitter();
 
@@ -119,11 +120,14 @@ export function toggleDebugWindow() {
     height: 750,
     minWidth: 600,
     minHeight: 400,
+    icon: getAppIconPath(),
     title: 'EverFern Debug & Terminal Monitor (Ctrl+Shift+P)',
     autoHideMenuBar: true,
     backgroundColor: '#0f172a',
     webPreferences: { nodeIntegration: false, contextIsolation: true }
   });
+
+  setupWindowIcon(debugWin);
 
   const htmlContent = `
     <!DOCTYPE html>

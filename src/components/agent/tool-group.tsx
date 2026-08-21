@@ -10,7 +10,8 @@ import {
 } from "react";
 import { ChevronDownIcon, LoaderIcon } from "lucide-react";
 import { cva, type VariantProps } from "class-variance-authority";
-import { useScrollLock } from "@assistant-ui/react";
+import { useScrollLock, useAuiState } from "@assistant-ui/react";
+import { useAutoCollapse } from "@/hooks/use-auto-collapse";
 import {
   Collapsible,
   CollapsibleContent,
@@ -205,10 +206,12 @@ const ToolGroupImpl: FC<
   PropsWithChildren<{ startIndex: number; endIndex: number }>
 > = ({ children, startIndex, endIndex }) => {
   const toolCount = endIndex - startIndex + 1;
+  const isRunning = useAuiState((s) => s.message.status?.type === "running");
+  const [isOpen, setIsOpen] = useAutoCollapse(isRunning, true);
 
   return (
-    <ToolGroupRoot>
-      <ToolGroupTrigger count={toolCount} />
+    <ToolGroupRoot open={isOpen} onOpenChange={setIsOpen}>
+      <ToolGroupTrigger count={toolCount} active={isRunning} />
       <ToolGroupContent>{children}</ToolGroupContent>
     </ToolGroupRoot>
   );

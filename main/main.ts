@@ -46,6 +46,7 @@ import { getAllModelsFlat, FlatModelEntry, PROVIDER_REGISTRY, getModelsForProvid
 import { toggleDebugWindow, setupLogging } from './lib/debug';
 import { systemTrayManager } from './lib/system-tray-manager';
 import { autoStartManager } from './lib/auto-start-manager';
+import { getAppIconPath, getAppIcon, setupWindowIcon } from './lib/app-icon';
 import { integrationService } from './integrations/integration-service';
 import { autoStartEnabledBots, initializeBotMessageHandler, shutdownBotMessageHandler } from './ipc/integration-handlers';
 import { checkDatabaseConnection, checkVectorStore } from './lib/health-check';
@@ -235,15 +236,15 @@ function createWindow(): void {
   console.log(`[Window] Creating window (app.isPackaged: ${app.isPackaged}, isDev: ${isDev})`);
   console.log(`[Window] NODE_ENV: ${process.env.NODE_ENV}`);
 
+  const appIconPath = getAppIconPath();
+  const appIcon = getAppIcon();
+  console.log(`[Window] Resolved icon path: ${appIconPath}`);
+
   mainWindow = new BrowserWindow({
     width: 1400, height: 900,
     minWidth: 800, minHeight: 600,
     frame: false,
-    icon: isDev
-      ? path.join(__dirname, '../../public/images/logos/everfern-rounded.png')
-      : path.join(app.getAppPath(), process.platform === 'win32'
-          ? 'public/images/logos/everfern.ico'
-          : 'public/images/logos/everfern-rounded.png'),
+    icon: appIconPath || (appIcon ?? undefined),
     titleBarStyle: 'hidden',
     trafficLightPosition: { x: 16, y: 16 },
     backgroundColor: '#1a1a1a',
@@ -257,6 +258,9 @@ function createWindow(): void {
     },
   });
 
+  // Explicitly set window icon for taskbar on Windows/Linux
+  setupWindowIcon(mainWindow);
+
   // Make mainWindow available globally for IPC handlers
   (global as any).mainWindow = mainWindow;
   console.log('[Window] mainWindow assigned to global');
@@ -266,6 +270,7 @@ function createWindow(): void {
   const showFallback = setTimeout(() => {
     if (mainWindow && !mainWindow.isVisible() && !isAutoStartMode) {
       console.warn('[Window] ready-to-show timed out, forcing show()');
+      setupWindowIcon(mainWindow);
       mainWindow.show();
     }
   }, 5000);
@@ -273,6 +278,7 @@ function createWindow(): void {
   mainWindow.once('ready-to-show', () => {
     console.log('[Window] ready-to-show received');
     clearTimeout(showFallback);
+    setupWindowIcon(mainWindow);
 
     // Initialize system tray first
     try {

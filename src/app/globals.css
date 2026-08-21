@@ -365,6 +365,30 @@
   --color-assistant-bubble: #ffffff;
   --color-assistant-bubble-border: #e8e6d9;
 
+  /* Sidebar Theme Variables (Light Theme) */
+  --sidebar-bg: #f5f4f0;
+  --sidebar-border: #e8e6d9;
+  --sidebar-btn-color: #8a8886;
+  --sidebar-btn-hover-color: #111111;
+  --sidebar-brand-text: #111111;
+  --sidebar-text-primary: #111111;
+  --sidebar-text-secondary: #4a4846;
+  --sidebar-text-tertiary: #8a8886;
+  --sidebar-bg-hover: rgba(0, 0, 0, 0.04);
+  --sidebar-bg-selected: rgba(0, 0, 0, 0.06);
+  --sidebar-bg-active: rgba(0, 0, 0, 0.08);
+  --sidebar-avatar-bg: #eae8e1;
+  --sidebar-avatar-border: #dcdad0;
+  --sidebar-limit-text: #8a8886;
+  --sidebar-project-text: #666666;
+
+  --sidebar-settings-bg: rgba(0, 0, 0, 0.03);
+  --sidebar-settings-border: rgba(0, 0, 0, 0.06);
+  --sidebar-settings-text: #8a8886;
+  --sidebar-settings-hover-bg: rgba(0, 0, 0, 0.06);
+  --sidebar-settings-hover-border: rgba(0, 0, 0, 0.15);
+  --sidebar-settings-hover-text: #111111;
+
   /* Typography System */
   --font-sans: 'Figtree', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-branding: 'Figtree', sans-serif;
@@ -432,27 +456,31 @@
   --radius-full: 9999px;
 
   /* ────────────────────────────────────────────────────────────────── */
-  /* SHADOWS & EFFECTS                                                  */
+  /* SHADOWS & EFFECTS (Light Theme)                                    */
   /* ────────────────────────────────────────────────────────────────── */
 
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.15);
-  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.2);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.25);
-  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.35);
-  --shadow-xl: 0 20px 48px rgba(0, 0, 0, 0.4);
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.07), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 12px 24px -4px rgba(0, 0, 0, 0.08), 0 4px 12px -2px rgba(0, 0, 0, 0.04);
+  --shadow-xl: 0 20px 32px -6px rgba(0, 0, 0, 0.10), 0 8px 16px -4px rgba(0, 0, 0, 0.04);
   --shadow-glow: 0 0 24px var(--color-accent-glow);
 
-  /* Glassmorphism & Backdrop Effects */
-  --glass-bg: rgba(26, 26, 26, 0.9);
-  --glass-border: #3a3a3a;
-  --glass-blur: blur(12px);
-  --backdrop-blur: blur(8px);
+  /* Composer & Floating Card Shadows (Light Theme) */
+  --composer-shadow: var(--glossy-inner), 0 10px 30px -4px rgba(0, 0, 0, 0.08), 0 2px 8px -1px rgba(0, 0, 0, 0.04);
+  --composer-border-top: 1px solid var(--glossy-highlight);
 
-  /* Glossy surface highlight & shadow */
-  --glossy-highlight: rgba(255, 255, 255, 0.42);
-  --glossy-shadow-color: rgba(0, 0, 0, 0.10);
+  /* Glassmorphism & Backdrop Effects (Light Theme) */
+  --glass-bg: rgba(255, 255, 255, 0.85);
+  --glass-border: rgba(0, 0, 0, 0.08);
+  --glass-blur: blur(16px);
+  --backdrop-blur: blur(12px);
+
+  /* Glossy surface highlight & shadow (Light Theme default) */
+  --glossy-highlight: rgba(255, 255, 255, 0.95);
+  --glossy-shadow-color: rgba(0, 0, 0, 0.08);
   --glossy-inner: inset 0 1px 0 0 var(--glossy-highlight);
-  --glossy-outer: 0 4px 20px -4px var(--glossy-shadow-color);
+  --glossy-outer: 0 4px 20px -2px var(--glossy-shadow-color), 0 1px 4px 0 rgba(0, 0, 0, 0.04);
 
   /* ────────────────────────────────────────────────────────────────── */
   /* ANIMATIONS & TRANSITIONS                                           */
@@ -893,67 +921,85 @@ a:hover {
   transition: box-shadow var(--transition-fast), border-color var(--transition-fast);
 }
 
-/* Apply glossy finish to common component classes in dark mode */
-.dark .card,
-.dark .surface,
-.dark .surface-elevated,
-.dark .input,
-.dark .btn-secondary,
-.dark .badge,
-.dark .glossy,
-.dark .glossy-no-border,
-.dark .glossy-bubble,
-.dark .glossy-input {
+/* Apply glossy finish to common component classes across BOTH Light and Dark themes */
+.card,
+.surface,
+.surface-elevated,
+.input,
+.btn-secondary,
+.badge,
+.glossy,
+.glossy-no-border,
+.glossy-bubble,
+.glossy-input {
   box-shadow: var(--glossy-inner), var(--glossy-outer);
 }
 
-.dark .glossy,
-.dark .glossy-bubble,
-.dark .glossy-input {
+.glossy,
+.glossy-bubble,
+.glossy-input {
   border-top: 1px solid var(--glossy-highlight);
 }
 
-.dark .card-hover:hover {
-  box-shadow: var(--glossy-inner), var(--glossy-outer);
-  border-top: 1px solid var(--glossy-highlight);
-}
-
-/* ── Auto-apply glossy to common Tailwind + custom surface patterns in dark mode ── */
-.dark .bg-card,
-.dark .bg-popover,
-.dark .bg-muted,
-.dark .bg-\[var\(--color-bg-surface\)\],
-.dark .bg-\[var\(--color-bg-subtle\)\],
-.dark .bg-\[var\(--color-bg-elevated\)\],
-.dark .bg-\[\#0A0A0A\],
-.dark .bg-\[\#141414\],
-.dark .bg-neutral-900,
-.dark .bg-black\/60,
-.dark [class*="rounded-"][class*="shadow-"][class*="border"] {
+.card-hover:hover {
   box-shadow: var(--glossy-inner), var(--glossy-outer);
   border-top: 1px solid var(--glossy-highlight);
 }
 
-/* Message bubbles in dark mode */
-.dark [class*="user-bubble"],
-.dark [class*="assistant-bubble"] {
+/* ── Auto-apply glossy to common Tailwind + custom surface patterns ── */
+.bg-card,
+.bg-popover,
+.bg-muted,
+.bg-\[var\(--color-bg-surface\)\],
+.bg-\[var\(--color-bg-subtle\)\],
+.bg-\[var\(--color-bg-elevated\)\],
+.bg-\[\#0A0A0A\],
+.bg-\[\#141414\],
+.bg-neutral-900,
+.bg-black\/60,
+[class*="rounded-"][class*="shadow-"][class*="border"] {
+  box-shadow: var(--glossy-inner), var(--glossy-outer);
+  border-top: 1px solid var(--glossy-highlight);
+}
+
+/* Message bubbles in light and dark mode */
+[class*="user-bubble"],
+[class*="assistant-bubble"] {
   box-shadow: inset 0 1px 0 0 var(--glossy-highlight), 0 4px 16px -4px var(--glossy-shadow-color);
 }
 
-/* Modal / Dialog / Overlay panels in dark mode */
-.dark [class*="modal"],
-.dark [class*="dialog"],
-.dark [class*="popover"],
-.dark [class*="dropdown-menu"],
-.dark [role="dialog"] {
+/* Modal / Dialog / Overlay panels in light and dark mode */
+[class*="modal"],
+[class*="dialog"],
+[class*="popover"],
+[class*="dropdown-menu"],
+[role="dialog"] {
   box-shadow: var(--glossy-inner), var(--glossy-outer);
   border-top: 1px solid var(--glossy-highlight);
 }
 
 /* Make sure glossy inputs don't lose focus rings */
-.dark .glossy-input:focus,
-.dark .input:focus {
+.glossy-input:focus,
+.input:focus {
   box-shadow: 0 0 0 3px var(--color-accent-dim), inset 0 1px 0 0 var(--glossy-highlight), 0 4px 20px -4px var(--glossy-shadow-color);
+}
+
+/* ── Glassmorphism Utility Classes ───────────────────────────────────────── */
+.glass,
+.glass-panel {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: var(--glass-blur) saturate(180%);
+  -webkit-backdrop-filter: var(--glass-blur) saturate(180%);
+  box-shadow: var(--shadow-lg);
+}
+
+.glass-subtle {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: var(--backdrop-blur);
+  -webkit-backdrop-filter: var(--backdrop-blur);
+  box-shadow: var(--shadow-sm);
 }
 
 /* ── Focus styles ────────────────────────────────────────────────────────── */
@@ -1062,7 +1108,23 @@ a:hover {
   --sidebar-settings-hover-border: rgba(255, 255, 255, 0.15);
   --sidebar-settings-hover-text: #e5e4df;
 
-  /* Glossy surface highlight & shadow — dark theme */
+  /* Shadows & Effects — dark theme */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.40);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.55);
+  --shadow-xl: 0 20px 48px rgba(0, 0, 0, 0.65);
+  --shadow-glow: 0 0 24px var(--color-accent-glow);
+
+  /* Composer & Floating Card Shadows — dark theme */
+  --composer-shadow: var(--glossy-inner), 0 10px 32px -4px rgba(0, 0, 0, 0.5), 0 2px 8px -2px rgba(0, 0, 0, 0.35);
+  --composer-border-top: 1px solid rgba(255, 255, 255, 0.12);
+
+  /* Glassmorphism & Glossy surface — dark theme */
+  --glass-bg: rgba(26, 26, 26, 0.90);
+  --glass-border: #3a3a3a;
+  --glass-blur: blur(16px);
+  --backdrop-blur: blur(12px);
   --glossy-highlight: rgba(255, 255, 255, 0.10);
   --glossy-shadow-color: rgba(0, 0, 0, 0.45);
 }

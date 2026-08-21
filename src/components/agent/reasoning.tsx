@@ -9,6 +9,7 @@ import {
   type ReasoningMessagePartComponent,
   type ReasoningGroupComponent,
 } from "@assistant-ui/react";
+import { useAutoCollapse } from "@/hooks/use-auto-collapse";
 import { MarkdownText } from "@/components/markdown-text";
 import {
   Collapsible,
@@ -253,8 +254,10 @@ const ReasoningGroupImpl: ReasoningGroupComponent = ({
     return lastIndex >= startIndex && lastIndex <= endIndex;
   });
 
+  const [isOpen, setIsOpen] = useAutoCollapse(isReasoningStreaming, true);
+
   return (
-    <ReasoningRoot defaultOpen={isReasoningStreaming}>
+    <ReasoningRoot open={isOpen} onOpenChange={setIsOpen}>
       <ReasoningTrigger active={isReasoningStreaming} />
       <ReasoningContent aria-busy={isReasoningStreaming}>
         <ReasoningText>{children}</ReasoningText>

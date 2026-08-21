@@ -1309,11 +1309,19 @@ export function ToolCallDetailPane({
       .replace(/\b\w/g, c => c.toUpperCase());
   };
 
-  // If this is a file/code operation (write/edit/read), render the pixel-perfect ToolCallCodePane
-  if (isCodeOrFileViewer) {
+  const hasError = toolCall.status === 'error' || 
+    toolCall.status === 'failed' || 
+    toolCall.result?.success === false || 
+    toolCall.result?.isError === true || 
+    !!toolCall.error || 
+    (typeof toolCall.result?.output === 'string' && toolCall.result?.output.trim().startsWith('Error:'));
+
+  // If this is a file/code operation (write/edit/read) and succeeded, render the pixel-perfect ToolCallCodePane
+  if (isCodeOrFileViewer && !hasError) {
     return (
       <ToolCallCodePane
         toolName={toolCall.toolName}
+        path={toolCall.arguments?.TargetFile || toolCall.arguments?.AbsolutePath || toolCall.arguments?.filePath || toolCall.arguments?.path}
         args={toolCall.arguments || (toolCall as any).args}
         output={toolCall.result?.output || toolCall.result?.data?.output || ''}
         data={toolCall.result?.data || toolCall.result}
