@@ -1308,10 +1308,11 @@ export default function ChatPage() {
 
         const isWriteOrEdit = toolLower.includes('write') || toolLower.includes('edit') || toolLower.includes('replace');
         const hasError = tc.status === 'error' || 
-          tc.status === 'failed' || 
-          tc.result?.success === false || 
-          tc.result?.isError === true || 
-          (typeof tc.result?.output === 'string' && tc.result.output.trim().startsWith('Error:'));
+          (tc.status as string) === 'failed' || 
+          (tc as any).result?.success === false || 
+          (tc as any).result?.isError === true || 
+          (typeof tc.output === 'string' && tc.output.trim().startsWith('Error:')) ||
+          (typeof (tc as any).result?.output === 'string' && (tc as any).result.output.trim().startsWith('Error:'));
 
         if (isWriteOrEdit && hasError) {
             return;

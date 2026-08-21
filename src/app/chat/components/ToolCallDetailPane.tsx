@@ -1309,8 +1309,8 @@ export function ToolCallDetailPane({
       .replace(/\b\w/g, c => c.toUpperCase());
   };
 
-  const hasError = toolCall.status === 'error' || 
-    toolCall.status === 'failed' || 
+  const hasError = toolCall.status === 'failed' || 
+    (toolCall.status as string) === 'error' || 
     toolCall.result?.success === false || 
     toolCall.result?.isError === true || 
     !!toolCall.error || 
