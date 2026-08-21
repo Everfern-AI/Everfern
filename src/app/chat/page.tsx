@@ -94,6 +94,7 @@ import { SubagentPanel } from './components/SubagentPanel';
 import { ToolCallDetailPane, PlanPreviewCard, type ToolCallDetail } from './components/ToolCallDetailPane';
 import { useSubagentTracking } from '@/hooks/useSubagentTracking';
 import { VisionDowngradeNotice } from '@/components/VisionDowngradeNotice';
+import { InterruptedResponseBanner } from './components/InterruptedResponseBanner';
 
 
 // Extracted components
@@ -7935,24 +7936,6 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                             onPillClick={handlePillClick}
                                                                         />
                                                                     </div>
-                                                                    {msg.stopped && (
-                                                                        <div style={{
-                                                                            display: 'flex',
-                                                                            alignItems: 'center',
-                                                                            gap: 8,
-                                                                            padding: '10px 14px',
-                                                                            marginTop: 12,
-                                                                            backgroundColor: 'var(--color-error-dim)',
-                                                                            border: '1px solid var(--color-error-border)',
-                                                                            borderRadius: 10,
-                                                                            fontSize: 13,
-                                                                            color: 'var(--color-error)',
-                                                                            fontWeight: 500
-                                                                        }}>
-                                                                            <StopIcon width={14} height={14} />
-                                                                            <span>Stopped by user</span>
-                                                                        </div>
-                                                                    )}
 
 
                                                                     {(() => {
@@ -8093,6 +8076,34 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                             </div>
                                                                         );
                                                                     })}
+                                                                    {/* Interrupted Response Banner (when user stops message) */}
+                                                                    {msg.stopped && (
+                                                                        <InterruptedResponseBanner
+                                                                            onEditPrompt={() => {
+                                                                                const prevUserMsg = messages.slice(0, idx).reverse().find(m => m.role === 'user');
+                                                                                if (prevUserMsg) {
+                                                                                    const promptText = typeof prevUserMsg.content === 'string' ? prevUserMsg.content : '';
+                                                                                    setInputValue(promptText);
+                                                                                    setTimeout(() => {
+                                                                                        if (textareaRef.current) {
+                                                                                            textareaRef.current.focus();
+                                                                                            textareaRef.current.setSelectionRange(promptText.length, promptText.length);
+                                                                                            textareaRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                                                                        }
+                                                                                    }, 50);
+                                                                                }
+                                                                            }}
+                                                                            onTryAgain={() => {
+                                                                                const prevUserMsg = messages.slice(0, idx).reverse().find(m => m.role === 'user');
+                                                                                if (prevUserMsg) {
+                                                                                    const promptText = typeof prevUserMsg.content === 'string' ? prevUserMsg.content : '';
+                                                                                    const userMsgIndex = messages.findIndex(m => m.id === prevUserMsg.id);
+                                                                                    const historyBeforeAssistant = messages.slice(0, userMsgIndex);
+                                                                                    handleSend(promptText, historyBeforeAssistant, false);
+                                                                                }
+                                                                            }}
+                                                                        />
+                                                                    )}
                                                                     <RateLimitContinueButton content={msg.content} onContinue={() => { setInputValue("continue"); const inputArea = document.querySelector('textarea') || document.querySelector('input[type="text"]'); if (inputArea) { (inputArea as any).focus(); } }} />
                                                                     <CloudAuthLoginButton content={toContentString(msg.content)} providerType={currentModel?.providerType} onLogin={() => { setCloudAuthError(false); router.push('/auth'); }} />
                                                                     {idx === messages.length - 1 && activeUserQuestions.length > 0 && isNavisQuestion(activeUserQuestions) && (

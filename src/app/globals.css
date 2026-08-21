@@ -365,6 +365,17 @@
   --color-assistant-bubble: #ffffff;
   --color-assistant-bubble-border: #e8e6d9;
 
+  /* Interrupted Response Banner (Light Theme) */
+  --interrupted-banner-bg: rgba(0, 0, 0, 0.025);
+  --interrupted-banner-border: rgba(0, 0, 0, 0.08);
+  --interrupted-banner-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --interrupted-icon-color: #6b7280;
+  --interrupted-text-color: #1f2937;
+  --interrupted-btn-bg: rgba(0, 0, 0, 0.06);
+  --interrupted-btn-border: rgba(0, 0, 0, 0.08);
+  --interrupted-btn-text: #111827;
+  --interrupted-btn-hover-bg: rgba(0, 0, 0, 0.10);
+
   /* Sidebar Theme Variables (Light Theme) */
   --sidebar-bg: #f5f4f0;
   --sidebar-border: #e8e6d9;
@@ -1076,6 +1087,17 @@ a:hover {
   --color-user-bubble-border: #3e3a2c;
   --color-assistant-bubble: #181714;
   --color-assistant-bubble-border: #333029;
+
+  /* Interrupted Response Banner (Dark Theme) */
+  --interrupted-banner-bg: rgba(255, 255, 255, 0.04);
+  --interrupted-banner-border: rgba(255, 255, 255, 0.08);
+  --interrupted-banner-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  --interrupted-icon-color: #9ca3af;
+  --interrupted-text-color: #e5e7eb;
+  --interrupted-btn-bg: rgba(255, 255, 255, 0.08);
+  --interrupted-btn-border: rgba(255, 255, 255, 0.06);
+  --interrupted-btn-text: #f3f4f6;
+  --interrupted-btn-hover-bg: rgba(255, 255, 255, 0.14);
 
   /* Navis Theme Colors */
   --color-navis-active-bg: rgba(99, 102, 241, 0.15);
