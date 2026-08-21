@@ -19,6 +19,8 @@
     "build:macos:x64": "npm run build:next && npm run build:electron-ts && electron-builder --macos --x64",
     "build": "npm run build:next && npm run build:electron-ts && electron-builder",
     "rebuild:electron": "cross-env SHARP_IGNORE_GLOBAL_LIBVIPS=1 electron-rebuild -f",
+    "rebuild:electron:arm64": "cross-env SHARP_IGNORE_GLOBAL_LIBVIPS=1 electron-rebuild -f -a arm64",
+    "rebuild:electron:x64": "cross-env SHARP_IGNORE_GLOBAL_LIBVIPS=1 electron-rebuild -f -a x64",
     "start": "electron-forge start",
     "lint": "eslint",
     "test": "vitest",

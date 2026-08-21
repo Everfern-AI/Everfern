@@ -23,19 +23,20 @@ on:
 jobs:
   build-macos:
     name: Build macOS (${{ matrix.target_name }})
-    runs-on: ${{ matrix.os }}
+    # Run on Apple Silicon M-series (fastest GitHub runner, cross-compiles x64 and arm64 in minutes)
+    runs-on: macos-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
-            arch: arm64
+          - arch: arm64
             target_name: Apple Silicon (arm64)
             builder_flag: --arm64
-          - os: macos-13
-            arch: x64
+            rebuild_script: rebuild:electron:arm64
+          - arch: x64
             target_name: Intel (x64)
             builder_flag: --x64
+            rebuild_script: rebuild:electron:x64
 
     steps:
       # ── 1. Checkout ────────────────────────────────────────────────────────
@@ -49,17 +50,25 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      # ── 3. System dependencies ─────────────────────────────────────────────
-      - name: Install macOS Dependencies
-        run: brew install vips
+      # ── 3. Cache Electron & builder downloads ──────────────────────────────
+      - name: Cache Electron binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: electron-cache-macos-${{ matrix.arch }}-${{ hashFiles('package.json') }}
+          restore-keys: |
+            electron-cache-macos-${{ matrix.arch }}-
+            electron-cache-macos-
 
       # ── 4. Install npm dependencies ────────────────────────────────────────
       - name: Install Node modules
         run: npm install
 
-      # ── 5. Rebuild native modules for Electron ─────────────────────────────
-      - name: Rebuild native modules for Electron
-        run: npm run rebuild:electron
+      # ── 5. Rebuild native modules for target architecture ──────────────────
+      - name: Rebuild native modules for Electron (${{ matrix.arch }})
+        run: npm run ${{ matrix.rebuild_script }}
 
       # ── 6. Build Next.js frontend ──────────────────────────────────────────
       - name: Build Next.js frontend
