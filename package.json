@@ -15,6 +15,8 @@
     "build:electron": "npm run build:electron-ts && electron-builder",
     "build:linux": "npm run build:next && npm run build:electron-ts && electron-builder --linux",
     "build:macos": "npm run build:next && npm run build:electron-ts && electron-builder --macos",
+    "build:macos:arm64": "npm run build:next && npm run build:electron-ts && electron-builder --macos --arm64",
+    "build:macos:x64": "npm run build:next && npm run build:electron-ts && electron-builder --macos --x64",
     "build": "npm run build:next && npm run build:electron-ts && electron-builder",
     "rebuild:electron": "cross-env SHARP_IGNORE_GLOBAL_LIBVIPS=1 electron-rebuild -f",
     "start": "electron-forge start",
@@ -124,7 +126,8 @@
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.inherit.plist"
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
     "win": {
       "target": [

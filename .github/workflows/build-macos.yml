@@ -1,4 +1,4 @@
-name: Build Linux
+name: Build macOS
 
 permissions:
   contents: write
@@ -21,9 +21,21 @@ on:
         type: boolean
 
 jobs:
-  build-linux:
-    name: Build Linux (AppImage · deb · rpm)
-    runs-on: ubuntu-latest
+  build-macos:
+    name: Build macOS (${{ matrix.target_name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            arch: arm64
+            target_name: Apple Silicon (arm64)
+            builder_flag: --arm64
+          - os: macos-13
+            arch: x64
+            target_name: Intel (x64)
+            builder_flag: --x64
 
     steps:
       # ── 1. Checkout ────────────────────────────────────────────────────────
@@ -38,34 +50,8 @@ jobs:
           cache: 'npm'
 
       # ── 3. System dependencies ─────────────────────────────────────────────
-      - name: Install Linux system dependencies
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y \
-            libglib2.0-dev \
-            pkg-config \
-            libvips-dev \
-            libcairo2-dev \
-            libpango1.0-dev \
-            librsvg2-dev \
-            libpixman-1-dev \
-            libgif-dev \
-            libjpeg-dev \
-            libpng-dev \
-            libx11-dev \
-            libxtst-dev \
-            libxkbfile-dev \
-            libxinerama-dev \
-            libxrandr-dev \
-            libxss-dev \
-            build-essential \
-            python3 \
-            python-is-python3 \
-            make \
-            g++
-
-          # libfuse2 was renamed to libfuse2t64 on Ubuntu 24 — try both
-          sudo apt-get install -y libfuse2 || sudo apt-get install -y libfuse2t64 || true
+      - name: Install macOS Dependencies
+        run: brew install vips
 
       # ── 4. Install npm dependencies ────────────────────────────────────────
       - name: Install Node modules
@@ -86,14 +72,12 @@ jobs:
         run: npm run build:electron-ts
 
       # ── 8. Package with electron-builder ───────────────────────────────────
-      # APPIMAGE_EXTRACT_AND_RUN=1 is required on CI runners that don't have
-      # FUSE kernel support (GitHub Actions runs inside a container).
-      - name: Package — AppImage, deb, rpm
+      - name: Package — DMG & ZIP (${{ matrix.arch }})
         shell: bash
         run: |
           for i in 1 2 3; do
             echo "[Attempt $i/3] Running electron-builder..."
-            npx electron-builder --linux --publish never && break || {
+            npx electron-builder --macos ${{ matrix.builder_flag }} --publish never && break || {
               if [ $i -lt 3 ]; then
                 echo "[Warning] electron-builder encountered an error (e.g. transient 502). Retrying in 15s..."
                 sleep 15
@@ -105,17 +89,15 @@ jobs:
           done
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APPIMAGE_EXTRACT_AND_RUN: '1'
 
       # ── 9. Upload build artifacts ──────────────────────────────────────────
-      - name: Upload Linux artifacts
+      - name: Upload macOS artifacts (${{ matrix.arch }})
         uses: actions/upload-artifact@v4
         with:
-          name: EverFern-Linux-${{ github.sha }}
+          name: EverFern-macOS-${{ matrix.arch }}-${{ github.sha }}
           path: |
-            release/*.AppImage
-            release/*.deb
-            release/*.rpm
+            release/*.dmg
+            release/*.zip
           if-no-files-found: error
           retention-days: 14
 
@@ -125,9 +107,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            release/*.AppImage
-            release/*.deb
-            release/*.rpm
+            release/*.dmg
+            release/*.zip
           fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
