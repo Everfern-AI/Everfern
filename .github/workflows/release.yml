@@ -29,18 +29,22 @@ jobs:
             arch: arm64
             name: macOS-AppleSilicon
             builder_args: --mac --arm64
-          - os: macos-13
+            rebuild_script: rebuild:electron:arm64
+          - os: macos-latest
             arch: x64
             name: macOS-Intel
             builder_args: --mac --x64
+            rebuild_script: rebuild:electron:x64
           - os: ubuntu-latest
             arch: x64
             name: Linux-x64
             builder_args: --linux
+            rebuild_script: rebuild:electron
           - os: windows-latest
             arch: x64
             name: Windows-x64
             builder_args: --win
+            rebuild_script: rebuild:electron
 
     steps:
       - name: Check out repository
@@ -52,9 +56,20 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      - name: Install macOS Dependencies
-        if: runner.os == 'macOS'
-        run: brew install vips
+      - name: Cache Electron & builder downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: electron-binaries-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('package.json') }}
+          restore-keys: |
+            electron-binaries-${{ runner.os }}-${{ matrix.arch }}-
+            electron-binaries-${{ runner.os }}-
 
       - name: Install Linux Dependencies
         if: runner.os == 'Linux'
@@ -88,9 +103,9 @@ jobs:
       - name: Install Node Modules
         run: npm install
 
-      # Recompiles heavy binaries safely for the matching host architecture
+      # Recompiles native modules safely for target architecture
       - name: Compile Native Modules
-        run: npm run rebuild:electron
+        run: npm run ${{ matrix.rebuild_script }}
 
       - name: Build Next.js frontend
         run: npm run build:next
