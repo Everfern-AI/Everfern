@@ -166,3 +166,7 @@ Email everfernsupport@gmail.com directly — do not open public issues.
 ## License
 
 MIT — by contributing, you agree your contributions are licensed under MIT.
+
+
+## Contributors
+* Gnaneshwar Raavi
