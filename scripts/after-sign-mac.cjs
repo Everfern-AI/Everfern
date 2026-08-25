@@ -22,20 +22,26 @@
  *   because `electron .` runs the stock Developer-ID-signed binaries.
  *
  * Fix:
- *   After electron-builder signs, walk the bundle deepest-first and re-sign
- *   every ad-hoc component WITHOUT the hardened-runtime flag. Without the
- *   runtime flag, library validation is not enforced and helpers load the
- *   framework normally. If anything inside the bundle was repaired, the
- *   outermost bundle is re-signed last so its CodeResources seal stays
- *   consistent with the modified contents.
+ *   After electron-builder signs, walk the bundle and re-sign every ad-hoc
+ *   component WITHOUT the hardened-runtime flag, deepest bundle first
+ *   (Apple TN2206 inside-out order). Nested .app, .framework, .xpc and
+ *   .appex containers are all discovered, including inside other bundles.
+ *   If anything inside changed, every enclosing bundle — innermost first —
+ *   plus the outermost bundle is re-signed last, so each CodeResources seal
+ *   stays consistent with the modified contents.
  *
- * Builds signed with a real certificate (CSC_LINK / CSC_NAME set, or the
- * resulting signature is not ad-hoc) are detected and left untouched.
+ * Builds signed with a real certificate are never modified: if the outer
+ * bundle is certificate-signed, the hook exits without touching anything
+ * (repairing ad-hoc nested code would invalidate the certificate seal in a
+ * way we cannot repair without the certificate).
  */
 
 const { execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+
+/** Directory suffixes treated as signable nested bundles. */
+const BUNDLE_SUFFIXES = ['.app', '.framework', '.xpc', '.appex'];
 
 /**
  * Run a command and resolve with { err, out } instead of throwing.
@@ -54,47 +60,49 @@ function sh(cmd, args) {
 }
 
 /**
- * Inspect a code-signed target's signature flags.
+ * Inspect a code-signed target's signature.
  *
- * @param {string} target - Path to a Mach-O binary, framework, or app bundle.
- * @returns {Promise<{adhoc: boolean, runtime: boolean}>} Whether the target
- *   is ad-hoc signed and whether the hardened-runtime flag is set.
+ * @param {string} target - Path to a Mach-O binary, framework, or bundle.
+ * @returns {Promise<{signed: boolean, adhoc: boolean, runtime: boolean}>}
+ *   `signed` is false when the target has no signature at all; `adhoc` is
+ *   true for ad-hoc signatures; `runtime` reflects the hardened-runtime flag.
  */
 async function codesignDetails(target) {
   const { out } = await sh('codesign', ['-dv', target]);
   const flagsLine =
     (out.match(/^CodeDirectory.*?flags=0x[0-9a-fA-F]+\(([^)]*)\)/m) || [])[1] || '';
+  const signed = /^Signature=/m.test(out);
   return {
+    signed,
     adhoc: /\badhoc\b/.test(flagsLine) || /^Signature=adhoc$/m.test(out),
     runtime: /\bruntime\b/.test(flagsLine),
   };
 }
 
 /**
- * Collect every nested bundle inside an .app that may need re-signing.
+ * Collect every nested signable bundle inside an .app.
  *
- * Walks Contents/Frameworks, Contents/Plugins and Contents (depth-limited),
- * gathering .framework and .app bundles without descending into them (each
- * nested bundle is re-signed as a unit).
+ * Recurses through the bundle tree — including inside discovered bundles —
+ * gathering .app, .framework, .xpc and .appex containers, so nested XPC
+ * services or app extensions inside helper apps/frameworks are found too.
+ * Symlinked directories are not followed.
  *
  * @param {string} appBundle - Path to the outer .app bundle.
- * @returns {Promise<string[]>} Bundle paths sorted deepest-first, so outer
- *   bundles are always (re-)sealed after their contents change.
+ * @returns {Promise<string[]>} Bundle paths sorted deepest-first, so every
+ *   bundle is re-signed after its own contents (TN2206 inside-out order).
  */
 async function findTargets(appBundle) {
-  const contents = path.join(appBundle, 'Contents');
-  const roots = [path.join(contents, 'Frameworks'), path.join(contents, 'Plugins'), contents];
-  const found = [];
+  const found = new Set();
 
   /**
    * Recurse into a directory collecting nested bundle paths.
    *
    * @param {string} dir - Directory to scan.
-   * @param {number} depth - Current recursion depth (hard limit 6).
+   * @param {number} depth - Current recursion depth (hard limit 12).
    * @returns {Promise<void>} Resolves when the directory has been scanned.
    */
   async function walk(dir, depth) {
-    if (depth > 6) return;
+    if (depth > 12) return;
     let entries;
     try {
       entries = await fs.promises.readdir(dir, { withFileTypes: true });
@@ -102,21 +110,21 @@ async function findTargets(appBundle) {
       return;
     }
     for (const entry of entries) {
+      if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
       const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (entry.name.endsWith('.framework') || entry.name.endsWith('.app')) {
-          found.push(full);
-          continue; // don't descend into nested bundles; they get re-signed whole
-        }
-        await walk(full, depth + 1);
+      if (BUNDLE_SUFFIXES.some((suffix) => entry.name.endsWith(suffix))) {
+        found.add(full);
       }
+      // Keep recursing inside bundles too: helpers/XPC services can nest
+      // arbitrarily deep (e.g. Helper.app/Contents/Frameworks/*.framework).
+      await walk(full, depth + 1);
     }
   }
 
-  for (const root of roots) await walk(root, 0);
+  await walk(path.join(appBundle, 'Contents'), 0);
 
   // Deepest paths first so outer bundles are sealed after their contents.
-  return [...new Set(found)].sort((a, b) => b.split(path.sep).length - a.split(path.sep).length);
+  return [...found].sort((a, b) => b.split(path.sep).length - a.split(path.sep).length);
 }
 
 /**
@@ -124,7 +132,10 @@ async function findTargets(appBundle) {
  *
  * Re-signs ad-hoc hardened-runtime components without the runtime flag and
  * re-seals the outer bundle if any nested component changed. Skips entirely
- * on non-macOS builds and whenever a real signing identity is configured.
+ * on non-macOS builds, when a signing identity is configured via CSC
+ * environment variables, or when the outer bundle carries a real
+ * certificate signature (modifying nested code would invalidate that
+ * certificate's seal beyond repair).
  *
  * @param {object} context - electron-builder hook context (appOutDir,
  *   electronPlatformName, packager, etc.).
@@ -134,7 +145,9 @@ async function findTargets(appBundle) {
 exports.default = async function afterSign(context) {
   if (context.electronPlatformName !== 'darwin') return;
 
-  // Never touch builds signed with a real certificate.
+  // Never touch builds signed with a real certificate. (Note: electron-builder
+  // can also auto-discover a keychain identity when these are unset — the
+  // outer-bundle signature check below covers that case.)
   if (process.env.CSC_LINK || process.env.CSC_NAME || process.env.MAC_CERTS_P12) {
     console.log('[after-sign-mac] Signing identity configured — skipping ad-hoc repair.');
     return;
@@ -171,13 +184,28 @@ exports.default = async function afterSign(context) {
     return;
   }
 
-  // Deepest-first, with the outermost bundle handled last (see below).
-  const targets = [...(await findTargets(appBundle)), appBundle];
+  const targets = await findTargets(appBundle);
+
+  // Inspect the outer bundle BEFORE modifying anything: if it carries a real
+  // certificate signature we must not change nested code (the certificate
+  // seal would break and we cannot re-seal without the certificate).
+  const outer = await codesignDetails(appBundle);
+  if (outer.signed && !outer.adhoc) {
+    console.log(
+      '[after-sign-mac] Outer bundle is certificate-signed — leaving bundle untouched.'
+    );
+    return;
+  }
+
+  // Outermost last: it is part of the repair set when it needs flag-stripping,
+  // and is re-sealed again below if any nested bundle changed.
+  targets.push(appBundle);
 
   let repaired = 0;
+  const repairedTargets = [];
   for (const target of targets) {
-    const { adhoc, runtime } = await codesignDetails(target);
-    if (adhoc && runtime) {
+    const { signed, adhoc, runtime } = await codesignDetails(target);
+    if (signed && adhoc && runtime) {
       const rel = path.relative(outDir, target);
       // Plain ad-hoc re-sign drops the hardened-runtime flag (and its
       // entitlement requirements, which are meaningless without it).
@@ -187,20 +215,52 @@ exports.default = async function afterSign(context) {
         throw err;
       }
       repaired++;
+      repairedTargets.push(target);
       console.log(`[after-sign-mac] Stripped hardened runtime from ${rel}`);
-    } else if (!adhoc) {
+    } else if (signed && !adhoc) {
       console.log(
         `[after-sign-mac] ${path.relative(outDir, target)} is certificate-signed — leaving as-is.`
       );
     }
   }
 
-  // Re-signing a nested bundle invalidates the outer bundle's CodeResources
-  // seal, so the outermost bundle must always be re-sealed after any nested
-  // repair — even when its own signature didn't need the runtime flag
-  // stripped. Plain ad-hoc signing is idempotent, so this is safe to run
-  // unconditionally after a repair.
+  // Re-signing any nested bundle invalidates the CodeResources seal of every
+  // bundle that encloses it — not just the outermost app. Re-seal all
+  // ancestor bundles of repaired targets, innermost first, then the outer
+  // app bundle itself. Plain ad-hoc signing is idempotent, so re-sealing a
+  // bundle that was already repaired in the loop above is safe.
   if (repaired > 0) {
+    const toReseal = new Set();
+    for (const target of repairedTargets) {
+      let dir = path.dirname(target);
+      while (dir.length >= appBundle.length && dir !== appBundle) {
+        if (BUNDLE_SUFFIXES.some((suffix) => path.basename(dir).endsWith(suffix))) {
+          toReseal.add(dir);
+        }
+        dir = path.dirname(dir);
+      }
+    }
+    const ancestors = [...toReseal].sort(
+      (a, b) => b.split(path.sep).length - a.split(path.sep).length
+    );
+    for (const bundle of ancestors) {
+      const { signed, adhoc } = await codesignDetails(bundle);
+      if (signed && !adhoc) {
+        console.warn(
+          `[after-sign-mac] ⚠️  ${path.relative(outDir, bundle)} is certificate-signed but its ` +
+            'contents changed — it cannot be re-sealed without the certificate.'
+        );
+        continue;
+      }
+      const rel = path.relative(outDir, bundle);
+      const { err } = await sh('codesign', ['--force', '--sign', '-', bundle]);
+      if (err) {
+        console.error(`[after-sign-mac] Failed to re-seal ${rel}: ${err.message}`);
+        throw err;
+      }
+      console.log(`[after-sign-mac] Re-sealed ${rel}`);
+    }
+
     const { err } = await sh('codesign', ['--force', '--sign', '-', appBundle]);
     if (err) {
       console.error(`[after-sign-mac] Failed to re-seal outer bundle: ${err.message}`);
