@@ -19,6 +19,63 @@ export interface ToolApprovalPolicy {
 
 const POLICIES_FILE_PATH = path.join(os.homedir(), '.everfern', 'tool-approvals.json');
 
+/**
+ * MP-SEC-08 Fix: Shell metacharacter screen for safe-prefix auto-approval.
+ * Scans the full command with quote-state tracking and reports whether any
+ * chaining/substitution/redirection metacharacter (; & | ` $ ( ) < > or
+ * newline/CR) appears outside single/double quotes. A raw startsWith() alone
+ * would wrongly auto-approve "ls; rm -rf ~" under the 'ls' prefix.
+ *
+ * Single source of truth: pi-tools' WIN_AUTO_LOCAL_HEADS gate imports this so
+ * auto-local execution and safe-prefix approval share one scanner.
+ */
+export function hasUnquotedMetacharacters(cmd: string): boolean {
+  let inSingle = false;
+  let inDouble = false;
+
+  for (const ch of cmd) {
+    if (inSingle) {
+      // Inside single quotes everything is literal until the closing quote.
+      if (ch === "'") inSingle = false;
+      continue;
+    }
+
+    if (inDouble) {
+      if (ch === '"') {
+        inDouble = false; // Closing double quote ends the quoted span.
+      } else if (ch === '`' || ch === '$') {
+        // Bash still performs `...` / $(...) substitution inside double
+        // quotes, so treat those as unquoted (fail closed).
+        return true;
+      }
+      continue;
+    }
+
+    // Outside quotes: a quote character opens a quoted span.
+    if (ch === "'") {
+      inSingle = true;
+      continue;
+    }
+    if (ch === '"') {
+      inDouble = true;
+      continue;
+    }
+
+    // Outside quotes: any chain/substitution/redirection metacharacter
+    // (< > write files) disqualifies the command from safe-prefix
+    // auto-approval. \r is screened like \n (CRLF line-splitting tricks).
+    if (
+      ch === ';' || ch === '&' || ch === '|' || ch === '`' ||
+      ch === '$' || ch === '(' || ch === ')' || ch === '\n' ||
+      ch === '<' || ch === '>' || ch === '\r'
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export class ToolApprovalStore {
   private policies: ToolApprovalPolicy[] = [];
   private filePath: string;
@@ -47,7 +104,15 @@ export class ToolApprovalStore {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    fs.writeFileSync(this.filePath, JSON.stringify(this.policies, null, 2), 'utf-8');
+    fs.writeFileSync(
+      this.filePath,
+      // MP-CORR-22 Fix: session-scoped policies (conversationId set) are
+      // in-memory-only by design (Issue #15). Filter at this single choke
+      // point so every persistence path (add/update/delete/clear) writes
+      // only global policies and a reload never resurrects session approvals.
+      JSON.stringify(this.policies.filter(p => !p.conversationId), null, 2),
+      'utf-8'
+    );
   }
 
   /**
@@ -93,9 +158,16 @@ export class ToolApprovalStore {
         'git status', 'git diff', 'git log', 'git branch', 'git show',
         'ls', 'dir', 'pwd', 'whoami', 'date',
         'node -v', 'npm -v', 'pnpm -v', 'yarn -v', 'python --version', 'git --version',
-        'npx tsc --noEmit', 'echo '
+        'npx tsc --noEmit', 'echo'
       ];
-      if (safePrefixes.some(sp => cmd === sp || cmd.startsWith(sp))) {
+      // MP-SEC-08 Fix: require the WHOLE command to be free of unquoted
+      // metacharacters before trusting a prefix match ("ls; rm -rf ~" must
+      // not ride the 'ls' prefix). Suspect commands fall through to the
+      // explicit policy check / HITL approval below.
+      // Word-boundary fix: match the head as an exact token only, so 'ls'
+      // cannot approve 'lsassdump'.
+      const matchesSafePrefix = safePrefixes.some(sp => cmd === sp || cmd.startsWith(sp + ' '));
+      if (matchesSafePrefix && !hasUnquotedMetacharacters(cmd)) {
         return true;
       }
     }

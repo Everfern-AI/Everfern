@@ -5,6 +5,8 @@ import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
 
+let lifecycleHandlersInstalled = false;
+
 export class DispatchService {
   private static instance: DispatchService;
   private supabase: SupabaseClient | null = null;
@@ -84,8 +86,9 @@ export class DispatchService {
       auth: { token: config.token },
       transports: ['websocket', 'polling'],   // prefer WebSocket, fall back to polling
       reconnection: true,
-      reconnectionAttempts: Infinity,
+      reconnectionAttempts: 10,
       reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
     });
 
     this.socket.on('connect', () => {
@@ -95,6 +98,16 @@ export class DispatchService {
 
     this.socket.on('connect_error', (err) => {
       console.error('[DispatchService] Socket connect_error:', err.message);
+    });
+
+    this.socket.on('reconnect_failed', () => {
+      console.warn('[DispatchService] Socket gave up reconnecting after 10 attempts.');
+      // Periodic self-heal every 5 minutes after give-up.
+      setTimeout(() => {
+        try {
+          if (!this.socket?.connected) this.socket?.connect();
+        } catch {}
+      }, 300000).unref?.();
     });
 
     this.socket.on('disconnect', (reason) => {
@@ -129,9 +142,12 @@ export class DispatchService {
       }
     });
 
-    // Graceful shutdown
-    process.on('exit', () => this.disconnect());
-    process.on('SIGINT', () => { this.disconnect().then(() => process.exit(0)); });
+    // Graceful shutdown — install lifecycle handlers only once
+    // (Electron/main owns shutdown signals like SIGINT)
+    if (!lifecycleHandlersInstalled) {
+      lifecycleHandlersInstalled = true;
+      process.on('exit', () => this.disconnect());
+    }
 
     // Only create a new session if we actually have pairing credentials.
     // When restoring an existing session, these will be empty.

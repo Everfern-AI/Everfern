@@ -16,13 +16,36 @@ const GRAY = '\x1b[90m';
 const BOLD = '\x1b[1m';
 
 DebugEmitter.on('log', (entry: { time: string; level: 'info' | 'warn' | 'error'; title: string; data: any }) => {
-  logs.push(entry);
+  const sanitized = { ...entry, data: capLength(typeof entry.data === 'string' ? entry.data : safeStringify(entry.data)) };
+  logs.push(sanitized);
   if (logs.length > 2000) logs.shift(); // Keep last 2000 logs in memory
 
   if (debugWin && !debugWin.isDestroyed()) {
-    debugWin.webContents.executeJavaScript(`window.appendLog(${JSON.stringify(JSON.stringify(entry))})`).catch(() => {});
+    debugWin.webContents.executeJavaScript(`window.appendLog(${JSON.stringify(JSON.stringify(sanitized))})`).catch(() => {});
   }
 });
+
+// Safe + lazy-ish stringify: circular structures and BigInts must never throw,
+// and oversized payloads are truncated to keep the debug ring cheap.
+function safeStringify(value: unknown): string {
+  const seen = new WeakSet();
+  try {
+    return JSON.stringify(value, (_key, val) => {
+      if (typeof val === 'bigint') return `${val}n`;
+      if (typeof val === 'object' && val !== null) {
+        if (seen.has(val)) return '[Circular]';
+        seen.add(val);
+      }
+      return val;
+    }) ?? String(value);
+  } catch {
+    return '[Unserializable]';
+  }
+}
+
+function capLength(s: string): string {
+  return s.length > 2000 ? `${s.slice(0, 2000)}…` : s;
+}
 
 /**
  * Hooks into console.log/warn/error to enhance terminal output with ANSI colors
@@ -41,7 +64,7 @@ export function setupLogging() {
 
       // Format terminal line with ANSI colors
       if (typeof firstArg === 'string' && (firstArg.startsWith('[') || firstArg.startsWith('('))) {
-        const formatted = `${GRAY}[${timeStr}]${RESET} ${CYAN}${BOLD}${args[0]}${RESET} ${args.slice(1).map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ')}`;
+        const formatted = `${GRAY}[${timeStr}]${RESET} ${CYAN}${BOLD}${args[0]}${RESET} ${args.slice(1).map(a => capLength(typeof a === 'string' ? a : safeStringify(a))).join(' ')}`;
         originalLog.call(console, formatted);
       } else {
         originalLog.apply(console, args);
@@ -59,7 +82,7 @@ export function setupLogging() {
 
     console.warn = (...args: any[]) => {
       const timeStr = new Date().toLocaleTimeString();
-      const formatted = `${GRAY}[${timeStr}]${RESET} ${YELLOW}${BOLD}⚠️ ${args[0]}${RESET} ${args.slice(1).map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ')}`;
+      const formatted = `${GRAY}[${timeStr}]${RESET} ${YELLOW}${BOLD}⚠️ ${args[0]}${RESET} ${args.slice(1).map(a => capLength(typeof a === 'string' ? a : safeStringify(a))).join(' ')}`;
       originalWarn.call(console, formatted);
 
       try {
@@ -74,7 +97,7 @@ export function setupLogging() {
 
     console.error = (...args: any[]) => {
       const timeStr = new Date().toLocaleTimeString();
-      const formatted = `${GRAY}[${timeStr}]${RESET} ${RED}${BOLD}❌ ${args[0]}${RESET} ${args.slice(1).map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ')}`;
+      const formatted = `${GRAY}[${timeStr}]${RESET} ${RED}${BOLD}❌ ${args[0]}${RESET} ${args.slice(1).map(a => capLength(typeof a === 'string' ? a : safeStringify(a))).join(' ')}`;
       originalError.call(console, formatted);
 
       try {
@@ -380,7 +403,11 @@ export function toggleDebugWindow() {
 
   debugWin.webContents.on('did-finish-load', () => {
     logs.forEach(entry => {
-      debugWin!.webContents.executeJavaScript(`window.appendLog(${JSON.stringify(JSON.stringify(entry))})`).catch(() => {});
+      try {
+        debugWin!.webContents.executeJavaScript(`window.appendLog(${JSON.stringify(JSON.stringify(entry))})`).catch(() => {});
+      } catch (e) {
+        console.warn('[Debug] Skipped unserializable log entry during replay:', e);
+      }
     });
   });
 

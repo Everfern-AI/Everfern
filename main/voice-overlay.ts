@@ -25,7 +25,6 @@ export class VoiceOverlayManager {
   private isCtrlDown = false;
   private isAltDown = false;
   private isListening = false;
-  private holdTimeout: NodeJS.Timeout | null = null;
   private otherKeyPressed = false;
   private startListeningTimeout: NodeJS.Timeout | null = null;
 
@@ -66,7 +65,6 @@ export class VoiceOverlayManager {
 
       if (stateStr === 'idle') {
         this.isListening = false;
-        if (this.holdTimeout) clearTimeout(this.holdTimeout);
         broadcastState('idle');
         if (this.overlayWindow && !this.overlayWindow.isDestroyed()) {
           this.overlayWindow.setIgnoreMouseEvents(true);
@@ -79,7 +77,6 @@ export class VoiceOverlayManager {
       } else {
         if (stateStr === 'listening') {
           this.isListening = true;
-          if (this.holdTimeout) clearTimeout(this.holdTimeout);
         } else {
           this.isListening = false;
         }
@@ -260,9 +257,8 @@ export class VoiceOverlayManager {
           if (!this.isListening) {
             console.log('[VoiceOverlay] Starting listening state...');
             this.isListening = true;
-            if (this.holdTimeout) clearTimeout(this.holdTimeout);
-            
-            if (this.overlayWindow) {
+
+            if (this.overlayWindow && !this.overlayWindow.isDestroyed()) {
               this.overlayWindow.showInactive();
               broadcastState('listening');
               console.log('[VoiceOverlay] IPC state sent: listening');
@@ -282,7 +278,7 @@ export class VoiceOverlayManager {
         console.log('[VoiceOverlay] Stopping listening state, executing...');
         this.isListening = false;
         
-        if (this.overlayWindow) {
+        if (this.overlayWindow && !this.overlayWindow.isDestroyed()) {
           broadcastState('executing');
         }
       }

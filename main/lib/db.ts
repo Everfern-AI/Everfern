@@ -7,6 +7,7 @@ import { runMigrations } from './migrations/runner';
 import { initializePersistenceTables, migratePersistenceSchema } from '../store/persistence-db';
 
 let instance: sqlite3.Database | null = null;
+let instancePromise: Promise<sqlite3.Database> | null = null;
 let currentVectorDims: number | null = null;
 
 function dbRunPromise(db: sqlite3.Database, sql: string, params: any[] = []): Promise<void> {
@@ -342,9 +343,17 @@ export async function initMemoryDb(): Promise<sqlite3.Database> {
   });
 }
 
-export async function getDb(): Promise<sqlite3.Database> {
-  if (!instance) return await initMemoryDb();
-  return instance;
+export function getDb(): Promise<sqlite3.Database> {
+  // Re-entrant fast path: continueWithSetup sets `instance` before running
+  // migrations, and those migrations call back into getDb() via dbOps.
+  if (instance) return Promise.resolve(instance);
+  if (!instancePromise) {
+    instancePromise = initMemoryDb().catch((err) => {
+      instancePromise = null;
+      throw err;
+    });
+  }
+  return instancePromise;
 }
 
 export function closeDb(): Promise<void> {
@@ -353,6 +362,7 @@ export function closeDb(): Promise<void> {
       instance.close((err) => {
         if (err) return reject(err);
         instance = null;
+        instancePromise = null;
         resolve();
       });
     } else {

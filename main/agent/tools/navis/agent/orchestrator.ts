@@ -58,11 +58,11 @@ function wrapUntrusted(nonce: string, label: string, content: string): string {
 function loadNavisPrompts(): { systemPrompt: string; nextStepPrompt: string } {
   const rawPrompt = loadPrompt('NAVIS.md');
   if (!rawPrompt) return { systemPrompt: FALLBACK_SYSTEM_PROMPT + SECURITY_GUIDELINE, nextStepPrompt: '' };
-  const systemMatch = rawPrompt.match(/SYSTEM_PROMPT = """\?\s*([\s\S]*?)"""/);
+  const systemMatch = rawPrompt.match(/SYSTEM_PROMPT = """\s*([\s\S]*?)"""/);
   if (!systemMatch) return { systemPrompt: FALLBACK_SYSTEM_PROMPT + SECURITY_GUIDELINE, nextStepPrompt: '' };
   let systemPrompt = systemMatch[1].trim();
   systemPrompt += SECURITY_GUIDELINE;
-  const nextStepMatch = rawPrompt.match(/NEXT_STEP_PROMPT = """\?\s*([\s\S]*?)"""/);
+  const nextStepMatch = rawPrompt.match(/NEXT_STEP_PROMPT = """\s*([\s\S]*?)"""/);
   return { systemPrompt, nextStepPrompt: nextStepMatch ? nextStepMatch[1].trim() : '' };
 }
 

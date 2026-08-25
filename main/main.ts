@@ -59,6 +59,36 @@ console.log('[Startup] Node version:', process.version);
 console.log('[Startup] App path:', app.getAppPath());
 console.log('[Startup] User data:', app.getPath('userData'));
 
+// ── Global quit/crash state ─────────────────────────────────────────
+// Declared before the fatal-error net below so an early-startup crash
+// can never hit a temporal dead zone while reading them.
+let isAppQuitting = false;
+let rendererCrashCount = 0;
+
+// ── Global Fatal-Error Net ──────────────────────────────────────────
+// Prevents silent main-process death: log, keep a breadcrumb, and stay alive
+// for recoverable errors. A crash during window creation still relaunches.
+process.on('uncaughtException', (err) => {
+  console.error('[Fatal] Uncaught exception in main process:', err);
+  try {
+    // Persist the breadcrumb so crashes leave evidence on disk.
+    const logsDir = path.join(app.getPath('userData'), 'crash-logs');
+    fs.mkdirSync(logsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(logsDir, `main-${Date.now()}.log`),
+      `${new Date().toISOString()}\n${err?.stack || String(err)}\n`
+    );
+  } catch { /* best effort */ }
+  if (!isAppQuitting && app.isReady() && !BrowserWindow.getAllWindows().length) {
+    // No window to recover into — relaunch rather than vanish.
+    app.relaunch();
+    app.exit(1);
+  }
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[Fatal] Unhandled rejection in main process:', reason);
+});
+
 // ── Check for Auto-Start Mode ───────────────────────────────────────
 const isAutoStartMode = process.argv.includes('--auto-start');
 console.log('[Startup] Auto-start mode:', isAutoStartMode);
@@ -358,8 +388,21 @@ function createWindow(): void {
     });
   }
 
-  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+  // Track load failures so we can retry instead of leaving a blank window.
+  let loadRetryCount = 0;
+  const win = mainWindow;
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    if (errorCode === -3) return; // ERR_ABORTED: interrupted navigation, not a real failure
     console.error(`[Window] ❌ did-fail-load: ${errorCode} (${errorDescription}) for URL: ${validatedURL}`);
+    if (loadRetryCount < 2 && !isAppQuitting && isMainFrame) {
+      loadRetryCount += 1;
+      console.warn(`[Window] Retrying load (attempt ${loadRetryCount}/2)...`);
+      setTimeout(() => {
+        try {
+          if (!win.isDestroyed()) win.webContents.reload();
+        } catch { /* window may be gone */ }
+      }, 1000);
+    }
   });
 
   mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
@@ -370,6 +413,24 @@ function createWindow(): void {
 
   mainWindow.webContents.on('render-process-gone', (event, details) => {
     console.error('[Window] ❌ Renderer process gone:', details);
+    // Auto-recover from renderer crashes (grey screen prevention): reload a few
+    // times before giving up and relaunching the whole app.
+    if (isAppQuitting) return;
+    const reason = details?.reason || '';
+    if (reason === 'clean-exit') return;
+    rendererCrashCount += 1;
+    if (rendererCrashCount <= 3) {
+      console.warn(`[Window] Auto-reloading after renderer crash (${rendererCrashCount}/3)...`);
+      setTimeout(() => {
+        try {
+          if (!win.isDestroyed()) win.webContents.reload();
+        } catch { /* window gone */ }
+      }, 500);
+    } else {
+      console.error('[Window] Too many renderer crashes — relaunching app.');
+      app.relaunch();
+      app.exit(1);
+    }
   });
 
   mainWindow.webContents.on('unresponsive', () => {
@@ -378,6 +439,7 @@ function createWindow(): void {
 
   mainWindow.webContents.on('did-finish-load', () => {
     console.log('[Window] Page finished loading');
+    rendererCrashCount = 0;
   });
 
   // Open external links securely in default browser
@@ -689,7 +751,7 @@ Your goal is to be the ultimate workplace companion.
 
   // Custom protocol for local sites
   protocol.handle('everfern-site', async (request) => {
-// ... existing site logic ...
+    // Accepted intra-user exposure (single-user threat model): any local frame may read any chatId's site.
     const url = new URL(request.url);
     const chatId = url.hostname;
     let filePath = url.pathname;
@@ -711,8 +773,8 @@ Your goal is to be the ultimate workplace companion.
     const sitesRoot = path.join(os.homedir(), '.everfern', 'sites');
     const artifactsRoot = path.join(os.homedir(), '.everfern', 'artifacts');
 
-    const isUnderSites = absPath.startsWith(sitesRoot);
-    const isUnderArtifacts = absPath.startsWith(artifactsRoot);
+    const isUnderSites = absPath.startsWith(sitesRoot.endsWith(path.sep) ? sitesRoot : sitesRoot + path.sep);
+    const isUnderArtifacts = absPath.startsWith(artifactsRoot.endsWith(path.sep) ? artifactsRoot : artifactsRoot + path.sep);
 
     if (!isUnderSites && !isUnderArtifacts) {
       return new Response('Forbidden', { status: 403 });
@@ -827,68 +889,88 @@ app.on('activate', () => {
 });
 
 // ── Graceful shutdown & cleanup on quit ──────────────────────────────
-let isAppQuitting = false;
+// NOTE: isAppQuitting / rendererCrashCount live at the top of this file.
+
+// Run one shutdown step with a hard timeout so a hung socket/DB/MCP call can
+// never block quitting. Returns 'timeout' instead of throwing.
+async function withShutdownTimeout(name: string, step: () => any, ms = 3000): Promise<void> {
+  try {
+    await Promise.race([
+      Promise.resolve(step()).catch((err) => {
+        console.error(`[Shutdown] ${name} failed:`, err);
+      }),
+      new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), ms)),
+    ]).then((result) => {
+      if (result === 'timeout') console.warn(`[Shutdown] ${name} timed out after ${ms}ms — continuing.`);
+    });
+  } catch (err) {
+    console.error(`[Shutdown] ${name} unexpected failure:`, err);
+  }
+}
+
 app.on('before-quit', async (event) => {
   if (isAppQuitting) return;
   event.preventDefault();
   isAppQuitting = true;
   console.log('[Shutdown] Graceful app shutdown initiated...');
 
-  // Stop Agent Gateway Control Plane
+  // Hard failsafe: no matter what happens below, the app WILL exit.
+  // NOTE: this 8s budget intentionally overrides individual step timeouts (5×3s+2×4s=23s worst case).
+  const forceExitTimer = setTimeout(() => {
+    console.error('[Shutdown] Cleanup exceeded budget — forcing exit.');
+    app.exit(0);
+  }, 8000);
+  // Never keep the process alive just for this timer.
+  forceExitTimer.unref?.();
+
+  // Release OS-global hooks first so hotkeys never outlive the process.
   try {
+    globalShortcut.unregisterAll();
+  } catch (shortcutErr) {
+    console.error('[Shutdown] Failed to unregister global shortcuts:', shortcutErr);
+  }
+
+  // Terminate the local STT child (app.exit below skips will-quit listeners).
+  try {
+    const { shutdownLocalStt } = require('./ipc/system/ollama-audio-handlers');
+    shutdownLocalStt();
+  } catch { /* module may not be loaded */ }
+
+  // Stop Agent Gateway Control Plane
+  await withShutdownTimeout('Agent Gateway', () => {
     const { agentGatewayServer } = require('./agent/gateway');
     agentGatewayServer.stop();
-  } catch (gatewayErr) {
-    console.error('[Shutdown] Failed to stop Agent Gateway:', gatewayErr);
-  }
+  });
 
   // Clean up MessageHandler
-  await shutdownBotMessageHandler();
+  await withShutdownTimeout('MessageHandler', () => shutdownBotMessageHandler());
 
   // Stop integration services
-  try {
-    console.log('[App] Stopping integration services...');
-    await integrationService.stop();
-    console.log('[App] Integration services stopped successfully');
-  } catch (error) {
-    console.error('[App] Error stopping integration services:', error);
-  }
+  console.log('[App] Stopping integration services...');
+  await withShutdownTimeout('Integration services', () => integrationService.stop());
+  console.log('[App] Integration services stopped successfully');
 
   // Stop extension bridge server
-  try {
-    console.log('[App] Stopping extension bridge server...');
-    bridgeServer.stop();
-    console.log('[App] Extension bridge server stopped successfully');
-  } catch (error) {
-    console.error('[App] Error stopping extension bridge server:', error);
-  }
+  console.log('[App] Stopping extension bridge server...');
+  await withShutdownTimeout('Extension bridge', () => bridgeServer.stop());
 
   // Shutdown background processor
-  try {
-    console.log('[App] Shutting down background processor...');
-    await backgroundProcessor.shutdown();
-    console.log('[App] Background processor shutdown complete');
-  } catch (error) {
-    console.error('[App] Error shutting down background processor:', error);
-  }
+  console.log('[App] Shutting down background processor...');
+  await withShutdownTimeout('Background processor', () => backgroundProcessor.shutdown());
 
   // Shutdown MCP tools
-  try {
-    console.log('[App] Shutting down MCP tools...');
-    await shutdownMCPTools();
-    console.log('[App] MCP tools shutdown complete');
-  } catch (error) {
-    console.error('[App] Error shutting down MCP tools:', error);
-  }
+  console.log('[App] Shutting down MCP tools...');
+  await withShutdownTimeout('MCP tools', () => shutdownMCPTools(), 4000);
 
   // Close database connection cleanly
-  try {
-    console.log('[App] Closing database connection...');
-    await closeDb();
-    console.log('[App] Database connection closed successfully');
-  } catch (error) {
-    console.error('[App] Error closing database connection:', error);
-  }
+  console.log('[App] Closing database connection...');
+  await withShutdownTimeout('Database', () => closeDb(), 4000);
+
+  // Close chat vector store
+  await withShutdownTimeout('Chat vector DB', () => {
+    const { closeChatVectorDb } = require('./store/chat-vectors');
+    closeChatVectorDb();
+  }, 3000);
 
   // Clean up system tray
   try {
@@ -898,6 +980,7 @@ app.on('before-quit', async (event) => {
   }
 
   console.log('[Shutdown] Cleanup finished, exiting process.');
+  clearTimeout(forceExitTimer);
   app.exit(0);
 });
 
@@ -1003,24 +1086,51 @@ ipcMain.handle('audio:play-sound', async (_event, soundPath: string) => {
     const { execFile } = require('child_process');
     const os = require('os');
 
-    // Construct full path to sound file
-    const soundFilePath = path.join(__dirname, '../../public/sounds', soundPath);
-
-    console.log(`[Audio] Playing sound: ${soundFilePath}`);
-
-    if (!fs.existsSync(soundFilePath)) {
-      console.warn(`[Audio] Sound file not found: ${soundFilePath}`);
+    // MP-SEC-01: never join raw renderer input into a path — only accept a
+    // validated bare filename, resolved against our own sounds directories.
+    const safeName = path.basename(soundPath || '');
+    if (safeName === '.' || safeName === '..' || !/^[A-Za-z0-9._-]{1,64}$/.test(safeName)) {
+      console.warn(`[Audio] Rejected invalid sound name`);
       return false;
     }
+
+    // MAC-10: public/sounds ships as extraResources (outside the asar) in
+    // packaged builds; probe candidate roots and use the first containing the file.
+    const soundDirs = [
+      process.resourcesPath ? path.join(process.resourcesPath, 'public', 'sounds') : '',
+      path.join(__dirname, '../../public/sounds'),
+      path.join(app.getAppPath(), 'public', 'sounds')
+    ].filter(Boolean);
+
+    let soundFilePath = '';
+    let soundFound = false;
+    for (const dir of soundDirs) {
+      const candidate = path.join(dir, safeName);
+      if (fs.existsSync(candidate)) {
+        soundFilePath = candidate;
+        soundFound = true;
+        break;
+      }
+    }
+
+    if (!soundFound) {
+      console.warn(`[Audio] Sound file not found: ${safeName}`);
+      return false;
+    }
+
+    console.log(`[Audio] Playing sound: ${soundFilePath}`);
 
     // Use platform-specific audio player
     const platform = os.platform();
 
     if (platform === 'win32') {
-      // Windows: Use PowerShell to play sound
+      // Windows: Use PowerShell to play sound.
+      // Safe: soundFilePath is a validated basename resolved inside our own
+      // dirs, but install/user dirs may still contain apostrophes — PowerShell
+      // single-quote escaping doubles them ('').
       execFile('powershell.exe', [
         '-Command',
-        `(New-Object System.Media.SoundPlayer '${soundFilePath}').PlaySync()`
+        `(New-Object System.Media.SoundPlayer '${soundFilePath.replace(/'/g, "''")}').PlaySync()`
       ], { maxBuffer: 10 * 1024 * 1024 });
     } else if (platform === 'darwin') {
       // macOS: Use afplay command

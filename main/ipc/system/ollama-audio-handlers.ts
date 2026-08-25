@@ -26,8 +26,18 @@ export function getOllamaBinary(): string {
   return 'ollama';
 }
 
+// Allow-list terminal-bound identifiers: blocks shell metacharacter injection
+// through titles and model tags coming from the renderer.
+function isSafeTerminalText(value: string): boolean {
+  return typeof value === 'string' && /^[A-Za-z0-9 ._:\/\\-]{0,80}$/.test(value);
+}
+
 export function launchNativeTerminalCommand(title: string, cmd: string): boolean {
   try {
+    if (!isSafeTerminalText(title)) {
+      console.warn('[System] Blocked terminal launch: unsafe characters in title.');
+      return false;
+    }
     const { exec } = require('child_process');
     const isWin = process.platform === 'win32';
     const isMac = process.platform === 'darwin';
@@ -207,12 +217,22 @@ async function startLocalSttServer(): Promise<number> {
 }
 
 app.on('will-quit', () => {
+  shutdownLocalStt();
+});
+
+// Exported so the before-quit shutdown chain can terminate the child even when
+// quitting via app.exit() (which skips will-quit listeners).
+export function shutdownLocalStt(): void {
   if (localSttProcess) {
     console.log('[LocalSTT] Terminating local STT server...');
-    localSttProcess.kill();
+    try {
+      localSttProcess.kill();
+    } catch (err) {
+      console.warn('[LocalSTT] Failed to kill local STT server:', err);
+    }
     localSttProcess = null;
   }
-});
+}
 
 export function registerOllamaAudioHandlers(): void {
   ipcMain.handle('system:ollama-status', async () => {
@@ -307,13 +327,18 @@ export function registerOllamaAudioHandlers(): void {
     const provider = params?.provider || 'ollama';
     const modelTag = params?.modelTag || 'llama3.2:3b';
 
+    if (!/^[A-Za-z0-9._:\/@-]{1,100}$/.test(modelTag)) {
+      console.warn('[System] Rejected pull-local-model-terminal: unsafe model tag.');
+      return { success: false, provider, modelTag, error: 'Invalid model tag: contains unsafe characters.' };
+    }
+
     let cmd = '';
     let title = '';
     if (provider === 'lmstudio') {
-      title = `Pulling model "${modelTag}" via LM Studio CLI (lms)...`;
+      title = `Pulling model ${modelTag} via LM Studio CLI lms...`;
       cmd = `lms get ${modelTag} || lms load ${modelTag}`;
     } else {
-      title = `Pulling model "${modelTag}" via Ollama...`;
+      title = `Pulling model ${modelTag} via Ollama...`;
       cmd = `ollama run ${modelTag} || ollama pull ${modelTag}`;
     }
 
@@ -325,10 +350,16 @@ export function registerOllamaAudioHandlers(): void {
     const isWin = process.platform === 'win32';
     const tag = modelTag || 'qwen3-vl:2b';
 
+    if (!/^[A-Za-z0-9._:\/@-]{1,100}$/.test(tag)) {
+      console.warn('[System] Rejected open-terminal-installer: unsafe model tag.');
+      return { success: false, error: 'Invalid model tag: contains unsafe characters.' };
+    }
+
     if (action === 'install-all') {
       const winCmd = `powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://ollama.com/install.ps1 | Invoke-Expression" && ollama pull ${tag}`;
       const unixCmd = `curl -fsSL https://ollama.com/install.sh | sh && ollama pull ${tag}`;
-      launchNativeTerminalCommand('DOWNLOADING AND INSTALLING OLLAMA & VISION MODEL', isWin ? winCmd : unixCmd);
+      const ok = launchNativeTerminalCommand('DOWNLOADING AND INSTALLING OLLAMA AND VISION MODEL', isWin ? winCmd : unixCmd);
+      return { success: ok };
     } else {
       launchNativeTerminalCommand(`PULLING MODEL: ${tag}`, `ollama run ${tag} || ollama pull ${tag}`);
     }

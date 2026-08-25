@@ -414,6 +414,7 @@ export class MessageHandler extends EventEmitter {
         // Requirement 6.4: Generic agent runner failure
         console.error(`[MessageHandler] ❌ Generic error: ${errorMsg}`);
         const failureMessage = errorMsg.toLowerCase().includes('fetch failed') || errorMsg.toLowerCase().includes('network')
+          || errorMsg.includes('ECONNREFUSED') || errorMsg.includes('not reachable')
           ? 'I could not reach the configured AI provider. Please check the provider endpoint/API key, then try again.'
           : 'Failed to process your message. Please try again.';
         if (activeErrorMessage) {

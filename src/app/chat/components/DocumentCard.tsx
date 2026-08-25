@@ -1,12 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useTheme } from '@/components/ThemeProvider';
+import { esc } from './ToolCallDetailPane';
 
 interface DocumentCardProps {
     path: string;
     description: string;
     chatId: string;
     onOpenArtifact?: (name: string) => void;
+}
+
+/* CU-UI-01 XSS HARDENING: raw document text must pass through esc()
+   before the formatter injects trusted markup, so attacker markup stays
+   inert while formatter-generated <code>/<strong> tags remain literal. */
+export function formatInlineText(text: string, isDark: boolean): string {
+    let f = esc(text);
+    const codeBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
+    f = f.replace(/`(.*?)`/g, `<code style="background-color: ${codeBg}; padding: 2px 4px; border-radius: 4px; font-family: monospace; font-size: 12px; color: #3b82f6;">$1</code>`);
+    f = f.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    return f;
 }
 
 export default function DocumentCard({ path, description, chatId, onOpenArtifact }: DocumentCardProps) {
@@ -108,17 +120,7 @@ export default function DocumentCard({ path, description, chatId, onOpenArtifact
         }
     };
 
-    const formatInline = (text: string) => {
-        let f = text;
-        // Escape HTML
-        f = f.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        // Inline code
-        const codeBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
-        f = f.replace(/`(.*?)`/g, `<code style="background-color: ${codeBg}; padding: 2px 4px; border-radius: 4px; font-family: monospace; font-size: 12px; color: #3b82f6;">$1</code>`);
-        // Inline bold
-        f = f.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-        return f;
-    };
+    const formatInline = (text: string) => formatInlineText(text, isDark);
 
     const renderPreviewContent = () => {
         if (loading) {

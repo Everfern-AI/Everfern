@@ -35,10 +35,10 @@ const runningServers = new Map<string, ServerProcess>();
 async function detectFramework(projectRoot: string): Promise<string> {
   try {
     const packageJsonPath = path.join(projectRoot, 'package.json');
-    const { execSync } = require('child_process');
+    const fs = require('fs');
 
     // Try to detect framework from common dependencies
-    const result = execSync(`cat "${packageJsonPath}"`, { encoding: 'utf8' });
+    const result = fs.readFileSync(packageJsonPath, 'utf8');
     const packageJson = JSON.parse(result);
     const deps = { ...packageJson.dependencies, ...packageJson.devDependencies };
 

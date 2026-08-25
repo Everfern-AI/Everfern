@@ -2,7 +2,200 @@ import { ipcMain, dialog, shell, app } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import * as dns from 'dns';
 import { memorySaveTool } from '../../agent/tools/memory-save';
+
+// MP-SEC-18: typed confirmation required before wiping ~/.everfern
+export const WIPE_ACCOUNT_CONFIRM_PHRASE = 'DELETE MY DATA';
+
+// MP-SEC-09: never open system-sensitive locations via shell.openPath
+// (/private/* entries are the macOS realpath aliases of /etc and /var/root)
+const DANGEROUS_PATH_PREFIXES = ['/etc', '/system', 'c:/windows', '/private/etc', '/private/var/root'];
+
+// MP-SEC-09: shell.openPath routes through ShellExecute/LaunchServices, which
+// LAUNCH these formats instead of revealing them — deny executable payloads.
+const EXECUTABLE_OPEN_EXTENSIONS = [
+  '.exe', '.bat', '.cmd', '.scr', '.msi', '.msp', '.vbs', '.ps1',
+  '.js', '.jse', '.wsf', '.wsh', '.app', '.deb', '.rpm'
+];
+
+export const isSafeLocalOpenPath = (hostPath: string): boolean => {
+  if (!fs.existsSync(hostPath)) return false;
+  const normalized = path.normalize(hostPath).toLowerCase().replace(/\\/g, '/');
+  if (EXECUTABLE_OPEN_EXTENSIONS.includes(path.extname(normalized))) return false;
+  return !DANGEROUS_PATH_PREFIXES.some(
+    (prefix) => normalized === prefix || normalized.startsWith(`${prefix}/`)
+  );
+};
+
+// MP-SEC-17: block literal private/internal hostnames to prevent SSRF probes
+const isBlockedMetadataHost = (hostname: string): boolean => {
+  const host = hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  return (
+    host === 'localhost' ||
+    host === '::1' ||
+    host === 'metadata.google.internal' ||
+    host.endsWith('.local') ||
+    host.endsWith('.lan') ||
+    host.startsWith('127.') ||
+    host.startsWith('10.') ||
+    host.startsWith('192.168.') ||
+    host.startsWith('169.254.') ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+  );
+};
+
+// WAVE-5R: expand a literal IP into bytes — dotted-quad incl. inet_aton-style
+// decimal/hex/octal shorthand (2130706433, 0x7f000001, 0177.0.0.1, 127.1) and
+// IPv6 incl. embedded/mapped v4 tails (::ffff:169.254.169.254). Non-literals
+// return null.
+export const parseIpAddress = (host: string): number[] | null => {
+  const h = host.replace(/^\[|\]$/g, '').toLowerCase();
+  if (!h) return null;
+  const ipv4Bytes = (s: string): number[] | null => {
+    const parts = s.split('.');
+    if (parts.length > 4 || parts.some((p) => p === '')) return null;
+    const nums: number[] = [];
+    for (let i = 0; i < parts.length; i++) {
+      const p = parts[i];
+      let n: number;
+      if (/^0x[0-9a-f]+$/.test(p)) n = parseInt(p.slice(2), 16);
+      else if (/^0[0-7]+$/.test(p)) n = parseInt(p, 8);
+      else if (/^\d+$/.test(p)) n = parseInt(p, 10);
+      else return null;
+      if (i < parts.length - 1 && n > 255) return null;
+      nums.push(n);
+    }
+    if (nums[nums.length - 1] >= Math.pow(256, 5 - parts.length)) return null;
+    // inet_aton-style shorthand: the final part spans the remaining bytes
+    const span = 5 - parts.length;
+    let n = nums.pop() as number;
+    const rest: number[] = [];
+    for (let i = 0; i < span; i++) {
+      rest.unshift(n % 256);
+      n = Math.floor(n / 256);
+    }
+    if (n !== 0) return null;
+    return [...nums, ...rest];
+  };
+
+  if (!h.includes(':')) return ipv4Bytes(h);
+
+  // IPv6
+  const halves = h.split('::');
+  if (halves.length > 2) return null;
+  const head = halves[0] ? halves[0].split(':') : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  if ([...head, ...tail].some((g) => g.includes('.'))) {
+    // dotted quad must be the final group; fold it into two hex groups
+    const target = tail.length && tail[tail.length - 1].includes('.') ? tail
+      : !tail.length && head.length && head[head.length - 1].includes('.') ? head
+      : null;
+    if (!target) return null;
+    const v4 = ipv4Bytes(target[target.length - 1]);
+    if (!v4) return null;
+    target.splice(target.length - 1, 1,
+      ((v4[0] << 8) | v4[1]).toString(16),
+      ((v4[2] << 8) | v4[3]).toString(16));
+  }
+  const groups = [...head, ...tail];
+  if (groups.length > 8 || (halves.length === 1 && groups.length !== 8)) return null;
+  if (!groups.every((g) => /^[0-9a-f]{1,4}$/.test(g))) return null;
+  const full = halves.length === 2
+    ? [...head, ...new Array(8 - groups.length).fill('0'), ...tail]
+    : groups;
+  const bytes: number[] = [];
+  for (const g of full) {
+    const n = parseInt(g as string, 16);
+    bytes.push((n >> 8) & 255, n & 255);
+  }
+  return bytes;
+};
+
+// WAVE-5R: true for loopback/private/link-local/CGNAT/unspecified/reserved
+// space (10/8, 172.16/12, 192.168/16, 127/8, 169.254/16, 100.64/10, 0/8,
+// ::1, fc00::/7, fe80::/10, ::ffff:<private>).
+export const isPrivateAddress = (bytes: number[] | null): boolean => {
+  if (!bytes) return true;
+  if (bytes.length === 4) {
+    const [a, b] = bytes;
+    return (
+      a === 0 || a === 10 || a === 127 ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 169 && b === 254) ||
+      (a === 100 && b >= 64 && b <= 127)
+    );
+  }
+  if (bytes.length === 16) {
+    if (bytes.slice(0, 15).every((b) => b === 0)) return true; // :: / ::1
+    if (bytes.slice(0, 10).every((b) => b === 0) && bytes[10] === 0xff && bytes[11] === 0xff) {
+      return isPrivateAddress(bytes.slice(12)); // ::ffff:<v4>
+    }
+    const [a, b] = bytes;
+    return (a & 0xfe) === 0xfc || (a === 0xfe && (b & 0xc0) === 0x80); // fc00::/7, fe80::/10
+  }
+  return true;
+};
+
+// WAVE-5R: post-resolution SSRF guard — every DNS answer must land in public
+// space; lookup failure or a non-literal that maps private ⇒ reject.
+export const assertPublicHost = async (hostname: string): Promise<void> => {
+  const records = await dns.promises.lookup(hostname.replace(/^\[|\]$/g, ''), { all: true, verbatim: true });
+  if (!records.length) throw new Error(`no addresses resolved for ${hostname}`);
+  for (const record of records) {
+    if (isPrivateAddress(parseIpAddress(record.address))) {
+      throw new Error(`${hostname} resolves to private/reserved address ${record.address}`);
+    }
+  }
+};
+
+// WAVE-5R: SSRF-hardened metadata fetch. fetch never auto-follows
+// (redirect:'manual'); each of max 3 redirect hops re-runs scheme, literal
+// screen and resolved-address checks so a hop can't land in private space.
+const METADATA_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36';
+
+const fetchMetadataHtml = async (initialUrl: string): Promise<{ html: string; origin: string } | null> => {
+  let currentUrl = initialUrl;
+  for (let hop = 0; hop < 4; hop++) {
+    let parsed: URL;
+    try {
+      parsed = new URL(currentUrl);
+      if (!['http:', 'https:'].includes(parsed.protocol)) return null;
+      if (isBlockedMetadataHost(parsed.hostname)) {
+        console.warn('[IPC] system:fetch-metadata: Blocked private/internal host:', parsed.hostname);
+        return null;
+      }
+      await assertPublicHost(parsed.hostname);
+    } catch (err) {
+      console.warn('[IPC] system:fetch-metadata: Blocked non-public host:', err instanceof Error ? err.message : String(err));
+      return null;
+    }
+
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), 3000);
+    let response: Response;
+    try {
+      response = await fetch(parsed.href, {
+        headers: { 'User-Agent': METADATA_USER_AGENT },
+        signal: controller.signal,
+        redirect: 'manual'
+      });
+    } finally {
+      clearTimeout(id);
+    }
+
+    if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) {
+      const location = response.headers.get('location');
+      if (!location || hop === 3) return null;
+      currentUrl = new URL(location, parsed.href).href;
+      continue;
+    }
+    if (!response.ok) return null;
+    return { html: await response.text(), origin: parsed.origin };
+  }
+  return null;
+};
 
 export function registerWindowFsHandlers(): void {
   ipcMain.handle('system:get-version', () => {
@@ -180,6 +373,11 @@ export function registerWindowFsHandlers(): void {
 
           console.log(`[IPC] system:open-external: Original file:// url: ${url}, Translated host path: ${hostPath}`);
 
+          if (!isSafeLocalOpenPath(hostPath)) {
+            console.warn('[IPC] system:open-external: Blocked unsafe or non-existent local path:', hostPath);
+            return { success: false, error: 'Blocked unsafe local path' };
+          }
+
           const resultMsg = await shell.openPath(hostPath);
           if (resultMsg) {
             return { success: false, error: resultMsg };
@@ -187,6 +385,11 @@ export function registerWindowFsHandlers(): void {
           return { success: true };
         }
 
+        const parsed = new URL(url);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          console.warn('[IPC] system:open-external: Blocked non-http(s) external URL:', url);
+          return { success: false, error: 'Only http(s) URLs can be opened externally' };
+        }
         await shell.openExternal(url);
         return { success: true };
       } catch (err: any) {
@@ -200,27 +403,9 @@ export function registerWindowFsHandlers(): void {
   ipcMain.handle('system:fetch-metadata', async (_event, url: string) => {
     if (!url) return null;
     try {
-      let parsedUrl: URL;
-      try {
-        parsedUrl = new URL(url);
-        if (!['http:', 'https:'].includes(parsedUrl.protocol)) return null;
-      } catch {
-        return null;
-      }
-
-      const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), 3000);
-
-      const response = await fetch(parsedUrl.href, {
-        headers: { 
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36' 
-        },
-        signal: controller.signal
-      });
-      clearTimeout(id);
-
-      if (!response.ok) return null;
-      const html = await response.text();
+      const result = await fetchMetadataHtml(url);
+      if (!result) return null;
+      const html = result.html;
 
       const getMeta = (prop: string) => {
         const regex = new RegExp(`<meta[^>]*?(?:name|property)=["']${prop}["'][^>]*?content=["'](.*?)["']`, 'i');
@@ -255,7 +440,7 @@ export function registerWindowFsHandlers(): void {
 
       if (favicon && !favicon.startsWith('http')) {
         try {
-          favicon = new URL(favicon, parsedUrl.origin).href;
+          favicon = new URL(favicon, result.origin).href;
         } catch { /* ignore */ }
       }
 
@@ -387,7 +572,12 @@ export function registerWindowFsHandlers(): void {
     }
   });
 
-  ipcMain.handle('system:wipe-account', async () => {
+  ipcMain.handle('system:wipe-account', async (_event, confirmPhrase?: string) => {
+    if (confirmPhrase !== WIPE_ACCOUNT_CONFIRM_PHRASE) {
+      console.warn('[IPC] system:wipe-account: rejected — explicit confirmation phrase required');
+      return { success: false, error: 'Confirmation phrase required' };
+    }
+
     const everfernDir = path.join(os.homedir(), '.everfern');
     try {
       try {

@@ -14,7 +14,9 @@ import fs from 'fs';
 import os from 'os';
 
 let instance: sqlite3.Database | null = null;
+let instancePromise: Promise<sqlite3.Database> | null = null;
 let isInitialized = false;
+let isClosing = false;
 
 export interface VectorMessage {
   id: string;
@@ -50,29 +52,41 @@ function ensureDir(): void {
 
 let writeQueue: Array<() => void> = [];
 let isWriteInProgress = false;
+let isNextScheduled = false;
 
 function queueWrite(fn: () => void): void {
   writeQueue.push(fn);
   processQueue();
 }
 
+// Release the write slot only once the write's callback/completion has fired,
+// then schedule the next queued item.
+function finishWrite(): void {
+  isWriteInProgress = false;
+  scheduleNext();
+}
+
+function scheduleNext(): void {
+  if (isNextScheduled || isWriteInProgress || writeQueue.length === 0 || !instance) return;
+  isNextScheduled = true;
+  setTimeout(() => {
+    isNextScheduled = false;
+    processQueue();
+  }, 10);
+}
+
 function processQueue(): void {
   if (isWriteInProgress || writeQueue.length === 0 || !instance) return;
 
-  isWriteInProgress = true;
   const next = writeQueue.shift();
-  if (next) {
-    try {
-      next();
-    } catch (err) {
-      log('Queue write error:', err);
-    }
-  }
-  isWriteInProgress = false;
+  if (!next) return;
 
-  // Process next in queue
-  if (writeQueue.length > 0) {
-    setTimeout(processQueue, 10);
+  isWriteInProgress = true;
+  try {
+    next();
+  } catch (err) {
+    log('Queue write error:', err);
+    finishWrite();
   }
 }
 
@@ -132,11 +146,17 @@ export async function initChatVectorDb(): Promise<sqlite3.Database> {
   });
 }
 
-export async function getChatVectorDb(): Promise<sqlite3.Database> {
-  if (!instance) {
-    await initChatVectorDb();
+export function getChatVectorDb(): Promise<sqlite3.Database> {
+  if (isClosing) {
+    return Promise.reject(new Error('Chat vector DB is closing'));
   }
-  return instance!;
+  if (!instancePromise) {
+    instancePromise = initChatVectorDb().catch((err) => {
+      instancePromise = null;
+      throw err;
+    });
+  }
+  return instancePromise!;
 }
 
 export async function embedAndStoreMessage(
@@ -171,14 +191,12 @@ export async function embedAndStoreMessage(
                 log('Message stored successfully');
                 res();
               }
-              isWriteInProgress = false;
-              processQueue();
+              finishWrite();
             }
           );
         } catch (err: any) {
           log('Queue write error:', err.message);
-          isWriteInProgress = false;
-          processQueue();
+          finishWrite();
           rej(err);
         }
       });
@@ -303,8 +321,7 @@ export async function deleteChatVectors(chatId: string): Promise<void> {
             log('Deleted vectors for chat:', chatId);
             res();
           }
-          isWriteInProgress = false;
-          processQueue();
+          finishWrite();
         });
       });
     });
@@ -316,20 +333,47 @@ export async function deleteChatVectors(chatId: string): Promise<void> {
 export async function closeChatVectorDb(): Promise<void> {
   log('closeChatVectorDb');
 
-  if (instance) {
-    return new Promise((res, rej) => {
-      instance!.close((e) => {
-        if (e) {
-          log('closeChatVectorDb ERROR:', e.message);
-          rej(e);
-        } else {
-          log('Database closed');
-          instance = null;
-          isInitialized = false;
-          res();
-        }
+  isClosing = true;
+
+  try {
+    if (instance) {
+      await new Promise<void>((res, rej) => {
+        instance!.close((e) => {
+          if (e) {
+            log('closeChatVectorDb ERROR:', e.message);
+            rej(e);
+          } else {
+            log('Database closed');
+            res();
+          }
+        });
       });
-    });
+      instance = null;
+      instancePromise = null;
+      isInitialized = false;
+    } else if (instancePromise) {
+      try {
+        const db = await instancePromise;
+        await new Promise<void>((res, rej) => {
+          db.close((e) => {
+            if (e) {
+              log('closeChatVectorDb ERROR:', e.message);
+              rej(e);
+            } else {
+              log('Database closed (in-flight init)');
+              res();
+            }
+          });
+        });
+        instance = null;
+        instancePromise = null;
+        isInitialized = false;
+      } catch (err: any) {
+        log('closeChatVectorDb in-flight init error:', err?.message);
+      }
+    }
+  } finally {
+    isClosing = false;
   }
 }
 

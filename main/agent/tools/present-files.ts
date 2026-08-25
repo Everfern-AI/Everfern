@@ -267,7 +267,7 @@ export const createPresentFilesTool = (runner?: any): AgentTool => ({
       if (!fileCopied && process.platform === 'darwin') {
         try {
           fs.mkdirSync(artifactsDir, { recursive: true });
-          const { execSync } = require('child_process');
+          const { execFileSync } = require('child_process');
           const dockerPaths = [
             f.path.startsWith('/') ? f.path : null,
             `/everfern/${fileName}`,
@@ -278,7 +278,7 @@ export const createPresentFilesTool = (runner?: any): AgentTool => ({
 
           for (const dp of dockerPaths) {
             try {
-              execSync(`docker cp everfern-ubuntu:"${dp}" "${targetPath}"`, { timeout: 15000, stdio: 'pipe' });
+              execFileSync('docker', ['cp', `everfern-ubuntu:${dp}`, targetPath], { timeout: 15000, stdio: 'pipe', maxBuffer: 10 * 1024 * 1024 });
               if (fs.existsSync(targetPath)) {
                 fileCopied = true;
                 console.log(`[PresentFiles] Copied Docker file ${dp} to host artifacts at ${targetPath}`);

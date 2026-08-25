@@ -339,7 +339,7 @@ export function registerStreamHandlers(): void {
           } catch (e) {
             console.error('[AgentIPC] Failed to hide overlay:', e);
           }
-          streamSender.send('acp:stream-chunk', { delta: '\n\n🛑 Stopped by user.', done: true, conversationId: request.conversationId, assistantMessageId: request.assistantMessageId });
+          safeSend('acp:stream-chunk', { delta: '\n\n🛑 Stopped by user.', done: true, conversationId: request.conversationId, assistantMessageId: request.assistantMessageId });
           break;
         }
 
@@ -537,7 +537,7 @@ export function registerStreamHandlers(): void {
         console.error('[AgentIPC] Cleanup sequence error on stream crash:', cleanupErr);
       }
 
-      streamSender.send('acp:stream-chunk', { delta: `\n\n[Error: ${String(error)}]`, done: true, conversationId: request.conversationId, assistantMessageId: request.assistantMessageId });
+      safeSend('acp:stream-chunk', { delta: `\n\n[Error: ${String(error)}]`, done: true, conversationId: request.conversationId, assistantMessageId: request.assistantMessageId });
     }
   });
 }

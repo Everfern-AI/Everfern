@@ -56,7 +56,7 @@ function wrapUntrusted(nonce: string, label: string, content: string): string {
 function loadExtensionPrompt(): string {
   const rawPrompt = loadPrompt('NAVIS.md');
   if (!rawPrompt) return FALLBACK_EXTENSION_SYSTEM_PROMPT + SECURITY_GUIDELINE;
-  const systemMatch = rawPrompt.match(/SYSTEM_PROMPT = """\?\s*([\s\S]*?)"""/);
+  const systemMatch = rawPrompt.match(/SYSTEM_PROMPT = """\s*([\s\S]*?)"""/);
   if (!systemMatch) return FALLBACK_EXTENSION_SYSTEM_PROMPT + SECURITY_GUIDELINE;
   let systemPrompt = systemMatch[1].trim();
   systemPrompt += SECURITY_GUIDELINE;

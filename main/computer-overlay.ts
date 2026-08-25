@@ -20,6 +20,7 @@ export class ComputerOverlayManager {
   // Physical pixel dimensions of the primary display (robotjs coordinate space)
   private physicalWidth = 1920;
   private physicalHeight = 1080;
+  private hideTimeout: NodeJS.Timeout | null = null;
 
   constructor() {
     console.log('[ComputerOverlay] Manager created, preloading window at startup...');
@@ -93,6 +94,10 @@ export class ComputerOverlayManager {
    * Show the overlay and begin a computer_use session.
    */
   show(taskDescription?: string): void {
+    if (this.hideTimeout) {
+      clearTimeout(this.hideTimeout);
+      this.hideTimeout = null;
+    }
     this.ensureWindow();
     if (!this.overlayWindow || this.overlayWindow.isDestroyed()) return;
 
@@ -122,8 +127,9 @@ export class ComputerOverlayManager {
       active: false,
     });
 
-    setTimeout(() => {
-      if (this.overlayWindow && !this.overlayWindow.isDestroyed()) {
+    this.hideTimeout = setTimeout(() => {
+      this.hideTimeout = null;
+      if (!this.isActive && this.overlayWindow && !this.overlayWindow.isDestroyed()) {
         this.overlayWindow.hide();
       }
     }, 400);
@@ -176,6 +182,10 @@ export class ComputerOverlayManager {
    * Clean up resources.
    */
   destroy(): void {
+    if (this.hideTimeout) {
+      clearTimeout(this.hideTimeout);
+      this.hideTimeout = null;
+    }
     if (this.overlayWindow && !this.overlayWindow.isDestroyed()) {
       this.overlayWindow.close();
     }

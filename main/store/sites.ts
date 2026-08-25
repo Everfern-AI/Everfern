@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { assertSafeSegment, resolveWithin } from '../lib/path-guard';
 
 export interface SiteMeta {
   id: string; // filename or foldername
@@ -35,7 +36,7 @@ export async function listSites(chatId?: string): Promise<SiteMeta[]> {
   try {
     let dirs: string[] = [];
     if (chatId) {
-      dirs = [chatId];
+      dirs = [assertSafeSegment(chatId, 'site name')];
     } else {
       const entries = await fs.promises.readdir(SITES_DIR);
       for (const f of entries) {
@@ -75,7 +76,7 @@ export async function listSites(chatId?: string): Promise<SiteMeta[]> {
  * Reads a site file (usually index.html).
  */
 export async function readSiteFile(chatId: string, filename: string): Promise<string | null> {
-  const p = path.join(SITES_DIR, chatId, filename);
+  const p = resolveWithin(SITES_DIR, assertSafeSegment(chatId, 'site name'), filename);
   if (!(await exists(p))) return null;
   try {
     return await fs.promises.readFile(p, 'utf-8');
@@ -89,9 +90,9 @@ export async function readSiteFile(chatId: string, filename: string): Promise<st
  */
 export async function writeSiteFile(chatId: string, filename: string, content: string): Promise<{ success: boolean; error?: string }> {
   try {
-    const dir = path.join(SITES_DIR, chatId);
+    const dir = resolveWithin(SITES_DIR, assertSafeSegment(chatId, 'site name'));
     if (!(await exists(dir))) await fs.promises.mkdir(dir, { recursive: true });
-    await fs.promises.writeFile(path.join(dir, filename), content, 'utf-8');
+    await fs.promises.writeFile(resolveWithin(dir, filename), content, 'utf-8');
     return { success: true };
   } catch (e) {
     return { success: false, error: String(e) };
@@ -103,10 +104,15 @@ export async function writeSiteFile(chatId: string, filename: string, content: s
  */
 export async function deleteSite(chatId: string, filename?: string): Promise<{ success: boolean }> {
   try {
-    const p = filename ? path.join(SITES_DIR, chatId, filename) : path.join(SITES_DIR, chatId);
+    const site = assertSafeSegment(chatId, 'site name');
+    const p = filename ? resolveWithin(SITES_DIR, site, filename) : resolveWithin(SITES_DIR, site);
     if (await exists(p)) {
       const stats = await fs.promises.stat(p);
       if (stats.isDirectory()) {
+        // MP-SEC-02: only direct children of the sites root may be recursively removed
+        if (fs.realpathSync(path.dirname(p)) !== fs.realpathSync(SITES_DIR)) {
+          return { success: false };
+        }
         await fs.promises.rm(p, { recursive: true, force: true });
       } else {
         await fs.promises.unlink(p);

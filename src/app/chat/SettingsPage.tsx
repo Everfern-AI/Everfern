@@ -2342,6 +2342,10 @@ export default function SettingsPage({
     const [showVectorsModal, setShowVectorsModal] = useState(false);
     const [vectorsData, setVectorsData] = useState<any[]>([]);
     const [loadingVectors, setLoadingVectors] = useState(false);
+    const [showWipeConfirm, setShowWipeConfirm] = useState(false);
+    const [wipePhrase, setWipePhrase] = useState('');
+    // Must match main/ipc/system/window-fs-handlers WIPE_ACCOUNT_CONFIRM_PHRASE (renderer can't import main's constant).
+    const WIPE_CONFIRM_PHRASE = 'DELETE MY DATA';
     const router = useRouter();
 
     // ── Local Model Discovery & Benchmark State ──────────────────────────────
@@ -4451,39 +4455,65 @@ export default function SettingsPage({
             <div style={{ backgroundColor: 'var(--color-error-dim)', border: '1px solid var(--color-error-dim)', borderRadius: 16, padding: 24 }}>
                 <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-error)', margin: '0 0 8px' }}>Danger Zone</h3>
                 <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)', margin: '0 0 16px', lineHeight: 1.6 }}>Wipe all local data, search API keys, tool configurations, and reset your account. This cannot be undone.</p>
-                <button
-                    onClick={async () => {
-                        if (!window.confirm('Are you sure you want to reset your account? This will permanently delete all conversations, search API keys, settings, and local data.')) return;
-                        try {
-                            try {
-                                await (window as any).electronAPI?.toolSettings?.set?.({
-                                    webSearch: { mode: 'local', provider: 'exa', headless: true, apiKey: '', exaApiKey: '', firecrawlApiKey: '' },
-                                    webCrawl: { mode: 'local', headless: true, apiKey: '' },
-                                    browserUse: { mode: 'local', headless: false, apiKey: '' },
-                                    navis: { useVision: false, onlyVision: false, headless: false, maxSteps: 200, useChromeProfile: true, selectedBrowserId: 'chrome', useIsolatedBrowser: false, automationMode: 'extension-first' },
-                                });
-                            } catch (e) {
-                                console.warn('toolSettings reset error:', e);
-                            }
-                            const result = await (window as any).electronAPI?.system.wipeAccount();
-                            if (result?.success) {
-                                localStorage.clear();
-                                sessionStorage.clear();
-                                window.location.reload();
-                            } else {
-                                alert(`Reset failed: ${result?.error || 'Unknown error'}`);
-                            }
-                        } catch (err: any) {
-                            alert(`Reset failed: ${err?.message || 'Unknown error'}`);
-                        }
-                    }}
-                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', backgroundColor: 'var(--color-error-dim)', color: 'var(--color-error)', borderRadius: 10, fontWeight: 600, fontSize: 13, border: '1px solid var(--color-error-dim)', cursor: 'pointer', transition: 'all 0.2s' }}
-                    onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-error-dim)'}
-                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--color-error-dim)'}
-                >
-                    <TrashIcon width={16} height={16} />
-                    Reset Account & Delete All Data
-                </button>
+                {!showWipeConfirm ? (
+                    <button
+                        onClick={() => setShowWipeConfirm(true)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', backgroundColor: 'var(--color-error-dim)', color: 'var(--color-error)', borderRadius: 10, fontWeight: 600, fontSize: 13, border: '1px solid var(--color-error-dim)', cursor: 'pointer', transition: 'all 0.2s' }}
+                    >
+                        <TrashIcon width={16} height={16} />
+                        Reset Account & Delete All Data
+                    </button>
+                ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        <input
+                            type="text"
+                            value={wipePhrase}
+                            onChange={e => setWipePhrase(e.target.value)}
+                            placeholder={`Type "${WIPE_CONFIRM_PHRASE}" to confirm`}
+                            autoFocus
+                            style={{ padding: '10px 14px', backgroundColor: 'var(--color-bg-elevated)', color: 'var(--color-text-primary)', borderRadius: 8, fontSize: 13, border: '1px solid var(--color-border)', outline: 'none', fontFamily: 'monospace' }}
+                        />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <button
+                                disabled={wipePhrase.trim() !== WIPE_CONFIRM_PHRASE}
+                                onClick={async () => {
+                                    try {
+                                        try {
+                                            await (window as any).electronAPI?.toolSettings?.set?.({
+                                                webSearch: { mode: 'local', provider: 'exa', headless: true, apiKey: '', exaApiKey: '', firecrawlApiKey: '' },
+                                                webCrawl: { mode: 'local', headless: true, apiKey: '' },
+                                                browserUse: { mode: 'local', headless: false, apiKey: '' },
+                                                navis: { useVision: false, onlyVision: false, headless: false, maxSteps: 200, useChromeProfile: true, selectedBrowserId: 'chrome', useIsolatedBrowser: false, automationMode: 'extension-first' },
+                                            });
+                                        } catch (e) {
+                                            console.warn('toolSettings reset error:', e);
+                                        }
+                                        const result = await (window as any).electronAPI?.system.wipeAccount(wipePhrase.trim());
+                                        if (result?.success) {
+                                            localStorage.clear();
+                                            sessionStorage.clear();
+                                            window.location.reload();
+                                        } else {
+                                            alert(`Reset failed: ${result?.error || 'Unknown error'}`);
+                                        }
+                                    } catch (err: any) {
+                                        alert(`Reset failed: ${err?.message || 'Unknown error'}`);
+                                    }
+                                }}
+                                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', backgroundColor: wipePhrase.trim() === WIPE_CONFIRM_PHRASE ? 'var(--color-error)' : 'var(--color-error-dim)', color: wipePhrase.trim() === WIPE_CONFIRM_PHRASE ? '#ffffff' : 'var(--color-error)', borderRadius: 10, fontWeight: 600, fontSize: 13, border: '1px solid var(--color-error)', cursor: wipePhrase.trim() === WIPE_CONFIRM_PHRASE ? 'pointer' : 'not-allowed', opacity: wipePhrase.trim() === WIPE_CONFIRM_PHRASE ? 1 : 0.6, transition: 'all 0.2s' }}
+                            >
+                                <TrashIcon width={16} height={16} />
+                                Confirm Reset
+                            </button>
+                            <button
+                                onClick={() => { setShowWipeConfirm(false); setWipePhrase(''); }}
+                                style={{ padding: '10px 20px', backgroundColor: 'var(--color-bg-subtle)', color: 'var(--color-text-primary)', borderRadius: 10, fontWeight: 500, fontSize: 13, border: '1px solid var(--color-border)', cursor: 'pointer', transition: 'all 0.2s' }}
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );
