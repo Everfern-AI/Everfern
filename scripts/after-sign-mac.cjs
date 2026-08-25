@@ -25,7 +25,9 @@
  *   After electron-builder signs, walk the bundle deepest-first and re-sign
  *   every ad-hoc component WITHOUT the hardened-runtime flag. Without the
  *   runtime flag, library validation is not enforced and helpers load the
- *   framework normally.
+ *   framework normally. If anything inside the bundle was repaired, the
+ *   outermost bundle is re-signed last so its CodeResources seal stays
+ *   consistent with the modified contents.
  *
  * Builds signed with a real certificate (CSC_LINK / CSC_NAME set, or the
  * resulting signature is not ad-hoc) are detected and left untouched.
@@ -35,6 +37,14 @@ const { execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
+/**
+ * Run a command and resolve with { err, out } instead of throwing.
+ *
+ * @param {string} cmd - Executable to run.
+ * @param {string[]} args - Argument list for the executable.
+ * @returns {Promise<{err: Error|null, out: string}>} Combined stdout/stderr
+ *   and an error object when the command failed.
+ */
 function sh(cmd, args) {
   return new Promise((resolve) => {
     execFile(cmd, args, { encoding: 'utf8' }, (err, stdout, stderr) =>
@@ -43,6 +53,13 @@ function sh(cmd, args) {
   });
 }
 
+/**
+ * Inspect a code-signed target's signature flags.
+ *
+ * @param {string} target - Path to a Mach-O binary, framework, or app bundle.
+ * @returns {Promise<{adhoc: boolean, runtime: boolean}>} Whether the target
+ *   is ad-hoc signed and whether the hardened-runtime flag is set.
+ */
 async function codesignDetails(target) {
   const { out } = await sh('codesign', ['-dv', target]);
   const flagsLine =
@@ -53,11 +70,29 @@ async function codesignDetails(target) {
   };
 }
 
+/**
+ * Collect every nested bundle inside an .app that may need re-signing.
+ *
+ * Walks Contents/Frameworks, Contents/Plugins and Contents (depth-limited),
+ * gathering .framework and .app bundles without descending into them (each
+ * nested bundle is re-signed as a unit).
+ *
+ * @param {string} appBundle - Path to the outer .app bundle.
+ * @returns {Promise<string[]>} Bundle paths sorted deepest-first, so outer
+ *   bundles are always (re-)sealed after their contents change.
+ */
 async function findTargets(appBundle) {
   const contents = path.join(appBundle, 'Contents');
   const roots = [path.join(contents, 'Frameworks'), path.join(contents, 'Plugins'), contents];
   const found = [];
 
+  /**
+   * Recurse into a directory collecting nested bundle paths.
+   *
+   * @param {string} dir - Directory to scan.
+   * @param {number} depth - Current recursion depth (hard limit 6).
+   * @returns {Promise<void>} Resolves when the directory has been scanned.
+   */
   async function walk(dir, depth) {
     if (depth > 6) return;
     let entries;
@@ -84,6 +119,18 @@ async function findTargets(appBundle) {
   return [...new Set(found)].sort((a, b) => b.split(path.sep).length - a.split(path.sep).length);
 }
 
+/**
+ * electron-builder afterSign hook entry point.
+ *
+ * Re-signs ad-hoc hardened-runtime components without the runtime flag and
+ * re-seals the outer bundle if any nested component changed. Skips entirely
+ * on non-macOS builds and whenever a real signing identity is configured.
+ *
+ * @param {object} context - electron-builder hook context (appOutDir,
+ *   electronPlatformName, packager, etc.).
+ * @returns {Promise<void>} Resolves once the bundle is consistent; rejects
+ *   if a required re-sign fails.
+ */
 exports.default = async function afterSign(context) {
   if (context.electronPlatformName !== 'darwin') return;
 
@@ -123,7 +170,8 @@ exports.default = async function afterSign(context) {
     console.warn(`[after-sign-mac] No .app found in ${outDir} — nothing to do.`);
     return;
   }
-  // Sign the outermost bundle last.
+
+  // Deepest-first, with the outermost bundle handled last (see below).
   const targets = [...(await findTargets(appBundle)), appBundle];
 
   let repaired = 0;
@@ -145,6 +193,20 @@ exports.default = async function afterSign(context) {
         `[after-sign-mac] ${path.relative(outDir, target)} is certificate-signed — leaving as-is.`
       );
     }
+  }
+
+  // Re-signing a nested bundle invalidates the outer bundle's CodeResources
+  // seal, so the outermost bundle must always be re-sealed after any nested
+  // repair — even when its own signature didn't need the runtime flag
+  // stripped. Plain ad-hoc signing is idempotent, so this is safe to run
+  // unconditionally after a repair.
+  if (repaired > 0) {
+    const { err } = await sh('codesign', ['--force', '--sign', '-', appBundle]);
+    if (err) {
+      console.error(`[after-sign-mac] Failed to re-seal outer bundle: ${err.message}`);
+      throw err;
+    }
+    console.log('[after-sign-mac] Re-sealed outer app bundle signature.');
   }
 
   if (repaired === 0) console.log('[after-sign-mac] No ad-hoc hardened-runtime binaries found.');
