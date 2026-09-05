@@ -305,16 +305,16 @@ Respond with ONLY new memory entries in Markdown bullet format, or "NO_NEW_MEMOR
 
       // Strip any lines that snuck through containing file paths, artifact locations, or task results
       const PATH_PATTERNS = [
-        /c:\\[^\s]*/gi,           // Windows absolute paths
-        /\.everfern[^\s]*/gi,     // .everfern directory references
-        /artifacts[^\s]*/gi,      // artifact paths
-        /\.html\b/gi,             // HTML file references
-        /\.py\b/gi,               // Python file references
-        /what worked:/gi,         // "What Worked" sections
-        /project architecture:/gi, // "Project Architecture" sections
-        /successfully deliver/gi,  // task result language
-        /report.*generated/gi,    // report generation results
-        /file.*saved/gi,          // file save results
+        /c:\\[^\s]*/i,            // Windows absolute paths
+        /\.everfern[^\s]*/i,      // .everfern directory references
+        /artifacts[^\s]*/i,       // artifact paths
+        /\.html\b/i,              // HTML file references
+        /\.py\b/i,                // Python file references
+        /what worked:/i,          // "What Worked" sections
+        /project architecture:/i, // "Project Architecture" sections
+        /successfully deliver/i,  // task result language
+        /report.*generated/i,     // report generation results
+        /file.*saved/i,           // file save results
       ];
 
       const filteredLines = content.split('\n').filter(line => {

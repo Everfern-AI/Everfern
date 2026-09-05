@@ -1,6 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { assertSafeSegment, resolveWithin } from '../lib/path-guard';
+
+// MP-SEC-02: sandbox root every global artifact path must stay within.
+const ARTIFACTS_DIR = path.join(os.homedir(), '.everfern', 'artifacts');
 
 export interface ArtifactMeta {
   id: string;
@@ -30,7 +34,7 @@ async function exists(p: string): Promise<boolean> {
  * Scans ~/.everfern/artifacts/ and projectPath/.everfern/artifacts/ if provided.
  */
 export async function listArtifacts(chatId?: string, projectPath?: string): Promise<ArtifactMeta[]> {
-  const globalArtifactsDir = path.join(os.homedir(), '.everfern', 'artifacts');
+  const globalArtifactsDir = ARTIFACTS_DIR;
   const results: ArtifactMeta[] = [];
 
   // 1. Scan global artifacts
@@ -38,7 +42,7 @@ export async function listArtifacts(chatId?: string, projectPath?: string): Prom
     let dirsToScan: string[] = [];
     try {
       if (chatId) {
-        dirsToScan = [chatId];
+        dirsToScan = [assertSafeSegment(chatId, 'chat id')];
       } else {
         const entries = await fs.promises.readdir(globalArtifactsDir);
         for (const f of entries) {
@@ -122,9 +126,9 @@ export async function readArtifact(chatId: string, filename: string, projectPath
   let filepath: string;
   
   if (projectPath && chatId === 'project') {
-    filepath = path.join(projectPath, '.everfern', 'artifacts', filename);
+    filepath = resolveWithin(path.join(projectPath, '.everfern', 'artifacts'), filename);
   } else {
-    filepath = path.join(os.homedir(), '.everfern', 'artifacts', chatId, filename);
+    filepath = resolveWithin(ARTIFACTS_DIR, assertSafeSegment(chatId, 'chat id'), filename);
   }
 
   if (await exists(filepath)) {
@@ -151,15 +155,15 @@ export async function writeArtifact(chatId: string, filename: string, content: s
   try {
     let dir: string;
     if (projectPath) {
-      dir = path.join(projectPath, '.everfern', 'artifacts');
+      dir = resolveWithin(path.join(projectPath, '.everfern', 'artifacts'));
     } else {
-      dir = path.join(os.homedir(), '.everfern', 'artifacts', chatId);
+      dir = resolveWithin(ARTIFACTS_DIR, assertSafeSegment(chatId, 'chat id'));
     }
     
     if (!(await exists(dir))) {
       await fs.promises.mkdir(dir, { recursive: true });
     }
-    await fs.promises.writeFile(path.join(dir, filename), content, 'utf-8');
+    await fs.promises.writeFile(resolveWithin(dir, filename), content, 'utf-8');
     return { success: true };
   } catch (e) {
     return { success: false, error: String(e) };
@@ -173,9 +177,9 @@ export async function deleteArtifact(chatId: string, filename: string, projectPa
   try {
     let p: string;
     if (projectPath && chatId === 'project') {
-      p = path.join(projectPath, '.everfern', 'artifacts', filename);
+      p = resolveWithin(path.join(projectPath, '.everfern', 'artifacts'), filename);
     } else {
-      p = path.join(os.homedir(), '.everfern', 'artifacts', chatId, filename);
+      p = resolveWithin(ARTIFACTS_DIR, assertSafeSegment(chatId, 'chat id'), filename);
     }
     
     if (await exists(p)) {
@@ -192,20 +196,22 @@ export async function deleteArtifact(chatId: string, filename: string, projectPa
  * This prevents corruption if the write operation is interrupted.
  */
 export async function writeArtifactAtomic(chatId: string, filename: string, content: string, projectPath?: string): Promise<{ success: boolean; error?: string }> {
+  let dir: string;
+  let filePath: string;
+  let tempPath: string | undefined;
   try {
-    let dir: string;
     if (projectPath) {
-      dir = path.join(projectPath, '.everfern', 'artifacts');
+      dir = resolveWithin(path.join(projectPath, '.everfern', 'artifacts'));
     } else {
-      dir = path.join(os.homedir(), '.everfern', 'artifacts', chatId);
+      dir = resolveWithin(ARTIFACTS_DIR, assertSafeSegment(chatId, 'chat id'));
     }
     
     if (!(await exists(dir))) {
       await fs.promises.mkdir(dir, { recursive: true });
     }
 
-    const filePath = path.join(dir, filename);
-    const tempPath = `${filePath}.tmp`;
+    filePath = resolveWithin(dir, filename);
+    tempPath = `${filePath}.tmp`;
 
     // Write to temporary file
     await fs.promises.writeFile(tempPath, content, 'utf-8');
@@ -215,17 +221,10 @@ export async function writeArtifactAtomic(chatId: string, filename: string, cont
 
     return { success: true };
   } catch (e) {
-    // Clean up temporary file if it exists
+    // Clean up temporary file if it exists (reuse the guarded path captured
+    // above; never re-join raw chatId/projectPath here)
     try {
-      let dir: string;
-      if (projectPath) {
-        dir = path.join(projectPath, '.everfern', 'artifacts');
-      } else {
-        dir = path.join(os.homedir(), '.everfern', 'artifacts', chatId);
-      }
-      const filePath = path.join(dir, filename);
-      const tempPath = `${filePath}.tmp`;
-      if (await exists(tempPath)) {
+      if (tempPath && (await exists(tempPath))) {
         await fs.promises.unlink(tempPath);
       }
     } catch {
@@ -242,9 +241,9 @@ export async function updateArtifactTimestamp(chatId: string, filename: string, 
   try {
     let filePath: string;
     if (projectPath && chatId === 'project') {
-      filePath = path.join(projectPath, '.everfern', 'artifacts', filename);
+      filePath = resolveWithin(path.join(projectPath, '.everfern', 'artifacts'), filename);
     } else {
-      filePath = path.join(os.homedir(), '.everfern', 'artifacts', chatId, filename);
+      filePath = resolveWithin(ARTIFACTS_DIR, assertSafeSegment(chatId, 'chat id'), filename);
     }
     
     if (!(await exists(filePath))) {

@@ -31,6 +31,26 @@ interface ArtifactsPanelProps {
     projectPath?: string | null;
 }
 
+// CU-STRM-02: theme-aware syntax-highlight palette. Roles map to globals.css
+// tokens (CSS vars are valid in inline styles) so highlight colors follow the
+// active light/dark theme; the low-contrast hardcoded comment gray is gone.
+// keyword/property/boolean keep their hex: globals.css has NO fuchsia/purple
+// semantic token (--color-accent is teal and reserved for function/attr/key).
+const SYNTAX_COLORS = {
+    keyword: '#d946ef',
+    string: 'var(--color-success)',        // was #16a34a
+    number: 'var(--color-info)',           // was #2563eb
+    comment: 'var(--color-text-tertiary)', // was #8a8886
+    function: 'var(--color-accent)',       // was #0891b2
+    tag: 'var(--color-error)',             // was #dc2626
+    attr: 'var(--color-accent)',
+    property: '#d946ef',
+    value: 'var(--color-info)',
+    selector: 'var(--color-error)',
+    key: 'var(--color-accent)',
+    boolean: '#d946ef',
+};
+
 // ── 1. MARKDOWN VIEWER ──────────────────────────────────────────────
 export function MarkdownViewer({ content }: { content: string }) {
     const renderMarkdown = (text: string) => {
@@ -137,7 +157,7 @@ export function MarkdownViewer({ content }: { content: string }) {
             if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
                 const content = line.trim().substring(2);
                 elements.push(
-                    <li key={`li-${i}`} style={{ marginLeft: 20, margin: '4px 0', fontSize: 14, color: 'var(--color-text-primary)' }}
+                    <li key={`li-${i}`} style={{ margin: '4px 0 4px 20px', fontSize: 14, color: 'var(--color-text-primary)' }}
                         dangerouslySetInnerHTML={{ __html: formatInline(content) }}
                     />
                 );
@@ -1016,13 +1036,13 @@ All subprocess executions pass through strict environment isolation with explici
 // Syntax highlighting helper
 const getSyntaxHighlightingColors = (language: string, token: string): string => {
     const colorMap: Record<string, Record<string, string>> = {
-        javascript: { keyword: '#d946ef', string: '#16a34a', number: '#2563eb', comment: '#8a8886', function: '#0891b2' },
-        typescript: { keyword: '#d946ef', string: '#16a34a', number: '#2563eb', comment: '#8a8886', function: '#0891b2' },
-        python: { keyword: '#d946ef', string: '#16a34a', number: '#2563eb', comment: '#8a8886', function: '#0891b2' },
-        html: { tag: '#dc2626', attr: '#0891b2', string: '#16a34a', comment: '#8a8886' },
-        css: { property: '#d946ef', value: '#2563eb', selector: '#dc2626', comment: '#8a8886' },
-        json: { key: '#0891b2', string: '#16a34a', number: '#2563eb', boolean: '#d946ef' },
-        sql: { keyword: '#d946ef', string: '#16a34a', number: '#2563eb', comment: '#8a8886' },
+        javascript: { keyword: SYNTAX_COLORS.keyword, string: SYNTAX_COLORS.string, number: SYNTAX_COLORS.number, comment: SYNTAX_COLORS.comment, function: SYNTAX_COLORS.function },
+        typescript: { keyword: SYNTAX_COLORS.keyword, string: SYNTAX_COLORS.string, number: SYNTAX_COLORS.number, comment: SYNTAX_COLORS.comment, function: SYNTAX_COLORS.function },
+        python: { keyword: SYNTAX_COLORS.keyword, string: SYNTAX_COLORS.string, number: SYNTAX_COLORS.number, comment: SYNTAX_COLORS.comment, function: SYNTAX_COLORS.function },
+        html: { tag: SYNTAX_COLORS.tag, attr: SYNTAX_COLORS.attr, string: SYNTAX_COLORS.string, comment: SYNTAX_COLORS.comment },
+        css: { property: SYNTAX_COLORS.property, value: SYNTAX_COLORS.value, selector: SYNTAX_COLORS.selector, comment: SYNTAX_COLORS.comment },
+        json: { key: SYNTAX_COLORS.key, string: SYNTAX_COLORS.string, number: SYNTAX_COLORS.number, boolean: SYNTAX_COLORS.boolean },
+        sql: { keyword: SYNTAX_COLORS.keyword, string: SYNTAX_COLORS.string, number: SYNTAX_COLORS.number, comment: SYNTAX_COLORS.comment },
     };
     return colorMap[language]?.[token] || 'var(--color-text-primary)';
 };
@@ -1043,43 +1063,43 @@ const detectLanguage = (filename: string): string => {
 export const SyntaxHighlighter = ({ code, language }: { code: string; language: string }) => {
     const colorSchemes: Record<string, Record<string, string>> = {
         python: {
-            keyword: '#d946ef',
-            string: '#16a34a',
-            number: '#2563eb',
-            comment: '#8a8886',
-            function: '#0891b2',
+            keyword: SYNTAX_COLORS.keyword,
+            string: SYNTAX_COLORS.string,
+            number: SYNTAX_COLORS.number,
+            comment: SYNTAX_COLORS.comment,
+            function: SYNTAX_COLORS.function,
         },
         javascript: {
-            keyword: '#d946ef',
-            string: '#16a34a',
-            number: '#2563eb',
-            comment: '#8a8886',
-            function: '#0891b2',
+            keyword: SYNTAX_COLORS.keyword,
+            string: SYNTAX_COLORS.string,
+            number: SYNTAX_COLORS.number,
+            comment: SYNTAX_COLORS.comment,
+            function: SYNTAX_COLORS.function,
         },
         typescript: {
-            keyword: '#d946ef',
-            string: '#16a34a',
-            number: '#2563eb',
-            comment: '#8a8886',
-            function: '#0891b2',
+            keyword: SYNTAX_COLORS.keyword,
+            string: SYNTAX_COLORS.string,
+            number: SYNTAX_COLORS.number,
+            comment: SYNTAX_COLORS.comment,
+            function: SYNTAX_COLORS.function,
         },
         html: {
-            tag: '#dc2626',
-            attr: '#0891b2',
-            string: '#16a34a',
-            comment: '#8a8886',
+            tag: SYNTAX_COLORS.tag,
+            attr: SYNTAX_COLORS.attr,
+            string: SYNTAX_COLORS.string,
+            comment: SYNTAX_COLORS.comment,
         },
         css: {
-            property: '#d946ef',
-            value: '#2563eb',
-            selector: '#dc2626',
-            comment: '#8a8886',
+            property: SYNTAX_COLORS.property,
+            value: SYNTAX_COLORS.value,
+            selector: SYNTAX_COLORS.selector,
+            comment: SYNTAX_COLORS.comment,
         },
         json: {
-            key: '#0891b2',
-            string: '#16a34a',
-            number: '#2563eb',
-            boolean: '#d946ef',
+            key: SYNTAX_COLORS.key,
+            string: SYNTAX_COLORS.string,
+            number: SYNTAX_COLORS.number,
+            boolean: SYNTAX_COLORS.boolean,
         },
     };
 
@@ -1979,8 +1999,8 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                                 >
                                                     {/* Site preview */}
                                                     <div style={{ flex: 1, backgroundColor: "var(--color-bg-subtle)", overflow: "hidden", position: "relative" }}>
-                                                        <iframe 
-                                                            srcDoc={`<html><head><style>body{margin:0;padding:16px;font-family:system-ui}</style></head><body><p style="color:var(--color-text-tertiary);font-size:12px">Loading preview...</p></body></html>`}
+                                                        <iframe
+                                                            src={`everfern-site://${site.chatId}/index.html`}
                                                             style={{ width: "100%", height: "100%", border: "none", backgroundColor: "var(--color-bg-subtle)" }}
                                                             title="Preview"
                                                             sandbox="allow-scripts"

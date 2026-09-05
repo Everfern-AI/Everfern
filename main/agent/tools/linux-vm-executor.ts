@@ -15,6 +15,25 @@ export interface LinuxVMExecutionResult {
 }
 
 /**
+ * Commands considered read-only by their first token. When the Linux VM
+ * (WSL/Docker) is unavailable, ONLY these may fall back to native host
+ * execution; anything else must never silently run on the host.
+ *
+ * DRIFT GUARD: pi-tools.ts keeps a local mirror of this set (READ_ONLY_HEADS,
+ * above its executePwsh adapter) because test suites may mock this module —
+ * any change here MUST be mirrored there and vice versa. This file's copy is
+ * the exported reference.
+ */
+export const READ_ONLY_HEADS: ReadonlySet<string> = new Set([
+  'dir', 'type', 'cat', 'ls', 'pwd', 'whoami', 'hostname', 'which',
+  'head', 'tail', 'wc', 'find', 'grep', 'echo', 'uname', 'df'
+]);
+
+function getCommandHead(command: string): string {
+  return command.trim().toLowerCase().split(/\s+/)[0];
+}
+
+/**
  * Thin wrapper that runs any shell command in a Linux VM environment.
  *
  * Platform-specific implementations:
@@ -60,7 +79,15 @@ export async function runInLinuxVM(
         return await runNatively(command, cwd, onUpdate);
     }
   } catch (error) {
-    console.warn(`[runInLinuxVM] VM execution failed, falling back to native execution: ${error}`);
+    if (!READ_ONLY_HEADS.has(getCommandHead(command))) {
+      console.warn(`[VMExecutor] VM unavailable — blocking host fallback for non-read-only command "${getCommandHead(command)}": ${error}`);
+      return {
+        stdout: '',
+        stderr: `Linux VM (WSL/Docker) is not available. Start WSL/Docker or re-run with target main. (Original error: ${error})`,
+        exitCode: -1
+      };
+    }
+    console.log('[VMExecutor] VM unavailable — read-only fallback on host');
     return await runNatively(command, cwd, onUpdate);
   }
 }

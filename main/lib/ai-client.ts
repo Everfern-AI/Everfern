@@ -15,6 +15,17 @@ import { DebugEmitter } from './debug';
 import OpenAI from 'openai';
 import { CLOUD_MODEL_MAP } from './providers';
 
+// ── Local URL Normalization ─────────────────────────────────────────
+
+// Normalize localhost/::1 loopback URLs to 127.0.0.1 — Node fetch may dial ::1
+// first while Ollama/LM Studio bind IPv4 only, producing bare "fetch failed".
+export function normalizeLocalUrl(url?: string): string | undefined {
+  if (!url) return url;
+  return url
+    .replace(/^http:\/\/\[?::1\]?(:\d+)?/i, 'http://127.0.0.1$1')
+    .replace(/^http:\/\/localhost(:\d+)?/i, 'http://127.0.0.1$1');
+}
+
 // ── Safe JSON Parsing ───────────────────────────────────────────────
 
 /**
@@ -143,6 +154,8 @@ export interface AIClientConfig {
   customModel?: string;
   temperature?: number;
   maxTokens?: number;
+  /** Ollama native: context window size passed as options.num_ctx */
+  ollamaNumCtx?: number;
   /** Decoupled Vision AI configuration */
   vlm?: {
     engine: 'online' | 'local' | 'cloud';
@@ -252,9 +265,9 @@ const DEFAULT_URLS: Record<ProviderType, string> = {
   minimax: 'https://api.minimax.io/v1',
   everfern: 'https://api.everfern.app/api',  // Production EverFern API
   gemini: 'https://generativelanguage.googleapis.com/v1beta/openai',
-  ollama: 'http://localhost:11434',
+  ollama: 'http://127.0.0.1:11434',
   'ollama-cloud': 'https://ollama.com/v1',  // Fixed: was /api, should be /v1
-  lmstudio: 'http://localhost:1234/v1',
+  lmstudio: 'http://127.0.0.1:1234/v1',
   nvidia: 'https://integrate.api.nvidia.com/v1',
   openrouter: 'https://openrouter.ai/api/v1',
 };
@@ -397,8 +410,113 @@ const GEMINI_COMPUTER_USE_TOOLS = [
 
 // ── AIClient ─────────────────────────────────────────────────────────
 
+export function _formatOllamaTools(tools: any[]): any[] {
+    const sanitizeSchemaNode = (node: any, depth: number = 0): any => {
+      if (!node || typeof node !== 'object' || Array.isArray(node)) {
+        return node;
+      }
+      if (depth > 24) {
+        return node;
+      }
+
+      const clean: any = { ...node };
+
+      // Keys Ollama's schema parser cannot handle
+      delete clean.$schema;
+      delete clean.$id;
+      delete clean.examples;
+
+      // Boolean required is hoisted by the parent node — never emit it
+      if (typeof clean.required === 'boolean') {
+        delete clean.required;
+      }
+
+      // Union-typed `type` arrays like ["string","null"]: keep first non-null entry
+      if (Array.isArray(clean.type)) {
+        const nonNull = clean.type.filter((t: any) => t !== 'null');
+        clean.type = nonNull.length > 0 ? nonNull[0] : clean.type[0];
+      }
+
+      if (clean.properties && typeof clean.properties === 'object' && !Array.isArray(clean.properties)) {
+        const hoistedRequired: string[] = [];
+        const props: any = {};
+        for (const [key, val] of Object.entries(clean.properties)) {
+          if (val && typeof val === 'object' && !Array.isArray(val)) {
+            if ((val as any).required === true && !hoistedRequired.includes(key)) {
+              hoistedRequired.push(key);
+            }
+            props[key] = sanitizeSchemaNode(val, depth + 1);
+          } else {
+            props[key] = val;
+          }
+        }
+        clean.properties = props;
+        if (hoistedRequired.length > 0) {
+          clean.required = Array.isArray(clean.required) ? [...clean.required] : [];
+          for (const name of hoistedRequired) {
+            if (!clean.required.includes(name)) {
+              clean.required.push(name);
+            }
+          }
+        } else if (!Array.isArray(clean.required)) {
+          delete clean.required;
+        }
+      }
+
+      if (clean.items !== undefined) {
+        clean.items = Array.isArray(clean.items)
+          ? clean.items.map((item: any) => sanitizeSchemaNode(item, depth + 1))
+          : sanitizeSchemaNode(clean.items, depth + 1);
+      }
+
+      for (const combinator of ['anyOf', 'oneOf', 'allOf']) {
+        if (Array.isArray(clean[combinator])) {
+          clean[combinator] = clean[combinator].map((branch: any) => sanitizeSchemaNode(branch, depth + 1));
+        }
+      }
+
+      for (const defsKey of ['$defs', 'definitions']) {
+        if (clean[defsKey] && typeof clean[defsKey] === 'object' && !Array.isArray(clean[defsKey])) {
+          const defs: any = {};
+          for (const [defName, defVal] of Object.entries(clean[defsKey])) {
+            defs[defName] = sanitizeSchemaNode(defVal, depth + 1);
+          }
+          clean[defsKey] = defs;
+        }
+      }
+
+      return clean;
+    };
+
+    const sanitizeParams = (rawParams: any): any => {
+      if (!rawParams || typeof rawParams !== 'object') {
+        return { type: 'object', properties: {}, required: [] };
+      }
+      const clean = sanitizeSchemaNode(rawParams);
+      return {
+        type: clean?.type || 'object',
+        properties: (clean?.properties && typeof clean.properties === 'object') ? clean.properties : {},
+        required: Array.isArray(clean?.required) ? clean.required : []
+      };
+    };
+
+    return tools.map(t => {
+      const rawFunc = (t && (t as any).type === 'function' && (t as any).function)
+        ? (t as any).function
+        : t;
+      return {
+        type: 'function',
+        function: {
+          name: rawFunc.name,
+          description: rawFunc.description || '',
+          parameters: sanitizeParams(rawFunc.parameters)
+        }
+      };
+    });
+  }
+
 export class AIClient {
-  private config: Required<Omit<AIClientConfig, 'vlm' | 'customModel'>> & { vlm?: AIClientConfig['vlm']; customModel?: string };
+  private config: Required<Omit<AIClientConfig, 'vlm' | 'customModel' | 'ollamaNumCtx'>> & { vlm?: AIClientConfig['vlm']; customModel?: string; ollamaNumCtx?: number };
   private openaiClient?: OpenAI; // For NVIDIA NIM and DeepSeek
 
   constructor(config: AIClientConfig) {
@@ -444,6 +562,7 @@ export class AIClient {
       customModel: config.customModel,
       temperature: config.temperature ?? (config.provider === 'nvidia' ? 0.1 : 0.7),
       maxTokens: config.maxTokens ?? (config.provider === 'nvidia' ? 16383 : config.provider === 'openrouter' ? 8192 : 4096),
+      ollamaNumCtx: config.ollamaNumCtx,
       vlm: config.vlm,
     };
 
@@ -460,7 +579,7 @@ export class AIClient {
 
       this.openaiClient = new OpenAI({
         apiKey: this.config.apiKey || 'dummy-key',
-        baseURL: this.config.baseUrl,
+        baseURL: normalizeLocalUrl(this.config.baseUrl),
         timeout: 120000,
         maxRetries: 3,
         dangerouslyAllowBrowser: true,
@@ -692,9 +811,18 @@ export class AIClient {
         if (isGemini3Flash) {
           // Gemini 3 Flash via EverFern Cloud: attempt primary, fall back to gemini-2.5-flash on failure
           const FALLBACK_MODEL = 'google/gemini-2.5-flash';
+          let producedContent = false;
           try {
             console.log(`[EverFern Gemini] Trying primary model: ${modelName}`);
-            const result = await this._openAISDKChat(request);
+            const guardedRequest: ChatRequest = {
+              ...request,
+              onStreamChunk: (chunk: string) => {
+                if (chunk) producedContent = true;
+                request.onStreamChunk?.(chunk);
+              }
+            };
+            const result = await this._openAISDKChat(guardedRequest);
+            producedContent = true;
             // If empty content returned, treat as a soft failure and fall back
             const content = typeof result.content === 'string' ? result.content : '';
             if (!content.trim() && result.finishReason !== 'tool_calls') {
@@ -704,6 +832,10 @@ export class AIClient {
             }
             return result;
           } catch (err: any) {
+            if (producedContent) {
+              console.warn(`[EverFern Gemini] Primary model ${modelName} failed after content was already produced (${err?.message ?? err}) — not falling back to avoid duplicated reply`);
+              throw err;
+            }
             console.warn(`[EverFern Gemini] Primary model ${modelName} failed (${err?.message ?? err}) — falling back to ${FALLBACK_MODEL}`);
             const fallbackRequest = { ...request, model: FALLBACK_MODEL };
             return this._openAISDKChat(fallbackRequest);
@@ -897,11 +1029,22 @@ export class AIClient {
         if (isGemini3Flash) {
           // Gemini 3 Flash via EverFern Cloud: try primary, fall back to gemini-2.5-flash on error
           const FALLBACK_MODEL = 'google/gemini-2.5-flash';
+          let yieldedAny = false;
           try {
             console.log(`[EverFern Gemini Stream] Trying primary model: ${modelName}`);
-            yield* this._openAISDKStream(request);
+            const iterator = this._openAISDKStream(request);
+            while (true) {
+              const next = await iterator.next();
+              if (next.done) break;
+              yieldedAny = true;
+              yield next.value;
+            }
             return;
           } catch (err: any) {
+            if (yieldedAny) {
+              console.warn(`[EverFern Gemini Stream] Primary model ${modelName} failed mid-stream after chunks were already yielded (${err?.message ?? err}) — not falling back to avoid duplicated reply`);
+              throw err;
+            }
             console.warn(`[EverFern Gemini Stream] Primary model ${modelName} failed (${err?.message ?? err}) — falling back to ${FALLBACK_MODEL}`);
             const fallbackRequest = { ...request, model: FALLBACK_MODEL };
             yield* this._openAISDKStream(fallbackRequest);
@@ -1445,6 +1588,7 @@ export class AIClient {
 
         let fullContent = '';
         let fullReasoning = '';
+        const thinkState = { inThinking: false };
         const toolCallsMap: Record<number, { id: string; name: string; arguments: string }> = {};
         let finishReason: any = 'stop';
         let responseId = `${this.config.provider}-${Date.now()}`;
@@ -1457,13 +1601,23 @@ export class AIClient {
           }
           const delta = chunk.choices?.[0]?.delta;
 
+          if ((delta as any)?.reasoning_content) {
+            const piece = (delta as any).reasoning_content as string;
+            fullReasoning += piece;
+            if (!thinkState.inThinking) {
+              thinkState.inThinking = true;
+              req.onStreamChunk?.(`<think>${piece}`);
+            } else {
+              req.onStreamChunk?.(piece);
+            }
+          } else if (delta?.content && thinkState.inThinking) {
+            thinkState.inThinking = false;
+            req.onStreamChunk?.('</think>');
+          }
+
           if (delta?.content) {
             fullContent += delta.content;
             req.onStreamChunk!(delta.content);
-          }
-
-          if ((delta as any)?.reasoning_content) {
-            fullReasoning += (delta as any).reasoning_content;
           }
 
           if (delta?.tool_calls) {
@@ -1487,6 +1641,11 @@ export class AIClient {
           if (chunk.choices?.[0]?.finish_reason) {
             finishReason = chunk.choices[0].finish_reason;
           }
+        }
+
+        if (thinkState.inThinking) {
+          thinkState.inThinking = false;
+          req.onStreamChunk?.('</think>');
         }
 
         const toolCalls = Object.values(toolCallsMap).map(tc => ({
@@ -1656,20 +1815,42 @@ export class AIClient {
         this.openaiClient!.chat.completions.create(options) as unknown as Promise<AsyncIterable<any>>
       );
       let id = `${this.config.provider}-${Date.now()}`;
+      const thinkState = { inThinking: false };
 
       for await (const chunk of stream) {
         if (chunk.id) id = chunk.id;
         const delta = chunk.choices?.[0]?.delta;
 
-        yield {
-          id,
-          delta: delta?.content ?? '',
-          toolCalls: delta?.tool_calls,
-          done: false,
-          model: chunk.model
-        };
+        if ((delta as any)?.reasoning_content) {
+          const piece = (delta as any).reasoning_content as string;
+          if (!thinkState.inThinking) {
+            thinkState.inThinking = true;
+            yield { id, delta: `<think>${piece}`, done: false, model: chunk.model };
+          } else {
+            yield { id, delta: piece, done: false, model: chunk.model };
+          }
+        }
+
+        if (delta?.content && thinkState.inThinking) {
+          thinkState.inThinking = false;
+          yield { id, delta: '</think>', done: false };
+        }
+
+        if (delta?.content || delta?.tool_calls) {
+          yield {
+            id,
+            delta: delta?.content ?? '',
+            toolCalls: delta?.tool_calls,
+            done: false,
+            model: chunk.model
+          };
+        }
 
         if (chunk.choices?.[0]?.finish_reason) {
+          if (thinkState.inThinking) {
+            thinkState.inThinking = false;
+            yield { id, delta: '</think>', done: false };
+          }
           yield { id, delta: '', done: true };
           return;
         }
@@ -1693,30 +1874,35 @@ export class AIClient {
     }
   }
 
-  async healthCheck(): Promise<{ ok: boolean; latencyMs?: number; error?: string }> {
+  async healthCheck(): Promise<{ ok: boolean; latencyMs?: number; error?: string; reason?: string }> {
     const start = Date.now();
     try {
       const models = await this.listModels();
-      return { ok: models.length >= 0, latencyMs: Date.now() - start };
+      if (models.length === 0) {
+        return { ok: models.length > 0, reason: 'No models reported — is the server running?', latencyMs: Date.now() - start };
+      }
+      return { ok: models.length > 0, latencyMs: Date.now() - start };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   }
 
   private async _fetchWithRetry(url: string, options: RequestInit, maxRetries = 6): Promise<Response> {
+    // Normalize loopback hosts (::1/localhost → 127.0.0.1) so Node fetch doesn't dial IPv6 first
+    const requestUrl = normalizeLocalUrl(url) ?? url;
     let lastError: Error | null = null;
     let delay = 1000; // Start with 1s instead of 2s for faster initial retry
 
     for (let i = 0; i <= maxRetries; i++) {
       try {
-        if (url.includes('nvidia') || i > 0) {
-          console.log(`[AIClient] Fetching: ${url} (Attempt ${i + 1}/${maxRetries + 1})`);
+        if (requestUrl.includes('nvidia') || i > 0) {
+          console.log(`[AIClient] Fetching: ${requestUrl} (Attempt ${i + 1}/${maxRetries + 1})`);
         }
 
         // Create a new AbortController for each attempt with timeout
         // Increase timeout to 5 minutes (300000ms) for local providers to prevent cold-start failures
         const controller = new AbortController();
-        const isLocal = this.isLocal() || url.includes('localhost') || url.includes('127.0.0.1');
+        const isLocal = this.isLocal() || requestUrl.includes('localhost') || requestUrl.includes('127.0.0.1');
         const timeoutMs = isLocal ? 300000 : 60000;
         const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -1733,7 +1919,7 @@ export class AIClient {
         };
 
         try {
-          const res = await fetch(url, enhancedOptions);
+          const res = await fetch(requestUrl, enhancedOptions);
           clearTimeout(timeoutId);
 
           if (res.status === 429 || (res.status >= 500 && res.status <= 599)) {
@@ -1755,27 +1941,28 @@ export class AIClient {
         lastError = err instanceof Error ? err : new Error(String(err));
 
         // If local daemon (Ollama 11434, LM Studio 1234, local server) is offline, fail fast immediately without noisy retries
-        const isLocalEndpoint = url.includes('11434') || url.includes('1234') || url.includes('localhost') || url.includes('127.0.0.1');
+        const isLocalEndpoint = requestUrl.includes('11434') || requestUrl.includes('1234') || requestUrl.includes('localhost') || requestUrl.includes('127.0.0.1');
         if (isLocalEndpoint && (lastError.message.includes('fetch failed') || (lastError as any).cause?.code === 'ECONNREFUSED' || lastError.message.includes('ECONNREFUSED'))) {
-          console.log(`[AIClient] Local endpoint offline (${url}), failing fast.`);
-          throw lastError;
+          console.log(`[AIClient] Local endpoint offline (${requestUrl}), failing fast.`);
+          const providerLabel = requestUrl.includes('11434') ? 'Ollama' : 'LM Studio';
+          throw new Error(`${providerLabel} not reachable at ${requestUrl} (${(lastError as any)?.cause?.code ?? lastError?.message}). Start the server or fix Settings → Base URL.`);
         }
 
         // Check if it's an abort error (timeout)
         if (lastError.name === 'AbortError') {
           console.warn(`[AIClient] Request timeout after 30s. Retrying...`);
           // Log Ollama-specific timeout info
-          if (url.includes('/api/chat')) {
-            console.log(`[Ollama] Timeout on ${url} - No response received within timeout window`);
+          if (requestUrl.includes('/api/chat')) {
+            console.log(`[Ollama] Timeout on ${requestUrl} - No response received within timeout window`);
           }
         } else {
           console.warn(`[AIClient] Network error: ${lastError.message}. Retrying in ${delay}ms...`);
           // Log error details for debugging
-          if (url.includes('/api/chat')) {
+          if (requestUrl.includes('/api/chat')) {
             console.log(`[Ollama] Error details:`, {
               message: lastError.message,
               name: lastError.name,
-              url: url
+              url: requestUrl
             });
           }
         }
@@ -1787,7 +1974,7 @@ export class AIClient {
         }
       }
     }
-    throw lastError || new Error(`Failed to fetch ${url} after ${maxRetries + 1} attempts`);
+    throw lastError || new Error(`Failed to fetch ${requestUrl} after ${maxRetries + 1} attempts`);
   }
 
   // ── OpenAI-Compatible (OpenAI, DeepSeek, LM Studio, EverFern) ───
@@ -2311,7 +2498,7 @@ export class AIClient {
     try {
       const isLocal = this.isLocal() || this.config.provider === 'lmstudio' || this.config.baseUrl.includes('localhost') || this.config.baseUrl.includes('127.0.0.1');
       const retries = isLocal ? 0 : 2;
-      const res = await this._fetchWithRetry(`${this.config.baseUrl}/models`, { headers: this._oaiHeaders }, retries);
+      const res = await this._fetchWithRetry(`${normalizeLocalUrl(this.config.baseUrl) ?? this.config.baseUrl}/models`, { headers: this._oaiHeaders }, retries);
       if (!res.ok) return [];
       const data = await res.json();
       const rawModels = Array.isArray(data.data)
@@ -2649,6 +2836,7 @@ export class AIClient {
     const toolCallsMap: Record<number, { id: string; name: string; arguments: string }> = {};
     let finishReason: any = 'stop';
     let responseId = `anthropic-${Date.now()}`;
+    const thinkState = { inThinking: false };
 
     while (true) {
       const { done, value } = await reader.read();
@@ -2665,7 +2853,20 @@ export class AIClient {
           if (d.type === 'message_start') {
             responseId = d.message?.id ?? responseId;
           }
+          if (d.type === 'content_block_delta' && d.delta?.type === 'thinking_delta') {
+            const piece = d.delta.thinking ?? '';
+            if (!thinkState.inThinking) {
+              thinkState.inThinking = true;
+              req.onStreamChunk?.(`<think>${piece}`);
+            } else {
+              req.onStreamChunk?.(piece);
+            }
+          }
           if (d.type === 'content_block_delta' && d.delta?.type === 'text_delta') {
+            if (thinkState.inThinking) {
+              thinkState.inThinking = false;
+              req.onStreamChunk?.('</think>');
+            }
             fullContent += d.delta.text;
             req.onStreamChunk!(d.delta.text);
           }
@@ -2685,6 +2886,11 @@ export class AIClient {
           }
         } catch { }
       }
+    }
+
+    if (thinkState.inThinking) {
+      thinkState.inThinking = false;
+      req.onStreamChunk?.('</think>');
     }
 
     const toolCalls = Object.values(toolCallsMap).map((tc: any) => ({
@@ -2755,6 +2961,7 @@ export class AIClient {
     const dec = new TextDecoder();
     let buf = '';
     let id = `anthropic-${Date.now()}`;
+    const thinkState = { inThinking: false };
 
     while (true) {
       const { done, value } = await reader.read();
@@ -2770,9 +2977,27 @@ export class AIClient {
           const d = JSON.parse(t.slice(6));
           if (d.type === 'message_start') id = d.message?.id ?? id;
           if (d.type === 'content_block_delta') {
-            yield { id, delta: d.delta?.text ?? '', done: false };
+            if (d.delta?.type === 'thinking_delta') {
+              const piece = d.delta.thinking ?? '';
+              if (!thinkState.inThinking) {
+                thinkState.inThinking = true;
+                yield { id, delta: `<think>${piece}`, done: false };
+              } else {
+                yield { id, delta: piece, done: false };
+              }
+            } else {
+              if (d.delta?.type === 'text_delta' && thinkState.inThinking) {
+                thinkState.inThinking = false;
+                yield { id, delta: '</think>', done: false };
+              }
+              yield { id, delta: d.delta?.text ?? '', done: false };
+            }
           }
           if (d.type === 'message_stop') {
+            if (thinkState.inThinking) {
+              thinkState.inThinking = false;
+              yield { id, delta: '</think>', done: false };
+            }
             yield { id, delta: '', done: true }; return;
           }
         } catch { /* skip */ }
@@ -2842,61 +3067,6 @@ export class AIClient {
     });
   }
 
-  private _formatOllamaTools(tools: any[]): any[] {
-    const sanitizeParams = (rawParams: any): any => {
-      if (!rawParams || typeof rawParams !== 'object') {
-        return { type: 'object', properties: {}, required: [] };
-      }
-
-      const clean: any = {
-        type: rawParams.type || 'object',
-        properties: {},
-        required: Array.isArray(rawParams.required) ? [...rawParams.required] : []
-      };
-
-      if (rawParams.properties && typeof rawParams.properties === 'object') {
-        for (const [key, val] of Object.entries(rawParams.properties)) {
-          if (val && typeof val === 'object') {
-            const propCopy: any = { ...(val as any) };
-            if (typeof propCopy.required === 'boolean') {
-              if (propCopy.required && !clean.required.includes(key)) {
-                clean.required.push(key);
-              }
-              delete propCopy.required;
-            } else if (Array.isArray(propCopy.required)) {
-              delete propCopy.required;
-            }
-            if (propCopy.properties && typeof propCopy.properties === 'object') {
-              propCopy.properties = sanitizeParams(propCopy).properties;
-            }
-            clean.properties[key] = propCopy;
-          } else {
-            clean.properties[key] = val;
-          }
-        }
-      }
-
-      if (!Array.isArray(clean.required)) {
-        clean.required = [];
-      }
-
-      return clean;
-    };
-
-    return tools.map(t => {
-      const rawFunc = (t && (t as any).type === 'function' && (t as any).function)
-        ? (t as any).function
-        : t;
-      return {
-        type: 'function',
-        function: {
-          name: rawFunc.name,
-          description: rawFunc.description || '',
-          parameters: sanitizeParams(rawFunc.parameters)
-        }
-      };
-    });
-  }
 
   private async _ollamaChat(req: ChatRequest): Promise<ChatResponse> {
     const isStreaming = !!req.onStreamChunk;
@@ -2919,9 +3089,10 @@ export class AIClient {
       model: req.model ?? this.config.model,
       messages,
       stream: isStreaming,
+      keep_alive: '30m',
       options: {
         temperature: req.temperature ?? this.config.temperature ?? 0.2,
-        num_ctx: 16384,
+        num_ctx: this.config.ollamaNumCtx ?? 16384,
         num_predict: 4096,
       },
     };
@@ -2929,7 +3100,7 @@ export class AIClient {
 
     // Pass tools to Ollama if provided
     if (req.tools && req.tools.length > 0) {
-      body['tools'] = this._formatOllamaTools(req.tools);
+      body['tools'] = _formatOllamaTools(req.tools);
     }
 
     const headers = this._ollamaHeaders;
@@ -3005,6 +3176,7 @@ export class AIClient {
     let lineBuffer = '';
 
     const toolCallsMap: Record<number, { id: string; name: string; arguments: string }> = {};
+    const thinkState = { inThinking: false };
 
     while (true) {
       const { done, value } = await reader.read();
@@ -3019,6 +3191,19 @@ export class AIClient {
         if (!line.trim()) continue;
         try {
           const d = JSON.parse(line);
+          const thinkingPiece = d.message?.thinking ?? d.message?.reasoning;
+          if (thinkingPiece) {
+            if (!thinkState.inThinking) {
+              thinkState.inThinking = true;
+              req.onStreamChunk?.(`<think>${thinkingPiece}`);
+            } else {
+              req.onStreamChunk?.(thinkingPiece);
+            }
+          } else if (d.message?.content && thinkState.inThinking) {
+            thinkState.inThinking = false;
+            req.onStreamChunk?.('</think>');
+          }
+
           if (d.message?.content) {
             fullContent += d.message.content;
             req.onStreamChunk!(d.message.content);
@@ -3051,6 +3236,11 @@ export class AIClient {
       }
     }
 
+    if (thinkState.inThinking) {
+      thinkState.inThinking = false;
+      req.onStreamChunk?.('</think>');
+    }
+
     const toolCalls = Object.values(toolCallsMap).map(tc => {
       const args = safeParseJSON(tc.arguments);
       return { id: tc.id, name: tc.name, arguments: args as Record<string, any> };
@@ -3075,16 +3265,17 @@ export class AIClient {
       model: req.model ?? this.config.model,
       messages: this._mapOllamaMessages(req.messages),
       stream: true,
+      keep_alive: '30m',
       options: {
         temperature: req.temperature ?? this.config.temperature ?? 0.2,
-        num_ctx: 16384,
+        num_ctx: this.config.ollamaNumCtx ?? 16384,
         num_predict: 4096,
       },
     };
 
     // Pass tools to Ollama if provided (mirrors non-streaming path)
     if (req.tools && req.tools.length > 0) {
-      body['tools'] = this._formatOllamaTools(req.tools);
+      body['tools'] = _formatOllamaTools(req.tools);
     }
 
     const res = await this._fetchWithRetry(`${this.config.baseUrl}/api/chat`, {
@@ -3108,6 +3299,7 @@ export class AIClient {
     const dec = new TextDecoder();
     const id = `ollama-${Date.now()}`;
     let buffer = '';
+    const thinkState = { inThinking: false };
 
     while (true) {
       const { done, value } = await reader.read();
@@ -3130,6 +3322,23 @@ export class AIClient {
                 req.onToolCallChunk(i, tc.function?.name || tc.name || '', argsDelta);
               }
             }
+          }
+          const thinkingPiece = d.message?.thinking ?? d.message?.reasoning;
+          if (thinkingPiece) {
+            if (!thinkState.inThinking) {
+              thinkState.inThinking = true;
+              yield { id, delta: `<think>${thinkingPiece}`, done: false, model: d.model };
+            } else {
+              yield { id, delta: thinkingPiece, done: false, model: d.model };
+            }
+          }
+          if (d.message?.content && thinkState.inThinking) {
+            thinkState.inThinking = false;
+            yield { id, delta: '</think>', done: false };
+          }
+          if (d.done && thinkState.inThinking) {
+            thinkState.inThinking = false;
+            yield { id, delta: '</think>', done: false };
           }
           yield {
             id,

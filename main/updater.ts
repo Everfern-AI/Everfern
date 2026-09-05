@@ -10,6 +10,27 @@ export const updateStatus = {
   errorMsg: null as string | null
 };
 
+// Resolve a live window at send time. The window captured at initialization can be
+// destroyed and recreated (e.g. macOS activate path), so always re-resolve.
+function getMainWindow(): BrowserWindow | null {
+  const globalAny = global as any;
+  const candidate: BrowserWindow | undefined = globalAny.mainWindow;
+  if (candidate && !candidate.isDestroyed()) return candidate;
+  const first = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
+  return first ?? null;
+}
+
+function safeSend(channel: string, payload: unknown) {
+  const win = getMainWindow();
+  if (win) {
+    try {
+      win.webContents.send(channel, payload);
+    } catch (err) {
+      log.warn(`[Updater] Failed to send ${channel} to renderer:`, err);
+    }
+  }
+}
+
 export function initializeUpdater(mainWindow: BrowserWindow) {
   autoUpdater.logger = log;
   (autoUpdater.logger as any).transports.file.level = 'info';
@@ -32,7 +53,7 @@ export function initializeUpdater(mainWindow: BrowserWindow) {
     log.info('[Updater] Update available.', info);
     updateStatus.status = 'available';
     updateStatus.version = info.version || '';
-    mainWindow.webContents.send('update-available', info);
+    safeSend('update-available', info);
   });
   
   autoUpdater.on('update-not-available', (info) => {
@@ -44,14 +65,14 @@ export function initializeUpdater(mainWindow: BrowserWindow) {
     log.error('[Updater] Error in auto-updater. ' + err);
     updateStatus.status = 'error';
     updateStatus.errorMsg = err?.message || 'Unknown error';
-    mainWindow.webContents.send('update-error', err?.message || 'Unknown error');
+    safeSend('update-error', err?.message || 'Unknown error');
   });
   
   autoUpdater.on('download-progress', (progressObj) => {
     log.info(`[Updater] Download progress: ${progressObj.percent.toFixed(2)}%`);
     updateStatus.status = 'downloading';
     updateStatus.progress = progressObj;
-    mainWindow.webContents.send('download-progress', progressObj);
+    safeSend('download-progress', progressObj);
   });
   
   autoUpdater.on('update-downloaded', (info) => {
@@ -59,7 +80,7 @@ export function initializeUpdater(mainWindow: BrowserWindow) {
     updateStatus.status = 'downloaded';
     updateStatus.version = info.version || '';
     updateStatus.progress = null;
-    mainWindow.webContents.send('update-downloaded', info);
+    safeSend('update-downloaded', info);
   });
 
   // Listen for renderer confirming restart and update (support both send and invoke)
@@ -77,7 +98,9 @@ export function initializeUpdater(mainWindow: BrowserWindow) {
 
   // Check for updates
   try {
-    autoUpdater.checkForUpdatesAndNotify();
+    autoUpdater.checkForUpdatesAndNotify()?.catch((error: unknown) => {
+      log.error('[Updater] Async update check failed:', error);
+    });
   } catch (error) {
     log.error('[Updater] Failed to check for updates on startup:', error);
   }

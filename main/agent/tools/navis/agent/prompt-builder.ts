@@ -30,7 +30,7 @@ function loadNavisPrompts(): { systemPrompt: string; nextStepPrompt: string } {
   const rawPrompt = loadPrompt('NAVIS.md');
   if (!rawPrompt) return { systemPrompt: FALLBACK_SYSTEM_PROMPT, nextStepPrompt: '' };
 
-  const systemMatch = rawPrompt.match(/SYSTEM_PROMPT = """\?\s*([\s\S]*?)"""/);
+  const systemMatch = rawPrompt.match(/SYSTEM_PROMPT = """\s*([\s\S]*?)"""/);
   if (!systemMatch) {
     console.warn('[Navis] Failed to parse SYSTEM_PROMPT from NAVIS.md. Using fallback.');
     return { systemPrompt: FALLBACK_SYSTEM_PROMPT, nextStepPrompt: '' };
@@ -38,7 +38,7 @@ function loadNavisPrompts(): { systemPrompt: string; nextStepPrompt: string } {
 
   let systemPrompt = systemMatch[1].trim() + SECURITY_GUIDELINE;
 
-  const nextStepMatch = rawPrompt.match(/NEXT_STEP_PROMPT = """\?\s*([\s\S]*?)"""/);
+  const nextStepMatch = rawPrompt.match(/NEXT_STEP_PROMPT = """\s*([\s\S]*?)"""/);
   const nextStepPrompt = nextStepMatch ? nextStepMatch[1].trim() : '';
 
   return { systemPrompt, nextStepPrompt };

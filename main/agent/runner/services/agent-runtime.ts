@@ -444,8 +444,10 @@ export async function runAgentStep(
         normalizedMessages.unshift(systemMsg);
       }
       
-      systemMsg.content += `\n\n# PERSONALITY & BEHAVIOR CORE (SOUL.md)\n${soulContent}\n`;
-      console.log(`[AgentRuntime] 🎭 Injected SOUL.md personality into ${nodeName} step`);
+      if (typeof systemMsg.content === 'string' && !systemMsg.content.includes('# PERSONALITY & BEHAVIOR CORE')) {
+        systemMsg.content += `\n\n# PERSONALITY & BEHAVIOR CORE (SOUL.md)\n${soulContent}\n`;
+        console.log(`[AgentRuntime] 🎭 Injected SOUL.md personality into ${nodeName} step`);
+      }
     } catch (soulErr) {
       console.warn('[AgentRuntime] Failed to inject SOUL.md:', soulErr);
     }

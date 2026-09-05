@@ -15,6 +15,7 @@ import { taskCompleteTool } from './task-complete';
 
 import * as os from 'os';
 import { runOcrPdf } from '../../ocr/ocr';
+import { hasUnquotedMetacharacters } from '../../store/tool-approvals';
 
 async function existsAsync(p: string): Promise<boolean> {
   try {
@@ -156,6 +157,14 @@ export function performSmartReplace(content: string, oldString: string, newStrin
 
 // File tool names that run on the host and need Linux→Windows path translation
 const HOST_FILE_TOOL_NAMES = new Set(['read', 'write', 'edit', 'grep', 'find', 'ls']);
+
+// Read-only command heads (mirrors READ_ONLY_HEADS in linux-vm-executor; kept
+// local because test suites vi.mock that module without this export). When the
+// VM is unavailable, only these may fall back to ungated native host execution.
+const READ_ONLY_HEADS = new Set([
+  'dir', 'type', 'cat', 'ls', 'pwd', 'whoami', 'hostname', 'which',
+  'head', 'tail', 'wc', 'find', 'grep', 'echo', 'uname', 'df'
+]);
 
 function previewValue(value: unknown, max = 140): string {
   if (typeof value === 'string') {
@@ -703,15 +712,19 @@ function adaptTool(
             };
           }
 
-          const isHostCommand = (cmd: string): boolean => {
-            const normalized = cmd.trim().toLowerCase();
-            if (normalized.includes('/mnt/') || normalized.includes('/home/') || normalized.includes('/tmp/') || /\bsource\b/.test(normalized)) {
-              return false;
-            }
-            return /^(npm|npx|yarn|node|git|powershell|pwsh|cmd|set-location)\b/i.test(normalized);
-          };
+          // Windows convenience: these READ-ONLY heads may auto-run locally without a prompt.
+          // Anything else (powershell/cmd/npm/git/...) requires the normal approval flow.
+          // 'systeminfo' deliberately excluded (slow, leaks host details) — it rides the
+          // normal approval flow instead.
+          const WIN_AUTO_LOCAL_HEADS = new Set(['dir', 'type', 'where', 'hostname', 'whoami']);
+          const headMatches = (cmd: string, heads: Set<string>): boolean => heads.has(cmd.trim().toLowerCase().split(/\s+/)[0]);
 
-          const runLocally = local || (process.platform === 'win32' && isHostCommand(command));
+          // MP-SEC-10 Fix: the head match alone is NOT sufficient. The FULL command must
+          // also pass tool-approvals' quote-aware metacharacter screen, otherwise tails
+          // like "dir; Remove-Item x" would ride an auto-local head unprompted.
+          const runLocally = local || (process.platform === 'win32'
+            && headMatches(command, WIN_AUTO_LOCAL_HEADS)
+            && !hasUnquotedMetacharacters(command || ''));
 
           if (runLocally) {
             if (local && !reason) {
@@ -880,6 +893,24 @@ function adaptTool(
               };
             }
           } catch (vmError: any) {
+            // Same read-only concept as linux-vm-executor's host fallback gate:
+            // a VM failure must never silently run non-read-only commands on
+            // the host — surface the VM-unavailable error to the model instead.
+            const vmFallbackHead = (command || '').trim().toLowerCase().split(/\s+/)[0];
+            if (!READ_ONLY_HEADS.has(vmFallbackHead)) {
+              console.warn(`[PiTools] VM unavailable — blocking native fallback for non-read-only command "${vmFallbackHead}": ${vmError?.message || vmError}`);
+              const vmUnavailableMsg = 'Linux VM (WSL/Docker) is not available. Start WSL/Docker or re-run with target main.';
+              return {
+                success: false,
+                output: stripAnsi(`${vmUnavailableMsg}\n(Original VM error: ${vmError?.message || vmError})`),
+                error: stripAnsi(`${vmUnavailableMsg} (Original VM error: ${vmError?.message || vmError})`),
+                data: {
+                  target: 'vm',
+                  exitCode: -1,
+                },
+              };
+            }
+
             console.warn('Linux VM execution failed, falling back to native:', vmError);
 
             const isMock = typeof (executor as any).mock === 'object' || (executor as any)._isMock || executor.name === 'mockConstructor';

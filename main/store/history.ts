@@ -15,6 +15,17 @@ import { getSystemEmbeddingConfig, getEmbeddingModel } from '../lib/embeddings';
 const LEGACY_CONVERSATIONS_DIR = path.join(os.homedir(), '.everfern', 'store', 'conversations');
 const LEGACY_TIMELINE_DIR = path.join(os.homedir(), '.everfern', 'store', 'timeline');
 
+// Defensive parse: one corrupted column must never null out a whole conversation.
+export function parseJsonField<T>(raw: unknown, fallback: T, label: string): T {
+  try {
+    if (raw == null) return fallback;
+    return JSON.parse(String(raw)) as T;
+  } catch (err) {
+    console.warn(`[History] Corrupt ${label} field ignored:`, err instanceof Error ? err.message : err);
+    return fallback;
+  }
+}
+
 export class ChatHistoryStore {
   private migrated = false;
   private saveMutex = false;
@@ -330,7 +341,7 @@ export class ChatHistoryStore {
       const msgRows = await dbOps.all('SELECT * FROM messages WHERE conversation_id = ? ORDER BY order_index ASC, created_at ASC', [id]);
 
       const messages: ChatMessage[] = msgRows.map(row => {
-        let toolCalls = row.tool_calls ? JSON.parse(row.tool_calls) : undefined;
+        let toolCalls = parseJsonField<any[] | undefined>(row.tool_calls, undefined, 'tool_calls');
         if (Array.isArray(toolCalls)) {
           toolCalls.sort((a: any, b: any) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
         }
@@ -341,12 +352,12 @@ export class ChatHistoryStore {
           thought: row.thought,
           reasoning_content: row.reasoning_content || row.thought,
           toolCalls,
-          missionTimeline: row.mission_timeline ? JSON.parse(row.mission_timeline) : undefined,
+          missionTimeline: parseJsonField<any>(row.mission_timeline, undefined, 'mission_timeline'),
           hasTimeline: !!row.has_timeline,
           orderIndex: row.order_index ?? 0,
           thinkingDuration: row.thinking_duration ?? undefined,
           stopped: row.stopped === 1 || row.stopped === true,
-          attachments: row.attachments ? JSON.parse(row.attachments) : undefined,
+          attachments: parseJsonField<any[] | undefined>(row.attachments, undefined, 'attachments'),
           createdAt: row.created_at
         };
       });
@@ -472,7 +483,7 @@ export class ChatHistoryStore {
       // Cleanup orphaned/stale messages ONLY if this is a full conversation save
       // (indicated by (conversation as any).isFullSave flag)
       // Chunk deletions into batches of 400 to prevent exceeding SQLITE_MAX_VARIABLE_NUMBER (999)
-      if ((conversation as any).isFullSave !== false && savedIds.length > 0) {
+      if ((conversation as any).isFullSave === true && savedIds.length > 0) {
         const CHUNK_SIZE = 400;
         const allCurrentRows = await dbOps.all(
           'SELECT id FROM messages WHERE conversation_id = ?',
@@ -489,7 +500,7 @@ export class ChatHistoryStore {
             [conversation.id, ...chunk]
           );
         }
-      } else if ((conversation as any).isFullSave !== false) {
+      } else if ((conversation as any).isFullSave === true) {
         await dbOps.run(
           'DELETE FROM messages WHERE conversation_id = ?',
           [conversation.id]

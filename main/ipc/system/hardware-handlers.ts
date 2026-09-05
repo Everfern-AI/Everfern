@@ -20,6 +20,45 @@ export const KNOWN_MODELS = [
   { model_id: "meta-llama/Meta-Llama-3.1-70B-Instruct", name: "Llama 3.1 70B", params_b: 70.6, raw_fp16_vram_gb: 141.2, quantized_q4_vram_gb: 43.5, quantized_q8_vram_gb: 78.5, min_ram_gb: 64, category: "Enterprise Frontier Model", tags: ["llama3.1:70b", "llama"] }
 ];
 
+// Fallback for Windows 11 24H2+ where wmic was removed (BK parity #4 / MP-CORR-21).
+async function getGpuInfoViaCim(): Promise<{ name: string; vramBytes: number } | null> {
+  try {
+    const { execFile } = require('child_process');
+    const { promisify } = require('util');
+    const execFileAsync = promisify(execFile);
+    // Get-CimInstance survives Win11 24H2+ where wmic was removed. Note: AdapterRAM is
+    // uint32 even via CIM, so it saturates ≈4GiB for cards with more VRAM.
+    const { stdout } = await execFileAsync('powershell.exe', [
+      '-NoProfile', '-NonInteractive', '-Command',
+      `Get-CimInstance Win32_VideoController | Select-Object Name,@{N='Vram';E={$_.AdapterRAM}} | ConvertTo-Json -Compress`,
+    ], { timeout: 8000, windowsHide: true });
+    const parsed = JSON.parse(stdout);
+    const entries = (Array.isArray(parsed) ? parsed : [parsed]).filter(Boolean);
+    if (!entries.length) return null;
+    const best = entries.reduce((acc: any, e: any) => (Number(e?.Vram ?? 0) > Number(acc?.Vram ?? 0) ? e : acc));
+    return { name: String(best?.Name ?? ''), vramBytes: Number(best?.Vram ?? 0) };
+  } catch {
+    return null;
+  }
+}
+
+function mergeCimGpuInfo(cim: { name: string; vramBytes: number } | null, gpuName: string, vramGB: number): { gpuName: string; vramGB: number; isNvidia: boolean } {
+  if (cim && cim.name && (gpuName === 'Unknown GPU' || cim.name.toLowerCase().includes('nvidia') || cim.name.toLowerCase().includes('rtx'))) {
+    gpuName = cim.name;
+  }
+  if (cim && cim.vramBytes > 0) {
+    // ≥4GB reported as 4 (AdapterRAM is uint32-saturated; registry qwMemorySize would be
+    // needed for exact). Treat saturation as a floor, not a ceiling, when gating models.
+    if (cim.vramBytes >= 4026531840) {
+      vramGB = Math.max(vramGB, 4);
+    } else {
+      vramGB = Math.max(vramGB, Math.round((cim.vramBytes / (1024 * 1024 * 1024)) * 10) / 10);
+    }
+  }
+  const isNvidia = gpuName.toLowerCase().includes('nvidia') || gpuName.toLowerCase().includes('rtx') || gpuName.toLowerCase().includes('gtx');
+  return { gpuName, vramGB, isNvidia };
+}
+
 export async function detectHardwareSpecsAsync() {
   const { exec } = require('child_process');
   const { promisify } = require('util');
@@ -53,6 +92,7 @@ export async function detectHardwareSpecsAsync() {
           isNvidia = true;
         }
       } catch {
+        let wmicResolved = false;
         try {
           const { stdout } = await execAsync('wmic path Win32_VideoController get AdapterRAM,Name,DriverVersion /format:list', { timeout: 3000 });
           for (const line of stdout.split('\n')) {
@@ -70,7 +110,11 @@ export async function detectHardwareSpecsAsync() {
             }
           }
           isNvidia = gpuName.toLowerCase().includes('nvidia') || gpuName.toLowerCase().includes('rtx') || gpuName.toLowerCase().includes('gtx');
+          wmicResolved = gpuName !== 'Unknown GPU' || vramGB > 0;
         } catch {}
+        if (!wmicResolved) {
+          ({ gpuName, vramGB, isNvidia } = mergeCimGpuInfo(await getGpuInfoViaCim(), gpuName, vramGB));
+        }
       }
     } else if (process.platform === 'darwin') {
       try {
@@ -359,6 +403,7 @@ export function registerHardwareHandlers(): void {
             isNvidia = true;
           }
         } catch {
+          let wmicResolved = false;
           try {
             const stdout = execSync('wmic path Win32_VideoController get AdapterRAM,Name /format:list', { encoding: 'utf8' });
             for (const line of stdout.split('\n')) {
@@ -373,7 +418,11 @@ export function registerHardwareHandlers(): void {
                 }
               }
             }
+            wmicResolved = gpuName !== 'Unknown GPU' || vramGB > 0;
           } catch {}
+          if (!wmicResolved) {
+            ({ gpuName, vramGB, isNvidia } = mergeCimGpuInfo(await getGpuInfoViaCim(), gpuName, vramGB));
+          }
         }
       }
 

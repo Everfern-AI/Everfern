@@ -13,6 +13,8 @@ export function registerHistoryHandlers(historyStore: ChatHistoryStore) {
   });
 
   ipcMain.handle('history:save', async (_event, conv) => {
+    // Renderer channel omits isFullSave; absence means an explicit full-snapshot save.
+    if (conv && !('isFullSave' in conv)) conv.isFullSave = true;
     return await historyStore.save(conv);
   });
 

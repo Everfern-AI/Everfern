@@ -8,11 +8,12 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { exec } from 'child_process';
+import { exec, execFile, SpawnOptions } from 'child_process';
 import { promisify } from 'util';
 import { app, shell } from 'electron';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export interface FileApp {
   name: string;       // Display name
@@ -120,9 +121,22 @@ export async function openFileWithApp(filePath: string, appPath?: string): Promi
   }
 
   if (platform === 'win32') {
-    await execAsync(`start "" "${appPath}" "${filePath}"`);
+    const proc = require('child_process').spawn(
+      'cmd.exe',
+      ['/d', '/s', '/c', 'start', '', appPath, filePath],
+      { windowsHide: true, detached: true, stdio: 'ignore' }
+    );
+    proc.unref();
+    await new Promise<void>((resolve, reject) => {
+      proc.once('error', reject);
+      proc.once('close', (code: number | null) => {
+        if (code) reject(new Error(`start exited with code ${code}`));
+        else resolve();
+      });
+    });
   } else if (platform === 'darwin') {
-    await execAsync(`open -a "${appPath}" "${filePath}"`);
+    const openOpts: SpawnOptions = { detached: true, stdio: 'ignore' };
+    await execFileAsync('open', ['-a', appPath, filePath], openOpts);
   } else {
     // Linux: most apps can be launched directly
     const proc = require('child_process').spawn(appPath, [filePath], {

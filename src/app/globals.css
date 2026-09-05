@@ -312,6 +312,10 @@
   --color-bg-hover: rgba(0, 0, 0, 0.04);
   --color-bg-active: rgba(0, 0, 0, 0.08);
   --color-bg-selected: rgba(0, 0, 0, 0.06);
+  --color-bg-surface-hover: rgba(0, 0, 0, 0.05);
+
+  /* Scrim / Overlay Dim */
+  --scrim: rgba(0, 0, 0, 0.45);
 
   /* Border Colors */
   --color-border: #e8e6d9;
@@ -348,6 +352,14 @@
   --color-info-light: #60a5fa;
   --color-info-dim: rgba(59, 130, 246, 0.15);
 
+  /* Diff Colors (GitHub-style; values mirror diff-viewer fallbacks) */
+  --diff-add-bg: rgba(46, 160, 67, 0.15);
+  --diff-del-bg: rgba(248, 81, 73, 0.15);
+  --diff-add-text: #1a7f37;
+  --diff-del-text: #cf222e;
+  --diff-add-text-dark: #3fb950;
+  --diff-del-text-dark: #f85149;
+
   /* Agent / Tool Colors */
   --color-analysing: #a1a1aa;
   --color-tool-call: var(--color-accent);
@@ -375,30 +387,6 @@
   --interrupted-btn-border: rgba(0, 0, 0, 0.08);
   --interrupted-btn-text: #111827;
   --interrupted-btn-hover-bg: rgba(0, 0, 0, 0.10);
-
-  /* Sidebar Theme Variables (Light Theme) */
-  --sidebar-bg: #f5f4f0;
-  --sidebar-border: #e8e6d9;
-  --sidebar-btn-color: #8a8886;
-  --sidebar-btn-hover-color: #111111;
-  --sidebar-brand-text: #111111;
-  --sidebar-text-primary: #111111;
-  --sidebar-text-secondary: #4a4846;
-  --sidebar-text-tertiary: #8a8886;
-  --sidebar-bg-hover: rgba(0, 0, 0, 0.04);
-  --sidebar-bg-selected: rgba(0, 0, 0, 0.06);
-  --sidebar-bg-active: rgba(0, 0, 0, 0.08);
-  --sidebar-avatar-bg: #eae8e1;
-  --sidebar-avatar-border: #dcdad0;
-  --sidebar-limit-text: #8a8886;
-  --sidebar-project-text: #666666;
-
-  --sidebar-settings-bg: rgba(0, 0, 0, 0.03);
-  --sidebar-settings-border: rgba(0, 0, 0, 0.06);
-  --sidebar-settings-text: #8a8886;
-  --sidebar-settings-hover-bg: rgba(0, 0, 0, 0.06);
-  --sidebar-settings-hover-border: rgba(0, 0, 0, 0.15);
-  --sidebar-settings-hover-text: #111111;
 
   /* Typography System */
   --font-sans: 'Figtree', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -514,9 +502,6 @@
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
-  /* Scrollbar */
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.10) transparent;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --muted: oklch(0.97 0 0);
@@ -539,7 +524,6 @@
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.97 0 0);
   --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
 
   /* Sidebar Theme Variables */
@@ -1054,6 +1038,10 @@ a:hover {
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
 
+  /* Scrollbar */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.10) transparent;
+
   /* Background Colors — Dark Theme (Claude-inspired charcoal) */
   --color-bg-base: #0f0e0c;
   --color-bg-surface: #181714;
@@ -1068,6 +1056,10 @@ a:hover {
   --color-bg-hover: rgba(255, 255, 255, 0.04);
   --color-bg-active: rgba(255, 255, 255, 0.08);
   --color-bg-selected: rgba(255, 255, 255, 0.06);
+  --color-bg-surface-hover: rgba(255, 255, 255, 0.05);
+
+  /* Scrim / Overlay Dim */
+  --scrim: rgba(0, 0, 0, 0.60);
 
   /* Border Colors */
   --color-border: #333029;

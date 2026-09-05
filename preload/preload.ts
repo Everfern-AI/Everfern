@@ -85,7 +85,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     ocrPdf: (params: { pdfPath: string; engine?: string; backend?: string; installIfMissing?: boolean }) => ipcRenderer.invoke('system:ocr-pdf', params),
     pdfPages: (params: { pdfPath: string; maxPages?: number; installIfMissing?: boolean }) => ipcRenderer.invoke('system:pdf-pages', params),
-    wipeAccount:    () => ipcRenderer.invoke('system:wipe-account'),
+    wipeAccount:    (confirmPhrase?: string) => ipcRenderer.invoke('system:wipe-account', confirmPhrase),
     getPermissionStatus: () => ipcRenderer.invoke('permissions:status'),
     grantPermission:     () => ipcRenderer.invoke('permissions:grant'),
     onPermissionRequest: (cb: () => void) => {
@@ -430,7 +430,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeAllListeners('agent:permission-request');
       // Intentionally NOT removing mission listeners here to allow persistent tracking
       ipcRenderer.removeAllListeners('acp:plan-created');
-      ipcRenderer.removeAllListeners('acp:hitl-request');
+      // NOTE: acp:hitl-request is intentionally NOT removed here — the chat page
+      // registers it once at mount and relies on it persisting across sends/resets.
       ipcRenderer.removeAllListeners('acp:hitl-response-processed');
       ipcRenderer.removeAllListeners('acp:sub-agent-progress');
       ipcRenderer.removeAllListeners('acp:subagent-event');
@@ -716,7 +717,7 @@ export type ElectronAPI = {
     getPlatform:    () => Promise<string>;
     openFilePicker: (options?: { filters?: { name: string; extensions: string[] }[] }) => Promise<{ path: string; name: string; content?: string; base64?: string; mimeType?: string; size?: number; success: boolean, error?: string } | null>;
     openFolderPicker: () => Promise<{ path: string; name: string; success: boolean; error?: string } | null>;
-    wipeAccount:    () => Promise<{ success: boolean; error?: string }>;
+    wipeAccount:    (confirmPhrase?: string) => Promise<{ success: boolean; error?: string }>;
     getPermissionStatus: () => Promise<{ granted: boolean }>;
     grantPermission:     () => Promise<{ success: boolean }>;
     onPermissionRequest: (cb: () => void) => void;

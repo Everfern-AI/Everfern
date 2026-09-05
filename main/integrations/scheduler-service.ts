@@ -151,8 +151,20 @@ export class SchedulerService {
       }
     } else if (cron.startsWith('every ')) {
       const parts = cron.split(' ');
-      const value = parseInt(parts[1]);
-      const unit = parts[2];
+      const parsedValue = parseInt(parts[1]);
+      // Non-numeric interval (e.g. 'every five minutes') parses to NaN, which would make
+      // the initial step produce an Invalid Date whose comparisons are always false and
+      // even the loop's else-progress branch would never run. Fall back to 0 so the
+      // loop's default daily-step branch applies instead.
+      const value = Number.isFinite(parsedValue) && parsedValue > 0 ? parsedValue : 0;
+      // Missing unit token ("every banana") would crash on unit.startsWith below —
+      // default to a daily step so we always return a valid, future date.
+      const unit = typeof parts[2] === 'string' ? parts[2].toLowerCase() : '';
+
+      if (!unit) {
+        next.setDate(next.getDate() + 1);
+        return next;
+      }
 
       if (unit.startsWith('minute')) {
         next.setMinutes(next.getMinutes() + value);
@@ -160,13 +172,21 @@ export class SchedulerService {
         next.setHours(next.getHours() + value);
       } else if (unit.startsWith('day')) {
         next.setDate(next.getDate() + value);
+      } else if (unit.startsWith('week')) {
+        next.setDate(next.getDate() + value * 7);
       }
 
       // Ensure we don't return a time in the past if no lastRun
+      let iterations = 0;
       while (!lastRun && next <= now) {
-        if (unit.startsWith('minute')) next.setMinutes(next.getMinutes() + value);
-        else if (unit.startsWith('hour')) next.setHours(next.getHours() + value);
-        else if (unit.startsWith('day')) next.setDate(next.getDate() + value);
+        const before = next.getTime();
+        if (value > 0 && unit.startsWith('minute')) next.setMinutes(next.getMinutes() + value);
+        else if (value > 0 && unit.startsWith('hour')) next.setHours(next.getHours() + value);
+        else if (value > 0 && unit.startsWith('day')) next.setDate(next.getDate() + value);
+        else if (value > 0 && unit.startsWith('week')) next.setDate(next.getDate() + value * 7);
+        else next.setDate(next.getDate() + 1); // Unknown/invalid unit: default daily step so we always progress.
+        // Cap exhaustion leaves next <= now, so shouldRun fires the overdue task once immediately (documented semantics).
+        if (++iterations > 10000 || next.getTime() === before) break; // Safety: never hang the main process.
       }
     } else {
       // Default fallback

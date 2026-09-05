@@ -171,8 +171,8 @@ export const createArtifactTool = (runner?: any): AgentTool => ({
           if (isDockerInternal) {
             try {
               onUpdate?.(`📖 Reading Docker file: ${filePathParam}...`);
-              const { execSync } = require('child_process');
-              content = execSync(`docker exec everfern-ubuntu cat "${filePathParam}"`, { encoding: 'utf-8', timeout: 30000 });
+              const { execFileSync } = require('child_process');
+              content = execFileSync('docker', ['exec', 'everfern-ubuntu', 'cat', filePathParam], { encoding: 'utf8', timeout: 30000, maxBuffer: 10 * 1024 * 1024 });
               fileRead = true;
             } catch (err) {
               console.warn(`[CreateArtifact] Failed to read Docker file:`, err);

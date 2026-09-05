@@ -10,6 +10,7 @@ const CACHE_TIMEOUT_MS = 5000;
 let isCacheDisabled = false;
 let cacheHealthy = true;
 let lastHealthCheck = 0;
+let cacheSavepointCounter = 0;
 const HEALTH_CHECK_INTERVAL = 60000; // 1 minute
 
 // Circuit breaker pattern for cache reliability
@@ -48,11 +49,16 @@ class CacheCircuitBreaker {
 const circuitBreaker = new CacheCircuitBreaker();
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  const timeoutPromise = new Promise<never>((_, reject) => 
-    setTimeout(() => reject(new Error('Cache operation timed out')), timeoutMs)
-  );
+  let timer: ReturnType<typeof setTimeout>;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('Cache operation timed out')), timeoutMs);
+  });
   
-  return Promise.race([promise, timeoutPromise]);
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    clearTimeout(timer!);
+  }
 }
 
 async function checkCacheHealth(): Promise<boolean> {
@@ -151,6 +157,10 @@ export async function saveCache(prompt: string, response: ChatResponse) {
     return;
   }
 
+  // Unique-named SAVEPOINT instead of BEGIN/COMMIT to avoid colliding with
+  // other SAVEPOINT users of the shared connection under concurrency.
+  const spName = `sp_cache_${Date.now()}_${++cacheSavepointCounter}`;
+
   for (let attempt = 1; attempt <= CACHE_RETRY_ATTEMPTS; attempt++) {
     try {
       const config = getSystemEmbeddingConfig();
@@ -165,7 +175,7 @@ export async function saveCache(prompt: string, response: ChatResponse) {
       );
       const vectorBuffer = Buffer.from(new Float32Array(promptVector).buffer);
 
-      await withTimeout(dbOps.run('BEGIN TRANSACTION'), CACHE_TIMEOUT_MS);
+      await withTimeout(dbOps.run(`SAVEPOINT ${spName}`), CACHE_TIMEOUT_MS);
       try {
         await withTimeout(
           dbOps.run(
@@ -178,14 +188,15 @@ export async function saveCache(prompt: string, response: ChatResponse) {
           dbOps.run('INSERT OR REPLACE INTO semantic_cache_vec (id, embedding) VALUES (?, ?)', [id, vectorBuffer]),
           CACHE_TIMEOUT_MS
         );
-        await withTimeout(dbOps.run('COMMIT'), CACHE_TIMEOUT_MS);
+        await withTimeout(dbOps.run(`RELEASE SAVEPOINT ${spName}`), CACHE_TIMEOUT_MS);
         
         console.log('[Optima] Saved to Semantic Cache');
         circuitBreaker.recordSuccess();
         return;
         
       } catch (e) {
-        await dbOps.run('ROLLBACK').catch(() => {}); // Ignore rollback errors
+        await dbOps.run(`ROLLBACK TO SAVEPOINT ${spName}`).catch(() => {}); // Ignore rollback errors
+        await dbOps.run(`RELEASE SAVEPOINT ${spName}`).catch(() => {});
         throw e;
       }
     } catch (err) {

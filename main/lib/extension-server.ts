@@ -1,6 +1,13 @@
 import * as http from 'http';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { randomUUID, timingSafeEqual } from 'crypto';
 import { EventEmitter } from 'events';
 import { WebSocketServer, WebSocket } from 'ws';
+
+const EXTENSION_ORIGIN_PATTERNS = [/^chrome-extension:\/\//i, /^moz-extension:\/\//i];
+const DEV_ORIGIN_PATTERN = /^http:\/\/localhost:(3001|5173)(?:\/|$)/;
 
 /**
  * EverFern Localhost Bridge Server (WebSocket Edition)
@@ -15,15 +22,75 @@ class ExtensionBridgeServer extends EventEmitter {
   private activeSessions: Map<string, { id: string; url: string; title: string }> = new Map();
   private nextRequestId = 1;
   private pendingRequests = new Map<string, { resolve: (value: any) => void; reject: (reason?: any) => void; timeout: NodeJS.Timeout }>();
+  private bridgeToken = '';
+  private lastUpgradeRejectLogAt = 0;
+
+  /**
+   * Pairing token for defense-in-depth on the localhost bridge (MP-SEC-06).
+   * Loaded once per server start; persisted to ~/.everfern/bridge-token.json (0600).
+   * The 0600 hardening is POSIX-only: Windows ignores chmod and relies on its
+   * same-user permission model instead.
+   */
+  getBridgeToken(): string {
+    return this.bridgeToken;
+  }
+
+  private isAllowedHttpOrigin(origin: string): boolean {
+    if (EXTENSION_ORIGIN_PATTERNS.some(p => p.test(origin))) return true;
+    if (process.env.NODE_ENV !== 'production' && DEV_ORIGIN_PATTERN.test(origin)) return true;
+    return false;
+  }
+
+  private tokenMatches(candidate: string | null): boolean {
+    if (!candidate || !this.bridgeToken) return false;
+    const a = Buffer.from(candidate);
+    const b = Buffer.from(this.bridgeToken);
+    return a.length === b.length && timingSafeEqual(a, b);
+  }
+
+  private loadBridgeToken() {
+    const tokenFile = path.join(os.homedir(), '.everfern', 'bridge-token.json');
+    try {
+      const parsed = JSON.parse(fs.readFileSync(tokenFile, 'utf8'));
+      if (parsed && typeof parsed.token === 'string' && parsed.token) {
+        this.bridgeToken = parsed.token;
+        // Re-harden pre-existing token files that may have been written with
+        // looser modes (POSIX only — Windows ignores chmod, see JSDoc above).
+        if (process.platform !== 'win32') fs.chmodSync(tokenFile, 0o600);
+        return;
+      }
+    } catch { /* regenerate below */ }
+    this.bridgeToken = randomUUID();
+    try {
+      fs.mkdirSync(path.dirname(tokenFile), { recursive: true });
+      fs.writeFileSync(tokenFile, JSON.stringify({ token: this.bridgeToken }), { mode: 0o600 });
+      fs.chmodSync(tokenFile, 0o600);
+    } catch (e) {
+      console.warn('[BridgeServer] ⚠️ Could not persist bridge token:', e);
+    }
+  }
+
+  private logRejectedUpgrade(origin: string | undefined) {
+    const now = Date.now();
+    if (now - this.lastUpgradeRejectLogAt < 60000) return;
+    this.lastUpgradeRejectLogAt = now;
+    console.warn(`[BridgeServer] 🚫 Rejected WebSocket upgrade from unauthorized origin: ${origin ? origin.slice(0, 100) : '<none>'}`);
+  }
 
   start() {
     if (this.server) return;
 
+    this.loadBridgeToken();
+
     this.server = http.createServer((req, res) => {
-      // CORS headers
-      res.setHeader('Access-Control-Allow-Origin', '*');
+      // CORS: reflect Origin only for known extension/dev origins (MP-SEC-06)
+      const origin = req.headers.origin;
+      if (origin && this.isAllowedHttpOrigin(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Vary', 'Origin');
+      }
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-everfern-bridge');
 
       if (req.method === 'OPTIONS') {
         res.writeHead(204);
@@ -32,6 +99,17 @@ class ExtensionBridgeServer extends EventEmitter {
       }
 
       const url = new URL(req.url || '', `http://localhost:${this.port}`);
+
+      // CSRF guard: state-changing requests must carry a non-forgeable custom header
+      if (
+        (url.pathname === '/event' || url.pathname === '/wake') &&
+        req.method !== 'GET' &&
+        req.headers['x-everfern-bridge'] !== '1'
+      ) {
+        res.writeHead(403);
+        res.end('Forbidden');
+        return;
+      }
 
       // ── HTTP Routes ───────────────────────────────────────────────────────
 
@@ -177,7 +255,20 @@ class ExtensionBridgeServer extends EventEmitter {
     });
 
     // ── WebSocket Server ──────────────────────────────────────────────────
-    this.wss = new WebSocketServer({ server: this.server });
+    this.wss = new WebSocketServer({ noServer: true });
+
+    // Origin/token validation on upgrade (MP-SEC-06)
+    this.server.on('upgrade', (req, socket, head) => {
+      const origin = req.headers.origin;
+      const isExtensionOrigin = !!origin && EXTENSION_ORIGIN_PATTERNS.some(p => p.test(origin));
+      const token = new URL(req.url || '', `http://localhost:${this.port}`).searchParams.get('token');
+      if (!isExtensionOrigin && !this.tokenMatches(token)) {
+        socket.destroy();
+        this.logRejectedUpgrade(origin);
+        return;
+      }
+      this.wss!.handleUpgrade(req, socket, head, ws => this.wss!.emit('connection', ws, req));
+    });
 
     this.wss.on('connection', (ws) => {
       console.log('[BridgeServer] 🔌 Extension connected via WebSocket');

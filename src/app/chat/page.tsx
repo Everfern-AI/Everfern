@@ -3607,6 +3607,9 @@ export default function ChatPage() {
                     truncatedTools: truncatedTools ?? undefined,
                     schemaTokenSavings: schemaTokenSavings ?? undefined,
                 });
+                // NOTE: Usage persistence/analytics recording happens in the main process
+                // (agent-runtime/call_model/brain forward acp:usage upstream). Recording here
+                // too would double-count every row.
             });
             acpApi.onSurfaceAction((data: any) => {
                 if (data?.conversationId && data.conversationId !== activeConversationIdRef.current) return;
@@ -3717,7 +3720,9 @@ export default function ChatPage() {
         })();
     }, [activeConversationId, selectedModel, availableModels, pursueGoalMode, applyLiveToolUpdate]);
 
-    const saveConversation = useCallback(async (msgs: Message[], isFullSave: boolean = false) => {
+    const saveConversation = useCallback(async (msgs: Message[], isFullSave: boolean = true) => {
+        // Full-snapshot saves of empty lists are not a supported UI flow — bail unconditionally
+        // to prevent an accidental mass-delete of all messages at the store level.
         if (msgs.length === 0) return;
         // Use the ref for synchronous reads — avoids duplicate IDs when called
         // multiple times before React flushes the state update.
@@ -4319,6 +4324,9 @@ export default function ChatPage() {
                         truncatedTools: truncatedTools ?? undefined,
                         schemaTokenSavings: schemaTokenSavings ?? undefined,
                     });
+                    // NOTE: Usage persistence/analytics recording happens in the main process
+                    // (agent-runtime/call_model/brain forward acp:usage upstream). Recording here
+                    // too would double-count every row.
                 });
                 api.onOptima(({ event, details, conversationId }: { event: string; details: string; conversationId?: string }) => {
                     if (conversationId && conversationId !== activeConversationIdRef.current) return;

@@ -12,6 +12,55 @@ import { PlanArtifact } from './PlanArtifact';
 import ToolCallCodePane from '@/components/tools/ToolCallCodePane';
 
 /* ============================================================
+   CU-UI-01 XSS HARDENING
+   Every dangerouslySetInnerHTML sink in this file renders model/tool
+   text. Raw text MUST go through esc() BEFORE any formatter injects
+   trusted markup (<span>/<code>/<strong>), so attacker markup such as
+   "<img onerror=...>" stays inert while formatter-generated tags remain
+   literal HTML. esc() also strips Private Use Area characters, which
+   the highlighters reserve as internal placeholders.
+   ============================================================ */
+export function esc(s: string): string {
+  return s
+    .replace(/[\ue000-\uf8ff]/g, '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/* Sequential .replace passes used to match inside previously injected
+   style="..." attributes (hex/property/attr-name passes re-coloring the
+   injected "color:" values), corrupting the emitted HTML. Since esc()
+   removes every raw double-quote from user text, the only remaining
+   style="..." occurrences are formatter-injected, so they can be hidden
+   behind single PUA placeholder chars after each pass and restored at
+   the end of a highlighter run. The stash is scoped to a single
+   highlighter run (a fresh array per highlightLine()/highlightSyntax()
+   invocation, passed down through the helpers), so it never grows
+   across renders and placeholder indices reset every pass; only a
+   single line holding >PUA_RANGE injected styles could still wrap the
+   alphabet (worst case a wrong-but-well-formed style value — cosmetic). */
+const PUA_BASE = 0xe000;
+const PUA_RANGE = 0xf8ff - 0xe000 + 1;
+type StyleAttrStash = string[];
+
+function stashInjectedStyles(s: string, stash: StyleAttrStash): string {
+  return s.replace(/style="[^"]*"/g, (m) =>
+    String.fromCharCode(PUA_BASE + (stash.push(m) - 1) % PUA_RANGE)
+  );
+}
+
+function unstashInjectedStyles(s: string, stash: StyleAttrStash): string {
+  return s.replace(/[\ue000-\uf8ff]/g, (c) => stash[c.charCodeAt(0) - PUA_BASE] || '');
+}
+
+// Run one highlighting pass, then shield its injected style attrs from later passes.
+function hl(stash: StyleAttrStash, h: string, re: RegExp, repl: string): string {
+  return stashInjectedStyles(h.replace(re, repl), stash);
+}
+
+/* ============================================================
    TYPES & CONSTANTS
    ============================================================ */
 
@@ -393,141 +442,142 @@ function FileOperationView({ toolCall, onClose }: { toolCall: ToolCallDetail; on
 }
 
 /* ── Multi-Language Syntax Highlighter ─────────────────────────────── */
-function highlightLine(line: string, ext: string): string {
-  let h = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+export function highlightLine(line: string, ext: string): string {
+  const h = esc(line);
   if (!h.trim()) return h;
 
-  if (ext === 'py') return highlightPython(h);
-  if (['js', 'jsx', 'ts', 'tsx'].includes(ext)) return highlightJS(h);
-  if (['css', 'scss'].includes(ext)) return highlightCSS(h);
-  if (['html', 'htm'].includes(ext)) return highlightHTML(h);
-  if (ext === 'json') return highlightJSON(h);
-  if (['sh', 'bash', 'zsh'].includes(ext)) return highlightShell(h);
-  
+  const stash: StyleAttrStash = [];
+  if (ext === 'py') return highlightPython(h, stash);
+  if (['js', 'jsx', 'ts', 'tsx'].includes(ext)) return highlightJS(h, stash);
+  if (['css', 'scss'].includes(ext)) return highlightCSS(h, stash);
+  if (['html', 'htm'].includes(ext)) return highlightHTML(h, stash);
+  if (ext === 'json') return highlightJSON(h, stash);
+  if (['sh', 'bash', 'zsh'].includes(ext)) return highlightShell(h, stash);
+
   // Generic fallback
-  return highlightGeneric(h);
+  return highlightGeneric(h, stash);
 }
 
-function highlightPython(line: string): string {
+function highlightPython(line: string, stash: StyleAttrStash): string {
   let h = line;
   // Comments
-  h = h.replace(/(#.*)$/gm, '<span style="color: #5c6370">$1</span>');
+  h = hl(stash, h, /(#.*)$/gm, '<span style="color: #5c6370">$1</span>');
   // Strings
-  h = h.replace(/(""".*""")|('''.*''')|("[^"]*")|('[^']*')/g, '<span style="color: #98c379">$1</span>');
+  h = hl(stash, h, /(""".*""")|('''.*''')|(&quot;.*?&quot;)|('[^']*')/g, '<span style="color: #98c379">$1</span>');
   // Keywords
   const kw = /\b(import|from|as|def|class|return|if|elif|else|for|while|try|except|finally|with|yield|lambda|raise|assert|del|global|nonlocal|pass|continue|break|and|or|not|in|is|None|True|False)\b/g;
-  h = h.replace(kw, '<span style="color: #c678dd">$1</span>');
+  h = hl(stash, h, kw, '<span style="color: #c678dd">$1</span>');
   // Builtins
   const bi = /\b(print|len|range|enumerate|zip|map|filter|sorted|open|str|int|float|list|dict|set|tuple|type|isinstance|hasattr|getattr|super|self|cls)\b/g;
-  h = h.replace(bi, '<span style="color: #61afef">$1</span>');
+  h = hl(stash, h, bi, '<span style="color: #61afef">$1</span>');
   // Numbers
-  h = h.replace(/\b\d+\.?\d*\b/g, '<span style="color: #d19a66">$&</span>');
+  h = hl(stash, h, /\b\d+\.?\d*\b/g, '<span style="color: #d19a66">$&</span>');
   // Functions
-  h = h.replace(/\b(\w+)(?=\()/g, '<span style="color: #61afef">$1</span>');
-  return h;
+  h = hl(stash, h, /\b(\w+)(?=\()/g, '<span style="color: #61afef">$1</span>');
+  return unstashInjectedStyles(h, stash);
 }
 
-function highlightJS(line: string): string {
+function highlightJS(line: string, stash: StyleAttrStash): string {
   let h = line;
   // Comments
-  h = h.replace(/(\/\/.*$)/gm, '<span style="color: #5c6370">$1</span>');
-  h = h.replace(/(\/\*[\s\S]*?\*\/)/gm, '<span style="color: #5c6370">$1</span>');
+  h = hl(stash, h, /(\/\/.*$)/gm, '<span style="color: #5c6370">$1</span>');
+  h = hl(stash, h, /(\/\*[\s\S]*?\*\/)/gm, '<span style="color: #5c6370">$1</span>');
   // Strings
-  const str = /(`[^`]*`)|("[^"]*")|('[^']*')/g;
-  h = h.replace(str, '<span style="color: #98c379">$1</span>');
+  const str = /(`[^`]*`)|(&quot;.*?&quot;)|('[^']*')/g;
+  h = hl(stash, h, str, '<span style="color: #98c379">$1</span>');
   // Template literals interpolation
-  h = h.replace(/(\\\$\{[^}]*\})/g, '<span style="color: #e06c75">$1</span>');
+  h = hl(stash, h, /(\\\$\{[^}]*\})/g, '<span style="color: #e06c75">$1</span>');
   // Keywords
   const kw = /\b(import|export|from|default|const|let|var|function|class|extends|implements|interface|type|enum|namespace|module|return|if|else|for|while|do|switch|case|break|continue|try|catch|finally|throw|new|this|typeof|instanceof|void|delete|in|of|async|await|yield|get|set|static|public|private|protected|as|declare|readonly)\b/g;
-  h = h.replace(kw, '<span style="color: #c678dd">$1</span>');
+  h = hl(stash, h, kw, '<span style="color: #c678dd">$1</span>');
   // Types
   const types = /\b(string|number|boolean|any|void|null|undefined|object|Array|Promise|React|Record|Map|Set|Date|Error|RegExp|JSON|console|window|document|Math)\b/g;
-  h = h.replace(types, '<span style="color: #e5c07b">$1</span>');
+  h = hl(stash, h, types, '<span style="color: #e5c07b">$1</span>');
   // JSX tags
   if (h.includes('<')) {
-    h = h.replace(/&lt;(\/?)(\w+)/g, '&lt;$1<span style="color: #e06c75">$2</span>');
-    h = h.replace(/(\w+)=/g, '<span style="color: #d19a66">$1</span>=');
+    h = hl(stash, h, /&lt;(\/?)(\w+)/g, '&lt;$1<span style="color: #e06c75">$2</span>');
+    h = hl(stash, h, /(\w+)=/g, '<span style="color: #d19a66">$1</span>=');
   }
   // Properties
-  h = h.replace(/(\w+)(?=:)/g, '<span style="color: #e06c75">$1</span>');
+  h = hl(stash, h, /(\w+)(?=:)/g, '<span style="color: #e06c75">$1</span>');
   // Numbers
-  h = h.replace(/\b\d+\.?\d*\b/g, '<span style="color: #d19a66">$&</span>');
+  h = hl(stash, h, /\b\d+\.?\d*\b/g, '<span style="color: #d19a66">$&</span>');
   // Functions
-  h = h.replace(/\b(\w+)(?=\()/g, '<span style="color: #61afef">$1</span>');
-  return h;
+  h = hl(stash, h, /\b(\w+)(?=\()/g, '<span style="color: #61afef">$1</span>');
+  return unstashInjectedStyles(h, stash);
 }
 
-function highlightCSS(line: string): string {
+function highlightCSS(line: string, stash: StyleAttrStash): string {
   let h = line;
   // Comments
-  h = h.replace(/(\/\*[\s\S]*?\*\/)/gm, '<span style="color: #5c6370">$1</span>');
-  h = h.replace(/(\/\/.*$)/gm, '<span style="color: #5c6370">$1</span>');
+  h = hl(stash, h, /(\/\*[\s\S]*?\*\/)/gm, '<span style="color: #5c6370">$1</span>');
+  h = hl(stash, h, /(\/\/.*$)/gm, '<span style="color: #5c6370">$1</span>');
   // Selectors
-  h = h.replace(/^(\s*[.#]\w+)/, '<span style="color: #e06c75">$1</span>');
-  h = h.replace(/@\w+/g, '<span style="color: #c678dd">$&</span>');
+  h = hl(stash, h, /^(\s*[.#]\w+)/, '<span style="color: #e06c75">$1</span>');
+  h = hl(stash, h, /@\w+/g, '<span style="color: #c678dd">$&</span>');
   // Properties
   const prop = /([\w-]+)(?=\s*:)/g;
-  h = h.replace(prop, '<span style="color: #e06c75">$1</span>');
+  h = hl(stash, h, prop, '<span style="color: #e06c75">$1</span>');
   // Values (colors, px, rem, etc)
-  h = h.replace(/(#[0-9a-fA-F]{3,8})/g, '<span style="color: #98c379">$1</span>');
-  h = h.replace(/(\d+(px|rem|em|%|vh|vw|s|ms|deg|fr|pt|cm|mm|in))/g, '<span style="color: #d19a66">$1</span>');
+  h = hl(stash, h, /(#[0-9a-fA-F]{3,8})/g, '<span style="color: #98c379">$1</span>');
+  h = hl(stash, h, /(\d+(px|rem|em|%|vh|vw|s|ms|deg|fr|pt|cm|mm|in))/g, '<span style="color: #d19a66">$1</span>');
   // Strings
-  h = h.replace(/("[^"]*")|('[^']*')/g, '<span style="color: #98c379">$1</span>');
-  return h;
+  h = hl(stash, h, /(&quot;.*?&quot;)|('[^']*')/g, '<span style="color: #98c379">$1</span>');
+  return unstashInjectedStyles(h, stash);
 }
 
-function highlightHTML(line: string): string {
+function highlightHTML(line: string, stash: StyleAttrStash): string {
   let h = line;
   // Comments
-  h = h.replace(/(&lt;!--[\s\S]*?--&gt;)/gm, '<span style="color: #5c6370">$1</span>');
+  h = hl(stash, h, /(&lt;!--[\s\S]*?--&gt;)/gm, '<span style="color: #5c6370">$1</span>');
   // Tags
-  h = h.replace(/&lt;(\/?)(\w+)/g, '&lt;$1<span style="color: #e06c75">$2</span>');
-  h = h.replace(/(\/?)\s*&gt;/g, '$1<span style="color: #e06c75">&gt;</span>');
+  h = hl(stash, h, /&lt;(\/?)(\w+)/g, '&lt;$1<span style="color: #e06c75">$2</span>');
+  h = hl(stash, h, /(\/?)\s*&gt;/g, '$1<span style="color: #e06c75">&gt;</span>');
   // Attributes
-  h = h.replace(/\b(\w+)(?==)/g, '<span style="color: #d19a66">$1</span>');
+  h = hl(stash, h, /\b(\w+)(?==)/g, '<span style="color: #d19a66">$1</span>');
   // Strings
-  h = h.replace(/("[^"]*")|('[^']*')/g, '<span style="color: #98c379">$1</span>');
-  return h;
+  h = hl(stash, h, /(&quot;.*?&quot;)|('[^']*')/g, '<span style="color: #98c379">$1</span>');
+  return unstashInjectedStyles(h, stash);
 }
 
-function highlightJSON(line: string): string {
+function highlightJSON(line: string, stash: StyleAttrStash): string {
   let h = line;
   // Keys
-  h = h.replace(/("[^"]*")(?=\s*:)/g, '<span style="color: #e06c75">$1</span>');
+  h = hl(stash, h, /(&quot;.*?&quot;)(?=\s*:)/g, '<span style="color: #e06c75">$1</span>');
   // Strings
-  h = h.replace(/("[^"]*")/g, '<span style="color: #98c379">$1</span>');
+  h = hl(stash, h, /(&quot;.*?&quot;)/g, '<span style="color: #98c379">$1</span>');
   // Numbers
-  h = h.replace(/\b\d+\.?\d*\b/g, '<span style="color: #d19a66">$&</span>');
+  h = hl(stash, h, /\b\d+\.?\d*\b/g, '<span style="color: #d19a66">$&</span>');
   // Booleans/null
   const kw = /\b(true|false|null)\b/g;
-  h = h.replace(kw, '<span style="color: #c678dd">$1</span>');
-  return h;
+  h = hl(stash, h, kw, '<span style="color: #c678dd">$1</span>');
+  return unstashInjectedStyles(h, stash);
 }
 
-function highlightShell(line: string): string {
+function highlightShell(line: string, stash: StyleAttrStash): string {
   let h = line;
   // Comments
-  h = h.replace(/(#.*)$/gm, '<span style="color: #5c6370">$1</span>');
+  h = hl(stash, h, /(#.*)$/gm, '<span style="color: #5c6370">$1</span>');
   // Variables
-  h = h.replace(/(\$\w+)/g, '<span style="color: #e06c75">$1</span>');
+  h = hl(stash, h, /(\$\w+)/g, '<span style="color: #e06c75">$1</span>');
   // Builtins
   const builtins = /\b(echo|cd|ls|mkdir|rm|cp|mv|cat|grep|awk|sed|cut|sort|uniq|head|tail|find|chmod|chown|sudo|apt|yum|brew|curl|wget|git|docker|python|python3|node|npm|npx|yarn|pip|pip3)\b/g;
-  h = h.replace(builtins, '<span style="color: #61afef">$1</span>');
+  h = hl(stash, h, builtins, '<span style="color: #61afef">$1</span>');
   // Strings
-  h = h.replace(/("[^"]*")|('[^']*')/g, '<span style="color: #98c379">$1</span>');
-  return h;
+  h = hl(stash, h, /(&quot;.*?&quot;)|('[^']*')/g, '<span style="color: #98c379">$1</span>');
+  return unstashInjectedStyles(h, stash);
 }
 
-function highlightGeneric(line: string): string {
+function highlightGeneric(line: string, stash: StyleAttrStash): string {
   let h = line;
   // Comments
-  h = h.replace(/(\/\/.*$)/gm, '<span style="color: #5c6370">$1</span>');
-  h = h.replace(/(#.*)$/gm, '<span style="color: #5c6370">$1</span>');
+  h = hl(stash, h, /(\/\/.*$)/gm, '<span style="color: #5c6370">$1</span>');
+  h = hl(stash, h, /(#.*)$/gm, '<span style="color: #5c6370">$1</span>');
   // Strings
-  h = h.replace(/("[^"]*")|('[^']*')/g, '<span style="color: #98c379">$1</span>');
+  h = hl(stash, h, /(&quot;.*?&quot;)|('[^']*')/g, '<span style="color: #98c379">$1</span>');
   // Numbers
-  h = h.replace(/\b\d+\.?\d*\b/g, '<span style="color: #d19a66">$&</span>');
-  return h;
+  h = hl(stash, h, /\b\d+\.?\d*\b/g, '<span style="color: #d19a66">$&</span>');
+  return unstashInjectedStyles(h, stash);
 }
 
 function StatusDot({ status }: { status: string }) {
@@ -1651,21 +1701,25 @@ interface ParsedFileDiff {
   rawContent?: string;
 }
 
+/* CU-UI-01: esc() runs FIRST so raw model text can never reach innerHTML;
+   only the trusted tags injected below are literal HTML. Later passes cannot
+   match inside the injected style="..." attributes (they contain no
+   backticks/asterisks/underscores). */
+export function formatInline(raw: string): string {
+  let f = esc(raw);
+  f = f.replace(/`(.*?)`/g, '<code style="background-color: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 11px; color: #38bdf8;">$1</code>');
+  f = f.replace(/\*\*(.*?)\*\*/g, '<strong style="color: #f0f6fc;">$1</strong>');
+  f = f.replace(/__(.*?)__/g, '<strong style="color: #f0f6fc;">$1</strong>');
+  f = f.replace(/\*(.*?)\*/g, '<em style="color: #c9d1d9;">$1</em>');
+  f = f.replace(/_(.*?)_/g, '<em style="color: #c9d1d9;">$1</em>');
+  return f;
+}
+
 function FileMarkdownViewer({ content }: { content: string }) {
   const lines = (content || '').split('\n');
   const elements: React.ReactNode[] = [];
   let inCodeBlock = false;
   let codeBlockContent: string[] = [];
-
-  const formatInline = (text: string) => {
-    let f = text;
-    f = f.replace(/`(.*?)`/g, '<code style="background-color: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 11px; color: #38bdf8;">$1</code>');
-    f = f.replace(/\*\*(.*?)\*\*/g, '<strong style="color: #f0f6fc;">$1</strong>');
-    f = f.replace(/__(.*?)__/g, '<strong style="color: #f0f6fc;">$1</strong>');
-    f = f.replace(/\*(.*?)\*/g, '<em style="color: #c9d1d9;">$1</em>');
-    f = f.replace(/_(.*?)_/g, '<em style="color: #c9d1d9;">$1</em>');
-    return f;
-  };
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -2096,32 +2150,33 @@ function CodeEditorPreview({ toolCall }: { toolCall: ToolCallDetail }) {
 
   // Simple syntax highlighter matching One Dark theme
   const highlightSyntax = (code: string, fileName: string): string => {
-    let h = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    
+    const h0 = esc(code);
+    const stash: StyleAttrStash = [];
+
     // Keywords (purple)
     const keywords = /\b(import|export|from|const|let|var|function|return|if|else|for|while|class|interface|type|extends|implements|async|await|try|catch|throw|new|this|typeof|instanceof|default|as|yield|void|delete|in|of)\b/g;
-    h = h.replace(keywords, '<span style="color: #c678dd">$1</span>');
-    
+    let h = hl(stash, h0, keywords, '<span style="color: #c678dd">$1</span>');
+
     // Types (yellow/orange)
     const types = /\b(string|number|boolean|any|void|null|undefined|object|Array|Promise|React|ComponentProps|ReactNode|JSX|Element|boolean|Record|Map|Set|Date|Error|RegExp)\b/g;
-    h = h.replace(types, '<span style="color: #e5c07b">$1</span>');
-    
+    h = hl(stash, h, types, '<span style="color: #e5c07b">$1</span>');
+
     // Strings (green)
-    h = h.replace(/("[^"]*"|'[^']*'|`[^`]*`)/g, '<span style="color: #98c379">$1</span>');
-    
+    h = hl(stash, h, /(&quot;.*?&quot;|'[^']*'|`[^`]*`)/g, '<span style="color: #98c379">$1</span>');
+
     // Comments (gray)
-    h = h.replace(/(\/\/.*$|\/\*[\s\S]*?\*\/)/gm, '<span style="color: #5c6370">$1</span>');
-    
+    h = hl(stash, h, /(\/\/.*$|\/\*[\s\S]*?\*\/)/gm, '<span style="color: #5c6370">$1</span>');
+
     // Functions (blue)
-    h = h.replace(/(\w+)(?=\()/g, '<span style="color: #61afef">$1</span>');
-    
+    h = hl(stash, h, /(\w+)(?=\()/g, '<span style="color: #61afef">$1</span>');
+
     // Numbers (orange)
-    h = h.replace(/\b\d+\.?\d*\b/g, '<span style="color: #d19a66">$1</span>');
-    
+    h = hl(stash, h, /\b\d+\.?\d*\b/g, '<span style="color: #d19a66">$1</span>');
+
     // Properties (red)
-    h = h.replace(/(\w+)(?=:)/g, '<span style="color: #e06c75">$1</span>');
-    
-    return h;
+    h = hl(stash, h, /(\w+)(?=:)/g, '<span style="color: #e06c75">$1</span>');
+
+    return unstashInjectedStyles(h, stash);
   };
 
   return (

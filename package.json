@@ -39,6 +39,7 @@
     ],
     "appId": "com.everfern.desktop",
     "productName": "EverFern",
+    "afterSign": "scripts/after-sign-mac.cjs",
     "copyright": "Copyright © 2026 EverFern",
     "npmRebuild": true,
     "icon": "public/images/logos/everfern.ico",
@@ -125,7 +126,7 @@
         "zip"
       ],
       "icon": "public/images/logos/everfern.icns",
-      "hardenedRuntime": true,
+      "hardenedRuntime": false,
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.inherit.plist",

@@ -50,6 +50,14 @@ export function PDFViewer({ file }: { file: { name: string; path: string } }) {
     const [showAppDropdown, setShowAppDropdown] = useState(false);
     const appDropdownRef = useRef<HTMLDivElement>(null);
 
+    // NR-UI-09: mirror the URL in a ref so cleanup revokes the CURRENT blob
+    // url, not the stale state value captured when this effect was created.
+    const pdfBlobUrlRef = useRef<string | null>(null);
+    const updatePdfBlobUrl = (url: string | null) => {
+        pdfBlobUrlRef.current = url;
+        setPdfBlobUrl(url);
+    };
+
     // Fetch registered default opener apps (VS Code, Acrobat, Edge, etc.)
     useEffect(() => {
         if (!file?.path) return;
@@ -98,10 +106,10 @@ export function PDFViewer({ file }: { file: { name: string; path: string } }) {
                             const byteArray = new Uint8Array(byteNumbers);
                             const blob = new Blob([byteArray], { type: 'application/pdf' });
                             const bUrl = URL.createObjectURL(blob);
-                            if (isMounted) setPdfBlobUrl(bUrl);
+                            if (isMounted) updatePdfBlobUrl(bUrl);
                         }
                     } catch (e) {
-                        if (isMounted) setPdfBlobUrl(imgRes.dataUrl);
+                        if (isMounted) updatePdfBlobUrl(imgRes.dataUrl);
                     }
                     if (isMounted) setLoadingPdf(false);
                     return;
@@ -111,7 +119,7 @@ export function PDFViewer({ file }: { file: { name: string; path: string } }) {
                 const cleanPath = file.path.replace(/\\/g, '/');
                 const fallbackUrl = `file:///${cleanPath.startsWith('/') ? cleanPath.slice(1) : cleanPath}`;
                 if (isMounted) {
-                    setPdfBlobUrl(fallbackUrl);
+                    updatePdfBlobUrl(fallbackUrl);
                     setLoadingPdf(false);
                 }
             } catch (err) {
@@ -127,8 +135,9 @@ export function PDFViewer({ file }: { file: { name: string; path: string } }) {
 
         return () => {
             isMounted = false;
-            if (pdfBlobUrl && pdfBlobUrl.startsWith('blob:')) {
-                URL.revokeObjectURL(pdfBlobUrl);
+            const currentUrl = pdfBlobUrlRef.current;
+            if (currentUrl && currentUrl.startsWith('blob:')) {
+                URL.revokeObjectURL(currentUrl);
             }
         };
     }, [file?.path]);
@@ -617,7 +626,7 @@ export function MarkdownViewer({ content }: { content: string }) {
             if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
                 const itemContent = line.trim().substring(2);
                 elements.push(
-                    <li key={`li-${i}`} style={{ marginLeft: 20, margin: '6px 0', fontSize: 14, color: 'var(--color-text-primary)', lineHeight: 1.6 }}
+                    <li key={`li-${i}`} style={{ margin: '6px 0 6px 20px', fontSize: 14, color: 'var(--color-text-primary)', lineHeight: 1.6 }}
                         dangerouslySetInnerHTML={{ __html: formatInline(itemContent) }}
                     />
                 );
@@ -661,6 +670,18 @@ export function MarkdownViewer({ content }: { content: string }) {
 }
 
 // ── 3. EXCEL & CSV VIEWER ───────────────────────────────────────────
+// NR-UI-10: bijective base-26 column labels (A..Z, AA..ZZ, ...).
+// String.fromCharCode(65 + i) emits punctuation past column Z.
+const excelColumnLabel = (index: number): string => {
+    let label = '';
+    let n = index;
+    do {
+        label = String.fromCharCode(65 + (n % 26)) + label;
+        n = Math.floor(n / 26) - 1;
+    } while (n >= 0);
+    return label;
+};
+
 function ExcelViewer({ filename, content }: { filename: string; content: string | null }) {
     const { theme } = useTheme();
     const isDark = theme === 'dark';
@@ -699,7 +720,7 @@ function ExcelViewer({ filename, content }: { filename: string; content: string 
         });
     }, [parsedData, filterQuery]);
 
-    const columns = Array.from({ length: Math.max(parsedData[0]?.length || 10, 10) }, (_, i) => String.fromCharCode(65 + i));
+    const columns = Array.from({ length: Math.max(parsedData[0]?.length || 10, 10) }, (_, i) => excelColumnLabel(i));
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: 'var(--color-bg-base)', minWidth: 0, minHeight: 0 }}>

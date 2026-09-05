@@ -6,12 +6,12 @@
  * delete previous messages from the database.
  *
  * Bug: Previous behavior would delete all messages not in the current save
- * Fix: Only delete messages if isFullSave is explicitly NOT false
+ * Fix: Only delete messages if isFullSave is explicitly true
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { ChatHistoryStore } from '../history';
-import { databaseService } from '../database-service';
+import { dbOps } from '../../lib/db';
 
 describe('Chat Message Persistence on Restart', () => {
   let historyStore: ChatHistoryStore;
@@ -25,8 +25,8 @@ describe('Chat Message Persistence on Restart', () => {
   afterEach(async () => {
     // Cleanup
     try {
-      await databaseService.run('DELETE FROM messages WHERE conversation_id = ?', [testConvId]);
-      await databaseService.run('DELETE FROM conversations WHERE id = ?', [testConvId]);
+      await dbOps.run('DELETE FROM messages WHERE conversation_id = ?', [testConvId]);
+      await dbOps.run('DELETE FROM conversations WHERE id = ?', [testConvId]);
     } catch (err) {
       // Ignore cleanup errors
     }
@@ -106,15 +106,16 @@ describe('Chat Message Persistence on Restart', () => {
   });
 
   /**
-   * Test 2: Full saves SHOULD delete unspecified messages
+   * Test 2: Only explicit full saves SHOULD delete unspecified messages
    *
    * Scenario:
    * 1. Save conversation with 3 messages
-   * 2. Do a full save with only 2 messages (isFullSave: true or undefined)
-   * 3. Load conversation
-   * Expected: Only 2 messages should exist (the 3rd was deleted as expected)
+   * 2. Do a save with only 2 messages and NO isFullSave flag
+   * Expected: All 3 messages survive (absence of the flag must NOT trigger cleanup)
+   * 3. Do an explicit full save (isFullSave: true) with only 2 messages
+   * Expected: Only 2 messages exist (msg-3 deleted as expected)
    */
-  it('should delete messages not in full save (isFullSave: true or undefined)', async () => {
+  it('should delete messages not in save only when isFullSave is explicitly true', async () => {
     // Step 1: Initial save with 3 messages
     const initialConversation = {
       id: testConvId,
@@ -151,7 +152,38 @@ describe('Chat Message Persistence on Restart', () => {
     let loaded = await historyStore.load(testConvId);
     expect(loaded?.messages.length).toBe(3);
 
-    // Step 2: Full save with only 2 messages (isFullSave defaults to true)
+    // Step 2: Save with only 2 messages and NO isFullSave flag
+    const unflaggedUpdate = {
+      id: testConvId,
+      messages: [
+        {
+          id: 'msg-1',
+          role: 'user' as const,
+          content: 'Message 1',
+          createdAt: new Date().toISOString()
+        },
+        {
+          id: 'msg-2',
+          role: 'assistant' as const,
+          content: 'Message 2 [edited]',
+          createdAt: new Date().toISOString()
+        }
+      ],
+      // isFullSave is intentionally omitted - absence must NOT trigger cleanup
+      updatedAt: new Date().toISOString()
+    };
+
+    const saveResult2 = await historyStore.save(unflaggedUpdate as any);
+    expect(saveResult2.success).toBe(true);
+
+    // Step 3: Load conversation - verify ALL messages still exist
+    loaded = await historyStore.load(testConvId);
+    expect(loaded?.messages.length).toBe(3).withContext(
+      'Save without explicit isFullSave flag should NOT delete msg-3'
+    );
+    expect(loaded?.messages.map(m => m.id)).toEqual(['msg-1', 'msg-2', 'msg-3']);
+
+    // Step 4: Explicit full save (isFullSave: true) with only 2 messages
     const fullUpdate = {
       id: testConvId,
       messages: [
@@ -168,17 +200,17 @@ describe('Chat Message Persistence on Restart', () => {
           createdAt: new Date().toISOString()
         }
       ],
-      // isFullSave is NOT set to false, so cleanup should happen
+      isFullSave: true, // Explicit full snapshot - cleanup SHOULD happen
       updatedAt: new Date().toISOString()
     };
 
-    const saveResult2 = await historyStore.save(fullUpdate as any);
-    expect(saveResult2.success).toBe(true);
+    const saveResult3 = await historyStore.save(fullUpdate as any);
+    expect(saveResult3.success).toBe(true);
 
-    // Step 3: Load conversation - verify msg-3 was deleted
+    // Step 5: Load conversation - verify msg-3 was deleted
     loaded = await historyStore.load(testConvId);
     expect(loaded?.messages.length).toBe(2).withContext(
-      'Full save should delete msg-3 which was not included'
+      'Explicit isFullSave:true should delete msg-3 which was not included'
     );
     expect(loaded?.messages.map(m => m.id)).toEqual(['msg-1', 'msg-2']);
   });

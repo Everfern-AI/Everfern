@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron';
 import { projectsStore } from '../store/projects/projects';
+import { resolveWithin } from '../lib/path-guard';
 
 function mimeFromExt(ext: string): string {
   const clean = ext.replace(/^\./, '').toLowerCase();
@@ -123,9 +124,9 @@ export function registerProjectsHandlers() {
 
   ipcMain.handle('projects:readFile', async (_event, projectPath: string, filePath: string) => {
     const fs = require('fs');
-    const path = require('path');
-    const fullPath = path.join(projectPath, filePath);
     try {
+      const root = fs.realpathSync(projectPath);
+      const fullPath = resolveWithin(root, filePath);
       return fs.readFileSync(fullPath, 'utf-8');
     } catch {
       return null;
@@ -135,9 +136,15 @@ export function registerProjectsHandlers() {
   ipcMain.handle('projects:readFileDataUrl', async (_event, projectPath: string, filePath: string) => {
     const fs = require('fs');
     const path = require('path');
-    const fullPath = path.join(projectPath, filePath);
     const maxPreviewBytes = 32 * 1024 * 1024;
     try {
+      const root = fs.realpathSync(projectPath);
+      let fullPath: string;
+      try {
+        fullPath = resolveWithin(root, filePath);
+      } catch {
+        return { success: false, error: 'Invalid file path' };
+      }
       const stat = fs.statSync(fullPath);
       if (!stat.isFile()) return { success: false, error: 'Path is not a file' };
       if (stat.size > maxPreviewBytes) {
