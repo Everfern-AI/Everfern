@@ -155,13 +155,27 @@ export const CORE_NODE_DEPS = 'pptxgenjs pdf-lib exceljs typescript ts-node';
 async function getTargetWSLArgs(extraArgs: string[]): Promise<string[]> {
   if (!_cachedDistroName) {
     try {
-      const { stdout } = await execFileAsync('wsl.exe', ['-l', '-q'], { encoding: 'utf16le', timeout: 5000 }).catch(() => ({ stdout: '' }));
-      const distros = stdout.split(/\r?\n/).map((d: string) => d.replace(/\0/g, '').trim()).filter(Boolean);
+      let raw = '';
+      // Try utf16le first (standard on many Windows builds)
+      const res1 = await execFileAsync('wsl.exe', ['-l', '-q'], { encoding: 'utf16le', timeout: 5000 }).catch(() => null);
+      if (res1?.stdout && res1.stdout.replace(/\0/g, '').trim()) {
+        raw = res1.stdout;
+      }
+      // If empty or garbled, try utf8
+      if (!raw) {
+        const res2 = await execFileAsync('wsl.exe', ['-l', '-q'], { encoding: 'utf8', timeout: 5000 }).catch(() => null);
+        if (res2?.stdout) raw = res2.stdout;
+      }
+      const distros = raw.replace(/\0/g, '').split(/[\r\n]+/).map(d => d.trim()).filter(Boolean);
       if (distros.includes('Ubuntu')) _cachedDistroName = 'Ubuntu';
-      else if (distros.some((d: string) => d.startsWith('Ubuntu-'))) _cachedDistroName = distros.find((d: string) => d.startsWith('Ubuntu-')) || null;
+      else if (distros.some(d => d.toLowerCase().startsWith('ubuntu'))) _cachedDistroName = distros.find(d => d.toLowerCase().startsWith('ubuntu')) || null;
       else if (distros.includes('Debian')) _cachedDistroName = 'Debian';
       else if (distros.length > 0) _cachedDistroName = distros[0];
     } catch {}
+    // Default to 'Ubuntu' on Windows if detection was inconclusive
+    if (!_cachedDistroName && process.platform === 'win32') {
+      _cachedDistroName = 'Ubuntu';
+    }
   }
   if (_cachedDistroName) {
     return ['-d', _cachedDistroName, ...extraArgs];
@@ -192,11 +206,13 @@ async function checkWslToolchain(): Promise<WslToolchain> {
     `printf 'NODEBIN=%s\\n' "$(command -v node 2>/dev/null | tr -d '\\r\\n')"`,
     `printf 'NODEVER=%s\\n' "$(node -v 2>/dev/null | tr -d '\\r\\n')"`,
   ].join('\n');
-  const args = await getTargetWSLArgs(['--exec', 'bash', '-c', script]);
 
   let lastErr: any = null;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
+      // First attempt with regular user, second attempt with root fallback
+      const probeFlag = attempt === 1 ? ['--user', 'root', '--exec', 'bash', '-c', script] : ['--exec', 'bash', '-c', script];
+      const args = await getTargetWSLArgs(probeFlag);
       const { stdout } = await execFileAsync(getWslCmd(), args, { timeout: 30000 });
       const read = (key: string) => {
         const m = stdout.match(new RegExp(`^${key}=(.*)$`, 'm'));
@@ -211,11 +227,16 @@ async function checkWslToolchain(): Promise<WslToolchain> {
       };
       console.log(`[WSL toolchain probe] attempt ${attempt + 1} → python3=${tc.python3 ? tc.pythonVersion || 'found' : 'missing'}, node=${tc.node ? tc.nodeVersion || 'found' : 'missing'}`);
       return tc;
-    } catch (e) {
+    } catch (e: any) {
       lastErr = e;
+      const errMsg = e?.message || String(e);
+      if (errMsg.includes('0x80370102') || errMsg.toLowerCase().includes('reboot') || errMsg.toLowerCase().includes('restart')) {
+        console.warn(`[WSL toolchain probe] WSL requires system restart: ${errMsg}`);
+        return { reachable: false, python3: false, node: false, error: 'Windows restart required to activate WSL 2 hypervisor' };
+      }
       if (attempt === 0) {
-        console.warn(`[WSL toolchain probe] attempt ${attempt + 1} failed (${(e as any)?.message || e}), retrying...`);
-        await new Promise((r) => setTimeout(r, 2000));
+        console.warn(`[WSL toolchain probe] attempt 1 failed (${errMsg}), retrying with root...`);
+        await new Promise((r) => setTimeout(r, 1500));
       }
     }
   }
@@ -230,6 +251,12 @@ export async function ensureWSLSetup(): Promise<void> {
   const baseArgs = await getTargetWSLArgs([]);
   console.log(`[ensureWSLSetup] Setting up WSL environment via ${wslCmd} ${baseArgs.join(' ')}...`);
   broadcastVMSetupLog('[ensureWSLSetup] Setting up WSL environment...', 'info', 1);
+
+  // Step 0: Ensure WSL & Ubuntu container is booted and initialized (especially if installed with --no-launch)
+  try {
+    const initArgs = await getTargetWSLArgs(['--user', 'root', '--exec', '/bin/true']);
+    await execFileAsync(wslCmd, initArgs, { timeout: 45000 }).catch(() => {});
+  } catch {}
 
   // Configure WSL resources (.wslconfig)
   try {
@@ -257,7 +284,7 @@ export async function ensureWSLSetup(): Promise<void> {
 
     if (!toolchain.reachable) {
       console.warn(`[ensureWSLSetup] Could not reach WSL to verify toolchain (${toolchain.error}). Attempting install anyway...`);
-      broadcastVMSetupLog(`[ensureWSLSetup] WSL unreachable (${toolchain.error}). Attempting toolchain install...`, 'warn', 2);
+      broadcastVMSetupLog(`[ensureWSLSetup] WSL notice: ${toolchain.error || 'Initializing distribution...'}`, 'warn', 2);
     }
 
     if (missing.length > 0) {
@@ -358,8 +385,8 @@ fi
   // Step 5: Ensure default user has passwordless sudo
   try {
     const whoamiArgs = await getTargetWSLArgs(['--exec', 'bash', '-c', 'whoami']);
-    const { stdout: defaultUserOut } = await execFileAsync(wslCmd, whoamiArgs, { timeout: 10000 });
-    const defaultUser = defaultUserOut.trim();
+    const { stdout: defaultUserOut } = await execFileAsync(wslCmd, whoamiArgs, { timeout: 10000 }).catch(() => ({ stdout: '' }));
+    const defaultUser = (defaultUserOut || '').trim();
     if (defaultUser && defaultUser !== 'root') {
       const sudoArgs = await getTargetWSLArgs(['--user', 'root', '--exec', 'bash', '-c', `echo '${defaultUser} ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/${defaultUser} && chmod 0440 /etc/sudoers.d/${defaultUser}`]);
       await execFileAsync(wslCmd, sudoArgs, { timeout: 10000 }).catch(() => {});
@@ -368,8 +395,17 @@ fi
     console.error('[ensureWSLSetup] Failed to configure passwordless sudo:', err);
   }
 
-  console.log('[ensureWSLSetup] WSL environment setup complete with full Node/Python toolchain ✅');
-  broadcastVMSetupLog('[ensureWSLSetup] WSL environment setup complete with full Node/Python toolchain ✅', 'success', 5);
+  const finalCheck = await checkWslToolchain();
+  if (finalCheck.reachable && finalCheck.python3 && finalCheck.node) {
+    console.log('[ensureWSLSetup] WSL environment setup complete with full Node/Python toolchain ✅');
+    broadcastVMSetupLog('[ensureWSLSetup] WSL environment setup complete with full Node/Python toolchain ✅', 'success', 5);
+  } else if (!finalCheck.reachable) {
+    console.warn('[ensureWSLSetup] WSL is not yet reachable:', finalCheck.error);
+    broadcastVMSetupLog('[ensureWSLSetup] WSL service is not reachable yet. If you recently installed WSL, please restart your computer to activate the virtualization layer.', 'warn', 5);
+  } else {
+    console.log('[ensureWSLSetup] WSL environment setup finished.');
+    broadcastVMSetupLog('[ensureWSLSetup] WSL environment setup finished. Some optional packages may install during first run.', 'info', 5);
+  }
 }
 
 export interface EnvironmentDependenciesResult {

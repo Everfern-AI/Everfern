@@ -67,6 +67,9 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
       electronAPI.system.onVMSetupLog((data: any) => {
         if (data?.message) {
           addLog(data.message, data.level || "info", data.step);
+          if (data.level === "error" || (data.level === "warn" && (data.message.includes("restart") || data.message.includes("unreachable")))) {
+            setErrorMessage(data.message);
+          }
         }
       });
     }
@@ -463,7 +466,30 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
               {errorMessage}
             </div>
             <div style={{ fontSize: 11.5, color: "var(--color-text-tertiary)", marginTop: 4 }}>
-              You can click <strong>Skip for now</strong> below to continue onboarding. You can configure or retry the Linux toolchain anytime later in <strong>Settings &gt; Linux VM</strong>.
+              You can skip this setup and continue onboarding. You can configure or retry the Linux VM anytime in <strong>Settings &gt; Linux VM</strong>.
+            </div>
+            <div style={{ marginTop: 10 }}>
+              <button
+                onClick={onSkip}
+                style={{
+                  padding: "7px 14px",
+                  borderRadius: 8,
+                  background: "#dc2626",
+                  color: "#ffffff",
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  border: "none",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  transition: "opacity 0.15s",
+                }}
+                onMouseEnter={e => (e.currentTarget.style.opacity = "0.9")}
+                onMouseLeave={e => (e.currentTarget.style.opacity = "1")}
+              >
+                Skip this step &amp; continue &rarr;
+              </button>
             </div>
           </div>
         </motion.div>
@@ -825,24 +851,45 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
                 </button>
               </>
             ) : (
-              <button
-                onClick={onComplete}
-                disabled={depsChecking}
-                style={{
-                  width: "100%",
-                  height: 48,
-                  background: "var(--color-text-primary)",
-                  color: "var(--color-bg-base)",
-                  border: "none",
-                  borderRadius: 12,
-                  fontWeight: 600,
-                  fontSize: 13.5,
-                  cursor: depsChecking ? "wait" : "pointer",
-                  transition: "all 0.15s",
-                }}
-              >
-                Continue
-              </button>
+              <div style={{ display: "flex", gap: 10, width: "100%" }}>
+                <button
+                  onClick={onComplete}
+                  disabled={depsChecking}
+                  style={{
+                    flex: 2,
+                    minWidth: 160,
+                    height: 48,
+                    background: "var(--color-text-primary)",
+                    color: "var(--color-bg-base)",
+                    border: "none",
+                    borderRadius: 12,
+                    fontWeight: 600,
+                    fontSize: 13.5,
+                    cursor: depsChecking ? "wait" : "pointer",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  Continue
+                </button>
+                <button
+                  onClick={onSkip}
+                  style={{
+                    flex: 1,
+                    minWidth: 120,
+                    height: 48,
+                    background: "transparent",
+                    color: "var(--color-text-tertiary)",
+                    border: "1px solid rgba(32,30,36,0.12)",
+                    borderRadius: 12,
+                    fontWeight: 600,
+                    fontSize: 13.5,
+                    cursor: "pointer",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  Skip for now
+                </button>
+              </div>
             )}
           </>
         )}

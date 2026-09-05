@@ -218,29 +218,81 @@ export async function ensureOcrDeps(): Promise<{ ok: boolean; message: string }>
       ].some(p => fs.existsSync(p));
 
       if (!tessExists) {
-        emitOcrProgress(97, 'Tesseract', 'Downloading Tesseract OCR installer...');
+        emitOcrProgress(97, 'Tesseract', 'Checking Tesseract OCR installer...');
         const setupPath = path.join(os.homedir(), '.everfern', 'tesseract-setup.exe');
         try {
+          // If a previous corrupt or partial file exists (< 10MB), delete it
+          if (fs.existsSync(setupPath)) {
+            try {
+              const stat = fs.statSync(setupPath);
+              if (stat.size < 10 * 1024 * 1024) {
+                fs.unlinkSync(setupPath);
+              }
+            } catch {}
+          }
+
           if (!fs.existsSync(setupPath)) {
+            emitOcrProgress(97, 'Tesseract', 'Downloading Tesseract OCR installer...');
             const https = require('https');
-            const file = fs.createWriteStream(setupPath);
             await new Promise<void>((resolve, reject) => {
+              const file = fs.createWriteStream(setupPath);
+              let settled = false;
+
+              const cleanup = (err: any) => {
+                if (settled) return;
+                settled = true;
+                file.destroy();
+                try { if (fs.existsSync(setupPath)) fs.unlinkSync(setupPath); } catch {}
+                reject(err);
+              };
+
               const req = (url: string) => {
                 https.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (res: any) => {
                   if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
                     req(res.headers.location);
                     return;
                   }
+                  if (res.statusCode !== 200) {
+                    cleanup(new Error(`Download failed with status ${res.statusCode}`));
+                    return;
+                  }
                   res.pipe(file);
-                  file.on('finish', () => { file.close(); resolve(); });
-                }).on('error', (err: any) => { fs.unlinkSync(setupPath); reject(err); });
+                  file.on('finish', () => {
+                    file.close((err: any) => {
+                      if (err) cleanup(err);
+                      else {
+                        settled = true;
+                        resolve();
+                      }
+                    });
+                  });
+                }).on('error', cleanup);
               };
+
               req('https://github.com/tesseract-ocr/tesseract/releases/download/5.5.3/tesseract-ocr-w64-setup-5.5.3.20260724.exe');
             });
           }
-          emitOcrProgress(98, 'Tesseract', 'Launching Tesseract installer...');
-          const { spawn } = require('child_process');
-          spawn(setupPath, ['/VERYSILENT', '/NORESTART'], { detached: true, stdio: 'ignore' }).unref();
+
+          // Verify installer exists and has valid size (> 10MB) before launching
+          if (fs.existsSync(setupPath) && fs.statSync(setupPath).size > 10 * 1024 * 1024) {
+            emitOcrProgress(98, 'Tesseract', 'Launching Tesseract installer...');
+            const { spawn } = require('child_process');
+            try {
+              const child = spawn(setupPath, ['/VERYSILENT', '/NORESTART'], {
+                detached: true,
+                stdio: 'ignore',
+                windowsHide: true
+              });
+              child.on('error', (spawnErr: any) => {
+                console.warn('[OCR] Auto-downloaded Tesseract installer execution skipped (non-fatal):', spawnErr?.message || spawnErr);
+              });
+              child.unref();
+            } catch (err: any) {
+              console.warn('[OCR] Failed to spawn Tesseract installer (non-fatal):', err?.message || err);
+            }
+          } else {
+            console.warn('[OCR] Tesseract installer file not ready or invalid size, skipping launch.');
+          }
         } catch (tessErr) {
           console.warn('[OCR] Auto-downloading Tesseract failed (non-fatal):', tessErr);
         }

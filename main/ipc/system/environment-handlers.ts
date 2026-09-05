@@ -99,11 +99,19 @@ export function registerEnvironmentHandlers(): void {
     try {
       console.log('[WSL Installer] Attempting to install default Ubuntu on WSL...');
       await execAsync('wsl.exe --install -d Ubuntu --no-launch', { timeout: 180000 });
+      // Boot root once to initialize distro filesystem and bypass first-run prompts
+      try {
+        await execAsync('wsl.exe -d Ubuntu -u root --exec /bin/true', { timeout: 45000 });
+      } catch {}
       return { success: true };
     } catch (err: any) {
       console.warn('[WSL Installer] Primary install failed, attempting elevated PowerShell install:', err);
       try {
         await execAsync('powershell -Command "Start-Process wsl.exe -ArgumentList \'--install -d Ubuntu --no-launch\' -Verb RunAs -Wait"', { timeout: 180000 });
+        // Boot root once to initialize distro filesystem and bypass first-run prompts
+        try {
+          await execAsync('wsl.exe -d Ubuntu -u root --exec /bin/true', { timeout: 45000 });
+        } catch {}
         return { success: true };
       } catch (elevatedErr: any) {
         console.error('[WSL Installer] Elevated install also failed:', elevatedErr);
