@@ -34,11 +34,11 @@ interface FileOperationCardProps {
 }
 
 const OP_META = {
-    create: { label: ["Create", "Creating", "Created"], Icon: DocumentTextIcon, color: "#2563eb" },
-    edit:   { label: ["Edit",   "Editing",   "Edited"],   Icon: PencilIcon,           color: "#d97706" },
-    delete: { label: ["Delete", "Deleting",  "Deleted"],  Icon: TrashIcon,            color: "#dc2626" },
-    move:   { label: ["Move",   "Moving",    "Moved"],    Icon: ArrowTopRightOnSquareIcon, color: "#7c3aed" },
-    copy:   { label: ["Copy",   "Copying",   "Copied"],   Icon: DocumentDuplicateIcon,color: "#059669" },
+    create: { label: ["Create", "Creating", "Created"], Icon: DocumentTextIcon, color: "var(--color-info)" },
+    edit:   { label: ["Edit",   "Editing",   "Edited"],   Icon: PencilIcon,           color: "var(--color-warning)" },
+    delete: { label: ["Delete", "Deleting",  "Deleted"],  Icon: TrashIcon,            color: "var(--color-error)" },
+    move:   { label: ["Move",   "Moving",    "Moved"],    Icon: ArrowTopRightOnSquareIcon, color: "var(--color-navis-icon-color)" },
+    copy:   { label: ["Copy",   "Copying",   "Copied"],   Icon: DocumentDuplicateIcon,color: "var(--color-success)" },
 };
 
 const statusIndex = { pending: 0, in_progress: 1, success: 2, error: 0 } as const;

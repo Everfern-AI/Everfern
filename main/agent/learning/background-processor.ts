@@ -10,8 +10,9 @@ import { performance } from 'perf_hooks';
 import { LearningTask, ProcessingQueue, ResourceUsage, ResourceLimits, LearningError } from './types';
 import { IBackgroundProcessor, QueueStatus } from './interfaces';
 import { learningErrorHandler } from './error-handler';
+import { sleep } from '../../lib/sleep';
 
-export interface BackgroundProcessorConfig {
+interface BackgroundProcessorConfig {
   maxConcurrency: number;
   resourceLimits: ResourceLimits;
   idleThresholdMs: number;
@@ -34,6 +35,7 @@ export class BackgroundProcessor extends EventEmitter implements IBackgroundProc
   private resourceMonitorInterval?: NodeJS.Timeout;
   private queueCleanupInterval?: NodeJS.Timeout;
   private currentResourceUsage: ResourceUsage;
+  private lastCpuSample: { cpuUsage: NodeJS.CpuUsage; hrtime: [number, number] } | null = null;
 
   private readonly config: BackgroundProcessorConfig;
   private isShuttingDown = false;
@@ -65,6 +67,16 @@ export class BackgroundProcessor extends EventEmitter implements IBackgroundProc
       timestamp: new Date()
     };
 
+    // AG-MEM-11: Monitoring is lazy — intervals are started on first actual
+    // use via start(), so importing this module does not keep timers running.
+  }
+
+  /**
+   * AG-MEM-11: Start resource monitoring and queue cleanup intervals.
+   * Idempotent — safe to call repeatedly; only starts timers once.
+   */
+  public start(): void {
+    if (this.resourceMonitorInterval || this.queueCleanupInterval) return;
     this.initializeMonitoring();
   }
 
@@ -72,15 +84,17 @@ export class BackgroundProcessor extends EventEmitter implements IBackgroundProc
    * Initialize resource monitoring and queue cleanup
    */
   private initializeMonitoring(): void {
-    // Monitor resource usage
+    // Monitor resource usage (unref'd so it never holds the event loop open)
     this.resourceMonitorInterval = setInterval(() => {
       this.updateResourceUsage();
     }, this.config.performanceMonitoringIntervalMs);
+    this.resourceMonitorInterval.unref?.();
 
-    // Cleanup completed/failed tasks periodically
+    // Cleanup completed/failed tasks periodically (unref'd as well)
     this.queueCleanupInterval = setInterval(() => {
       this.cleanupQueue();
     }, this.config.queueCleanupIntervalMs);
+    this.queueCleanupInterval.unref?.();
   }
 
   /**
@@ -100,18 +114,23 @@ export class BackgroundProcessor extends EventEmitter implements IBackgroundProc
   }
 
   /**
-   * Estimate CPU usage (simplified approach)
-   * In a real implementation, this would use more sophisticated CPU monitoring
+   * AG-MEM-11: Measure real main-process CPU usage.
+   * Computes process CPU time (user + system) delta against wall-clock delta
+   * between samples, yielding an actual CPU percentage of this process.
    */
   private estimateCpuUsage(): number {
-    // Simple estimation based on processing tasks and system load
-    const processingCount = this.processingTasks.size;
-    const baseUsage = processingCount * 2; // Rough estimate: 2% per task
-
-    // Add some randomness to simulate real CPU fluctuation
-    const variance = Math.random() * 1;
-
-    return Math.min(baseUsage + variance, 100);
+    const now = process.cpuUsage();
+    const nowHr = process.hrtime();
+    if (!this.lastCpuSample) {
+      this.lastCpuSample = { cpuUsage: now, hrtime: nowHr };
+      return 0;
+    }
+    const userDelta = (now.user - this.lastCpuSample.cpuUsage.user) / 1e6;   // ms
+    const sysDelta = (now.system - this.lastCpuSample.cpuUsage.system) / 1e6; // ms
+    const wallMs = (nowHr[0] - this.lastCpuSample.hrtime[0]) * 1000 + (nowHr[1] - this.lastCpuSample.hrtime[1]) / 1e6;
+    this.lastCpuSample = { cpuUsage: now, hrtime: nowHr };
+    if (wallMs <= 0) return 0;
+    return Math.min(100, ((userDelta + sysDelta) / wallMs) * 100);
   }
 
   /**
@@ -147,6 +166,8 @@ export class BackgroundProcessor extends EventEmitter implements IBackgroundProc
    * Queue a learning task for background processing
    */
   public async queueLearningTask(task: LearningTask): Promise<void> {
+    this.start();
+
     if (this.isShuttingDown) {
       throw new Error('Background processor is shutting down');
     }
@@ -182,6 +203,8 @@ export class BackgroundProcessor extends EventEmitter implements IBackgroundProc
    * Process queued tasks during idle periods
    */
   public async processQueue(): Promise<void> {
+    this.start();
+
     if (this.queue.isProcessing || this.isShuttingDown) {
       return;
     }
@@ -319,7 +342,7 @@ export class BackgroundProcessor extends EventEmitter implements IBackgroundProc
         throw new Error('Resource constraints exceeded during processing');
       }
 
-      await this.sleep(checkInterval);
+      await sleep(checkInterval);
     }
 
     // Task-specific processing would go here
@@ -496,13 +519,17 @@ export class BackgroundProcessor extends EventEmitter implements IBackgroundProc
     if (this.queueCleanupInterval) {
       clearInterval(this.queueCleanupInterval);
     }
+    // AG-MEM-11: Reset handles so start() can be called again after shutdown
+    // and idempotency checks see the cleared state.
+    this.resourceMonitorInterval = undefined;
+    this.queueCleanupInterval = undefined;
 
     // Wait for current processing to complete
     const maxWaitTime = 10000; // 10 seconds
     const startTime = Date.now();
 
     while (this.queue.isProcessing && Date.now() - startTime < maxWaitTime) {
-      await this.sleep(100);
+      await sleep(100);
     }
 
     // Clear remaining tasks
@@ -511,13 +538,6 @@ export class BackgroundProcessor extends EventEmitter implements IBackgroundProc
 
     console.log('[Background Processor] Shutdown completed');
     this.emit('shutdown');
-  }
-
-  /**
-   * Utility method for sleeping
-   */
-  private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   /**

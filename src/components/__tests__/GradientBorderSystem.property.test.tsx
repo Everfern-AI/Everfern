@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import * as fc from 'fast-check';
-import { GradientBorderSystem } from '../GradientBorderSystem';
+import { GradientBorderSystem } from '@/app/chat/components/GradientBorderSystem';
 
 /**
  * Property-Based Tests for GradientBorderSystem

@@ -1,30 +1,26 @@
 import { ipcMain } from 'electron';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
 import { AgentRunner } from '../../agent/runner/runner';
-import { globalAbortManager } from '../../agent/runner/abort-manager';
+import { globalAbortManager, getConversationAbortManager } from '../../agent/runner/abort-manager';
 import { acpManager } from '../../acp/manager';
-import { AIClient } from '../../lib/ai-client';
-import { hydrateConfigWithIsolatedKeys } from '../../lib/vlm-config';
+import { AIClient, AIClientConfig, getPooledAIClient, releasePooledAIClient } from '../../lib/ai-client';
+import { loadConfigWithCache } from '../../lib/config-cache';
 import { dbOps } from '../../lib/db';
+import { createDraftSaveDebouncer } from '../../lib/draft-debounce';
 import { reflectAndRemember } from '../../store/memory-manager';
 import { showPermissionNotification } from '../../lib/permission-notification';
 
+// Loads ~/.everfern/config.json (stream setup needs provider keys in hand
+// before the first chunk) via the AI-PERF-03 mtime cache: a stat() per
+// request instead of a full read+parse+key-dir scan, re-hydrating only
+// when the file changed. Returns null — never throws — so a broken config
+// degrades to "no override".
 function loadConfigSync() {
-  try {
-    const configDir = path.join(os.homedir(), '.everfern');
-    const configPath = path.join(configDir, 'config.json');
-    if (fs.existsSync(configPath)) {
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-      return hydrateConfigWithIsolatedKeys(config, configDir);
-    }
-  } catch (err) {
-    console.error('[Config] Error loading config:', err);
-  }
-  return null;
+  return loadConfigWithCache();
 }
 
+// The renderer prefixes models with the provider ("ollama:llama3") for
+// routing, but native provider clients expect the bare name — strip the
+// prefix only when it matches the active provider.
 function normalizeRequestedModel(providerType?: string, model?: string): string | undefined {
   if (!model) return model;
   if (providerType === 'ollama' && model.startsWith('ollama:')) return model.slice('ollama:'.length);
@@ -32,11 +28,17 @@ function normalizeRequestedModel(providerType?: string, model?: string): string 
   return model;
 }
 
+// Distills a short, human-readable action line for the UI — from an
+// explicit narrative tool-arg or the raw thought stream — stripping
+// reasoning noise so raw chain-of-thought is never surfaced as narrative.
 function extractCleanNarrative(explicitNarrative?: string, rawThought?: string): string | undefined {
   if (explicitNarrative && typeof explicitNarrative === 'string' && explicitNarrative.trim()) {
     return explicitNarrative.trim();
   }
   if (!rawThought) return undefined;
+
+  // Peel non-narrative noise before picking a line: think-blocks, code
+  // fences, [ROLE] headers, then emoji pictograph lines.
 
   const cleaned = rawThought
     .replace(/<think>[\s\S]*?<\/think>/gi, '')
@@ -50,15 +52,73 @@ function extractCleanNarrative(explicitNarrative?: string, rawThought?: string):
   const lines = cleaned.split('\n').map(l => l.trim()).filter(l => l.length > 5 && !l.startsWith('#') && !l.startsWith('-'));
   if (!lines.length) return undefined;
 
+  // Prefer the first action-verb line ("Opening…", "Checking…"); the last
+  // line is only a fallback when nothing reads like an action.
   const actionLine = lines.find(l => /^(?:I will|I'll|Now|Opening|Navigating|Checking|Inspecting|Searching|Updating|Writing|Creating|Running|Analyzing|Reading|Editing|Fetching|Looking)\b/i.test(l));
   const candidate = actionLine || lines[lines.length - 1];
 
   return candidate.replace(/^[*\s]+/, '').replace(/[.*]+$/, '').slice(0, 120).trim() || undefined;
 }
 
+// IPC payloads must be plain JSON — Electron's structured clone over the pipe
+// rejects Error instances, and depth cap guards against cyclic structures.
+const IPC_PAYLOAD_MAX_DEPTH = 16;
+// Cap persisted reasoning so a runaway thought stream can't grow the draft
+// row (and every subsequent upsert of it) without bound.
+const MAX_PERSISTED_THOUGHT_CHARS = 256 * 1024;
+
+// Cheap pre-scan: does this payload contain an Error anywhere? Decides whether
+// serializeIpcPayload can take the fast structuredClone path or must run the
+// Error-flattening JSON replacer.
+function payloadContainsError(value: unknown, depth = 0, seen: Set<object> = new Set<object>()): boolean {
+  if (value instanceof Error) return true;
+  if (value === null || typeof value !== 'object') return false;
+  if (depth >= IPC_PAYLOAD_MAX_DEPTH || seen.has(value)) return false;
+  seen.add(value);
+  const record = value as Record<string, unknown>;
+  for (const key of Object.keys(record)) {
+    try {
+      if (payloadContainsError(record[key], depth + 1, seen)) return true;
+    } catch (e) {}
+  }
+  return false;
+}
+
+// Order matters: structuredClone is the fast path (preserves Dates, Maps, etc.)
+// and is only safe when no Error instances are present — clone would throw or
+// silently drop Error internals. The JSON fallback flattens Errors to plain
+// {message, stack} objects so the renderer receives something renderable.
+function serializeIpcPayload(data: any): any {
+  if (!payloadContainsError(data)) {
+    try {
+      return structuredClone(data);
+    } catch (e) {}
+  }
+  return JSON.parse(JSON.stringify(data, (_key, value) => {
+    if (value instanceof Error) return { message: value.message, stack: value.stack };
+    return value;
+  }));
+}
+
+/**
+ * Registers the acp:* IPC handlers (stop, chat, stream). Called exactly
+ * once from the main-process IPC bootstrap (ipc/agent/index.ts) — a
+ * second call would throw on duplicate ipcMain.handle channels.
+ */
 export function registerStreamHandlers(): void {
-  ipcMain.handle('acp:stop', () => {
-    globalAbortManager.setAborted();
+  // MP-CORR-13: stop is scoped per conversation when the payload carries an id;
+  // legacy callers without a payload still abort the global flag (all streams).
+  ipcMain.handle('acp:stop', (_event, payload?: { conversationId?: string }) => {
+    const conversationId = payload?.conversationId || undefined;
+    if (conversationId) {
+      // MP-CORR-13: scoped stop — abort ONLY this conversation's streams.
+      // The global flag stays untouched so other running chats continue.
+      getConversationAbortManager(conversationId).setAborted();
+      console.log(`[acp:stop] Aborted conversation ${conversationId} (other conversations unaffected).`);
+    } else {
+      // Legacy callers without a payload abort every stream (global flag).
+      globalAbortManager.setAborted();
+    }
     return { success: true };
   });
 
@@ -71,7 +131,13 @@ export function registerStreamHandlers(): void {
     let client = acpManager.getClient();
     const config = loadConfigSync();
     const requestedModel = normalizeRequestedModel(request.providerType, request.model);
+    // XI.C: set when a pooled client is acquired below, so it can be released
+    // after the one-shot chat (no-op for pool-overflow temporaries).
+    let pooledConfig: AIClientConfig | null = null;
 
+    // One-shot chat may target a DIFFERENT provider than the active ACP
+    // session — build a transient client locally so the shared ACP
+    // client's provider is never swapped as a side effect of a chat.
     if (request.providerType) {
       const currentProvider = acpManager.getActiveConfig()?.provider;
       if (request.providerType !== currentProvider || !client) {
@@ -82,7 +148,20 @@ export function registerStreamHandlers(): void {
           apiKey,
         });
       } else if (requestedModel) {
-        client.setModel(requestedModel);
+        // XI.C: never setModel() the shared ACP client — a second concurrent
+        // conversation would silently swap models mid-flight. Re-acquire from
+        // the pool keyed on (provider, baseUrl, model) so a differing model
+        // gets its own client and an identical model reuses this one (the
+        // runner's setModel then lands as a same-model no-op).
+        if (requestedModel !== client.model) {
+          pooledConfig = {
+            provider: request.providerType as any,
+            model: requestedModel,
+            apiKey: config?.keys?.[request.providerType] || '',
+            baseUrl: acpManager.getActiveConfig()?.baseUrl,
+          };
+          client = getPooledAIClient(pooledConfig);
+        }
       }
     }
 
@@ -96,6 +175,10 @@ export function registerStreamHandlers(): void {
       return { success: true, response };
     } catch (error) {
       return { success: false, error: String(error) };
+    } finally {
+      if (pooledConfig && client) {
+        try { releasePooledAIClient(client, pooledConfig); } catch (e) {}
+      }
     }
   });
 
@@ -110,12 +193,17 @@ export function registerStreamHandlers(): void {
     operatorMode?: boolean,
     reasoningEffort?: string
   }) => {
+    // Debug stash: debug IPC handlers read lastChatMessages/lastStreamEvent
+    // off globalThis to dump recent context without a shared module import.
     (globalThis as any).lastChatMessages = request.messages;
     const streamSender = event.sender;
     const config = loadConfigSync();
     let client = acpManager.getClient();
     const requestedModel = normalizeRequestedModel(request.providerType, request.model);
     let activeConfigForRequest = acpManager.getActiveConfig();
+    // XI.C: set when a pooled client is acquired below, so it can be released
+    // (no-op for pool-overflow temporaries) when this stream finishes.
+    let pooledConfig: AIClientConfig | null = null;
 
     if (request.providerType) {
       const currentProvider = activeConfigForRequest?.provider;
@@ -132,6 +220,9 @@ export function registerStreamHandlers(): void {
           apiKey,
           baseUrl,
         });
+        // Per-request override: the merged config drives ONLY this stream
+        // (client + runner) — the manager's stored active config is not
+        // mutated, so later requests revert to it.
         activeConfigForRequest = {
           ...(activeConfigForRequest || {}),
           provider: request.providerType as any,
@@ -140,7 +231,20 @@ export function registerStreamHandlers(): void {
           baseUrl,
         } as any;
       } else if (requestedModel) {
-        client.setModel(requestedModel);
+        // XI.C: same-provider different-model — never mutate the shared ACP
+        // client (concurrent conversations would overwrite each other). Re-key
+        // through the pool: a differing model acquires its own client; an
+        // identical model keeps this one (the runner's setModel is then a
+        // same-model no-op, so runner.ts needs no change).
+        if (requestedModel !== client.model) {
+          pooledConfig = {
+            provider: request.providerType as any,
+            model: requestedModel,
+            apiKey: config?.keys?.[request.providerType] || request.apiKey || '',
+            baseUrl: activeConfigForRequest?.baseUrl,
+          };
+          client = getPooledAIClient(pooledConfig);
+        }
         activeConfigForRequest = {
           ...(activeConfigForRequest || {}),
           model: requestedModel,
@@ -170,6 +274,8 @@ export function registerStreamHandlers(): void {
     let thoughtBuffer = '';
     let toolCallChunkBuffer: Array<{ index: number; argumentsDelta: string }> = [];
     let lastFlushTime = Date.now();
+    // ~16ms ≈ one flush per animation frame: coalesces token bursts so
+    // the renderer never receives one IPC message per token.
     const FLUSH_INTERVAL_MS = 16;
 
     const flushBuffers = () => {
@@ -191,16 +297,15 @@ export function registerStreamHandlers(): void {
     };
 
     const safeSend = (channel: string, data: any) => {
+      // Flush first: buffered chunks must land before this discrete event
+      // so the renderer always observes strict arrival order.
       flushBuffers();
       if (data === undefined) {
         console.warn(`[IPC] Skipping undefined data for channel ${channel}`);
         return;
       }
       try {
-        const safeData = JSON.parse(JSON.stringify(data, (key, value) => {
-          if (value instanceof Error) return { message: value.message, stack: value.stack };
-          return value;
-        }));
+        const safeData = serializeIpcPayload(data);
         if (safeData && typeof safeData === 'object' && !Array.isArray(safeData)) {
           if (!safeData.conversationId) {
             safeData.conversationId = request.conversationId;
@@ -215,6 +320,11 @@ export function registerStreamHandlers(): void {
       }
     };
 
+    // AI-ARCH-01: lets the catch path cancel a pending debounced draft save
+    // when the stream loop unwinds via throw (the debouncer itself is created
+    // inside the try, next to saveDraft, where its closure state lives).
+    let cancelPendingDraftSave: (() => void) | null = null;
+
     try {
       const validMessages = request.messages.filter((m: any) => m.content);
       if (validMessages.length === 0) {
@@ -225,12 +335,14 @@ export function registerStreamHandlers(): void {
       const userInput = validMessages[validMessages.length - 1].content;
 
       const convId = request.conversationId;
+      // One stable row id for the entire stream: every debounced/final
+      // save upserts this same id. Prefer the renderer-supplied id so its
+      // optimistic message row is reused rather than duplicated.
       const msgId = request.assistantMessageId || `draft-${Date.now()}`;
       let draftContent = '';
       let draftToolCalls: any[] = [];
       const draftSubAgentProgress = new Map<string, any[]>();
-      let lastDraftSave = 0;
-      const DRAFT_INTERVAL_MS = 800;
+      let accumulatedThought = '';
 
       const sanitizeDraftProgressEvent = (raw: any, fallbackToolCallId?: string) => {
         if (!raw || typeof raw !== 'object') return null;
@@ -239,6 +351,8 @@ export function registerStreamHandlers(): void {
           toolCallId: raw.toolCallId || fallbackToolCallId || '',
           timestamp: raw.timestamp || new Date().toISOString(),
         };
+        // Blank the inline base64 but keep the on-disk path — screenshot
+        // blobs would bloat the draft row on every re-upsert.
         if (event.screenshot) {
           event.screenshot = {
             ...event.screenshot,
@@ -268,9 +382,13 @@ export function registerStreamHandlers(): void {
           seen.add(key);
           merged.push(event);
         }
+        // Hard cap on persisted progress (same intent as the thought-char
+        // cap): long sub-agent runs must not grow the draft row unboundedly.
         return merged.slice(-100);
       };
 
+      // Sub-agent progress can arrive after the tool_call was recorded,
+      // so every save re-merges the per-toolCallId side-map into stored calls.
       const attachDraftProgress = (toolCall: any) => {
         const toolCallId = toolCall?.id || toolCall?.toolCallId || toolCall?.tool_call_id;
         if (!toolCallId) return toolCall;
@@ -294,44 +412,66 @@ export function registerStreamHandlers(): void {
       let lastMissionTimeline: any = null;
 
       const saveDraft = async () => {
-        if (!convId || (!draftContent && draftToolCalls.length === 0 && !thoughtBuffer)) return;
+        if (!convId || (!draftContent && draftToolCalls.length === 0 && !accumulatedThought)) return;
+        const persistedThought = accumulatedThought || null;
+        const now = new Date().toISOString();
         try {
+          // The COALESCE subqueries make the repeated upsert idempotent:
+          // re-saving the same draft id keeps its ORIGINAL order_index and
+          // created_at instead of re-stamping them on every chunk.
           await dbOps.run(
-            `INSERT OR REPLACE INTO messages
+            `INSERT INTO messages
              (id, conversation_id, role, content, thought, reasoning_content, tool_calls, mission_timeline, order_index, created_at)
-             VALUES (?, ?, 'assistant', ?, ?, ?, ?, ?, COALESCE((SELECT order_index FROM messages WHERE id = ?), (SELECT COUNT(*) FROM messages WHERE conversation_id = ?)), COALESCE((SELECT created_at FROM messages WHERE id = ?), ?))`,
+             VALUES (?, ?, 'assistant', ?, ?, ?, ?, ?, COALESCE((SELECT order_index FROM messages WHERE id = ?), (SELECT COUNT(*) FROM messages WHERE conversation_id = ?)), COALESCE((SELECT created_at FROM messages WHERE id = ?), ?))
+             ON CONFLICT(id) DO UPDATE SET
+               content = excluded.content,
+               thought = excluded.thought,
+               reasoning_content = excluded.reasoning_content,
+               tool_calls = excluded.tool_calls,
+               mission_timeline = excluded.mission_timeline,
+               order_index = excluded.order_index`,
             [
               msgId,
               convId,
               draftContent,
-              thoughtBuffer || null,
-              thoughtBuffer || null,
+              persistedThought,
+              persistedThought,
               draftToolCalls.length > 0 ? JSON.stringify(draftToolCalls.map(attachDraftProgress)) : null,
               lastMissionTimeline ? JSON.stringify(lastMissionTimeline) : null,
               msgId,
               convId,
               msgId,
-              new Date().toISOString()
+              now
             ]
           );
           await dbOps.run(
-            `INSERT OR IGNORE INTO conversations (id, title, provider, model, created_at, updated_at)
-             VALUES (?, '[In Progress]', 'everfern', ?, ?, ?)`,
-            [convId, requestedModel || 'unknown',
-             new Date().toISOString(), new Date().toISOString()]
-          );
-          await dbOps.run(
-            `UPDATE conversations SET updated_at = ? WHERE id = ?`,
-            [new Date().toISOString(), convId]
+            `INSERT INTO conversations (id, title, provider, model, created_at, updated_at)
+             VALUES (?, '[In Progress]', 'everfern', ?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
+            [convId, requestedModel || 'unknown', now, now]
           );
         } catch (e) {
           console.warn('[AgentIPC] Draft save error:', e);
         }
       };
 
+      // AI-ARCH-01: coalesce per-chunk draft saves into a trailing-idle
+      // debounce (at most one SQLite write per 600ms idle window). The
+      // final `await saveDraft()` at end-of-stream is the authoritative
+      // flush; debounced saves are crash/abort protection.
+      const draftSaveDebouncer = createDraftSaveDebouncer(saveDraft, 600);
+      cancelPendingDraftSave = () => draftSaveDebouncer.cancel();
+
+      // MP-CORR-13: check the scoped abort state first so stopping ANOTHER
+      // conversation does not kill this stream; global remains as a fallback.
+      const scopedAbortManager = getConversationAbortManager(request.conversationId);
       for await (const streamEvent of runner.runStream(userInput, history, requestedModel, request.conversationId, undefined, request.projectId, false, request.assistantMessageId, false, !!request.operatorMode, request.reasoningEffort)) {
         (globalThis as any).lastStreamEvent = streamEvent;
-        if (globalAbortManager.streamAborted) {
+        if (scopedAbortManager.streamAborted || globalAbortManager.streamAborted) {
+          // AI-ARCH-01: stop pending debounced saves and flush the draft once
+          // on the abort path (the loop exits via break, never reaching 'done').
+          draftSaveDebouncer.cancel();
+          void saveDraft().catch(() => {});
           flushBuffers();
           try {
             const { getComputerOverlayManager } = require('../../computer-overlay');
@@ -348,11 +488,14 @@ export function registerStreamHandlers(): void {
           fullResponse += streamEvent.content;
           draftContent += streamEvent.content;
           if (Date.now() - lastFlushTime >= FLUSH_INTERVAL_MS) flushBuffers();
-          if (Date.now() - lastDraftSave > DRAFT_INTERVAL_MS) {
-            lastDraftSave = Date.now();
-            saveDraft().catch(() => {});
-          }
+          draftSaveDebouncer.schedule();
         } else if (streamEvent.type === 'thought') {
+          accumulatedThought += streamEvent.content;
+          // Trim keeps the TAIL — most recent reasoning survives, the
+          // oldest is dropped once the persisted copy exceeds the cap.
+          if (accumulatedThought.length > MAX_PERSISTED_THOUGHT_CHARS) {
+            accumulatedThought = accumulatedThought.slice(-MAX_PERSISTED_THOUGHT_CHARS);
+          }
           thoughtBuffer += streamEvent.content;
           if (Date.now() - lastFlushTime >= FLUSH_INTERVAL_MS) flushBuffers();
         } else if (streamEvent.type === 'tool_start') {
@@ -471,6 +614,9 @@ export function registerStreamHandlers(): void {
           }
 
           safeSend('acp:stream-chunk', { delta: '', done: true });
+          // Cancel any pending debounced save so the awaited final flush is
+          // the single authoritative write and no duplicate fires right after.
+          draftSaveDebouncer.cancel();
           await saveDraft();
           reflectAndRemember(history, userInput, fullResponse, client);
         } else if (streamEvent.type === 'subagent-progress') {
@@ -484,10 +630,7 @@ export function registerStreamHandlers(): void {
                 mergeDraftProgress(draftSubAgentProgress.get(toolCallId) || [], [event])
               );
               draftToolCalls = draftToolCalls.map(attachDraftProgress);
-              if (Date.now() - lastDraftSave > DRAFT_INTERVAL_MS) {
-                lastDraftSave = Date.now();
-                saveDraft().catch(() => {});
-              }
+              draftSaveDebouncer.schedule();
             }
           }
           safeSend('acp:sub-agent-progress', progressPayload);
@@ -518,6 +661,9 @@ export function registerStreamHandlers(): void {
           console.log('[AgentIPC] Forwarding debate event:', de.type, 'debateId:', de.debateId);
           safeSend('debate:stream', de);
         } else {
+          // These were handled (and already forwarded) in explicit branches
+          // above — the generic forwarder must skip them or the renderer
+          // receives each one twice.
           const skippedTypes = new Set(['mission_step_update', 'mission_phase_change', 'mission_complete', 'done']);
           if (!skippedTypes.has(streamEvent.type)) {
             safeSend(`acp:${streamEvent.type.replace(/_/g, '-')}`, streamEvent);
@@ -526,6 +672,10 @@ export function registerStreamHandlers(): void {
       }
     } catch (error) {
       console.error('[AgentIPC] Stream Error:', error);
+      // AI-ARCH-01: cancel any pending debounced draft save on the crash path
+      // (loop unwound via throw, so no final flush happened; a trailing
+      // debounced write would persist a truncated stale draft).
+      try { cancelPendingDraftSave?.(); } catch (e) {}
       try {
         const { getComputerOverlayManager } = require('../../computer-overlay');
         getComputerOverlayManager().hide();
@@ -538,6 +688,13 @@ export function registerStreamHandlers(): void {
       }
 
       safeSend('acp:stream-chunk', { delta: `\n\n[Error: ${String(error)}]`, done: true, conversationId: request.conversationId, assistantMessageId: request.assistantMessageId });
+    } finally {
+      // XI.C: return any pooled re-acquired client so the (provider, baseUrl,
+      // model) entry is reusable — without this every model variant would
+      // degenerate into pool-overflow one-off clients.
+      if (pooledConfig && client) {
+        try { releasePooledAIClient(client, pooledConfig); } catch (e) {}
+      }
     }
   });
 }

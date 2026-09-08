@@ -1,0 +1,61 @@
+{
+  "manifest_version": 2,
+  "name": "EverFern Navis",
+  "description": "Extension-first browser control for EverFern Navis.",
+  "version": "0.1.7",
+  "permissions": [
+    "<all_urls>",
+    "activeTab",
+    "alarms",
+    "storage",
+    "tabs"
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ],
+    "persistent": true
+  },
+  "browser_action": {
+    "default_title": "EverFern Navis",
+    "default_icon": {
+      "16": "logos/tray-icon.png",
+      "32": "logos/tray-icon.png",
+      "48": "logos/tray-icon.png",
+      "128": "logos/everfern-rounded.png"
+    },
+    "default_popup": "popup.html"
+  },
+  "icons": {
+    "16": "logos/tray-icon.png",
+    "32": "logos/tray-icon.png",
+    "48": "logos/tray-icon.png",
+    "128": "logos/everfern-rounded.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    "logos/*"
+  ],
+  "content_security_policy": "script-src 'self'; object-src 'self'; connect-src 'self' ws://127.0.0.1:4001 http://127.0.0.1:4001 ws://localhost:4001 http://localhost:4001 * ws: wss: http: https:;",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "navis@everfern.local",
+      "strict_min_version": "109.0",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
+    }
+  }
+}

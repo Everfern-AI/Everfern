@@ -31,6 +31,20 @@ function safeSend(channel: string, payload: unknown) {
   }
 }
 
+// MP-CORR-27 (remainder): periodic re-check so long-running sessions still
+// discover updates published after launch. Cleared on quit — never holds the loop.
+let updateCheckInterval: ReturnType<typeof setInterval> | null = null;
+
+function runUpdateCheck(): void {
+  try {
+    autoUpdater.checkForUpdatesAndNotify()?.catch((error: unknown) => {
+      log.error('[Updater] Async update check failed:', error);
+    });
+  } catch (error) {
+    log.error('[Updater] Sync update check failed:', error);
+  }
+}
+
 export function initializeUpdater(mainWindow: BrowserWindow) {
   autoUpdater.logger = log;
   (autoUpdater.logger as any).transports.file.level = 'info';
@@ -96,12 +110,25 @@ export function initializeUpdater(mainWindow: BrowserWindow) {
     return updateStatus;
   });
 
-  // Check for updates
-  try {
-    autoUpdater.checkForUpdatesAndNotify()?.catch((error: unknown) => {
-      log.error('[Updater] Async update check failed:', error);
-    });
-  } catch (error) {
-    log.error('[Updater] Failed to check for updates on startup:', error);
+  // Initial check (startup)
+  runUpdateCheck();
+
+  // MP-CORR-27: re-check every 6 hours while the app runs (unref'd so it
+  // never keeps the event loop alive at quit).
+  const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+  updateCheckInterval = setInterval(() => {
+    log.info('[Updater] Periodic update check...');
+    runUpdateCheck();
+  }, SIX_HOURS_MS);
+  updateCheckInterval.unref?.();
+}
+
+/**
+ * Stop the periodic update checks (quit path / tests).
+ */
+export function stopPeriodicUpdateChecks(): void {
+  if (updateCheckInterval) {
+    clearInterval(updateCheckInterval);
+    updateCheckInterval = null;
   }
 }

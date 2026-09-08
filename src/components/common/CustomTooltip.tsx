@@ -39,7 +39,7 @@ const CustomTooltip: React.FC<CustomTooltipProps> = ({ content, children }) => {
                             whiteSpace: "nowrap",
                             maxWidth: 300,
                             zIndex: 1000,
-                            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+                            boxShadow: "var(--shadow-md)",
                             pointerEvents: "none"
                         }}
                     >
@@ -55,7 +55,7 @@ const CustomTooltip: React.FC<CustomTooltipProps> = ({ content, children }) => {
                                 height: 0,
                                 borderLeft: "6px solid transparent",
                                 borderRight: "6px solid transparent",
-                                borderTop: "6px solid #111111"
+                                borderTop: "6px solid var(--color-text-primary)"
                             }}
                         />
                     </motion.div>

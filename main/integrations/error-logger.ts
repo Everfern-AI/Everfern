@@ -94,7 +94,7 @@ export interface ErrorContext {
 /**
  * Comprehensive error log entry
  */
-export interface ErrorLogEntry {
+interface ErrorLogEntry {
   /** Unique error ID */
   id: string;
   /** Error timestamp */
@@ -134,7 +134,7 @@ export interface ErrorLogEntry {
 /**
  * Error statistics and analytics
  */
-export interface ErrorStatistics {
+interface ErrorStatistics {
   /** Total errors in time period */
   totalErrors: number;
   /** Errors by severity */
@@ -163,7 +163,7 @@ export interface ErrorStatistics {
 /**
  * Error notification configuration
  */
-export interface ErrorNotificationConfig {
+interface ErrorNotificationConfig {
   /** Enable notifications */
   enabled: boolean;
   /** Minimum severity for notifications */
@@ -185,6 +185,7 @@ export class ErrorLogger extends EventEmitter {
   private logDirectory: string;
   private notificationConfig: ErrorNotificationConfig;
   private notificationCounts: Map<string, number[]> = new Map();
+  private cleanupTimer: NodeJS.Timeout | null = null;
   private securityMonitor = getSecurityMonitor();
 
   constructor(config?: Partial<ErrorNotificationConfig>) {
@@ -790,11 +791,22 @@ export class ErrorLogger extends EventEmitter {
    * Start periodic cleanup
    */
   private startPeriodicCleanup(): void {
+    // MP-LEAK-01: store handle so stop() can clear it.
     // Clean up old errors every hour
-    setInterval(() => {
+    this.cleanupTimer = setInterval(() => {
       this.cleanupOldErrors();
       this.cleanupNotificationCounts();
     }, 60 * 60 * 1000);
+  }
+
+  /**
+   * Stop the logger and clear its periodic cleanup timer (MP-LEAK-01).
+   */
+  stop(): void {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
+    }
   }
 
   /**
@@ -830,23 +842,6 @@ export class ErrorLogger extends EventEmitter {
 }
 
 /**
- * Default error notification configuration
- */
-export const defaultErrorNotificationConfig: ErrorNotificationConfig = {
-  enabled: true,
-  minSeverity: ErrorSeverity.MEDIUM,
-  criticalCategories: [
-    ErrorCategory.SECURITY_VIOLATION,
-    ErrorCategory.DATABASE,
-    ErrorCategory.ENCRYPTION
-  ],
-  rateLimit: {
-    maxPerHour: 20,
-    cooldownMinutes: 5
-  }
-};
-
-/**
  * Global error logger instance
  */
 let globalErrorLogger: ErrorLogger | null = null;
@@ -859,6 +854,14 @@ export function getErrorLogger(config?: Partial<ErrorNotificationConfig>): Error
     globalErrorLogger = new ErrorLogger(config);
   }
   return globalErrorLogger;
+}
+
+/**
+ * Stop the global error logger (clears its cleanup timer).
+ * Called from the quit path (MP-LEAK-01).
+ */
+export function stopGlobalErrorLogger(): void {
+  globalErrorLogger?.stop();
 }
 
 /**

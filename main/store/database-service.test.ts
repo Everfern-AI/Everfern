@@ -66,6 +66,8 @@ describe('DatabaseService', () => {
         // Ignore cleanup errors
       }
     }
+    // MP-CORR-17: stop the background retry-drain interval
+    service.dispose();
   });
 
   describe('Retry Logic', () => {

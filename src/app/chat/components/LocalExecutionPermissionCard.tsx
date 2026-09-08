@@ -351,7 +351,7 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
           <button
             onClick={() => handleResponse(onAlwaysAllow)}
             onKeyDown={handleKeyDown}
-            aria-label="Always allow local execution"
+            aria-label="Always allow local execution for this session"
             disabled={responded}
             style={{
               padding: "7px 16px",
@@ -414,6 +414,20 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
           >
             Allow once
           </button>
+        </div>
+
+        {/* Always-allow scope disclosure */}
+        <div
+          style={{
+            padding: "0 20px 12px",
+            textAlign: "right",
+            fontSize: 11,
+            color: "var(--color-text-tertiary, var(--color-text-secondary))",
+            fontFamily: "var(--font-sans)",
+            backgroundColor: "var(--color-bg-surface)",
+          }}
+        >
+          “Always allow” applies to all commands in this chat until you switch conversations
         </div>
       </div>
 

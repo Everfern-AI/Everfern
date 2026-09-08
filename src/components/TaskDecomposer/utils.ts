@@ -149,9 +149,9 @@ export function formatDuration(ms: number): string {
 export function getStatusColor(status: TaskStatus): string {
   const colors: Record<TaskStatus, string> = {
     pending: 'var(--color-bg-subtle)',
-    'in-progress': '#dbeafe',
-    completed: '#dcfce7',
-    failed: '#fee2e2',
+    'in-progress': 'var(--color-info-dim)',
+    completed: 'var(--color-success-dim)',
+    failed: 'var(--color-error-dim)',
   };
 
   return colors[status] || colors.pending;
@@ -163,9 +163,9 @@ export function getStatusColor(status: TaskStatus): string {
 export function getStatusTextColor(status: TaskStatus): string {
   const colors: Record<TaskStatus, string> = {
     pending: 'var(--color-text-tertiary)',
-    'in-progress': '#0284c7',
-    completed: '#16a34a',
-    failed: '#dc2626',
+    'in-progress': 'var(--color-info)',
+    completed: 'var(--color-success)',
+    failed: 'var(--color-error)',
   };
 
   return colors[status] || colors.pending;
@@ -177,9 +177,9 @@ export function getStatusTextColor(status: TaskStatus): string {
 export function getStatusBorderColor(status: TaskStatus): string {
   const colors: Record<TaskStatus, string> = {
     pending: 'var(--color-border)',
-    'in-progress': '#0284c7',
-    completed: '#16a34a',
-    failed: '#dc2626',
+    'in-progress': 'var(--color-info)',
+    completed: 'var(--color-success)',
+    failed: 'var(--color-error)',
   };
 
   return colors[status] || colors.pending;

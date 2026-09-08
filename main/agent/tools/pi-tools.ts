@@ -8,8 +8,10 @@
 import type { AgentTool, ToolResult } from '../runner/types';
 import { runInLinuxVM, isLinuxVMAvailable } from './linux-vm-executor';
 import { getRollbackManager } from '../persistence/rollback-manager';
+import type { FileSnapshot } from '../persistence/rollback-manager';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as readline from 'readline';
 import { UnifiedExecutor } from './unified-executor';
 import { taskCompleteTool } from './task-complete';
 
@@ -257,6 +259,9 @@ function buildGrepMatcher(pattern: string, caseSensitive: boolean, regexRequeste
 }
 
 async function shouldSkipGrepFile(filePath: string, maxBytes: number): Promise<{ skip: boolean; reason?: string }> {
+  // Cheap pre-open gates: known-binary extensions skip by name alone, and the
+  // size cap bounds time spent on any single file. The reader itself streams,
+  // so the cap is about scan time, not memory.
   const ext = path.extname(filePath).toLowerCase();
   if (GREP_BINARY_EXTS.has(ext)) return { skip: true, reason: 'binary extension' };
   try {
@@ -276,6 +281,17 @@ type GrepMatch = {
   text: string;
 };
 
+/**
+ * Streaming recursive grep over the host filesystem.
+ * Walks the tree depth-first and reads each candidate file line-by-line via
+ * readline (never whole-file), so memory stays bounded on large log files.
+ * Stops early when maxResults or the timeout is hit; skips binaries, oversized
+ * files, symlinks, and well-known build/vendor directories.
+ * @param args Accepts pattern|query|search, path, timeout, maxResults,
+ *   maxFileBytes, caseSensitive, regex, literal.
+ * @param onUpdate Optional progress sink (throttled) for UI feedback.
+ * @returns ToolResult with matches and scan stats in `data`.
+ */
 async function executeHostGrep(
   args: Record<string, unknown>,
   onUpdate?: (msg: string) => void
@@ -319,6 +335,8 @@ async function executeHostGrep(
   let limitReached = false;
   let lastUpdate = 0;
 
+  // Throttle progress emission to ~1 update per 650ms so a large scan doesn't
+  // flood the UI event queue.
   const emitProgress = (force = false) => {
     const now = Date.now();
     if (!force && now - lastUpdate < 650) return;
@@ -326,6 +344,18 @@ async function executeHostGrep(
     onUpdate?.(`grep: searched ${filesSearched} file${filesSearched === 1 ? '' : 's'}, found ${matches.length} match${matches.length === 1 ? '' : 'es'} in ${path.basename(searchPath) || searchPath}`);
   };
 
+  // AG-CORR-09: bounded in-flight set for awaited per-directory searches.
+  const pendingSearches: Array<Promise<void>> = [];
+  const settleSearches = async (): Promise<void> => {
+    if (pendingSearches.length === 0) return;
+    const batch = pendingSearches.splice(0, pendingSearches.length);
+    await Promise.allSettled(batch);
+  };
+
+  // AG-PERF-09: stream files line-by-line instead of loading whole files into
+  // memory. Counts a file as searched on the first emitted line (empty files
+  // therefore no longer count toward filesSearched, unlike the whole-file
+  // implementation).
   const searchFile = async (filePath: string) => {
     const skip = await shouldSkipGrepFile(filePath, maxFileBytes);
     if (skip.skip) {
@@ -333,36 +363,65 @@ async function executeHostGrep(
       return;
     }
 
-    let content = '';
-    try {
-      content = await fs.promises.readFile(filePath, 'utf8');
-    } catch (err: any) {
-      if (skipped.length < 25) skipped.push(`${filePath} (${err?.message || 'read failed'})`);
-      return;
-    }
-    if (content.includes('\u0000')) {
-      if (skipped.length < 25) skipped.push(`${filePath} (binary content)`);
-      return;
-    }
-
-    filesSearched += 1;
-    const lines = content.split(/\r?\n/);
-    for (let i = 0; i < lines.length; i += 1) {
-      matcher.lastIndex = 0;
-      if (!matcher.test(lines[i])) continue;
-      const relativePath = path.relative(searchPath, filePath) || path.basename(filePath);
-      matches.push({
-        path: filePath,
-        relativePath,
-        line: i + 1,
-        text: lines[i].trimEnd(),
-      });
-      onUpdate?.(`grep: match ${matches.length} at ${relativePath}:${i + 1}`);
-      if (matches.length >= maxResults) {
-        limitReached = true;
+    let binary = false;
+    let counted = false;
+    // Stream line-by-line: the file is decoded in chunks and readline splits
+    // on \n / \r boundaries, holding any partial last line in its own buffer
+    // until the next chunk arrives (a line is only emitted once complete).
+    // Backpressure is handled by readline pausing the stream between 'line'
+    // events, so a huge file never occupies more than one line in memory.
+    await new Promise<void>((resolve) => {
+      let stream: fs.ReadStream | null = null;
+      try {
+        stream = fs.createReadStream(filePath, { encoding: 'utf8' });
+      } catch {
+        if (skipped.length < 25) skipped.push(`${filePath} (read failed)`);
+        resolve();
         return;
       }
-    }
+      // crlfDelay: Infinity treats a lone \r as a line break too (old Mac
+      // endings), not as part of the line text.
+      const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+      let lineNo = 0;
+      let settled = false;
+      const finish = () => { if (!settled) { settled = true; resolve(); } };
+      rl.on('line', (line: string) => {
+        // Early exit: once a global stop condition trips (binary hit, result
+        // limit, or deadline), close the reader. Note rl.close() only stops
+        // reading NEW chunks — lines already buffered from the current chunk
+        // can still fire, hence the same guard re-checks here each time.
+        if (binary || limitReached || timedOut) { rl.close(); return; }
+        lineNo += 1;
+        // NUL byte heuristic: treat as binary and abandon the file.
+        if (line.includes('\u0000')) {
+          binary = true;
+          if (skipped.length < 25) skipped.push(`${filePath} (binary content)`);
+          rl.close();
+          return;
+        }
+        if (!counted) { counted = true; filesSearched += 1; }
+        // Sample the clock every 64 lines — per-line Date.now() dominates on
+        // large files; this keeps timeout checks amortized O(1).
+        if ((lineNo & 0x3f) === 0 && Date.now() > deadline) { timedOut = true; rl.close(); return; }
+        matcher.lastIndex = 0;
+        if (!matcher.test(line)) return;
+        const relativePath = path.relative(searchPath, filePath) || path.basename(filePath);
+        matches.push({ path: filePath, relativePath, line: lineNo, text: line.trimEnd() });
+        onUpdate?.(`grep: match ${matches.length} at ${relativePath}:${lineNo}`);
+        if (matches.length >= maxResults) { limitReached = true; rl.close(); return; }
+      });
+      // Both error paths resolve (not reject) so one unreadable file never
+      // aborts the whole scan; it just lands in the skipped list.
+      rl.on('close', finish);
+      rl.on('error', () => {
+        if (skipped.length < 25) skipped.push(`${filePath} (read failed)`);
+        finish();
+      });
+      stream.on('error', () => {
+        if (skipped.length < 25) skipped.push(`${filePath} (read failed)`);
+        finish();
+      });
+    });
     emitProgress();
   };
 
@@ -379,6 +438,9 @@ async function executeHostGrep(
 
   onUpdate?.(`grep: searching "${pattern}" in ${searchPath} (timeout ${Math.round(timeoutMs / 1000)}s)`);
 
+  // Iterative DFS with an explicit stack (dirs.pop()) — no recursion, so
+  // pathological tree depth can't blow the call stack; limitReached
+  // short-circuits the whole walk once the result cap is hit.
   while (dirs.length > 0 && !limitReached) {
     if (Date.now() > deadline) {
       timedOut = true;
@@ -415,17 +477,28 @@ async function executeHostGrep(
         continue;
       }
       if (entry.isFile()) {
-        searchFile(fullPath);
+        // AG-CORR-09: fire-and-forget raced truncation/timeout composition.
+        // Collect the in-flight searches and await them before this dir is
+        // considered done, so maxResults/timeout checks see settled state.
+        pendingSearches.push(searchFile(fullPath));
       }
     }
 
+    // Await this directory's searches before moving on (bounded batch).
+    await settleSearches();
+
     if (dirsScanned % 10 === 0) {
       emitProgress();
+      // Yield to the event loop periodically so progress UI updates render
+      // and other pending I/O (permission dialogs, other agents) isn't starved.
       await new Promise(resolve => setImmediate(resolve));
     }
   }
 
   emitProgress(true);
+
+  // AG-CORR-09: drain any in-flight searches before composing the result.
+  await settleSearches();
 
   const elapsedMs = Date.now() - startedAt;
   const header = matches.length === 0
@@ -758,6 +831,16 @@ function adaptTool(
               const approvalPromise = new Promise<{ approved: boolean; alwaysAllow: boolean }>((resolve) => {
                 const resolvers = getLocalExecutionResolvers();
                 resolvers.set(requestId, resolve);
+                // MP-CORR-23: deny on timeout so ignored dialogs don't leak the
+                // resolver or hang the tool call forever.
+                const timeout = setTimeout(() => {
+                  if (resolvers.get(requestId) === resolve) {
+                    resolvers.delete(requestId);
+                    console.warn(`[pi-tools] Local execution request ${requestId} timed out — denying.`);
+                    resolve({ approved: false, alwaysAllow: false });
+                  }
+                }, 10 * 60 * 1000);
+                timeout.unref?.();
               });
 
               const response = await approvalPromise;
@@ -1100,6 +1183,8 @@ function adaptTool(
         }
 
         if (name === 'grep') {
+          // Intercept: bypass pi's whole-file grepTool entirely in favor of the
+          // streaming host implementation above.
           return await executeHostGrep(args, onUpdate);
         }
 
@@ -1248,7 +1333,9 @@ function adaptTool(
             try {
               const rollbackManager = getRollbackManager();
               await rollbackManager.initialize();
-              const { taskId } = currentAgentContext;
+              // Revert also depends on the ALS-scoped taskId to look up this
+              // task's snapshots only — never another conversation's.
+              const { taskId } = getAgentContext();
               if (!taskId) {
                 console.error(`[pi-tools] ❌ Revert error: requires an active agent task context`);
                 return { success: false, output: 'Error: revert requires an active agent task context', error: 'no_task_context' };
@@ -1408,41 +1495,119 @@ function adaptTool(
 
 let loadedCodingTools: AgentTool[] | null = null;
 
-// File read cache: path → { content, mtime }
-const fileReadCache = new Map<string, { content: string; mtime: number }>();
+// File read cache: path → { content, mtime } — LRU-bounded (AG-MEM-06).
+// Dual caps: max entries AND max total content bytes; Map iteration order is
+// insertion order, so the oldest entry is the first key. get() refreshes
+// recency by delete+re-insert.
+export const FILE_READ_CACHE_MAX_ENTRIES = 200;
+export const FILE_READ_CACHE_MAX_BYTES = 50 * 1024 * 1024;
+const fileReadCache = new Map<string, { content: string; mtime: number; bytes: number }>();
+let fileReadCacheBytes = 0;
+
+/** Test-only hook: current LRU occupancy. */
+export function __fileReadCacheStatsForTest(): { size: number; bytes: number } {
+  return { size: fileReadCache.size, bytes: fileReadCacheBytes };
+}
+
+function fileReadCacheGet(path: string): { content: string; mtime: number; bytes: number } | undefined {
+  const v = fileReadCache.get(path);
+  if (v) {
+    // Refresh recency.
+    fileReadCache.delete(path);
+    fileReadCache.set(path, v);
+  }
+  return v;
+}
+
+function fileReadCacheSet(path: string, content: string, mtime: number): void {
+  const bytes = Buffer.byteLength(content, 'utf8');
+  const prev = fileReadCache.get(path);
+  if (prev) fileReadCacheBytes -= prev.bytes;
+  fileReadCache.delete(path);
+  while (fileReadCache.size > 0 &&
+    (fileReadCacheBytes + bytes > FILE_READ_CACHE_MAX_BYTES ||
+      fileReadCache.size >= FILE_READ_CACHE_MAX_ENTRIES)) {
+    const oldest = fileReadCache.keys().next().value as string | undefined;
+    if (oldest === undefined) break;
+    const evicted = fileReadCache.get(oldest);
+    if (evicted) fileReadCacheBytes -= evicted.bytes;
+    fileReadCache.delete(oldest);
+  }
+  fileReadCache.set(path, { content, mtime, bytes });
+  fileReadCacheBytes += bytes;
+}
 
 /**
  * Get current agent context for rollback tracking.
  * This should be set by the agent runtime when executing tasks.
  */
-let currentAgentContext: { taskId?: string; stepNumber?: number } = {};
+// AG-CORR-13: module-global `currentAgentContext` was clobbered when two
+// conversations executed tools concurrently, attaching rollback records to the
+// wrong task. AsyncLocalStorage scopes the context per execution chain, so
+// concurrent turns each see their own taskId/stepNumber.
+import { AsyncLocalStorage } from 'async_hooks';
+const agentContextStorage = new AsyncLocalStorage<{ taskId?: string; stepNumber?: number }>();
+// Store shape: { taskId, stepNumber } — the rollback manager groups every
+// tracked record (file snapshots, command executions) by task + step so a
+// later undo can restore per step. ALS carries this identity through deep
+// async call graphs (tool adapter → tracking wrapper → executor → fs/VM
+// helpers) without threading a context param through every function, and
+// each concurrent conversation/subagent chain gets its own isolated store.
 
 /**
  * Set the current agent context for rollback tracking.
  * Called by the agent runtime before tool execution.
+ * AG-CORR-13: runs the callback inside the scoped store so all tool executions
+ * triggered by it (including parallel ones awaited within it) see this context.
+ * Legacy path: this only writes the module-global fallback, which cannot scope
+ * per-conversation state — prefer runWithAgentContext, which establishes the
+ * AsyncLocalStorage store instead.
+ * @param taskId Task identifier for rollback grouping.
+ * @param stepNumber Step within the task.
  */
-export function setAgentContext(taskId: string, stepNumber: number): void {
-  currentAgentContext = { taskId, stepNumber };
+function setAgentContext(taskId: string, stepNumber: number): void {
+  console.warn('[pi-tools] setAgentContext called without an execution scope — use runWithAgentContext instead (legacy no-op path)');
+  legacyAgentContext = { taskId, stepNumber };
 }
 
-/**
- * Clear the current agent context.
- */
-export function clearAgentContext(): void {
-  currentAgentContext = {};
+/** AG-CORR-13 fallback for direct legacy calls. */
+// Read only when no ALS scope is active — see getAgentContext.
+let legacyAgentContext: { taskId?: string; stepNumber?: number } = {};
+
+/** AG-CORR-13: scoped execution wrapper — call sites should use this. */
+// `.run()` establishes the AsyncLocalStorage store for the whole async chain
+// spawned by fn: every tool execution, tracking wrapper, and nested await
+// within it sees this taskId/stepNumber, while other concurrently running
+// conversations/subagents keep their own isolated store. Call at the point
+// where a task step begins executing tools.
+// @param taskId Task identifier for rollback grouping.
+// @param stepNumber Step within the task.
+export function runWithAgentContext<T>(
+  taskId: string,
+  stepNumber: number,
+  fn: () => Promise<T>
+): Promise<T> {
+  return agentContextStorage.run({ taskId, stepNumber }, fn);
 }
 
 /**
  * Get the current agent context for rollback tracking.
  * Used by tools that need to track operations.
+ * `.getStore()` reads the ALS store of the calling async chain; falls back to
+ * the legacy module-global only when no scoped execution is active.
+ * Returns a copy so callers can't mutate the scoped store.
  */
 export function getAgentContext(): { taskId?: string; stepNumber?: number } {
-  return { ...currentAgentContext };
+  const scoped = agentContextStorage.getStore();
+  if (scoped) return { ...scoped };
+  return { ...legacyAgentContext };
 }
 
 /**
  * Wrapper for file operations that tracks changes for rollback.
  * Captures file state before modification and tracks the operation.
+ * The operation is only recorded when an ALS-scoped agent context is active
+ * (see runWithAgentContext) — outside a scope, execution proceeds untracked.
  */
 async function withRollbackTracking(
   toolName: string,
@@ -1459,7 +1624,9 @@ async function withRollbackTracking(
     console.warn('[pi-tools] Failed to initialize rollback manager:', error);
   }
 
-  const { taskId, stepNumber } = currentAgentContext;
+  // getAgentContext() reads the ALS store here — any tool call made inside
+  // runWithAgentContext resolves its taskId/stepNumber through this point.
+  const { taskId, stepNumber } = getAgentContext();
 
   // Only track if we have agent context
   if (!taskId || stepNumber === undefined) {
@@ -1475,18 +1642,48 @@ async function withRollbackTracking(
     }
 
     try {
-      // Check if file exists and capture content before write
+      // AG-SAF-03: classify existence via stat, NOT via readability. A read
+      // failure on an existing file (EISDIR, EACCES, transient) must never be
+      // misclassified as "file absent" — a wrong create-record would delete a
+      // pre-existing user file on rollback.
       let contentBefore = '';
       let fileExists = false;
+      let contentReadable = false;
 
       try {
-        if ((await existsAsync(filePath))) {
+        await fs.promises.stat(filePath);
+        fileExists = true; // existence decided by stat, not readability
+        try {
           contentBefore = await fs.promises.readFile(filePath, 'utf-8');
-          fileExists = true;
+          contentReadable = true;
+        } catch (readErr) {
+          console.warn(`[pi-tools] Existing file unreadable, tracking modify without before-content: ${filePath}`, readErr);
         }
-      } catch (readError) {
-        // File might not be readable, continue anyway
-        console.warn(`[pi-tools] Could not read file before write: ${filePath}`, readError);
+      } catch {
+        fileExists = false; // stat ENOENT — file genuinely absent
+      }
+
+      // AG-SAF-03: record the create BEFORE the write executes (race window):
+      // trackFileCreation re-stats and refuses if the path already exists.
+      let creationSnapshot: FileSnapshot | null = null;
+      if (!fileExists) {
+        try {
+          creationSnapshot = await rollbackManager.trackFileCreation(
+            path.resolve(filePath),
+            taskId,
+            stepNumber
+          );
+          if (creationSnapshot === null) {
+            // Refused (pre-existing path or inaccessible parent) — the write
+            // itself still proceeds, but no create-record is stored, so
+            // rollback will never unlink this file.
+            console.warn(`[pi-tools] Create tracking refused for ${filePath} — rollback will not treat this write as a file creation`);
+          }
+        } catch (trackError) {
+          // Fail-open for the write, fail-closed for tracking: no record →
+          // no destructive unlink later. Untracked write is recoverable.
+          console.warn(`[pi-tools] Failed to record create for ${filePath}:`, trackError);
+        }
       }
 
       // Execute the write operation
@@ -1497,8 +1694,8 @@ async function withRollbackTracking(
         try {
           const contentAfter = args.content as string || args.text as string || '';
 
-          if (fileExists) {
-            // File modification
+          if (fileExists && contentReadable) {
+            // File modification (before-content captured)
             await rollbackManager.trackFileModification(
               path.resolve(filePath),
               contentBefore,
@@ -1506,14 +1703,14 @@ async function withRollbackTracking(
               taskId,
               stepNumber
             );
-          } else {
-            // File creation
-            await rollbackManager.trackFileCreation(
-              path.resolve(filePath),
-              taskId,
-              stepNumber
-            );
+          } else if (fileExists && !contentReadable) {
+            // Existing but unreadable: fail-safe — skip tracking entirely.
+            // A create-record would delete the user's file on rollback; a
+            // modify-record with fabricated before-content would corrupt it.
+            console.warn(`[pi-tools] Skipping rollback tracking for existing-but-unreadable file: ${filePath}`);
           }
+          // !fileExists: create was already tracked before the write (or
+          // refused / failed above) — nothing more to do here.
         } catch (trackError) {
           console.warn(`[pi-tools] Failed to track write operation for ${filePath}:`, trackError);
         }
@@ -1531,14 +1728,20 @@ async function withRollbackTracking(
     }
 
     try {
-      // Capture content before edit
+      // AG-SAF-03: classify existence via stat, not readability. If the file
+      // exists but is unreadable, contentBefore stays '' and the modify-
+      // tracking guard below (contentBefore truthiness) skips tracking —
+      // fail-safe, never a fabricated create-record.
       let contentBefore = '';
       try {
-        if ((await existsAsync(filePath))) {
+        await fs.promises.stat(filePath);
+        try {
           contentBefore = await fs.promises.readFile(filePath, 'utf-8');
+        } catch (readErr) {
+          console.warn(`[pi-tools] Existing file unreadable before edit, skipping rollback tracking: ${filePath}`, readErr);
         }
-      } catch (readError) {
-        console.warn(`[pi-tools] Could not read file before edit: ${filePath}`, readError);
+      } catch {
+        // File absent — edit will fail; nothing to track.
       }
 
       let result: ToolResult;
@@ -1634,10 +1837,14 @@ async function withRollbackTracking(
       if (result.success && contentBefore) {
         try {
           let contentAfter = '';
-          if ((await existsAsync(filePath))) {
+          try {
+            await fs.promises.stat(filePath);
             contentAfter = await fs.promises.readFile(filePath, 'utf-8');
+          } catch {
+            // AG-SAF-03: stat/read failure post-edit — skip tracking fail-safe
+            console.warn(`[pi-tools] Could not read file after edit for rollback tracking: ${filePath}`);
           }
-          if (contentBefore !== contentAfter) {
+          if (contentAfter && contentBefore !== contentAfter) {
             await rollbackManager.trackFileModification(
               path.resolve(filePath),
               contentBefore,
@@ -1680,7 +1887,9 @@ async function withCommandTracking(
     console.warn('[pi-tools] Failed to initialize rollback manager:', error);
   }
 
-  const { taskId, stepNumber } = currentAgentContext;
+  // Second ALS consumer: withCommandTracking reads the scoped context to
+  // group pre-execution snapshots and command records under the same task step.
+  const { taskId, stepNumber } = getAgentContext();
   const workDir = cwd || process.cwd();
 
   // ── Pre-execution: Capture file state for destructive commands ──
@@ -1749,7 +1958,7 @@ function withReadCache(executor: (toolCallId: string, params: any) => Promise<an
     try {
       const fs = require('fs');
       const stat = await fs.promises.stat(path);
-      const cached = fileReadCache.get(path);
+      const cached = fileReadCacheGet(path);
 
       if (cached && cached.mtime === stat.mtimeMs) {
         return { content: [{ type: 'text', text: cached.content }] };
@@ -1762,7 +1971,7 @@ function withReadCache(executor: (toolCallId: string, params: any) => Promise<an
           ? result.content.filter((c: any) => c.type === 'text').map((c: any) => c.text).join('\n')
           : '';
         if (content) {
-          fileReadCache.set(path, { content, mtime: stat.mtimeMs });
+          fileReadCacheSet(path, content, stat.mtimeMs);
         }
       }
 
@@ -1773,7 +1982,7 @@ function withReadCache(executor: (toolCallId: string, params: any) => Promise<an
   };
 }
 
-export const multiFileEditTool: AgentTool = {
+const multiFileEditTool: AgentTool = {
   name: 'multi_file_edit',
   description: '[MULTI-FILE-EDIT] Perform non-contiguous or multi-chunk edits across one or multiple files in a single atomic tool call. Accepts an array of file targets, each specifying path and either oldString/newString or an edits array of chunks.',
   parameters: {
@@ -1840,7 +2049,7 @@ export const multiFileEditTool: AgentTool = {
   }
 };
 
-export const multiReplaceFileContentTool: AgentTool = {
+const multiReplaceFileContentTool: AgentTool = {
   name: 'multi_replace_file_content',
   description: '[MULTI-REPLACE-FILE-CONTENT] Edit multiple non-adjacent line blocks within a single file in one atomic tool call. Accepts TargetFile (or path) and ReplacementChunks array containing TargetContent/ReplacementContent pairs.',
   parameters: {
@@ -1962,4 +2171,5 @@ export async function getPiCodingTools(): Promise<AgentTool[]> {
 export function resetPiCodingToolsCache() {
   loadedCodingTools = null;
   fileReadCache.clear();
+  fileReadCacheBytes = 0;
 }

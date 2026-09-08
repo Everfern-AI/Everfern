@@ -17,12 +17,18 @@ import { promises as fsPromises } from 'fs';
 import * as fsSync from 'fs';
 import * as zlib from 'zlib';
 import * as path from 'path';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import fg from 'fast-glob';
 import { dbOps } from '../../lib/db';
 
 const gzip = promisify(zlib.gzip);
 const gunzip = promisify(zlib.gunzip);
+const execFileAsync = promisify(execFile);
+
+// Short-lived per-turn cache for `git status --porcelain` output, keyed by cwd (AG-PERF-04).
+const GIT_STATUS_CACHE_TTL_MS = 1500;
+const gitStatusCache = new Map<string, { ts: number; out: string }>();
 
 // ── Public types ──────────────────────────────────────────────────────
 
@@ -60,21 +66,11 @@ export interface FileSnapshot {
  *
  * Used when rolling back file changes to provide detailed status.
  */
-export interface FileRestorationResult {
+interface FileRestorationResult {
   filePath: string;
   success: boolean;
   operation: 'create' | 'modify' | 'delete';
   error?: string;
-}
-
-/**
- * Represents the rollback impact analysis for a file change.
- */
-export interface FileRollbackImpact {
-  filePath: string;
-  operation: 'create' | 'modify' | 'delete';
-  canRollback: boolean;
-  riskLevel: 'low' | 'medium' | 'high';
 }
 
 /**
@@ -89,7 +85,7 @@ export interface FileRollbackImpact {
  * Requirement 5.4: For package installations, store package name and version for uninstallation
  * Requirement 5.5: Link configuration file modifications via command
  */
-export interface CommandRecord {
+interface CommandRecord {
   /** Unique identifier for this command record */
   id: string;
   /** Task that owns this command record */
@@ -102,8 +98,16 @@ export interface CommandRecord {
   output: string;
   /** Exit code (0 for success) */
   exitCode: number;
-  /** Rollback command to reverse this operation (null if not reversible) */
+  /** Rollback command to reverse this operation (null if not reversible).
+   *  LEGACY free-text field (AG-SAF-01): stored for display only. Rollback
+   *  execution uses {@link rollbackPayload}; free-text is NEVER executed. */
   rollbackCommand: string | null;
+  /** Structured rollback execution payload (AG-SAF-01). When present, this is
+   *  the ONLY form honored by rollbackCommand(); executed via spawn argv
+   *  with shell:false. */
+  rollbackPayload?: RollbackPayload | null;
+  /** Working directory recorded at capture time; passed to spawn on rollback */
+  cwd?: string | null;
   /** Whether this command can be rolled back */
   reversible: boolean;
   /** Unix timestamp (ms) when command was executed */
@@ -111,12 +115,52 @@ export interface CommandRecord {
 }
 
 /**
+ * Structured rollback execution payload (AG-SAF-01).
+ *
+ * Rollback commands are re-derived from the original command by the inverse
+ * generators and stored as an argv array — never as a free-text shell string.
+ * Executed with spawn(program, args, { shell: false, timeout }).
+ *
+ * Argv form is a security requirement, not a style choice: each element is
+ * passed to the OS as a single literal argument, so metacharacters in the
+ * original command (spaces, quotes, `;`, `|`, `&`, globs, `$()` …) can never
+ * be re-interpreted by a shell at rollback time. A free-text rollback string
+ * would effectively grant a second, unreviewed shell execution.
+ */
+interface RollbackPayload {
+  /** Executable program name (e.g. 'npm', 'pip3', 'apt-get', 'brew', 'git') */
+  program: string;
+  /** Argument vector (e.g. ['uninstall', 'lodash']) */
+  args: string[];
+  /** Optional cwd recorded at payload creation time */
+  cwd?: string;
+}
+
+/**
+ * Confirmation request presented before executing rollback commands (AG-SAF-01).
+ */
+interface RollbackConfirmationRequest {
+  /** Exact argv arrays that will be executed */
+  commands: RollbackPayload[];
+  /** File operations that are part of the same rollback */
+  fileOperations: Array<{ filePath: string; operation: 'create' | 'modify' | 'delete' }>;
+}
+
+/**
+ * Handler that approves or denies execution of rollback commands.
+ * Return true to approve, false (or throw) to deny (fail-closed).
+ */
+type RollbackConfirmationHandler = (
+  request: RollbackConfirmationRequest
+) => Promise<boolean> | boolean;
+
+/**
  * Strategy for rolling back a command execution.
  *
  * Requirement 5.4: Identify rollback strategies for package managers
  * Requirement 5.6: Mark irreversible commands (rm -rf, dd, mkfs, format)
  */
-export type RollbackStrategy =
+type RollbackStrategy =
   | 'package_uninstall'  // npm/yarn/pip/apt/pacman/cargo uninstall
   | 'config_restore'     // Restore from backed-up config file
   | 'git_revert'         // Git revert for source control changes
@@ -127,10 +171,14 @@ export type RollbackStrategy =
 /**
  * Details about how a command can be rolled back.
  */
-export interface RollbackStrategyInfo {
+interface RollbackStrategyInfo {
   strategy: RollbackStrategy;
   reversible: boolean;
   rollbackCommand?: string;
+  /** AG-SAF-01: structured rollback payload — the only form executed at rollback time */
+  rollbackPayload?: RollbackPayload | null;
+  /** True when every operand of the original command has an inverse */
+  partial?: boolean;
   reason?: string;
 }
 
@@ -140,7 +188,7 @@ export interface RollbackStrategyInfo {
  * copy/overwrite (cp), in-place edit (sed -i),
  * pipe-to-file (tee), raw write (dd of=), and truncation.
  */
-export interface DestructiveCommandInfo {
+interface DestructiveCommandInfo {
   /** The operation type */
   operation: 'rm' | 'mv' | 'cp' | 'sed' | 'tee' | 'dd' | 'truncate' | 'sponge' | 'sort' | 'install' | 'rsync' | 'git' | 'download';
   /** File/directory targets to delete or source paths for mv/cp */
@@ -156,7 +204,7 @@ export interface DestructiveCommandInfo {
 /**
  * Summary of captured file state before a destructive operation.
  */
-export interface CaptureSummary {
+interface CaptureSummary {
   snapshotIds: string[];
   fileCount: number;
   totalSizeBytes: number;
@@ -167,7 +215,7 @@ export interface CaptureSummary {
 /**
  * Preview of what will be restored during a rollback.
  */
-export interface RollbackPreviewItem {
+interface RollbackPreviewItem {
   filePath: string;
   operation: 'create' | 'modify' | 'delete';
   contentSizeBytes: number;
@@ -198,13 +246,54 @@ export interface RollbackPreview {
 /**
  * Result of linking snapshots to a command record.
  */
-export interface LinkSnapshotsResult {
+interface LinkSnapshotsResult {
   commandId: string;
   snapshotIds: string[];
   linked: number;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────
+
+/**
+ * Basename-based secret/credential file exclusions (case-insensitive).
+ * Matched against the final path segment only, via full equality.
+ *
+ * Requirement 17.5: Exclude sensitive files from snapshots by default
+ */
+const SECRET_BASENAMES = new Set<string>([
+  '.env',
+  '.env.production',
+  'secrets.yaml',
+  'secrets.yml',
+  'secrets.json',
+  'id_rsa',
+  'id_ed25519',
+  'id_ecdsa',
+  'known_hosts',
+  'authorized_keys',
+  'htpasswd',
+  '.npmrc',
+  '.netrc',
+  'credentials', // .aws/credentials
+]);
+
+/**
+ * Suffix (extension/ending) based secret exclusions, matched case-insensitively
+ * against the basename.
+ */
+const SECRET_BASENAME_SUFFIXES: RegExp[] = [
+  /^\.env\./i,          // .env.production, .env.staging, ...
+  /^id_rsa([.\-_].*)?$/i,   // id_rsa, id_rsa.pem, id_rsa-old
+  /^id_ed25519([.\-_].*)?$/i,
+  /^id_ecdsa([.\-_].*)?$/i,
+  /^service-account.*\.json$/i, // service-account*.json
+  /_rsa$/i,            // *_rsa
+  /\.ppk$/i,           // PuTTY private keys
+  /\.kdbx$/i,          // KeePass databases
+  /\.keystore$/i,      // Java keystores
+  /\.jks$/i,           // Java keystores
+  /\.htpasswd$/i,      // htpasswd files
+];
 
 /**
  * Default file patterns to exclude from snapshots
@@ -219,23 +308,40 @@ export const DEFAULT_EXCLUSION_PATTERNS = [
   /[/\\]node_modules([/\\]|$)/,
   /^\.env(.local)?$/,         // Environment files
   /[/\\]\.env(.local)?$/,
+  /^\.env\.[^/\\]+$/,         // .env.production, .env.staging, ...
+  /[/\\]\.env\.[^/\\]+$/,
   /\.key$/i,                  // Private keys
   /\.pem$/i,                  // PEM files
   /\.p12$/i,                  // PKCS#12 files
   /credentials\.json$/i,      // Credentials
   /secrets\.json$/i,          // Secrets
+  /secrets\.ya?ml$/i,         // secrets.yaml / secrets.yml
   /^\.venv([/\\]|$)/,         // Python virtual env
   /[/\\]\.venv([/\\]|$)/,
   /^venv([/\\]|$)/,           // Python virtual env
   /[/\\]venv([/\\]|$)/,
   /\.sqlite3$/i,              // Database files
   /\.db$/i,
+  // AG-SAF-05: anchored secrets — path-suffix forms for the basename set
+  /[/\\]id_rsa([.\-_][^/\\]*)?$/i,
+  /[/\\]id_ed25519([.\-_][^/\\]*)?$/i,
+  /[/\\]id_ecdsa([.\-_][^/\\]*)?$/i,
+  /[/\\]known_hosts$/i,
+  /[/\\]authorized_keys$/i,
+  /[/\\]htpasswd$/i,
+  /[/\\]\.npmrc$/i,
+  /[/\\]\.netrc$/i,
+  /[/\\]\.aws[/\\]credentials$/i,
+  /[/\\]\.ppk$/i,
+  /[/\\]\.kdbx$/i,
+  /[/\\]\.keystore$/i,
+  /[/\\]\.jks$/i,
+  /[/\\]\.htpasswd$/i,
+  /[/\\]service-account[^/\\]*\.json$/i,
+  /[/\\][^/\\]*_rsa$/i,
 ];
 
 // ── Table names ───────────────────────────────────────────────────────
-
-export const FILE_SNAPSHOTS_TABLE = 'file_snapshots';
-export const COMMAND_HISTORY_TABLE = 'command_history';
 
 // ── Schema initializers ────────────────────────────────────────────────
 
@@ -245,7 +351,7 @@ export const COMMAND_HISTORY_TABLE = 'command_history';
  *
  * Requirement 4.1: Store file snapshots in the Checkpoint_Store
  */
-export async function ensureFileSnapshotsTable(): Promise<void> {
+async function ensureFileSnapshotsTable(): Promise<void> {
   await dbOps.exec(`
     CREATE TABLE IF NOT EXISTS file_snapshots (
       id TEXT PRIMARY KEY,
@@ -275,7 +381,7 @@ export async function ensureFileSnapshotsTable(): Promise<void> {
  *
  * Requirement 5.1: Record command executions in Checkpoint_Store
  */
-export async function ensureCommandHistoryTable(): Promise<void> {
+async function ensureCommandHistoryTable(): Promise<void> {
   await dbOps.exec(`
     CREATE TABLE IF NOT EXISTS command_history (
       id TEXT PRIMARY KEY,
@@ -296,13 +402,21 @@ export async function ensureCommandHistoryTable(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_command_history_timestamp
       ON command_history(timestamp);
   `);
+
+  // AG-SAF-01: add structured rollback payload + cwd columns (idempotent migration)
+  try {
+    await dbOps.exec(`ALTER TABLE command_history ADD COLUMN rollback_payload TEXT`);
+  } catch { /* column already exists */ }
+  try {
+    await dbOps.exec(`ALTER TABLE command_history ADD COLUMN cwd TEXT`);
+  } catch { /* column already exists */ }
 }
 
 /**
  * Ensure the command_file_links table exists.
  * Links destructive commands to the file snapshots captured before execution.
  */
-export async function ensureCommandFileLinksTable(): Promise<void> {
+async function ensureCommandFileLinksTable(): Promise<void> {
   await dbOps.exec(`
     CREATE TABLE IF NOT EXISTS command_file_links (
       command_id TEXT NOT NULL,
@@ -367,6 +481,12 @@ export interface RollbackImpact {
 export class RollbackManager {
   private initialized = false;
   private exclusionPatterns: RegExp[] = DEFAULT_EXCLUSION_PATTERNS;
+  private allowedRoots: string[] = [];
+  /** Injected confirmation handler for rollback command execution (tests). */
+  private rollbackConfirmationHandler: RollbackConfirmationHandler | null = null;
+  /** When set, a consolidated approval already covered these payloads/file ops
+   *  (AG-SAF-01: ONE confirmation per rollback operation, not per command). */
+  private batchRollbackApproval: RollbackConfirmationRequest | null = null;
 
   /**
    * Initialize the rollback manager, ensuring database tables exist.
@@ -392,9 +512,68 @@ export class RollbackManager {
   }
 
   /**
+   * Set the workspace-root allowlist for snapshot ingestion (AG-SAF-05).
+   *
+   * When set (non-empty), file snapshots are only accepted for files whose
+   * realpath resolves inside one of the allowed roots. Files outside the
+   * allowlist are skipped with a note.
+   *
+   * @param roots - Absolute directory paths allowed for snapshots
+   */
+  setAllowedRoots(roots: string[]): void {
+    // Resolve each root (including through symlinks, e.g. /var → /private/var
+    // on macOS) so realpath-resolved targets compare correctly.
+    // Resolving BOTH sides through realpath also defeats symlink-based
+    // escapes: a target that symlinks outside the roots is rejected even
+    // when its lexical path looks inside.
+    this.allowedRoots = roots
+      .map((r) => {
+        try {
+          return fsSync.realpathSync(path.resolve(r));
+        } catch {
+          // Root itself doesn't exist (yet) — fall back to lexical resolve
+          return path.resolve(r);
+        }
+      })
+      .filter((r) => typeof r === 'string' && r.length > 0);
+  }
+
+  /**
+   * Check if a file path is within one of the allowed workspace roots
+   * (AG-SAF-05 root containment).
+   *
+   * @param filePath - Absolute path to check
+   * @returns true if within an allowed root (or allowlist not configured)
+   */
+  isPathWithinAllowedRoots(filePath: string): boolean {
+    if (!this.allowedRoots || this.allowedRoots.length === 0) {
+      return true;
+    }
+    try {
+      const resolved = fsSync.realpathSync(filePath);
+      for (const root of this.allowedRoots) {
+        // path.relative containment idiom: a result starting with '..' (or
+        // absolute, e.g. across Windows drives) means the file resolves
+        // OUTSIDE this root; '' means the file IS the root itself.
+        const rel = path.relative(root, resolved);
+        if (rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))) {
+          return true;
+        }
+      }
+      return false;
+    } catch {
+      // realpath cannot be resolved (file missing, symlink loop, permission...)
+      // Fail-closed: an unverifiable path counts as outside so it can never
+      // be snapshotted (and thus never written during restore).
+      return false;
+    }
+  }
+
+  /**
    * Check if a file path should be excluded from snapshots.
    *
    * Requirement 17.4: Exclude files matching patterns like .git, node_modules, .env
+   * Requirement 17.5: Exclude sensitive files (anchored basename + suffix match)
    *
    * @param filePath - File path to check
    * @returns true if file should be excluded, false otherwise
@@ -409,6 +588,34 @@ export class RollbackManager {
       }
     }
 
+    // AG-SAF-05: anchored basename equality (case-insensitive) + basename suffix match
+    const base = path.posix.basename(normalized).toLowerCase();
+    if (base) {
+      if (SECRET_BASENAMES.has(base)) return true;
+      for (const suffixRe of SECRET_BASENAME_SUFFIXES) {
+        if (suffixRe.test(base)) return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Heuristic detection of secret material in file content (AG-SAF-05).
+   *
+   * Scans the first N KB of a small text file for high-entropy secret markers:
+   * private key headers, api_key/token/password/secret assignments.
+   *
+   * @returns true if the content looks like it contains secrets
+   */
+  private contentLooksLikeSecrets(buffer: Buffer): boolean {
+    const SAMPLE = 64 * 1024; // first 64 KB
+    const sample = buffer.subarray(0, SAMPLE);
+    // Binary check: any NUL byte → not a small text config, skip heuristic
+    if (sample.includes(0)) return false;
+    const text = sample.toString('utf-8');
+    if (/-----BEGIN[ A-Z0-9]*PRIVATE KEY-----/.test(text)) return true;
+    if (/(^|[\n\r])\s*(api[_-]?key|apikey|token|password|secret)\s*[:=]\s*\S/i.test(text)) return true;
     return false;
   }
 
@@ -445,6 +652,12 @@ export class RollbackManager {
       // Requirement 17.4: Exclude sensitive files from snapshots
       if (this.isFileExcluded(filePath)) {
         console.log(`[RollbackManager] Skipping snapshot for excluded file: ${filePath}`);
+        return null;
+      }
+
+      // AG-SAF-05: root containment — skip paths outside allowed workspace roots
+      if (!this.isPathWithinAllowedRoots(filePath)) {
+        console.warn(`[RollbackManager] Skipped: path outside allowed roots: ${filePath}`);
         return null;
       }
 
@@ -513,6 +726,29 @@ export class RollbackManager {
         return null;
       }
 
+      // AG-SAF-05: root containment — skip paths outside allowed workspace roots
+      if (!this.isPathWithinAllowedRoots(filePath)) {
+        console.warn(`[RollbackManager] Skipped: path outside allowed roots: ${filePath}`);
+        return null;
+      }
+
+      // AG-SAF-03: pre-existence refusal — NEVER record a create for a path
+      // that already exists. A create-record would unlink the pre-existing
+      // file on rollback (data loss). stat success → refuse; ENOENT → good.
+      try {
+        await fsPromises.stat(filePath);
+        console.warn('[RollbackManager] Refusing to record create for existing file:', filePath);
+        return null;
+      } catch (statErr: any) {
+        if (statErr?.code !== 'ENOENT') {
+          // ENOTDIR/EACCES/... — path inaccessible or invalid; an
+          // inaccessible path must not be recorded as creatable either.
+          console.warn('[RollbackManager] Refusing to record create for inaccessible path:', filePath, statErr?.code);
+          return null;
+        }
+        // ENOENT = file absent — proceed to record creation.
+      }
+
       const id = this.generateSnapshotId();
       const timestamp = Date.now();
 
@@ -572,6 +808,25 @@ export class RollbackManager {
       if (this.isFileExcluded(filePath)) {
         console.log(`[RollbackManager] Skipping snapshot for excluded file: ${filePath}`);
         return null;
+      }
+
+      // AG-SAF-05: root containment — skip paths outside allowed workspace roots
+      if (!this.isPathWithinAllowedRoots(filePath)) {
+        console.warn(`[RollbackManager] Skipped: path outside allowed roots: ${filePath}`);
+        return null;
+      }
+
+      // AG-SAF-05: secrets heuristic — skip content that looks like secrets
+      if (typeof content === 'string' && content.length > 0) {
+        if (this.contentLooksLikeSecrets(Buffer.from(content, 'utf-8'))) {
+          console.warn(`[RollbackManager] Skipped: content matched secret heuristics: ${filePath}`);
+          return null;
+        }
+      } else if (Buffer.isBuffer(content) && content.length > 0) {
+        if (this.contentLooksLikeSecrets(content)) {
+          console.warn(`[RollbackManager] Skipped: content matched secret heuristics: ${filePath}`);
+          return null;
+        }
       }
 
       // Requirement 4.6: Compress file content using gzip
@@ -691,6 +946,15 @@ export class RollbackManager {
    * Decompresses the stored content and writes it back to the file system.
    * Used during rollback operations.
    *
+   * Restore-safety contract: content_before IS the backup — captured before
+   * the destructive operation, so restore works even if the on-disk file is
+   * gone. Writes are direct (no temp+rename atomicity): a crash mid-write can
+   * leave a truncated file, but the snapshot row is never deleted on restore,
+   * so re-running the rollback repairs it. Failures are returned, never
+   * thrown, so a multi-file rollback continues past one bad file. The 'create'
+   * branch additionally refuses to unlink unless the file plausibly belongs to
+   * the agent (AG-SAF-03, see inline).
+   *
    * @param snapshotId - Snapshot identifier
    * @returns Restoration result with success status and any error message
    */
@@ -710,7 +974,47 @@ export class RollbackManager {
 
       // Handle different operations
       if (snapshot.operation === 'create') {
-        // For creation, delete the file
+        // For creation, delete the file — but only if it is plausibly the
+        // agent's own file (AG-SAF-03). Create-snapshots store no content
+        // (null before/after), so the only ownership evidence is freshness:
+        // if the on-disk mtime predates the recorded creation by more than
+        // the 2s clock-skew tolerance, the file existed BEFORE the agent's
+        // "creation" (bad record or race) — refuse to unlink.
+        try {
+          const st = await fsPromises.stat(snapshot.filePath);
+          if (st.mtimeMs < snapshot.timestamp - 2000) {
+            console.warn(
+              `[RollbackManager] refusing to delete pre-existing/modified file: ${snapshot.filePath} ` +
+              `(mtime ${st.mtimeMs} predates recorded creation ${snapshot.timestamp})`
+            );
+            return {
+              filePath: snapshot.filePath,
+              success: false,
+              operation: 'create',
+              error: 'Refused to delete pre-existing/modified file (AG-SAF-03): file predates recorded creation',
+            };
+          }
+        } catch (statError: any) {
+          if (statError?.code === 'ENOENT') {
+            // Already deleted — treat as success without error.
+            return {
+              filePath: snapshot.filePath,
+              success: true,
+              operation: 'create',
+            };
+          }
+          // Other stat failures (EACCES, ENOTDIR, ...) — cannot verify
+          // ownership → do NOT unlink (fail-closed; blocks the data-loss path
+          // even if a bad create-record slipped through).
+          console.warn(`[RollbackManager] refusing to delete unverifiable file: ${snapshot.filePath}`, statError);
+          return {
+            filePath: snapshot.filePath,
+            success: false,
+            operation: 'create',
+            error: `Refused to delete unverifiable file (AG-SAF-03): ${(statError as Error).message}`,
+          };
+        }
+
         try {
           await fsPromises.unlink(snapshot.filePath);
           return {
@@ -728,6 +1032,8 @@ export class RollbackManager {
         }
       } else if (snapshot.operation === 'delete') {
         // For deletion, restore the content
+        // content_before holds the full pre-deletion bytes, so this
+        // resurrects the file even though it no longer exists on disk.
         try {
           const content = await this.decompressContent(snapshot.contentBefore);
           await fsPromises.writeFile(snapshot.filePath, content);
@@ -746,6 +1052,8 @@ export class RollbackManager {
         }
       } else if (snapshot.operation === 'modify') {
         // For modification, restore to the before state
+        // This overwrites whatever is on disk now; the preview layer warns
+        // beforehand if the file drifted from content_after since capture.
         try {
           const content = await this.decompressContent(snapshot.contentBefore);
           await fsPromises.writeFile(snapshot.filePath, content);
@@ -788,6 +1096,10 @@ export class RollbackManager {
    *
    * Helps manage storage space by removing old snapshots while preserving
    * recent ones that are more likely to be needed for rollback.
+   *
+   * Retention invariant: the newest `keepCount` snapshots PER FILE PATH are
+   * kept (retention is scoped per path, not per task) so rolling back the
+   * most recent steps always finds its pre-capture snapshots intact.
    *
    * @param taskId - Task identifier
    * @param keepCount - Number of most recent snapshots to keep per file
@@ -917,7 +1229,8 @@ export class RollbackManager {
     output: string,
     exitCode: number,
     taskId: string,
-    stepNumber: number
+    stepNumber: number,
+    cwd?: string
   ): Promise<CommandRecord | null> {
     try {
       this.ensureInitialized();
@@ -928,10 +1241,14 @@ export class RollbackManager {
       const id = this.generateCommandId();
       const timestamp = Date.now();
 
+      // AG-SAF-01: record the cwd at capture time so rollback spawns in the
+      // same directory; fall back to process cwd if not provided.
+      const recordedCwd = cwd || process.cwd();
+
       // Store command record in database
       await dbOps.run(
-        `INSERT INTO command_history (id, task_id, step_number, command, output, exit_code, rollback_command, reversible, timestamp)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO command_history (id, task_id, step_number, command, output, exit_code, rollback_command, rollback_payload, cwd, reversible, timestamp)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           id,
           taskId,
@@ -940,6 +1257,8 @@ export class RollbackManager {
           output,
           exitCode,
           strategyInfo.rollbackCommand || null,
+          strategyInfo.rollbackPayload ? JSON.stringify(strategyInfo.rollbackPayload) : null,
+          recordedCwd,
           strategyInfo.reversible ? 1 : 0,
           timestamp,
         ]
@@ -958,6 +1277,8 @@ export class RollbackManager {
         output,
         exitCode,
         rollbackCommand: strategyInfo.rollbackCommand || null,
+        rollbackPayload: strategyInfo.rollbackPayload || null,
+        cwd: recordedCwd,
         reversible: strategyInfo.reversible,
         timestamp,
       };
@@ -1011,6 +1332,8 @@ export class RollbackManager {
         reversible: true,
         reason: 'Read-only or harmless query command',
         rollbackCommand: 'echo "Read-only command - no rollback required"',
+        rollbackPayload: null,
+        partial: false,
       };
     }
 
@@ -1021,6 +1344,8 @@ export class RollbackManager {
         reversible: true,
         reason: 'Can be reverted by resetting staged changes',
         rollbackCommand: 'git reset HEAD',
+        rollbackPayload: { program: 'git', args: ['reset', 'HEAD'] },
+        partial: false,
       };
     }
 
@@ -1159,24 +1484,28 @@ export class RollbackManager {
     // ── NPM package installation ──────────────────────────────────────
     // Requirement 5.4: Identify npm install commands
     if (this.isNpmInstall(trimmed)) {
-      const rollbackCmd = this.generateNpmRollback(trimmed);
-      if (rollbackCmd) {
+      const payload = this.generateNpmRollbackPayload(trimmed);
+      if (payload) {
         return {
           strategy: 'package_uninstall',
           reversible: true,
-          rollbackCommand: rollbackCmd,
+          rollbackCommand: this._formatRollbackPayload(payload),
+          rollbackPayload: payload,
+          partial: false,
         };
       }
     }
 
     // ── Yarn package installation ─────────────────────────────────────
     if (this.isYarnInstall(trimmed)) {
-      const rollbackCmd = this.generateYarnRollback(trimmed);
-      if (rollbackCmd) {
+      const payload = this.generateYarnRollbackPayload(trimmed);
+      if (payload) {
         return {
           strategy: 'package_uninstall',
           reversible: true,
-          rollbackCommand: rollbackCmd,
+          rollbackCommand: this._formatRollbackPayload(payload),
+          rollbackPayload: payload,
+          partial: false,
         };
       }
     }
@@ -1184,12 +1513,14 @@ export class RollbackManager {
     // ── Pip package installation ──────────────────────────────────────
     // Requirement 5.4: Identify pip install commands
     if (this.isPipInstall(trimmed)) {
-      const rollbackCmd = this.generatePipRollback(trimmed);
-      if (rollbackCmd) {
+      const payload = this.generatePipRollbackPayload(trimmed);
+      if (payload) {
         return {
           strategy: 'package_uninstall',
           reversible: true,
-          rollbackCommand: rollbackCmd,
+          rollbackCommand: this._formatRollbackPayload(payload),
+          rollbackPayload: payload,
+          partial: false,
         };
       }
     }
@@ -1197,12 +1528,28 @@ export class RollbackManager {
     // ── Apt package installation (Debian/Ubuntu) ─────────────────────
     // Requirement 5.4: Identify apt install commands
     if (this.isAptInstall(trimmed)) {
-      const rollbackCmd = this.generateAptRollback(trimmed);
-      if (rollbackCmd) {
+      const payload = this.generateAptRollbackPayload(trimmed);
+      if (payload) {
         return {
           strategy: 'package_uninstall',
           reversible: true,
-          rollbackCommand: rollbackCmd,
+          rollbackCommand: this._formatRollbackPayload(payload),
+          rollbackPayload: payload,
+          partial: false,
+        };
+      }
+    }
+
+    // ── Homebrew package installation (AG-SAF-02) ─────────────────────
+    if (this.isBrewInstall(trimmed)) {
+      const payload = this.generateBrewRollbackPayload(trimmed);
+      if (payload) {
+        return {
+          strategy: 'package_uninstall',
+          reversible: true,
+          rollbackCommand: this._formatRollbackPayload(payload),
+          rollbackPayload: payload,
+          partial: false,
         };
       }
     }
@@ -1210,12 +1557,14 @@ export class RollbackManager {
     // ── Cargo package installation (Rust) ─────────────────────────────
     // Requirement 5.4: Identify cargo install commands
     if (this.isCargoInstall(trimmed)) {
-      const rollbackCmd = this.generateCargoRollback(trimmed);
-      if (rollbackCmd) {
+      const payload = this.generateCargoRollbackPayload(trimmed);
+      if (payload) {
         return {
           strategy: 'package_uninstall',
           reversible: true,
-          rollbackCommand: rollbackCmd,
+          rollbackCommand: this._formatRollbackPayload(payload),
+          rollbackPayload: payload,
+          partial: false,
         };
       }
     }
@@ -1290,6 +1639,11 @@ export class RollbackManager {
    * Clean up old command records for a task, keeping only recent ones.
    *
    * Helps manage storage space by removing old command records.
+   *
+   * Retention invariant: the newest `keepCount` records for the task are
+   * kept; everything older is deleted regardless of reversibility. Deleting a
+   * record orphans its command_file_links rows — prune command history no
+   * more aggressively than file snapshots.
    *
    * @param taskId - Task identifier
    * @param keepCount - Number of most recent command records to keep
@@ -1400,7 +1754,191 @@ export class RollbackManager {
   }
 
   /**
-   * Generate npm uninstall rollback command.
+   * Tokenize a command string into argv-like tokens (AG-SAF-02).
+   * Handles single- and double-quoted arguments.
+   *
+   * Deliberately minimal: only whitespace splitting and one layer of quote
+   * stripping. NO shell expansions ($vars, `...`, $(...), globbing) — so a
+   * token can never smuggle active shell syntax into the argv array later
+   * executed with shell:false; metacharacters stay inert literal characters
+   * inside a single argument.
+   */
+  private _tokenizePackageCommand(command: string): string[] {
+    const tokens: string[] = [];
+    let i = 0;
+    const s = command.trim();
+    while (i < s.length) {
+      // skip whitespace
+      while (i < s.length && /\s/.test(s[i])) i++;
+      if (i >= s.length) break;
+      let token = '';
+      // quoted argument
+      if (s[i] === '"' || s[i] === "'") {
+        const quote = s[i++];
+        while (i < s.length && s[i] !== quote) token += s[i++];
+        i++; // closing quote
+        tokens.push(token);
+        continue;
+      }
+      // unquoted argument
+      while (i < s.length && !/\s/.test(s[i])) token += s[i++];
+      if (token) tokens.push(token);
+    }
+    return tokens;
+  }
+
+  /**
+   * Extract all positional package operands from a package-manager install
+   * command (AG-SAF-02). Flag tokens (--save, -g, -D, --global, ...) and any
+   * flag arguments (--python-version 3.9) are skipped; every remaining
+   * positional token is treated as a package operand.
+   *
+   * @param command - Install command (program tokens included)
+   * @param skipFirstArgGroups - Number of leading program/subcommand tokens to skip
+   * @returns Array of package operand tokens (may be empty)
+   */
+  private _extractPackageOperands(command: string, skipFirstTokens: number): string[] {
+    const tokens = this._tokenizePackageCommand(command);
+    const operands: string[] = [];
+    for (let i = skipFirstTokens; i < tokens.length; i++) {
+      const tok = tokens[i];
+      if (tok === '--') {
+        // everything after -- is positional
+        for (let j = i + 1; j < tokens.length; j++) operands.push(tokens[j]);
+        break;
+      }
+      // Flag tokens are skipped entirely
+      if (tok.startsWith('-') && tok !== '-') continue;
+      operands.push(tok);
+    }
+    return operands;
+  }
+
+  /**
+   * Check if command is a brew install operation (AG-SAF-02).
+   */
+  private isBrewInstall(command: string): boolean {
+    return /^brew\s+(install|add)\s+/.test(command);
+  }
+
+  /**
+   * Generate npm uninstall rollback payload (AG-SAF-01/02).
+   *
+   * Extracts ALL package operands and generates a structured uninstall
+   * payload removing every installed name. Version specifiers are stripped.
+   *
+   * @param command - npm install command
+   * @returns Structured payload, or null if no package operands found
+   */
+  private generateNpmRollbackPayload(command: string): RollbackPayload | null {
+    const operands = this._extractPackageOperands(command, 2); // 'npm' + 'install|i'
+    if (operands.length === 0) return null;
+
+    const names: string[] = [];
+    for (const operand of operands) {
+      let packageName = operand;
+      // Strip @version but keep @scope (e.g. @babel/core@7.12.0 → @babel/core)
+      packageName = packageName.replace(/@([0-9]).*$/, '');
+      if (packageName) names.push(packageName);
+    }
+    if (names.length === 0) return null;
+
+    return { program: 'npm', args: ['uninstall', ...names] };
+  }
+
+  /**
+   * Generate yarn remove rollback payload (AG-SAF-01/02).
+   *
+   * @param command - yarn add/install command
+   * @returns Structured payload, or null if no package operands found
+   */
+  private generateYarnRollbackPayload(command: string): RollbackPayload | null {
+    const operands = this._extractPackageOperands(command, 2); // 'yarn' + 'add|install'
+    if (operands.length === 0) return null;
+    return { program: 'yarn', args: ['remove', ...operands] };
+  }
+
+  /**
+   * Generate pip uninstall rollback payload (AG-SAF-01/02).
+   *
+   * Extracts ALL package operands and strips version specifiers
+   * (==, >=, ~=, [extras]).
+   *
+   * @param command - pip/pip3 install command
+   * @returns Structured payload, or null if no package operands found
+   */
+  private generatePipRollbackPayload(command: string): RollbackPayload | null {
+    const tokens = this._tokenizePackageCommand(command);
+    const isPip3 = /^pip3\b/.test(tokens[0] || '');
+    // 'pip' + 'install' (note: pip has flag-like requirements e.g. -r requirements.txt)
+    const operands = this._extractPackageOperands(command, 2);
+    const names: string[] = [];
+    for (const operand of operands) {
+      // Extract base package name (remove [extras] and version specifiers)
+      const baseName = operand.split(/[[\]=<>!~]/)[0];
+      if (baseName) names.push(baseName);
+    }
+    if (names.length === 0) return null;
+
+    const program = isPip3 ? 'pip3' : 'pip';
+    return { program, args: ['uninstall', '-y', ...names] };
+  }
+
+  /**
+   * Generate apt remove rollback payload (AG-SAF-01/02).
+   *
+   * @param command - apt/apt-get install command
+   * @returns Structured payload, or null if no package operands found
+   */
+  private generateAptRollbackPayload(command: string): RollbackPayload | null {
+    const tokens = this._tokenizePackageCommand(command);
+    const isAptGet = /^apt-get\b/.test(tokens[0] || '');
+    const operands = this._extractPackageOperands(command, 2);
+    if (operands.length === 0) return null;
+
+    const program = isAptGet ? 'apt-get' : 'apt-get';
+    return { program, args: ['remove', '-y', ...operands] };
+  }
+
+  /**
+   * Generate brew uninstall rollback payload (AG-SAF-02).
+   *
+   * @param command - brew install command
+   * @returns Structured payload, or null if no package operands found
+   */
+  private generateBrewRollbackPayload(command: string): RollbackPayload | null {
+    const operands = this._extractPackageOperands(command, 2); // 'brew' + 'install'
+    if (operands.length === 0) return null;
+    return { program: 'brew', args: ['uninstall', ...operands] };
+  }
+
+  /**
+   * Generate cargo uninstall rollback payload (AG-SAF-01).
+   *
+   * @param command - cargo install command
+   * @returns Structured payload, or null if unable to parse
+   */
+  private generateCargoRollbackPayload(command: string): RollbackPayload | null {
+    const operands = this._extractPackageOperands(command, 2);
+    const names: string[] = [];
+    for (const operand of operands) {
+      const crateName = operand.split(/[=@]/)[0];
+      if (crateName) names.push(crateName);
+    }
+    if (names.length === 0) return null;
+    return { program: 'cargo', args: ['uninstall', ...names] };
+  }
+
+  /**
+   * Render a structured rollback payload as a human-readable command string
+   * (display/logging only — never executed).
+   */
+  private _formatRollbackPayload(payload: RollbackPayload): string {
+    return [payload.program, ...payload.args].join(' ');
+  }
+
+  /**
+   * Generate npm uninstall rollback command (legacy display string).
    *
    * Extracts package names from npm install and generates uninstall command.
    *
@@ -1408,19 +1946,8 @@ export class RollbackManager {
    * @returns Rollback command or null if unable to parse
    */
   private generateNpmRollback(command: string): string | null {
-    // Match: npm install package-name or npm install package@version
-    const match = command.match(/^npm\s+(?:install|i)\s+([\w@\-\.\/]+)(?:\s+|$)/);
-
-    if (match && match[1]) {
-      let packageName = match[1];
-      // Extract base package name (remove version specifier after @)
-      // Handle scoped packages like @babel/core@7.12.0
-      // Remove @version but keep @scope
-      packageName = packageName.replace(/@([0-9]).*$/, '');
-      return `npm uninstall ${packageName}`;
-    }
-
-    return null;
+    const payload = this.generateNpmRollbackPayload(command);
+    return payload ? this._formatRollbackPayload(payload) : null;
   }
 
   /**
@@ -1434,20 +1961,14 @@ export class RollbackManager {
   }
 
   /**
-   * Generate yarn remove rollback command.
+   * Generate yarn remove rollback command (legacy display string).
    *
    * @param command - yarn add/install command
    * @returns Rollback command or null if unable to parse
    */
   private generateYarnRollback(command: string): string | null {
-    const match = command.match(/^yarn\s+(?:add|install)\s+([\w@\-\.\/]+)(?:\s+|$)/);
-
-    if (match && match[1]) {
-      const packageName = match[1];
-      return `yarn remove ${packageName}`;
-    }
-
-    return null;
+    const payload = this.generateYarnRollbackPayload(command);
+    return payload ? this._formatRollbackPayload(payload) : null;
   }
 
   /**
@@ -1461,7 +1982,7 @@ export class RollbackManager {
   }
 
   /**
-   * Generate pip uninstall rollback command.
+   * Generate pip uninstall rollback command (legacy display string).
    *
    * Extracts package names from pip install and generates uninstall command.
    *
@@ -1469,17 +1990,8 @@ export class RollbackManager {
    * @returns Rollback command or null if unable to parse
    */
   private generatePipRollback(command: string): string | null {
-    // Match: pip install package-name or pip install package==version
-    const match = command.match(/^pip(?:3)?\s+install\s+([\w\-\[\]=.]+)(?:\s+|$)/);
-
-    if (match && match[1]) {
-      const packageName = match[1];
-      // Extract base package name (remove version specifiers)
-      const baseName = packageName.split(/[[\]=]/)[0];
-      return `pip${command.includes('pip3') ? '3' : ''} uninstall -y ${baseName}`;
-    }
-
-    return null;
+    const payload = this.generatePipRollbackPayload(command);
+    return payload ? this._formatRollbackPayload(payload) : null;
   }
 
   /**
@@ -1493,7 +2005,7 @@ export class RollbackManager {
   }
 
   /**
-   * Generate apt remove rollback command.
+   * Generate apt remove rollback command (legacy display string).
    *
    * Extracts package names from apt install and generates remove command.
    *
@@ -1501,15 +2013,8 @@ export class RollbackManager {
    * @returns Rollback command or null if unable to parse
    */
   private generateAptRollback(command: string): string | null {
-    // Match: apt install package-name
-    const match = command.match(/^apt(?:-get)?\s+install\s+([\w\-.]+)(?:\s+|$)/);
-
-    if (match && match[1]) {
-      const packageName = match[1];
-      return `apt-get remove -y ${packageName}`;
-    }
-
-    return null;
+    const payload = this.generateAptRollbackPayload(command);
+    return payload ? this._formatRollbackPayload(payload) : null;
   }
 
   /**
@@ -1523,7 +2028,7 @@ export class RollbackManager {
   }
 
   /**
-   * Generate cargo uninstall rollback command.
+   * Generate cargo uninstall rollback command (legacy display string).
    *
    * Extracts crate names from cargo install and generates uninstall command.
    *
@@ -1531,15 +2036,8 @@ export class RollbackManager {
    * @returns Rollback command or null if unable to parse
    */
   private generateCargoRollback(command: string): string | null {
-    // Match: cargo install crate-name
-    const match = command.match(/^cargo\s+install\s+([\w\-]+)(?:\s+|$)/);
-
-    if (match && match[1]) {
-      const crateName = match[1];
-      return `cargo uninstall ${crateName}`;
-    }
-
-    return null;
+    const payload = this.generateCargoRollbackPayload(command);
+    return payload ? this._formatRollbackPayload(payload) : null;
   }
 
   /**
@@ -2363,6 +2861,10 @@ export class RollbackManager {
    * @param pattern - Glob pattern to expand (e.g. "*.log", "**", "dist/*.js")
    * @param cwd - Working directory for resolution
    * @returns Array of resolved absolute file paths
+   *
+   * Glob expansion happens in-process via fast-glob, never by shelling out
+   * (`sh -c 'ls ...'`), so an adversarial pattern can enumerate files but
+   * cannot execute anything.
    */
   expandGlob(pattern: string, cwd: string): string[] {
     if (!pattern.includes('*') && !pattern.includes('?') && !pattern.includes('[') && !pattern.includes('!') && !pattern.includes('{')) {
@@ -2378,6 +2880,12 @@ export class RollbackManager {
 
   /**
    * Capture a list of paths in parallel using a concurrency pool.
+   *
+   * Concurrency is capped (default 15) rather than unbounded Promise.all:
+   * each capture opens a file handle, reads it fully, and writes a DB row —
+   * an unbounded pool over a large directory would exhaust file descriptors
+   * and starve the single SQLite writer. Per-path failures become warnings;
+   * one unreadable file must not cancel the whole pre-destructive backup.
    */
   async capturePathsParallel(
     pathsToCapture: Array<{ resolved: string; original: string }>,
@@ -2460,14 +2968,29 @@ export class RollbackManager {
 
   /**
    * Auto-detect and capture all modified/deleted/staged files in the git working tree.
+   *
+   * Git is probed via execFile with a literal argv (never a shell string) —
+   * cwd is an arbitrary user directory, and argv form guarantees nothing in
+   * it is shell-interpreted. The 5s timeout bounds huge repos; failure
+   * degrades to a warning rather than aborting the pre-destructive capture.
    */
   async captureGitChangedFiles(cwd: string, taskId: string, stepNumber: number): Promise<CaptureSummary> {
     const warnings: string[] = [];
     const pathsToCapture: Array<{ resolved: string; original: string }> = [];
 
     try {
-      const { execSync } = require('child_process');
-      const output = execSync('git status --porcelain', { cwd, encoding: 'utf-8', timeout: 5000 });
+      let output: string | null = null;
+      const cached = gitStatusCache.get(cwd);
+      if (cached && Date.now() - cached.ts < GIT_STATUS_CACHE_TTL_MS) {
+        output = cached.out;
+      } else {
+        gitStatusCache.delete(cwd);
+        // Fixed literal args, no shell, short timeout — safe no matter what
+        // the working directory contains (argv-execution, AG-SAF-01 style).
+        const result = await execFileAsync('git', ['status', '--porcelain'], { cwd, encoding: 'utf-8', timeout: 5000 });
+        output = result.stdout ?? '';
+        gitStatusCache.set(cwd, { ts: Date.now(), out: output });
+      }
       const lines = output.split('\n').filter(Boolean);
 
       for (const line of lines) {
@@ -2510,6 +3033,11 @@ export class RollbackManager {
    *
    * Call this BEFORE executing the command to ensure content is preserved.
    *
+   * Invariant: nothing destructive may run until every captureable target
+   * has a snapshot row committed to the DB. Uncapturable targets produce
+   * warnings (rollback then simply cannot restore them) — but the capture
+   * never silently pretends a missing file was backed up.
+   *
    * @param command - The destructive command about to be executed
    * @param cwd - Working directory for resolving paths
    * @param taskId - Task identifier
@@ -2545,6 +3073,9 @@ export class RollbackManager {
 
         if (!targetExists) {
           // Try glob expansion
+          // The shell would have expanded this operand before rm saw it; we
+          // must enumerate the same matches ourselves or `rm *.log`-style
+          // commands would capture nothing.
           const globResults = this.expandGlob(target.original, cwd);
           const actualMatches = globResults.filter(r => { try { return fsSync.existsSync(r); } catch { return false; } });
           if (actualMatches.length > 0) {
@@ -2571,6 +3102,8 @@ export class RollbackManager {
     }
 
     // ── mv / cp: Move/rename/copy (capture destination before overwrite) ──
+    // mv sources survive the move, so the content actually at risk is the
+    // DESTINATION's current bytes — capture them or the overwrite loses them.
     else if (cmdInfo.operation === 'mv' || cmdInfo.operation === 'cp') {
       if (cmdInfo.destination) {
         try {
@@ -2632,11 +3165,12 @@ export class RollbackManager {
         }
       }
       // For git clean -fd, need to list and capture untracked files
+      // They are invisible to `git status` captures above and have no git
+      // history to recover from, so without this snapshot they'd be gone forever.
       if (cmdInfo.force && cmdInfo.targets.length === 0) {
         try {
-          const { execSync } = require('child_process');
-          const result = execSync('git ls-files --others --exclude-standard', { cwd, encoding: 'utf-8', timeout: 5000 });
-          const untracked = result.split('\n').filter(Boolean);
+          const result = await execFileAsync('git', ['ls-files', '--others', '--exclude-standard'], { cwd, encoding: 'utf-8', timeout: 5000 });
+          const untracked = (result.stdout ?? '').split('\n').filter(Boolean);
           for (const file of untracked) {
             const resolved = path.resolve(cwd, file);
             pathsToCapture.push({ resolved, original: file });
@@ -2647,6 +3181,8 @@ export class RollbackManager {
 
     // ── Shell redirections (> file, 2> file, &> file) ──────────────────
     // Capture the file being written to via redirection BEFORE overwrite
+    // Deduped against paths already captured by the main operation branch
+    // so the same file isn't snapshotted (and restored) twice.
     if (cmdInfo.redirectFiles && cmdInfo.redirectFiles.length > 0) {
       for (const redirectPath of cmdInfo.redirectFiles) {
         // Skip if already captured as part of the main operation
@@ -2684,7 +3220,20 @@ export class RollbackManager {
       // Exclude pattern check
       if (this.isFileExcluded(filePath)) return null;
 
+      // AG-SAF-05: root containment check
+      if (!this.isPathWithinAllowedRoots(filePath)) {
+        console.warn(`[RollbackManager] Skipped: path outside allowed roots: ${filePath}`);
+        return null;
+      }
+
       const content = await fsPromises.readFile(filePath);
+
+      // AG-SAF-05: secrets heuristic on the file's actual content
+      if (content.length > 0 && this.contentLooksLikeSecrets(content)) {
+        console.warn(`[RollbackManager] Skipped: content matched secret heuristics: ${filePath}`);
+        return null;
+      }
+
       return await this._storeDeleteSnapshot(filePath, content, taskId, stepNumber);
     } catch (err) {
       console.warn(`[RollbackManager] Failed to capture file ${filePath}:`, (err as Error).message);
@@ -2773,6 +3322,10 @@ export class RollbackManager {
    * Link captured file snapshots to a command record.
    * Call this AFTER trackCommandExecution to associate snapshots with the command.
    *
+   * Side-effect: for file_restore commands this re-flips the record's
+   * reversible flag — a destructive command is only "reversible" once it has
+   * snapshots to restore from; zero linked snapshots means NOT reversible.
+   *
    * @param commandId - The command record ID from trackCommandExecution
    * @param snapshotIds - Array of snapshot IDs from captureFilesBeforeDestructiveCommand
    * @returns Result with number of links created
@@ -2797,19 +3350,21 @@ export class RollbackManager {
       }
     }
 
-    // Always update the command record to be reversible if it is a file/destructive command
-    // (even if 0 snapshots were linked, e.g. target didn't exist or no files were modified)
+    // AG-CORR-10: only advertise reversibility when there ARE snapshots to
+    // restore. Previously this flipped reversible=1 even with 0 snapshots,
+    // making the rollback button appear for destructive-only command sets.
     try {
       const cmdRec = await this.getCommandRecord(commandId);
       if (cmdRec) {
         const strategyInfo = this.identifyRollbackStrategy(cmdRec.command);
         if (strategyInfo.strategy === 'file_restore') {
           await dbOps.run(
-            `UPDATE command_history SET reversible = 1, rollback_command = ? WHERE id = ?`,
+            `UPDATE command_history SET reversible = ?, rollback_command = ? WHERE id = ?`,
             [
+              snaps.length > 0 ? 1 : 0,
               snaps.length > 0
                 ? `[File restoration] Restore ${snaps.length} file(s) from pre-capture snapshots`
-                : `[File restoration] No files to restore (no files were affected)`,
+                : `[File restoration] No restorable files were captured for this command`,
               commandId
             ]
           );
@@ -2847,6 +3402,34 @@ export class RollbackManager {
   }
 
   /**
+   * Get the set of snapshot IDs linked to any of the given command records
+   * in a single query (avoids N+1 per-command lookups in rollback previews).
+   *
+   * @param commandIds - Command record IDs
+   * @returns Set of linked snapshot IDs (empty on error)
+   */
+  private async getLinkedSnapshotIdsForCommands(commandIds: string[]): Promise<Set<string>> {
+    const ids = new Set<string>();
+    if (commandIds.length === 0) return ids;
+    try {
+      this.ensureInitialized();
+      const placeholders = commandIds.map(() => '?').join(',');
+      const rows = await dbOps.all(
+        `SELECT DISTINCT cfl.snapshot_id AS snapshot_id
+         FROM command_file_links cfl
+         WHERE cfl.command_id IN (${placeholders})`,
+        commandIds
+      );
+      for (const row of rows) {
+        if (row?.snapshot_id) ids.add(row.snapshot_id);
+      }
+    } catch (err) {
+      console.error('[RollbackManager] Failed to get linked snapshot ids for commands:', err);
+    }
+    return ids;
+  }
+
+  /**
    * Get a rollback preview since a specific timestamp.
    *
    * @param taskId - Task identifier
@@ -2881,13 +3464,7 @@ export class RollbackManager {
     }
 
     // Get linked snapshots for each command
-    const linkedSnapshotIds = new Set<string>();
-    for (const cmd of commands) {
-      const linked = await this.getFileSnapshotsForCommand(cmd.id);
-      for (const snap of linked) {
-        linkedSnapshotIds.add(snap.id);
-      }
-    }
+    const linkedSnapshotIds = await this.getLinkedSnapshotIdsForCommands(commands.map(c => c.id));
 
     const files: RollbackPreviewItem[] = [];
     let totalSizeBytes = 0;
@@ -2997,13 +3574,7 @@ export class RollbackManager {
     const commands = await this.getCommandsForStep(taskId, stepNumber);
 
     // Get linked snapshots for each command
-    const linkedSnapshotIds = new Set<string>();
-    for (const cmd of commands) {
-      const linked = await this.getFileSnapshotsForCommand(cmd.id);
-      for (const snap of linked) {
-        linkedSnapshotIds.add(snap.id);
-      }
-    }
+    const linkedSnapshotIds = await this.getLinkedSnapshotIdsForCommands(commands.map(c => c.id));
 
     const files: RollbackPreviewItem[] = [];
     let totalSizeBytes = 0;
@@ -3043,6 +3614,10 @@ export class RollbackManager {
             warning = 'File no longer exists — snapshot content will be restored as new file';
           } else {
             // Check if content matches what was expected (no conflict)
+            // Pre-restore validation: on-disk bytes vs content_after. Equal
+            // → nobody touched it since, so restoring content_before loses
+            // nothing. Diverged → warn before overwrite: the current edits
+            // have no snapshot of their own and would be destroyed.
             try {
               const expectedAfter = await this.decompressContent(snap.contentAfter);
               if (currentContent && expectedAfter && currentContent.equals(expectedAfter)) {
@@ -3097,25 +3672,6 @@ export class RollbackManager {
       hasUnrestorableFiles,
       riskLevel,
     };
-  }
-
-  /**
-   * Update a command record's reversibility after capturing file snapshots.
-   * Called by the external integration when snapshots are linked post-execution.
-   *
-   * @param commandId - Command record ID
-   * @param reversible - Whether the command should now be reversible
-   */
-  async updateCommandReversibility(commandId: string, reversible: boolean): Promise<void> {
-    this.ensureInitialized();
-    try {
-      await dbOps.run(
-        `UPDATE command_history SET reversible = ? WHERE id = ?`,
-        [reversible ? 1 : 0, commandId]
-      );
-    } catch (err) {
-      console.warn(`[RollbackManager] Failed to update command ${commandId} reversibility:`, err);
-    }
   }
 
   /**
@@ -3180,8 +3736,22 @@ export class RollbackManager {
 
   /**
    * Convert a database row to a CommandRecord.
+   *
+   * The JSON rollback_payload column is re-validated on read: a malformed or
+   * shape-mismatched payload is dropped (treated as absent), so a corrupted
+   * DB row can never fabricate an executable payload downstream.
    */
   private rowToCommandRecord(row: any): CommandRecord {
+    let rollbackPayload: RollbackPayload | null = null;
+    if (row.rollback_payload) {
+      try {
+        const parsed = JSON.parse(row.rollback_payload);
+        if (parsed && typeof parsed.program === 'string' && Array.isArray(parsed.args)) {
+          rollbackPayload = { program: parsed.program, args: parsed.args };
+        }
+      } catch { /* malformed payload — treat as absent (fail-safe) */ }
+    }
+
     return {
       id: row.id,
       taskId: row.task_id,
@@ -3190,6 +3760,8 @@ export class RollbackManager {
       output: row.output || '',
       exitCode: row.exit_code,
       rollbackCommand: row.rollback_command || null,
+      rollbackPayload,
+      cwd: row.cwd || null,
       reversible: row.reversible === 1 || row.reversible === true,
       timestamp: row.timestamp,
     };
@@ -3208,6 +3780,12 @@ export class RollbackManager {
    *
    * Collects all errors encountered during rollback to enable partial rollback
    * reporting. Returns success only if ALL operations complete successfully.
+   *
+   * Partial-failure behavior: best-effort — never stops at the first error.
+   * Every file and command is attempted; failures accumulate in `errors`;
+   * `partialRollback` is true when some (but not all) operations succeeded.
+   * A declined confirmation is the only short-circuit, and even then
+   * already-restored files are reported in the result.
    *
    * Requirement 6.1: Provide rollback interface accepting checkpoint identifier or step number
    * Requirement 6.2: Identify all state changes associated with that step
@@ -3231,6 +3809,11 @@ export class RollbackManager {
       const errors: string[] = [];
 
       // ── Phase 1: Restore files ──────────────────────────────────────
+      // Ordering constraint: files are restored BEFORE any rollback command
+      // runs (Phase 2), so a failed or declined command reversal cannot leave
+      // the pre-capture file state exposed to a later command. Each restore
+      // is independent — one failure must not abort the rest, because
+      // partial-rollback reporting depends on attempting everything.
 
       try {
         const fileSnapshots = await this.getFileSnapshotsForStep(taskId, stepNumber);
@@ -3259,7 +3842,41 @@ export class RollbackManager {
       try {
         const commands = await this.getCommandsForStep(taskId, stepNumber);
 
+        // AG-SAF-01: ONE consolidated confirmation for the whole batch —
+        // gather all valid structured payloads + file ops, confirm once.
+        const commandsToRun = commands
+          .filter((c) => c.reversible && c.rollbackPayload && this._validateRollbackPayload(c.rollbackPayload!))
+          .map((c) => ({ cmd: c, payload: c.rollbackPayload! }));
+        if (commandsToRun.length > 0) {
+          const fileOps = (await this.getFileSnapshotsForStep(taskId, stepNumber)).map((s) => ({
+            filePath: s.filePath,
+            operation: s.operation,
+          }));
+          const approved = await this.confirmRollbackExecution({
+            commands: commandsToRun.map((c) => c.payload),
+            fileOperations: fileOps,
+          });
+          if (!approved) {
+            this.batchRollbackApproval = null;
+            return {
+              success: false,
+              filesRestored,
+              commandsReversed: [],
+              errors: ['Rollback aborted: user declined the confirmation dialog'],
+              partialRollback: filesRestored.length > 0,
+              stepsRolledBack: [],
+            };
+          }
+          this.batchRollbackApproval = {
+            commands: commandsToRun.map((c) => c.payload),
+            fileOperations: [],
+          };
+        }
+
         // Reverse commands in reverse order (last executed first)
+        // Undo the most recent state change before the one it layered on.
+        // Individual failures are collected, not thrown, so the remaining
+        // commands still get their reversal attempt.
         for (let i = commands.length - 1; i >= 0; i--) {
           const cmd = commands[i];
 
@@ -3268,6 +3885,9 @@ export class RollbackManager {
             if (result.success) {
               commandsReversed.push(cmd.command);
               console.log(`[RollbackManager] Reversed command: ${cmd.command}`);
+            } else if ((result as any).skipped) {
+              // AG-SAF-01: fail-safe refusal (no structured payload / declined)
+              errors.push(`Command reversal skipped for "${cmd.command}": ${result.error}`);
             } else {
               errors.push(`Command reversal failed for "${cmd.command}": ${result.error}`);
             }
@@ -3277,7 +3897,9 @@ export class RollbackManager {
             );
           }
         }
+        this.batchRollbackApproval = null;
       } catch (error) {
+        this.batchRollbackApproval = null;
         errors.push(`Failed to retrieve command records: ${(error as Error).message}`);
       }
 
@@ -3369,6 +3991,9 @@ export class RollbackManager {
       }
 
       // ── Phase 2: Retrieve and rollback commands ─────────────────────
+      // Files first, commands second — same safety ordering as rollbackStep.
+      // The SQL above already orders rows newest-first (DESC), so iterating
+      // forward here IS reverse-chronological undo.
 
       try {
         const cmdRows = await dbOps.all(
@@ -3380,12 +4005,40 @@ export class RollbackManager {
 
         const commands = cmdRows.map(this.rowToCommandRecord);
 
+        // AG-SAF-01: ONE consolidated confirmation for the whole batch
+        const commandsToRun = commands
+          .filter((c) => c.reversible && c.rollbackPayload && this._validateRollbackPayload(c.rollbackPayload!))
+          .map((c) => ({ cmd: c, payload: c.rollbackPayload! }));
+        if (commandsToRun.length > 0) {
+          const approved = await this.confirmRollbackExecution({
+            commands: commandsToRun.map((c) => c.payload),
+            fileOperations: filesRestored.map((p) => ({ filePath: p, operation: 'modify' as const })),
+          });
+          if (!approved) {
+            this.batchRollbackApproval = null;
+            return {
+              success: false,
+              filesRestored,
+              commandsReversed: [],
+              errors: ['Rollback aborted: user declined the confirmation dialog'],
+              partialRollback: filesRestored.length > 0,
+              stepsRolledBack: [],
+            };
+          }
+          this.batchRollbackApproval = {
+            commands: commandsToRun.map((c) => c.payload),
+            fileOperations: [],
+          };
+        }
+
         for (const cmd of commands) {
           try {
             const result = await this.rollbackCommand(cmd.id);
             if (result.success) {
               commandsReversed.push(cmd.command);
               console.log(`[RollbackManager] Reversed command: ${cmd.command}`);
+            } else if ((result as any).skipped) {
+              errors.push(`Command reversal skipped for "${cmd.command}": ${result.error}`);
             } else {
               errors.push(`Command reversal failed for "${cmd.command}": ${result.error}`);
             }
@@ -3395,7 +4048,9 @@ export class RollbackManager {
             );
           }
         }
+        this.batchRollbackApproval = null;
       } catch (error) {
+        this.batchRollbackApproval = null;
         errors.push(`Failed to retrieve or rollback command records: ${(error as Error).message}`);
       }
 
@@ -3467,11 +4122,111 @@ export class RollbackManager {
   }
 
   /**
+   * Set an injectable confirmation handler for rollback command execution
+   * (AG-SAF-01). Tests use this to auto-approve; production Electron uses
+   * the native dialog when no handler is set.
+   */
+  setRollbackConfirmationHandler(handler: RollbackConfirmationHandler | null): void {
+    this.rollbackConfirmationHandler = handler;
+  }
+
+  /**
+   * Show a consolidated confirmation for a rollback operation (AG-SAF-01).
+   *
+   * Resolution order (fail-closed):
+   * 1. Injected handler via setRollbackConfirmationHandler()
+   * 2. Native Electron dialog (only when running in the main Electron
+   *    process, process.type === 'browser'); denies on any failure.
+   * 3. Default: DENY (no handler, no Electron).
+   *
+   * @param request - Commands + file operations to approve
+   * @returns true only when explicitly approved
+   */
+  private async confirmRollbackExecution(
+    request: RollbackConfirmationRequest
+  ): Promise<boolean> {
+    // 1. Injected handler takes precedence
+    if (this.rollbackConfirmationHandler) {
+      try {
+        return await this.rollbackConfirmationHandler(request);
+      } catch (err) {
+        console.error('[RollbackManager] Confirmation handler threw — denying:', err);
+        return false;
+      }
+    }
+
+    // 2. Native Electron dialog — only in the main Electron process
+    if (typeof process !== 'undefined' && (process as any).type === 'browser') {
+      try {
+        const { dialog, BrowserWindow } = require('electron');
+        const win = BrowserWindow.getAllWindows()[0];
+        const commandLines = request.commands
+          .map(c => `  ${c.program} ${c.args.join(' ')}`)
+          .join('\n');
+        const fileLines = request.fileOperations
+          .map(f => `  [${f.operation}] ${f.filePath}`)
+          .join('\n');
+        const response = await dialog.showMessageBox(win || undefined, {
+          type: 'warning',
+          title: 'EverFern Rollback Authorization',
+          message:
+            'A rollback is about to execute the following commands and file operations.\n\n' +
+            `Commands:\n${commandLines || '  (none)'}\n\n` +
+            `File operations:\n${fileLines || '  (none)'}\n\n` +
+            'Do you want to authorize this rollback?',
+          buttons: ['Approve', 'Deny'],
+          defaultId: 0,
+          cancelId: 1,
+        });
+        return response.response === 0;
+      } catch (err) {
+        console.error('[RollbackManager] Failed to show confirmation dialog — denying:', err);
+        return false;
+      }
+    }
+
+    // 3. Fail-closed default: no handler and no Electron → DENY
+    // An unverifiable approval is treated as no approval — rollback command
+    // execution must never proceed on an ambiguous confirmation path.
+    console.warn(
+      '[RollbackManager] No rollback confirmation handler available — denying rollback command execution (fail-closed)'
+    );
+    return false;
+  }
+
+  /**
+   * Validate a stored rollback payload before execution (AG-SAF-01).
+   *
+   * Only well-formed argv arrays with known-safe package-manager/git programs
+   * are allowed; anything else is refused.
+   *
+   * Needed even with shell:false: the payload round-trips through the DB as
+   * JSON, so shape and program are re-checked on every execution. The program
+   * allowlist stops a poisoned record from invoking sh/curl/node; the NUL/
+   * newline check blocks control characters some tools treat as argument
+   * separators or terminators. Defense in depth on top of argv form.
+   */
+  private _validateRollbackPayload(payload: RollbackPayload): boolean {
+    if (!payload || typeof payload.program !== 'string' || !Array.isArray(payload.args)) {
+      return false;
+    }
+    const ALLOWED_PROGRAMS = new Set([
+      'npm', 'yarn', 'pnpm', 'pip', 'pip3', 'apt-get', 'brew', 'cargo', 'git',
+    ]);
+    if (!ALLOWED_PROGRAMS.has(payload.program)) return false;
+    // Every arg must be a non-empty string without NUL / newline injection
+    return payload.args.every(
+      (a) => typeof a === 'string' && a.length > 0 && !/[\0\n\r]/.test(a)
+    );
+  }
+
+  /**
    * Rollback a command execution.
    *
-   * Executes the rollback command stored in the command record to reverse
-   * the effects of the original command. Only applies to reversible commands;
-   * irreversible commands return an error.
+   * AG-SAF-01: executes ONLY the structured rollback payload (argv array,
+   * shell:false, recorded cwd, 120s timeout). Legacy free-text
+   * `rollbackCommand` strings are NEVER executed — records without a
+   * structured payload are refused (skipped) fail-safe.
    *
    * Requirement 6.4: Execute rollback commands for reversible command executions
    * Requirement 6.5: Report if rollback cannot be fully completed
@@ -3479,7 +4234,7 @@ export class RollbackManager {
    * @param commandId - Command record identifier
    * @returns Rollback result with success status and error message
    */
-  async rollbackCommand(commandId: string): Promise<{ success: boolean; error?: string }> {
+  async rollbackCommand(commandId: string): Promise<{ success: boolean; error?: string; skipped?: boolean }> {
     try {
       this.ensureInitialized();
 
@@ -3501,25 +4256,105 @@ export class RollbackManager {
         };
       }
 
-      // Check if rollback command is available
-      if (!commandRecord.rollbackCommand) {
+      // AG-SAF-01: only the structured payload is honored.
+      const payload = commandRecord.rollbackPayload;
+      if (!payload) {
+        // Fail-safe refusal: legacy free-text rollbackCommand is display-only
+        console.warn(
+          `[RollbackManager] Refusing rollback for "${commandRecord.command}": ` +
+            `no structured rollback payload (legacy free-text rollbackCommand strings are never executed)`
+        );
         return {
           success: false,
-          error: `No rollback command available for: "${commandRecord.command}"`,
+          skipped: true,
+          error:
+            `Rollback refused: no structured rollback payload for "${commandRecord.command}" ` +
+            `(free-text rollbackCommand is never executed; command marked as skipped)`,
         };
       }
 
-      // Execute rollback command
-      try {
-        const { execSync } = require('child_process');
-        const rollbackOutput = execSync(commandRecord.rollbackCommand, {
-          encoding: 'utf-8',
-          stdio: ['pipe', 'pipe', 'pipe'],
-        });
+      // Validate the payload before doing anything with it
+      if (!this._validateRollbackPayload(payload)) {
+        console.warn(
+          `[RollbackManager] Refusing rollback for "${commandRecord.command}": invalid rollback payload`
+        );
+        return {
+          success: false,
+          skipped: true,
+          error: `Rollback refused: invalid or disallowed rollback payload for "${commandRecord.command}"`,
+        };
+      }
 
+      // Consolidated confirmation (AG-SAF-01): skip only when this exact
+      // payload was already approved as part of the current batch operation.
+      const alreadyApproved = !!this.batchRollbackApproval &&
+        this.batchRollbackApproval.commands.some(
+          (p) => p.program === payload.program &&
+            p.args.length === payload.args.length &&
+            p.args.every((a, idx) => a === payload.args[idx])
+        );
+      if (!alreadyApproved) {
+        const approved = await this.confirmRollbackExecution({
+          commands: [payload],
+          fileOperations: [],
+        });
+        if (!approved) {
+          return {
+            success: false,
+            skipped: true,
+            error: `Rollback denied: user declined confirmation for "${commandRecord.command}"`,
+          };
+        }
+      }
+
+      // Execute rollback command via structured spawn (shell: false)
+      try {
+        const { spawn } = require('child_process');
+        const rollbackDisplay = this._formatRollbackPayload(payload);
+        // Rollback must run where the original command ran — an inverse like
+        // `npm uninstall` is workspace-relative, so executing it from the
+        // process cwd instead of the recorded cwd would hit the wrong project.
+        const cwd = payload.cwd || commandRecord.cwd || process.cwd();
+
+        const rollbackOutput = await new Promise<{ code: number | null; stdout: string; stderr: string }>(
+          (resolve, reject) => {
+            const child = spawn(payload.program, payload.args, {
+              cwd,
+              // argv execution: each args[i] reaches the OS as ONE literal
+              // argument — no shell runs, so there is no word-splitting, no
+              // glob expansion, and no ;|&$() metacharacter interpretation.
+              // That is what makes executing a stored rollback safe even
+              // when operands came from a user-typed command string.
+              shell: false,
+              timeout: 120000,
+            });
+
+            let stdout = '';
+            let stderr = '';
+            child.stdout?.on('data', (d: Buffer) => { stdout += d.toString('utf-8'); });
+            child.stderr?.on('data', (d: Buffer) => { stderr += d.toString('utf-8'); });
+            child.on('error', reject);
+            child.on('close', (code: number | null) => resolve({ code, stdout, stderr }));
+          }
+        );
+
+        if (rollbackOutput.code !== 0) {
+          const tail = (rollbackOutput.stderr || rollbackOutput.stdout || '').slice(-500);
+          console.error(
+            `[RollbackManager] Rollback command failed (exit ${rollbackOutput.code}): "${rollbackDisplay}"\n${tail}`
+          );
+          return {
+            success: false,
+            error: `Rollback command failed (exit ${rollbackOutput.code}): ${rollbackDisplay}`,
+          };
+        }
+
+        // Capture output to the existing log mechanism
         console.log(
           `[RollbackManager] Successfully reversed command: "${commandRecord.command}"`,
-          `Rollback: "${commandRecord.rollbackCommand}"`
+          `Rollback: "${rollbackDisplay}"`,
+          rollbackOutput.stdout ? `\n[stdout] ${rollbackOutput.stdout.slice(0, 2000)}` : '',
+          rollbackOutput.stderr ? `\n[stderr] ${rollbackOutput.stderr.slice(0, 2000)}` : ''
         );
 
         return {
@@ -3528,7 +4363,7 @@ export class RollbackManager {
       } catch (execError) {
         const errorMsg = (execError as Error).message || 'Unknown execution error';
         console.error(
-          `[RollbackManager] Failed to execute rollback command "${commandRecord.rollbackCommand}":`,
+          `[RollbackManager] Failed to execute rollback payload "${this._formatRollbackPayload(payload)}":`,
           errorMsg
         );
 
@@ -3572,8 +4407,16 @@ export class RollbackManager {
         return false;
       }
 
-      // All file operations are reversible
-      // All commands that exist are either reversible or will be marked as failed
+      // AG-CORR-10: a step with ONLY irreversible commands (rm -rf, dd, mkfs…)
+      // cannot be rolled back. Previously canRollback returned true for any
+      // step with recorded commands, advertising reversibility that didn't
+      // exist. Snapshots alone are fine; bare irreversible commands are not.
+      const hasRestorable =
+        fileSnapshots.length > 0 ||
+        commands.some(cmd => !!cmd.reversible);
+      if (!hasRestorable) {
+        return false;
+      }
 
       return true;
     } catch (error) {

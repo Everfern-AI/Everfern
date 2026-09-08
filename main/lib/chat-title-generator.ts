@@ -11,7 +11,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { acpManager } from '../acp/manager';
-import { AIClient } from './ai-client';
+import { AIClient, getPooledAIClient, releasePooledAIClient, AIClientConfig } from './ai-client';
 import { dbOps } from './db';
 
 interface TitleOptions {
@@ -44,7 +44,18 @@ function loadConfigSync(): any {
   return null;
 }
 
-function getClient(options?: TitleOptions): AIClient | null {
+/** Per-call pool lease so concurrent title generations never cross-release. */
+interface TitleClientLease {
+  client: AIClient;
+  release: () => void;
+}
+
+function getClientLease(options?: TitleOptions): TitleClientLease | null {
+  const wrap = (client: AIClient, config?: AIClientConfig): TitleClientLease | null => {
+    if (!config) return { client, release: () => {} }; // not pooled — nothing to give back
+    return { client, release: () => releasePooledAIClient(client, config) };
+  };
+
   // 1. Check if explicit options were passed from renderer
   if (options?.providerType) {
     const provider = options.providerType as any;
@@ -56,12 +67,9 @@ function getClient(options?: TitleOptions): AIClient | null {
        provider === 'ollama' ? (config?.ollamaBaseUrl || 'http://localhost:11434') : undefined);
 
     try {
-      return new AIClient({
-        provider,
-        model: options.model,
-        apiKey,
-        baseUrl,
-      });
+      // Pool instead of rebuilding a client per title request.
+      const poolConfig: AIClientConfig = { provider, model: options.model, apiKey, baseUrl };
+      return wrap(getPooledAIClient(poolConfig), poolConfig);
     } catch (err) {
       console.warn('[ChatTitle] Failed to create custom AIClient for title:', err);
     }
@@ -70,7 +78,7 @@ function getClient(options?: TitleOptions): AIClient | null {
   // 2. Try acpManager singleton client
   try {
     const client = acpManager.getClient();
-    if (client) return client;
+    if (client) return wrap(client);
   } catch {}
 
   // 3. Fallback to active config from disk
@@ -78,12 +86,13 @@ function getClient(options?: TitleOptions): AIClient | null {
   if (config?.provider) {
     try {
       const apiKey = config.keys?.[config.provider] || config.apiKey || '';
-      return new AIClient({
+      const poolConfig: AIClientConfig = {
         provider: config.provider,
         model: config.model || config.customModel,
         apiKey,
         baseUrl: config.baseUrl,
-      });
+      };
+      return wrap(getPooledAIClient(poolConfig), poolConfig);
     } catch (err) {
       console.warn('[ChatTitle] Fallback AIClient creation failed:', err);
     }
@@ -114,11 +123,12 @@ async function generateTitle(conversationId: string, firstMessage: string, optio
   }
   const prompt = cleanInput.slice(0, 600);
 
-  const client = getClient(options);
-  if (!client) {
+  const lease = getClientLease(options);
+  if (!lease) {
     console.warn('[ChatTitle] No AI client available for title generation');
     return;
   }
+  const client = lease.client;
 
   try {
     const response = await client.chat({
@@ -163,5 +173,10 @@ async function generateTitle(conversationId: string, firstMessage: string, optio
     }
   } catch (err: any) {
     console.warn('[ChatTitle] Non-blocking title generation failed:', err?.message || err);
+  } finally {
+    // Return the pooled client for reuse; acpManager's singleton is not ours to release.
+    try {
+      lease.release();
+    } catch {}
   }
 }

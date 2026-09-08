@@ -36,6 +36,10 @@ async function fetchOpenRouterPricing(): Promise<void> {
           const models: any[] = parsed.data || [];
 
           const newCache: typeof pricingCache = {};
+          // MP-CORR-26: prepare all rows, then persist in ONE transaction —
+          // previously each model was an awaited INSERT on the shared
+          // connection (hundreds of round-trips per OpenRouter refresh).
+          const rows: any[][] = [];
           for (const m of models) {
             if (!m.id) continue;
             const pricing = m.pricing || {};
@@ -49,18 +53,32 @@ async function fetchOpenRouterPricing(): Promise<void> {
               displayName: m.name || m.id,
               provider: (m.id.split('/')[0]) || 'unknown'
             };
+            rows.push([
+              m.id, newCache[m.id].provider, newCache[m.id].displayName,
+              inputCostPer1M, outputCostPer1M, newCache[m.id].contextWindow,
+              new Date().toISOString()
+            ]);
+          }
 
-            // Persist to SQLite cache
+          // Persist to SQLite cache in a single batched transaction
+          if (rows.length > 0) {
             try {
-              await dbOps.run(
-                `INSERT OR REPLACE INTO model_pricing_cache
+              await dbOps.exec('BEGIN TRANSACTION');
+              try {
+                const stmt = `INSERT OR REPLACE INTO model_pricing_cache
                  (model_id, provider, display_name, input_cost_per_1m, output_cost_per_1m, context_window, last_fetched_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                [m.id, newCache[m.id].provider, newCache[m.id].displayName,
-                 inputCostPer1M, outputCostPer1M, newCache[m.id].contextWindow,
-                 new Date().toISOString()]
-              );
-            } catch { /* DB might not be ready */ }
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`;
+                for (const rowParams of rows) {
+                  await dbOps.run(stmt, rowParams);
+                }
+                await dbOps.exec('COMMIT');
+              } catch (txErr) {
+                await dbOps.exec('ROLLBACK').catch(() => {});
+                throw txErr;
+              }
+            } catch (batchErr) {
+              console.warn('[Analytics] Batched pricing persist failed:', batchErr);
+            }
           }
 
           pricingCache = newCache;
@@ -124,14 +142,21 @@ async function loadPricingCache(): Promise<void> {
 
 /**
  * Ensure pricing cache is up to date
+ *
+ * MP-LEAK-08 / battery A5: callers on the record path pass `{ blocking: false }`
+ * (the default) so a cold cache serves a background refresh and returns
+ * immediately — never blocking usage recording on the network.
  */
-export async function ensurePricingFresh(): Promise<void> {
+export async function ensurePricingFresh(options?: { blocking?: boolean }): Promise<void> {
+  const blocking = options?.blocking === true;
   if (Object.keys(pricingCache).length === 0) {
     await loadPricingCache();
   }
-  if (Date.now() - lastPricingFetch > PRICING_REFRESH_INTERVAL_MS || Object.keys(pricingCache).length === 0) {
-    // If cache is completely empty, await — otherwise refresh in background
-    if (Object.keys(pricingCache).length === 0) {
+  const cacheEmpty = Object.keys(pricingCache).length === 0;
+  if (Date.now() - lastPricingFetch > PRICING_REFRESH_INTERVAL_MS || cacheEmpty) {
+    // Only a completely empty cache after load attempts may block (opt-in);
+    // otherwise refresh in background so pricing updates land next tick.
+    if (blocking && cacheEmpty) {
       await fetchOpenRouterPricing();
     } else {
       fetchOpenRouterPricing().catch(() => { });
@@ -172,6 +197,8 @@ export async function recordUsage(params: {
   imageOutputCost?: number;
   totalCost?: number;
 }): Promise<void> {
+  // MP-LEAK-08: never block usage recording on a pricing fetch — serve
+  // stale pricing immediately; a refresh lands in the background.
   await ensurePricingFresh();
 
   const {
@@ -348,7 +375,10 @@ export async function getModelPricingList(): Promise<Array<{
   outputCostPer1M: number;
   contextWindow: number;
 }>> {
-  await ensurePricingFresh();
+  // User-initiated pricing read (Settings UI): on a completely cold cache it
+  // may block for one bounded fetch (10s https timeout) instead of showing an
+  // empty list for 6h. Stale-but-present caches still refresh in background.
+  await ensurePricingFresh({ blocking: true });
   return Object.entries(pricingCache).map(([modelId, data]) => ({
     modelId,
     provider: data.provider,
@@ -359,5 +389,8 @@ export async function getModelPricingList(): Promise<Array<{
   }));
 }
 
-// Initialize pricing cache on module load
-ensurePricingFresh().catch(() => { });
+// MP-LEAK-08 / battery A5: pricing warms up lazily — first recordUsage or
+// pricing read triggers a non-blocking ensure; no work at module import time.
+export function warmUpPricingCache(): void {
+  ensurePricingFresh().catch(() => { });
+}

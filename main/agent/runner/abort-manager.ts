@@ -59,6 +59,11 @@ export class AbortSignalManager {
 
   /**
    * Adds a listener for abort events
+   * @param callback Invoked synchronously when setAborted() fires
+   * @returns Unsubscribe handle that removes this listener
+   *
+   * Note: reset() wipes all listeners, so per-run listeners must be
+   * re-registered for each new execution.
    */
   onAbort(callback: () => void): () => void {
     this._listeners.push(callback);
@@ -69,6 +74,10 @@ export class AbortSignalManager {
 
   /**
    * Registers a listener for abort events (alias for onAbort)
+   *
+   * Unlike onAbort this returns no unsubscribe handle — intended for
+   * process-lifetime listeners. Scoped listeners should use onAbort so they
+   * can unbind explicitly rather than relying on reset() to wipe them.
    */
   registerListener(callback: () => void): void {
     this._listeners.push(callback);
@@ -90,6 +99,11 @@ export class AbortSignalManager {
   /**
    * Sets the abort flag to true and starts abort propagation
    * Requirement 1.1: Stop button shall immediately set the Stream_Abort_Flag to true
+   *
+   * Side effects: records the abort timestamp, aborts the AbortController
+   * (cancelling anything tied to its signal, e.g. in-flight tool fetches)
+   * and synchronously notifies listeners. Idempotent — a second call is a
+   * no-op so the original abort timing is never overwritten.
    */
   setAborted(): void {
     if (!this._streamAborted) {
@@ -122,6 +136,9 @@ export class AbortSignalManager {
    * Requirement 1.7: For ALL running tool executions, abortion SHALL propagate to terminate long-running operations
    */
   propagateToTools(): void {
+    // Defensive re-abort: setAborted() already fires the controller, so this
+    // only matters if the flag was somehow set without the controller aborting.
+    // controller.abort() is idempotent, so a no-op call here is harmless.
     if (this._streamAborted && !this._abortController.signal.aborted) {
       this._abortController.abort();
       console.log('[AbortSignalManager] 🛑 Abort signal propagated to running tools');
@@ -134,6 +151,10 @@ export class AbortSignalManager {
    * 2. Tool calls (100ms max)
    * 3. Browser sessions (500ms max)
    * 4. Streaming (immediate)
+   *
+   * Phases run sequentially and each catches its own errors, so one stuck or
+   * failing phase cannot block the remaining ones — total cleanup time is
+   * bounded by the sum of phase timeouts, not a single phase hanging forever.
    */
   async executeCleanupSequence(): Promise<CleanupStatus> {
     this._cleanupStartTime = Date.now();
@@ -171,6 +192,9 @@ export class AbortSignalManager {
           if (toolCallRegistry && typeof toolCallRegistry.markAllAborted === 'function') {
             toolCallRegistry.markAllAborted();
           }
+          // Dev-preview servers are stopped as part of tool cleanup so an
+          // aborted run doesn't leave orphaned dev servers running. The
+          // require is guarded because the module may not exist in all builds.
           try {
             const devPreview = require('../tools/dev-preview');
             if (devPreview && typeof devPreview.stopAllServers === 'function') {
@@ -245,6 +269,11 @@ export class AbortSignalManager {
 
   /**
    * Executes a single cleanup phase with timeout enforcement
+   *
+   * A phase timing out or throwing is recorded as an error result rather than
+   * rejecting — later phases still run. The race with the timer leaves the
+   * losing promise dangling, which is safe here because both paths are
+   * settle-once and no resources need explicit disposal.
    */
   private async executeCleanupPhase(
     phaseName: string,
@@ -319,6 +348,11 @@ export class AbortSignalManager {
 
   /**
    * Resets the abort state for a new execution
+   *
+   * Side effects: creates a fresh AbortController (an aborted controller can
+   * never be reused — its signal stays aborted forever), clears cleanup
+   * telemetry, and drops ALL listeners. Callers relying on persistent
+   * listeners must re-register after reset.
    */
   reset(): void {
     this._streamAborted = false;
@@ -335,6 +369,7 @@ export class AbortSignalManager {
 
   /**
    * Creates a shouldAbort callback function for compatibility with existing code
+   * @returns Closure reading the live abort flag — cheap enough to call per node
    */
   createShouldAbortCallback(): () => boolean {
     return () => this._streamAborted;
@@ -361,10 +396,69 @@ export const globalAbortManager = new AbortSignalManager();
  * AbortError class for consistent error handling
  */
 export class AbortError extends Error {
+  /**
+   * @param message Optional override; callers match on the default text
+   * ('Execution aborted by user') in some error paths, so overriding it can
+   * break abort classification downstream.
+   */
   constructor(message: string = 'Execution aborted by user') {
     super(message);
     this.name = 'AbortError';
   }
+}
+
+/**
+ * MP-CORR-13 / AG-CORR-04: per-conversation abort registry.
+ *
+ * `globalAbortManager` is process-wide, so `acp:stop` in one chat aborted every
+ * running stream. This registry keys abort state by conversationId; the global
+ * manager remains as a legacy fallback for paths that never had a
+ * conversationId. The manager instances share the same class so all existing
+ * call sites (checkAbort, abortController, onAbort, reset, …) work unchanged —
+ * they just need to receive the scoped instance.
+ */
+const conversationAbortManagers = new Map<string, AbortSignalManager>();
+
+export function getConversationAbortManager(conversationId?: string): AbortSignalManager {
+  // No conversationId (legacy call sites) falls back to the process-wide
+  // manager so those paths keep their historical abort-everything semantics.
+  if (!conversationId) return globalAbortManager;
+  let mgr = conversationAbortManagers.get(conversationId);
+  if (!mgr) {
+    mgr = new AbortSignalManager();
+    conversationAbortManagers.set(conversationId, mgr);
+  }
+  return mgr;
+}
+
+/**
+ * Resets the scoped (and, if unscoped, global) abort state for a conversation.
+ * Used to start a fresh run without the previous turn's abort flag sticking.
+ */
+export function resetConversationAbort(conversationId?: string): void {
+  getConversationAbortManager(conversationId).reset();
+}
+
+/**
+ * Full teardown of a conversation's scoped abort manager: resets its state
+ * AND removes it from the registry. Called at stream end (AG-CORR-04) so the
+ * per-conversation Map cannot grow without bound for the process lifetime.
+ */
+export function cleanupConversationAbort(conversationId: string): void {
+  const mgr = conversationAbortManagers.get(conversationId);
+  if (mgr) {
+    mgr.reset();
+    conversationAbortManagers.delete(conversationId);
+  }
+}
+
+/**
+ * Whether the given conversation (or the global manager, if unscoped) has
+ * been aborted. Safe on unknown conversationIds — getOrCreate lazily makes
+ * a fresh (non-aborted) manager rather than throwing.
+ */
+export function isConversationAborted(conversationId?: string): boolean {
+  return getConversationAbortManager(conversationId).streamAborted;
 }
 
 // Preload heavy modules in the background to prevent compilation/loading latency during timed cleanup execution

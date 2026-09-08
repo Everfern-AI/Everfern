@@ -5,9 +5,31 @@
  * injection attack prevention, content filtering, and rate limiting.
  */
 
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { InputValidator, defaultContentFilterConfig, defaultWebhookConfig } from '../input-validator';
 import { IncomingMessage, PlatformFile } from '../platform-interface';
 import crypto from 'crypto';
+
+// Hermetic (wave f11): InputValidator wires the GLOBAL SecurityMonitor
+// singleton (getSecurityMonitor()), which persists security events to
+// <homedir>/.everfern/security-logs on real fs. Mock os.homedir to a
+// per-run tmp dir so no real home-directory state is touched and no
+// stale ~/.everfern events leak in between runs. vi.mock('os') reaches
+// the product module here because security-monitor.ts binds homedir via
+// ESM named import (empirically verified with this setup).
+const { HERMETIC_HOME } = vi.hoisted(() => ({
+  HERMETIC_HOME: `/tmp/everfern-test-homes/input-validator/${process.pid}-${Date.now()}`
+}));
+vi.mock('os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('os')>();
+  // Override BOTH the named `homedir` export and `default` — products bind
+  // both styles (security-monitor.ts uses `import os from 'os'`; spreading
+  // ...actual alone would copy default: realOs and leak writes).
+  const mocked = { ...actual, homedir: () => HERMETIC_HOME };
+  return { ...mocked, default: mocked };
+});
+
+
 
 describe('InputValidator', () => {
   let validator: InputValidator;
@@ -286,50 +308,54 @@ describe('InputValidator', () => {
     });
   });
 
+  // wave f11: contract updated — validateWebhookSignature became async in
+  // commit 5596cc7 ("Pre release exe"); it now logs security events (e.g.
+  // 'webhook_signature_invalid') through SecurityMonitor during validation,
+  // so it returns Promise<ValidationResult> and must be awaited.
   describe('Webhook Signature Validation', () => {
     const testPayload = '{"test": "data"}';
     const testTimestamp = Math.floor(Date.now() / 1000).toString();
 
-    it('should validate correct webhook signatures', () => {
+    it('should validate correct webhook signatures', async () => {
       const hmac = crypto.createHmac('sha256', 'test-secret-key');
       hmac.update(`${testTimestamp}.${testPayload}`);
       const signature = `sha256=${hmac.digest('hex')}`;
 
-      const result = validator.validateWebhookSignature(testPayload, signature, testTimestamp);
+      const result = await validator.validateWebhookSignature(testPayload, signature, testTimestamp);
 
       expect(result.valid).toBe(true);
       expect(result.errors).toHaveLength(0);
       expect(result.riskLevel).toBe('low');
     });
 
-    it('should reject invalid webhook signatures', () => {
+    it('should reject invalid webhook signatures', async () => {
       const invalidSignature = 'sha256=invalid-signature';
 
-      const result = validator.validateWebhookSignature(testPayload, invalidSignature, testTimestamp);
+      const result = await validator.validateWebhookSignature(testPayload, invalidSignature, testTimestamp);
 
       expect(result.valid).toBe(false);
       expect(result.errors).toContain('Invalid webhook signature');
       expect(result.riskLevel).toBe('critical');
     });
 
-    it('should reject requests that are too old', () => {
+    it('should reject requests that are too old', async () => {
       const oldTimestamp = Math.floor((Date.now() - 400000) / 1000).toString(); // 400 seconds ago
       const hmac = crypto.createHmac('sha256', 'test-secret-key');
       hmac.update(`${oldTimestamp}.${testPayload}`);
       const signature = `sha256=${hmac.digest('hex')}`;
 
-      const result = validator.validateWebhookSignature(testPayload, signature, oldTimestamp);
+      const result = await validator.validateWebhookSignature(testPayload, signature, oldTimestamp);
 
       expect(result.valid).toBe(false);
       expect(result.errors[0]).toContain('Request too old');
     });
 
-    it('should validate signatures without timestamp', () => {
+    it('should validate signatures without timestamp', async () => {
       const hmac = crypto.createHmac('sha256', 'test-secret-key');
       hmac.update(testPayload);
       const signature = `sha256=${hmac.digest('hex')}`;
 
-      const result = validator.validateWebhookSignature(testPayload, signature);
+      const result = await validator.validateWebhookSignature(testPayload, signature);
 
       expect(result.valid).toBe(true);
       expect(result.errors).toHaveLength(0);
@@ -376,7 +402,9 @@ describe('InputValidator', () => {
       expect(result.errors[0]).toContain('Message too long');
     });
 
-    it('should update webhook configuration', () => {
+    // wave f11: contract updated — validateWebhookSignature became async in
+    // commit 5596cc7 ("Pre release exe"); must be awaited.
+    it('should update webhook configuration', async () => {
       validator.updateWebhookConfig({
         secretKey: 'new-secret-key',
         maxRequestAge: 600
@@ -388,7 +416,7 @@ describe('InputValidator', () => {
       hmac.update(testPayload);
       const signature = `sha256=${hmac.digest('hex')}`;
 
-      const result = validator.validateWebhookSignature(testPayload, signature);
+      const result = await validator.validateWebhookSignature(testPayload, signature);
       expect(result.valid).toBe(true);
     });
   });
@@ -408,9 +436,11 @@ describe('InputValidator', () => {
       expect(result.riskLevel).toBe('critical');
     });
 
-    it('should handle webhook signature validation errors', () => {
+    // wave f11: contract updated — validateWebhookSignature became async in
+    // commit 5596cc7 ("Pre release exe"); must be awaited.
+    it('should handle webhook signature validation errors', async () => {
       // Test with malformed signature
-      const result = validator.validateWebhookSignature('test', 'malformed-signature');
+      const result = await validator.validateWebhookSignature('test', 'malformed-signature');
 
       expect(result.valid).toBe(false);
       expect(result.errors).toContain('Invalid webhook signature');

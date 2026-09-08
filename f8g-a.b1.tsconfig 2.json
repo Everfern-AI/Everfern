@@ -1,0 +1,41 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/types/electron.d.ts",
+    "src/types/import-meta-env.d.ts",
+    "src/app/auth/page.tsx",
+    "src/app/chat/AnalyticsPage.tsx",
+    "src/app/chat/ArtifactsPanel.tsx",
+    "src/app/chat/SettingsPage.tsx",
+    "src/app/chat/VoiceAssistantUI.tsx",
+    "src/app/chat/components/HealthCheckScreen.tsx",
+    "src/app/chat/components/LazyBase64Thumb.tsx",
+    "src/app/chat/components/LocalExecutionPermissionCard.tsx",
+    "src/app/chat/components/MarkdownComponents.tsx",
+    "src/app/chat/components/MessageRow.tsx",
+    "src/app/chat/components/ShimmerProgressComponent.tsx",
+    "src/app/chat/components/StarRepoPopup.tsx",
+    "src/app/chat/components/ToolCallComponents.tsx",
+    "src/app/chat/components/ToolCallDetailPane.tsx",
+    "src/app/chat/components/ToolSettingsSection.tsx",
+    "src/app/chat/components/UIHelpers.tsx",
+    "src/app/chat/page.tsx",
+    "src/app/chat/types/debate-types.ts",
+    "src/app/computer-overlay/page.tsx",
+    "src/app/overlay/page.tsx",
+    "src/app/setup/page.tsx",
+    "src/components/common/AnnouncementPopup.tsx",
+    "src/components/common/MarkdownComponents.tsx",
+    "src/components/common/UpdateNotification.tsx",
+    "src/components/CreateProjectModal.tsx",
+    "src/components/files/FileViewerModal.tsx",
+    "src/components/PermissionDialog.tsx",
+    "src/components/SearchPopup.tsx",
+    "src/components/Sidebar.tsx",
+    "src/components/WindowControls.tsx"
+  ]
+}

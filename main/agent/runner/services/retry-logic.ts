@@ -13,6 +13,7 @@
 
 import type { AgentTool, ToolCallRecord, ToolResult } from '../types';
 import type { StreamEvent } from '../state';
+import { sleep } from '../../../lib/sleep';
 
 // ── Constants ─────────────────────────────────────────────────────────
 
@@ -394,9 +395,4 @@ export function errorMessage(error: unknown): string {
   return String(error);
 }
 
-/**
- * Promise-based sleep utility.
- */
-export function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
+export { sleep };

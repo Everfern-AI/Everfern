@@ -37,7 +37,7 @@ function renderMarkdown(text: string): string {
       });
       tableHtml += '</tr>';
     }
-    tableHtml += 'tbody></table></div>';
+    tableHtml += '</tbody></table></div>';
     return tableHtml;
   });
 
@@ -45,7 +45,7 @@ function renderMarkdown(text: string): string {
     // Code blocks (```...```)
     .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre style="background:rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;margin:8px 0;overflow-x:auto;font-size:12px;line-height:1.5;font-family:monospace;color:#e2e8f0"><code>$2</code></pre>')
     // Inline code
-    .replace(/`([^`]+)`/g, '<code style="background:rgba(255,255,255,0.1);border-radius:4px;padding:2px 6px;font-size:12px;font-family:monospace;color:#60a5fa">$1</code>')
+    .replace(/`([^`]+)`/g, '<code style="background:rgba(255,255,255,0.1);border-radius:4px;padding:2px 6px;font-size:12px;font-family:monospace;color:var(--color-info-light)">$1</code>')
     // Bold
     .replace(/\*\*(.+?)\*\*/g, '<strong style="color:#fff;font-weight:600">$1</strong>')
     // Strikethrough
@@ -53,18 +53,18 @@ function renderMarkdown(text: string): string {
     // Italic
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     // Links
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" style="color:#60a5fa;text-decoration:none;border-bottom:1px solid rgba(96,165,250,0.4)">$1</a>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" style="color:var(--color-info-light);text-decoration:none;border-bottom:1px solid rgba(96,165,250,0.4)">$1</a>')
     // Blockquotes
-    .replace(/^> (.+)$/gm, '<blockquote style="border-left:3px solid #60a5fa;margin:6px 0;padding-left:10px;color:rgba(255,255,255,0.8);font-style:italic">$1</blockquote>')
+    .replace(/^> (.+)$/gm, '<blockquote style="border-left:3px solid var(--color-info-light);margin:6px 0;padding-left:10px;color:rgba(255,255,255,0.8);font-style:italic">$1</blockquote>')
     // Task lists / Checkboxes
     .replace(/^[ \t]*\[ \] (.+)$/gm, '<div style="display:flex;align-items:center;gap:6px;margin:3px 0"><span style="width:12px;height:12px;border:1px solid rgba(255,255,255,0.3);border-radius:3px;display:inline-block"></span><span>$1</span></div>')
-    .replace(/^[ \t]*\[[xX]\] (.+)$/gm, '<div style="display:flex;align-items:center;gap:6px;margin:3px 0"><span style="width:12px;height:12px;background:#3b82f6;border-radius:3px;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:9px">✓</span><span style="text-decoration:line-through;color:rgba(255,255,255,0.6)">$1</span></div>')
+    .replace(/^[ \t]*\[[xX]\] (.+)$/gm, '<div style="display:flex;align-items:center;gap:6px;margin:3px 0"><span style="width:12px;height:12px;background:var(--color-info);border-radius:3px;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:9px">✓</span><span style="text-decoration:line-through;color:rgba(255,255,255,0.6)">$1</span></div>')
     // Headings
     .replace(/^### (.+)$/gm, '<div style="font-size:14px;font-weight:600;color:#fff;margin:10px 0 4px;letter-spacing:-0.01em">$1</div>')
     .replace(/^## (.+)$/gm, '<div style="font-size:15px;font-weight:600;color:#fff;margin:12px 0 6px;letter-spacing:-0.01em">$1</div>')
     .replace(/^# (.+)$/gm, '<div style="font-size:16px;font-weight:700;color:#fff;margin:14px 0 6px;letter-spacing:-0.01em">$1</div>')
     // Unordered list items
-    .replace(/^[ \t]*[-*] (.+)$/gm, '<div style="padding-left:14px;position:relative;margin:3px 0"><span style="position:absolute;left:2px;color:#60a5fa">•</span>$1</div>')
+    .replace(/^[ \t]*[-*] (.+)$/gm, '<div style="padding-left:14px;position:relative;margin:3px 0"><span style="position:absolute;left:2px;color:var(--color-info-light)">•</span>$1</div>')
     // Ordered list items
     .replace(/^(\d+)\. (.+)$/gm, '<div style="padding-left:18px;position:relative;margin:3px 0"><span style="position:absolute;left:0;color:rgba(255,255,255,0.6);font-weight:500">$1.</span>$2</div>')
     // Horizontal rules
@@ -391,12 +391,12 @@ export default function OverlayPage() {
                   width: 32,
                   height: 32,
                   borderRadius: '50%',
-                  backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                  backgroundColor: 'var(--color-error-dim)',
                   border: '1px solid rgba(239, 68, 68, 0.3)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: '#ef4444',
+                  color: 'var(--color-error)',
                   flexShrink: 0
                 }}>
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -406,7 +406,7 @@ export default function OverlayPage() {
                   </svg>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2, overflow: 'hidden' }}>
-                  <span style={{ fontSize: 13, color: '#ef4444', fontWeight: 600 }}>
+                  <span style={{ fontSize: 13, color: 'var(--color-error)', fontWeight: 600 }}>
                     Voice Mode Disabled
                   </span>
                   <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.7)', fontWeight: 400, textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }}>

@@ -2,11 +2,29 @@ import { app, nativeImage, BrowserWindow } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 
+// MP-XPLAT-06: icon probing walks ~8 dirs x up to 4 icons with fs.existsSync on
+// EVERY call (called per window + in setupWindowIcon). Memoize per process —
+// the result cannot change within a run, so one probe is enough. Cache BOTH
+// success and '' failure.
+let cachedAppIconPath: string | null = null;
+
+/**
+ * Resets the memoized app icon path (test-only hook).
+ */
+export function resetAppIconPathCacheForTests(): void {
+  cachedAppIconPath = null;
+}
+
 /**
  * Resolves the absolute path to the application icon for the current platform.
  * Supports Windows (.ico), macOS (.icns / .png), and Linux (.png).
+ * Result is memoized per process (MP-XPLAT-06).
  */
 export function getAppIconPath(): string {
+  if (cachedAppIconPath !== null) {
+    return cachedAppIconPath;
+  }
+
   const isWin = process.platform === 'win32';
   const isMac = process.platform === 'darwin';
 
@@ -36,7 +54,8 @@ export function getAppIconPath(): string {
   for (const dir of searchDirs) {
     const candidate = path.join(dir, preferredIcon);
     if (fs.existsSync(candidate)) {
-      return candidate;
+      cachedAppIconPath = candidate;
+      return cachedAppIconPath;
     }
   }
 
@@ -45,12 +64,14 @@ export function getAppIconPath(): string {
     for (const dir of searchDirs) {
       const candidate = path.join(dir, iconName);
       if (fs.existsSync(candidate)) {
-        return candidate;
+        cachedAppIconPath = candidate;
+        return cachedAppIconPath;
       }
     }
   }
 
-  return '';
+  cachedAppIconPath = '';
+  return cachedAppIconPath;
 }
 
 /**

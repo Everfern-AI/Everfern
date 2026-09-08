@@ -106,7 +106,17 @@ class SystemPromptCache {
 const promptCache = new SystemPromptCache();
 
 // Cleanup cache every 2 minutes
-setInterval(() => promptCache.cleanup(), 120000);
+// AG-MEM-12 FIX: unref'd so the interval never holds the event loop open;
+// stopPromptCacheCleanup() allows explicit teardown (e.g. app before-quit).
+const promptCacheCleanupInterval = setInterval(() => promptCache.cleanup(), 120000);
+promptCacheCleanupInterval.unref?.();
+
+/**
+ * AG-MEM-12: Stop the periodic prompt cache cleanup interval.
+ */
+export function stopPromptCacheCleanup(): void {
+  clearInterval(promptCacheCleanupInterval);
+}
 
 function minifyPrompt(prompt: string): string {
   if (!prompt) return prompt;

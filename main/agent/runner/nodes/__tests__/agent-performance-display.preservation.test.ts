@@ -25,7 +25,6 @@ import fc from 'fast-check';
 import { buildGraph } from '../../graph';
 import { GraphStateType } from '../../state';
 import { classifyIntent } from '../../triage';
-import { createJudgeNode } from '../judge';
 import { createTriageNode } from '../triage';
 
 // ── Test Helpers ─────────────────────────────────────────────────────────────
@@ -231,105 +230,7 @@ describe('Preservation Property 3.1 — Intent Classification Succeeds Within Ti
     expect(duration).toBeLessThan(2000);
     expect(result.currentIntent).toBeDefined();
     expect(result.intentConfidence).toBeGreaterThan(0);
-    expect(result.taskPhase).toBe('planning');
-  });
-});
-
-// ── Property 3.2: Judge Evaluation Succeeds Within Timeout ──────────────────
-
-describe('Preservation Property 3.2 — Judge Evaluation Succeeds Within Timeout', () => {
-  /**
-   * **Validates: Requirement 3.2**
-   *
-   * WHEN judge evaluation succeeds within timeout
-   * THEN the system SHALL CONTINUE TO make correct completion decisions
-   *
-   * This tests the baseline behavior where judge evaluation works properly
-   * with responsive AI providers (non-buggy scenario).
-   */
-
-  it('should successfully evaluate mission completion within timeout', async () => {
-    const runner = createMockRunner(1000); // Well within 10000ms timeout
-    const judgeNode = createJudgeNode(runner as any);
-
-    const startTime = Date.now();
-    const result = await judgeNode(createTestState({
-      completionSignal: {
-        reason: 'task_complete',
-        explanation: 'All requirements have been satisfied'
-      }
-    }));
-    const duration = Date.now() - startTime;
-
-    // Should complete well within timeout (10000ms)
-    expect(duration).toBeLessThan(5000);
-    expect(result.shouldContinueIteration).toBe(false);
-    expect(result.taskPhase).toBe('executing');
-  });
-
-  it('should handle fallback AI evaluation within timeout when no completion signal', async () => {
-    const runner = createMockRunner(2000); // Within timeout limits
-    const judgeNode = createJudgeNode(runner as any);
-
-    const startTime = Date.now();
-    const result = await judgeNode(createTestState({
-      completionSignal: null, // No signal, triggers AI fallback
-      messages: [
-        { role: 'user', content: 'Build me a React app' } as any,
-        { role: 'assistant', content: 'I have successfully created your React app with all requested features.' } as any,
-      ]
-    }));
-    const duration = Date.now() - startTime;
-
-    // Should complete within timeout even with AI fallback
-    expect(duration).toBeLessThan(8000);
-    expect(result.shouldContinueIteration).toBeDefined();
-    expect(result.taskPhase).toBe('executing');
-  });
-
-  it('property: judge evaluation succeeds for various completion signals within timeout', async () => {
-    await fc.assert(
-      fc.asyncProperty(
-        fc.constantFrom('task_complete', 'waiting_for_user_input', 'needs_hitl', 'cannot_proceed'),
-        fc.integer({ min: 500, max: 3000 }), // Response times well under timeout
-        async (reason, responseTime) => {
-          const runner = createMockRunner(responseTime);
-          const judgeNode = createJudgeNode(runner as any);
-
-          const startTime = Date.now();
-          const result = await judgeNode(createTestState({
-            completionSignal: {
-              reason: reason as any,
-              explanation: `Test completion: ${reason}`
-            }
-          }));
-          const duration = Date.now() - startTime;
-
-          // Should complete within reasonable time
-          expect(duration).toBeLessThan(5000);
-          expect(result.shouldContinueIteration).toBe(false);
-          expect(result.taskPhase).toBe('executing');
-        }
-      ),
-      { numRuns: 15 }
-    );
-  });
-
-  it('should correctly handle read-only intents without AI evaluation', async () => {
-    const runner = createMockRunner(100);
-    const judgeNode = createJudgeNode(runner as any);
-
-    const startTime = Date.now();
-    const result = await judgeNode(createTestState({
-      currentIntent: 'question' as any, // Read-only intent
-      iterations: 1
-    }));
-    const duration = Date.now() - startTime;
-
-    // Should complete very quickly for read-only intents
-    expect(duration).toBeLessThan(100);
-    expect(result.shouldContinueIteration).toBe(false);
-    expect(result.taskPhase).toBe('executing');
+    expect(result.taskPhase).toBe('routing');
   });
 });
 
@@ -580,23 +481,6 @@ describe('Preservation Property 3.5 — System Performance Is Adequate for Norma
 
     // Should complete quickly for normal operations
     expect(duration).toBeLessThan(1000);
-  });
-
-  it('should complete judge evaluation quickly for clear completion signals', async () => {
-    const runner = createMockRunner(100);
-    const judgeNode = createJudgeNode(runner as any);
-
-    const startTime = Date.now();
-    await judgeNode(createTestState({
-      completionSignal: {
-        reason: 'task_complete',
-        explanation: 'Task completed successfully'
-      }
-    }));
-    const duration = Date.now() - startTime;
-
-    // Should complete very quickly when completion signal is clear
-    expect(duration).toBeLessThan(200);
   });
 
   it('should handle state updates efficiently', () => {

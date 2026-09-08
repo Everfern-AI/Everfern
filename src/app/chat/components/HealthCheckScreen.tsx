@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useTheme } from "@/components/ThemeProvider";
+import { useTheme } from "@/components/common/ThemeProvider";
 
+/** State of one startup probe stage, as painted by the paced UI sequence. */
 export interface HealthCheckItem {
   id: string;
   label: string;
@@ -12,6 +13,8 @@ export interface HealthCheckItem {
   details?: string;
 }
 
+/** Props for HealthCheckScreen. `onComplete` receives overall success and
+ * per-stage error messages once all checks settle. */
 interface HealthCheckScreenProps {
   onComplete: (success: boolean, errors: string[]) => void;
   autoStart?: boolean;
@@ -28,6 +31,13 @@ const PRO_TIPS = [
   "Fern can browse the web — just ask it to look something up",
 ];
 
+/**
+ * Full-screen startup health-check splash: runs API/database/vector/model
+ * probes sequentially with animated stage transitions, cycling pro tips
+ * while the user waits. Calls `onComplete(success, errors)` when all
+ * stages settle. Renders the EverFern logo, rotating tips, the latest
+ * error, and a bottom progress bar.
+ */
 export const HealthCheckScreen: React.FC<HealthCheckScreenProps> = ({
   onComplete,
   autoStart = true,
@@ -46,6 +56,8 @@ export const HealthCheckScreen: React.FC<HealthCheckScreenProps> = ({
   const [errors, setErrors] = useState<string[]>([]);
   const [tipIndex, setTipIndex] = useState(() => Math.floor(Math.random() * PRO_TIPS.length));
   const [logoDim, setLogoDim] = useState(false);
+  // Ref mirror so the async probe sequence always calls the latest onComplete
+  // without being captured stale by the effect closure.
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
 
@@ -61,167 +73,203 @@ export const HealthCheckScreen: React.FC<HealthCheckScreenProps> = ({
   useEffect(() => {
     if (!autoStart) return;
 
+    const STAGE_PACE_MS = 350;
+    const COMPLETION_PAUSE_MS = 300;
+    const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+    const STAGE_ORDER = ["api", "database", "vectors", "models"] as const;
+    type ProbeResult = string | null;
+
+    // Shared error map (id -> message): populated by probes AND by runStage,
+    // so collectErrors() can build the final report in STAGE_ORDER even if
+    // a probe threw before recording its own error.
+    const errorById = new Map<string, string>();
+
+    const checkApi = async (): Promise<ProbeResult> => {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+        try {
+          const apiResponse = await fetch(
+            `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"}/api/health`,
+            { method: "GET", signal: controller.signal }
+          );
+
+          if (apiResponse.ok) return null;
+          return `API connection failed: API returned ${apiResponse.status}`;
+        } finally {
+          clearTimeout(timeoutId);
+        }
+      } catch (err) {
+        return `API connection failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    };
+
+    const checkDatabase = async (): Promise<ProbeResult> => {
+      try {
+        const dbResponse = await (window as any).electronAPI?.db?.checkConnection?.();
+        if (dbResponse && dbResponse.success) return null;
+        return dbResponse?.error || "Database connection failed";
+      } catch (err) {
+        return `Database check failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    };
+
+    const checkVectors = async (): Promise<ProbeResult> => {
+      try {
+        let embProvider = "everfern";
+        let embModel = "qwen/qwen3-embedding-8b";
+        try {
+          const cfgRes = await (window as any).electronAPI?.loadConfig?.();
+          if (cfgRes?.success && cfgRes.config?.embedding) {
+            embProvider = cfgRes.config.embedding.provider || "everfern";
+            embModel = cfgRes.config.embedding.model || "qwen/qwen3-embedding-8b";
+          }
+        } catch (_) {}
+
+        if (embProvider === "ollama") {
+          // Local ollama embeddings: the vector store check is only meaningful
+          // if the configured embedding model is actually installed, so probe
+          // the ollama tags API first and short-circuit with a pull hint.
+          try {
+            const ollamaRes = await fetch("http://localhost:11434/api/tags", {
+              method: "GET",
+              signal: AbortSignal.timeout(3000),
+            });
+            if (ollamaRes.ok) {
+              const data = await ollamaRes.json();
+              const models: string[] = (data.models || []).map((m: any) =>
+                m.name?.toLowerCase() || ""
+              );
+              const modelName = embModel.toLowerCase().replace(":latest", "");
+              const isInstalled = models.some(
+                (m) => m.includes(modelName) || m.startsWith(modelName)
+              );
+              if (isInstalled) {
+                const vectorResponse = await (window as any).electronAPI?.db?.checkVectors?.();
+                if (vectorResponse && vectorResponse.success) return null;
+                const errStr = vectorResponse?.error || "Failed to check vector store";
+                errorById.set("vectors", errStr);
+                return errStr;
+              }
+              errorById.set("vectors", `Embedding model "${embModel}" not installed. Run: ollama pull ${embModel}`);
+              return `Model not found: ${embModel}`;
+            }
+            errorById.set("vectors", "Ollama is not running.");
+            return "Ollama not running";
+          } catch {
+            errorById.set("vectors", "Ollama unreachable.");
+            return "Ollama unreachable";
+          }
+        }
+
+        const vectorResponse = await (window as any).electronAPI?.db?.checkVectors?.();
+        if (vectorResponse && vectorResponse.success) return null;
+        const errStr = vectorResponse?.error || "Failed to check vector store";
+        errorById.set("vectors", errStr);
+        return errStr;
+      } catch (err) {
+        return `Vector store check failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    };
+
+    const checkModels = async (): Promise<ProbeResult> => {
+      try {
+        const modelsResponse = await (window as any).electronAPI?.acp?.listModels?.();
+        if (modelsResponse?.success) return null;
+        return `Model loading failed: ${modelsResponse?.error || "Model loading failed"}`;
+      } catch (err) {
+        return `Model loading failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    };
+
+    const collectErrors = (): string[] =>
+      STAGE_ORDER.map((id) => errorById.get(id)).filter(
+        (msg): msg is string => typeof msg === "string"
+      );
+
     const runHealthChecks = async () => {
-      const newErrors: string[] = [];
+      let lastAdvanceAt = Date.now() - STAGE_PACE_MS;
+
+      // Pacing gate: stages may finish out of order (probes run in
+      // parallel via Promise.allSettled), but status paints are serialized
+      // at >= STAGE_PACE_MS apart so the UI advances in a steady cadence.
+      const paint = async (
+        id: string,
+        status: HealthCheckItem["status"],
+        message?: string
+      ) => {
+        const now = Date.now();
+        const earliest = lastAdvanceAt + STAGE_PACE_MS;
+        const wait = Math.max(0, earliest - now);
+        lastAdvanceAt = Math.max(now, earliest);
+        if (wait > 0) await sleep(wait);
+        setChecks((prev) =>
+          prev.map((check) =>
+            check.id === id ? { ...check, status, message } : check
+          )
+        );
+      };
+
+      const runStage = async (
+        id: string,
+        nextId: string | null,
+        probe: () => Promise<ProbeResult>
+      ) => {
+        const displayMsg = await probe();
+        if (displayMsg && !errorById.has(id)) errorById.set(id, displayMsg);
+        await paint(
+          id,
+          displayMsg ? "error" : "success",
+          displayMsg ?? undefined
+        );
+        if (nextId) {
+          setChecks((prev) =>
+            prev.map((check) =>
+              check.id === nextId && check.status === "pending"
+                ? { ...check, status: "checking" }
+                : check
+            )
+          );
+        }
+      };
 
       try {
-        // 1. Check API connectivity
-        await updateCheck("api", "checking");
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 5000);
+        setChecks((prev) =>
+          prev.map((check) =>
+            check.id === "api" ? { ...check, status: "checking" } : check
+          )
+        );
 
-          try {
-            const apiResponse = await fetch(
-              `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"}/api/health`,
-              { method: "GET", signal: controller.signal }
-            );
-            clearTimeout(timeoutId);
+        // Probes run concurrently, but `paint` pacing keeps the visible
+        // stage transitions sequential; "checking" flips early so the
+        // spinner shows while earlier stages are still painting.
+        await Promise.allSettled([
+          runStage("api", "database", checkApi),
+          runStage("database", "vectors", checkDatabase),
+          runStage("vectors", "models", checkVectors),
+          runStage("models", null, checkModels),
+        ]);
 
-            if (apiResponse.ok) {
-              await updateCheck("api", "success");
-            } else {
-              throw new Error(`API returned ${apiResponse.status}`);
-            }
-          } finally {
-            clearTimeout(timeoutId);
-          }
-        } catch (err) {
-          const errorMsg = `API connection failed: ${err instanceof Error ? err.message : String(err)}`;
-          newErrors.push(errorMsg);
-          await updateCheck("api", "error", errorMsg);
-        }
-
-        // 2. Check database
-        await updateCheck("database", "checking");
-        try {
-          const dbResponse = await (window as any).electronAPI?.db?.checkConnection?.();
-          if (dbResponse && dbResponse.success) {
-            await updateCheck("database", "success");
-          } else {
-            const errorMsg = dbResponse?.error || "Database connection failed";
-            newErrors.push(errorMsg);
-            await updateCheck("database", "error", errorMsg);
-          }
-        } catch (err) {
-          const errorMsg = `Database check failed: ${err instanceof Error ? err.message : String(err)}`;
-          newErrors.push(errorMsg);
-          await updateCheck("database", "error", errorMsg);
-        }
-
-        // 3. Check vector store + embedding model
-        await updateCheck("vectors", "checking");
-        try {
-          let embProvider = "everfern";
-          let embModel = "qwen/qwen3-embedding-8b";
-          try {
-            const cfgRes = await (window as any).electronAPI?.loadConfig?.();
-            if (cfgRes?.success && cfgRes.config?.embedding) {
-              embProvider = cfgRes.config.embedding.provider || "everfern";
-              embModel = cfgRes.config.embedding.model || "qwen/qwen3-embedding-8b";
-            }
-          } catch (_) {}
-
-          if (embProvider === "ollama") {
-            try {
-              const ollamaRes = await fetch("http://localhost:11434/api/tags", {
-                method: "GET",
-                signal: AbortSignal.timeout(3000),
-              });
-              if (ollamaRes.ok) {
-                const data = await ollamaRes.json();
-                const models: string[] = (data.models || []).map((m: any) =>
-                  m.name?.toLowerCase() || ""
-                );
-                const modelName = embModel.toLowerCase().replace(":latest", "");
-                const isInstalled = models.some(
-                  (m) => m.includes(modelName) || m.startsWith(modelName)
-                );
-                if (isInstalled) {
-                  const vectorResponse = await (window as any).electronAPI?.db?.checkVectors?.();
-                  if (vectorResponse && vectorResponse.success) {
-                    await updateCheck("vectors", "success");
-                  } else {
-                    const errStr = vectorResponse?.error || "Failed to check vector store";
-                    newErrors.push(errStr);
-                    await updateCheck("vectors", "error", errStr);
-                  }
-                } else {
-                  newErrors.push(`Embedding model "${embModel}" not installed. Run: ollama pull ${embModel}`);
-                  await updateCheck("vectors", "error", `Model not found: ${embModel}`);
-                }
-              } else {
-                newErrors.push("Ollama is not running.");
-                await updateCheck("vectors", "error", "Ollama not running");
-              }
-            } catch {
-              newErrors.push("Ollama unreachable.");
-              await updateCheck("vectors", "error", "Ollama unreachable");
-            }
-          } else {
-            const vectorResponse = await (window as any).electronAPI?.db?.checkVectors?.();
-            if (vectorResponse && vectorResponse.success) {
-              await updateCheck("vectors", "success");
-            } else {
-              const errStr = vectorResponse?.error || "Failed to check vector store";
-              newErrors.push(errStr);
-              await updateCheck("vectors", "error", errStr);
-            }
-          }
-        } catch (err) {
-          const errorMsg = `Vector store check failed: ${err instanceof Error ? err.message : String(err)}`;
-          newErrors.push(errorMsg);
-          await updateCheck("vectors", "error", errorMsg);
-        }
-
-        // 4. Load models
-        await updateCheck("models", "checking");
-        try {
-          const modelsResponse = await (window as any).electronAPI?.acp?.listModels?.();
-          if (modelsResponse?.success) {
-            await updateCheck("models", "success");
-          } else {
-            throw new Error(modelsResponse?.error || "Model loading failed");
-          }
-        } catch (err) {
-          const errorMsg = `Model loading failed: ${err instanceof Error ? err.message : String(err)}`;
-          newErrors.push(errorMsg);
-          await updateCheck("models", "error", errorMsg);
-        }
+        const newErrors = collectErrors();
 
         setLogoDim(true);
         setIsComplete(true);
         setErrors(newErrors);
 
-        // Brief pause after completion before dismissing
-        await new Promise((r) => setTimeout(r, 800));
+        await sleep(COMPLETION_PAUSE_MS);
         onCompleteRef.current(newErrors.length === 0, newErrors);
       } catch (err) {
         console.error("Health check error:", err);
         setLogoDim(true);
         setIsComplete(true);
-        await new Promise((r) => setTimeout(r, 800));
-        onCompleteRef.current(false, newErrors);
+        await sleep(COMPLETION_PAUSE_MS);
+        onCompleteRef.current(false, collectErrors());
       }
     };
 
     runHealthChecks();
   }, [autoStart]);
-
-  const updateCheck = (
-    id: string,
-    status: HealthCheckItem["status"],
-    message?: string
-  ) => {
-    return new Promise<void>((resolve) => {
-      setChecks((prev) =>
-        prev.map((check) =>
-          check.id === id ? { ...check, status, message } : check
-        )
-      );
-      setTimeout(resolve, 250);
-    });
-  };
 
   const successCount = checks.filter((c) => c.status === "success").length;
   const totalChecks = checks.length;
@@ -233,7 +281,7 @@ export const HealthCheckScreen: React.FC<HealthCheckScreenProps> = ({
       style={{
         position: "fixed",
         inset: 0,
-        zIndex: 9999,
+        zIndex: 'var(--z-chrome)',
         display: "flex",
         flexDirection: "column",
         alignItems: "center",

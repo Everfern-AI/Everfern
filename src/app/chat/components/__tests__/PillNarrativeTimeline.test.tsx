@@ -13,13 +13,13 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import PillNarrativeTimeline from '../PillNarrativeTimeline';
-import type { NarrativeTimeline, Task, ToolPill } from '../../../../main/agent/runner/pill-narrative/types';
+import PillNarrativeTimeline from '../../../../components/agent/PillNarrativeTimeline';
+import type { NarrativeTimeline, Task, ToolPill } from '../../../../../main/agent/runner/pill-narrative/types';
 
 /**
  * Mock ToolDetailSidePanel
  */
-vi.mock('../ToolDetailSidePanel', () => ({
+vi.mock('../../../../components/tools/ToolDetailSidePanel', () => ({
   default: ({ isOpen, onClose }: any) => (
     isOpen ? (
       <div data-testid="tool-detail-panel">
@@ -329,10 +329,13 @@ describe('PillNarrativeTimelineComponent', () => {
 
   describe('Task Collapse/Expand', () => {
     it('should collapse and expand tasks', async () => {
+      // The component's reconciliation keeps pending tasks expanded (only
+      // completed tasks stay collapsed), so use a completed task here.
       const timeline = createMockTimeline({
         tasks: [
           createMockTask({
             title: 'Task 1',
+            status: 'completed',
             pills: [createMockPill({ label: 'Search' })],
           }),
         ],

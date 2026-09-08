@@ -178,8 +178,8 @@ describe('Computer Use Tool - Preservation Properties', () => {
        * Validates: Requirements 9.1
        * Test that each action gets a unique identifier
        */
-      fc.assert(
-        fc.property(
+      await fc.assert(
+        fc.asyncProperty(
           fc.array(guiActionGenerator, { minLength: 5, maxLength: 10 }),
           async (actions) => {
             wrapper.clearCapturedActions();
@@ -527,8 +527,8 @@ describe('Computer Use Tool - Preservation Properties', () => {
        * Property: Action recording should work with any valid action sequence
        * Validates: Requirements 9.1, 9.5
        */
-      fc.assert(
-        fc.property(
+      await fc.assert(
+        fc.asyncProperty(
           fc.array(
             fc.record({
               action: fc.oneof(
@@ -538,10 +538,12 @@ describe('Computer Use Tool - Preservation Properties', () => {
                 fc.constant('wait')
               ),
               params: fc.record({
-                coordinate: fc.tuple(
-                  fc.integer({ min: 0, max: 1920 }),
-                  fc.integer({ min: 0, max: 1080 })
-                ).optional(),
+                coordinate: fc.option(
+                  fc.tuple(
+                    fc.integer({ min: 0, max: 1920 }),
+                    fc.integer({ min: 0, max: 1080 })
+                  )
+                ),
               }),
             }),
             { minLength: 1, maxLength: 10 }
@@ -575,8 +577,8 @@ describe('Computer Use Tool - Preservation Properties', () => {
        * Property: Parameters should round-trip perfectly through capture
        * Validates: Requirements 9.1
        */
-      fc.assert(
-        fc.property(
+      await fc.assert(
+        fc.asyncProperty(
           fc.record({
             coordinate: fc.tuple(
               fc.integer({ min: 0, max: 1920 }),

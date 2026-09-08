@@ -33,8 +33,10 @@ export class DesktopOverlay {
         skipTaskbar: true,
         hasShadow: false,
         webPreferences: {
-          nodeIntegration: true,
-          contextIsolation: false,
+          nodeIntegration: false,
+          contextIsolation: true,
+          sandbox: true,
+          webSecurity: true,
           preload: undefined,
         },
       });
@@ -153,35 +155,49 @@ export class DesktopOverlay {
         <div id="highlight"></div>
 
         <script>
-          // IPC communication with main process
-          const { ipcRenderer } = require('electron');
+          // AG-SAF-09: nodeIntegration is DISABLED for this window. This is
+          // plain DOM/timer code only — no require(), no ipcRenderer, no Node
+          // APIs. Updates are driven by the main process via executeJavaScript.
+          (function () {
+            var statusEl = null;
+            var highlightEl = null;
 
-          window.desktopOverlayAPI = {
-            setStatus: (text) => {
-              const el = document.getElementById('text');
-              if (el) el.textContent = text;
-            },
-            moveCursor: (x, y, click) => {
-              // The real OS cursor is moved by robotjs. Do not draw a fake/magic cursor here.
-            },
-            highlight: (r) => {
-              const h = document.getElementById('highlight');
-              if (!h) return;
-              h.style.left = r.x + 'px';
-              h.style.top = r.y + 'px';
-              h.style.width = r.width + 'px';
-              h.style.height = r.height + 'px';
-              h.style.opacity = '1';
-              setTimeout(() => { h.style.opacity = '0'; }, 1500);
+            function ensureEls() {
+              if (!statusEl) {
+                // Status text container — created lazily so setStatus has
+                // somewhere to write (the overlay has no visible status text
+                // element by default).
+                statusEl = document.createElement('div');
+                statusEl.id = 'text';
+                statusEl.style.cssText =
+                  'position:fixed;top:18px;left:50%;transform:translateX(-50%);' +
+                  'z-index:30;pointer-events:none;font-size:13px;font-weight:600;' +
+                  'color:rgba(220,80,255,0.95);text-shadow:0 0 8px rgba(160,40,255,0.6);';
+                document.body.appendChild(statusEl);
+              }
+              if (!highlightEl) highlightEl = document.getElementById('highlight');
             }
-          };
 
-          // Listen for updates from main process
-          ipcRenderer.on('overlay-update', (event, data) => {
-            if (data.status) window.desktopOverlayAPI.setStatus(data.status);
-            if (data.cursor) window.desktopOverlayAPI.moveCursor(data.cursor.x, data.cursor.y, data.cursor.click);
-            if (data.highlight) window.desktopOverlayAPI.highlight(data.highlight);
-          });
+            window.desktopOverlayAPI = {
+              setStatus: function (text) {
+                ensureEls();
+                if (statusEl) statusEl.textContent = text;
+              },
+              moveCursor: function (x, y, click) {
+                // The real OS cursor is moved by robotjs. Do not draw a fake/magic cursor here.
+              },
+              highlight: function (r) {
+                ensureEls();
+                if (!highlightEl) return;
+                highlightEl.style.left = r.x + 'px';
+                highlightEl.style.top = r.y + 'px';
+                highlightEl.style.width = r.width + 'px';
+                highlightEl.style.height = r.height + 'px';
+                highlightEl.style.opacity = '1';
+                setTimeout(function () { highlightEl.style.opacity = '0'; }, 1500);
+              }
+            };
+          })();
         </script>
       </body>
       </html>
@@ -204,23 +220,41 @@ export class DesktopOverlay {
     }
   }
 
+  /** AG-SAF-09: drive the (node-free) overlay DOM via executeJavaScript.
+   *  The argument is JSON-serialized — never string-interpolated — so no
+   *  value can break out of the call expression. */
+  private invokeOverlayMethod(method: string, jsonArgs: string): void {
+    if (!this.overlayWindow || this.overlayWindow.isDestroyed()) return;
+    try {
+      this.overlayWindow.webContents.executeJavaScript(
+        `window.desktopOverlayAPI && window.desktopOverlayAPI.${method}(${jsonArgs});`,
+        false
+      ).catch(() => { /* renderer not ready yet (pre-load) — non-fatal */ });
+    } catch (err) {
+      console.warn('[DesktopOverlay] executeJavaScript failed:', err);
+    }
+  }
+
   setStatus(text: string): void {
     this.statusText = text;
     if (this.overlayWindow) {
-      this.overlayWindow.webContents.send('overlay-update', { status: text });
+      this.invokeOverlayMethod('setStatus', JSON.stringify(String(text)));
       console.log(`[DesktopOverlay] Status updated: ${text}`);
     }
   }
 
   moveCursor(x: number, y: number, click: boolean = false): void {
     if (this.overlayWindow) {
-      this.overlayWindow.webContents.send('overlay-update', { cursor: { x, y, click } });
+      this.invokeOverlayMethod('moveCursor', `${JSON.stringify(Number(x))}, ${JSON.stringify(Number(y))}, ${JSON.stringify(!!click)}`);
     }
   }
 
   highlight(box: { x: number; y: number; width: number; height: number }): void {
     if (this.overlayWindow) {
-      this.overlayWindow.webContents.send('overlay-update', { highlight: box });
+      this.invokeOverlayMethod('highlight', JSON.stringify({
+        x: Number(box.x), y: Number(box.y),
+        width: Number(box.width), height: Number(box.height)
+      }));
     }
   }
 

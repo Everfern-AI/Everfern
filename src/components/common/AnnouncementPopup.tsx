@@ -116,7 +116,7 @@ export function AnnouncementPopup() {
   const portalContent = (
     <AnimatePresence>
       {isVisible && current && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-6 sm:p-10 bg-black/60 backdrop-blur-sm" style={{ overflow: 'auto' }}>
+        <div className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center p-6 sm:p-10 bg-black/60 backdrop-blur-sm" style={{ overflow: 'auto' }}>
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -164,7 +164,7 @@ export function AnnouncementPopup() {
                   )}
                 </div>
               ) : (
-                <div className="w-full h-[180px] bg-[#141414] relative overflow-hidden flex items-center justify-center border-b border-white/5">
+                <div className="w-full h-[180px] bg-[var(--color-code-block-bg)] relative overflow-hidden flex items-center justify-center border-b border-white/5">
                   <div className="absolute inset-0 flex items-center justify-center opacity-10">
                     <MegaphoneIcon className="w-32 h-32 text-white" />
                   </div>
@@ -183,18 +183,18 @@ export function AnnouncementPopup() {
             {/* Content Section */}
             <div className="flex flex-col" style={{ padding: '40px 44px' }}>
               <div style={{ marginBottom: '20px' }}>
-                <h3 style={{ fontSize: '28px', fontWeight: 400, color: '#fff', letterSpacing: '-0.02em', marginBottom: '8px', lineHeight: 1.2 }}>
+                <h3 style={{ fontSize: '28px', fontWeight: 400, color: 'var(--color-text-inverse)', letterSpacing: '-0.02em', marginBottom: '8px', lineHeight: 1.2 }}>
                   {current.title}
                 </h3>
 
                 {current.subtitle && (
-                  <p style={{ fontSize: '16px', color: '#a3a3a3', fontWeight: 400, lineHeight: 1.6 }}>
+                  <p style={{ fontSize: '16px', color: 'var(--color-text-tertiary)', fontWeight: 400, lineHeight: 1.6 }}>
                     {current.subtitle}
                   </p>
                 )}
               </div>
 
-              <div className="custom-scrollbar" style={{ fontSize: '15px', color: '#d4d4d4', fontWeight: 300, lineHeight: 1.7, marginBottom: '28px', maxHeight: '360px', overflowY: 'auto', paddingRight: '16px' }}>
+              <div className="custom-scrollbar" style={{ fontSize: '15px', color: 'var(--color-text-inverse)', fontWeight: 300, lineHeight: 1.7, marginBottom: '28px', maxHeight: '360px', overflowY: 'auto', paddingRight: '16px' }}>
                 {current.content_type === "markdown" ? (
                   <div className="prose prose-invert prose-base max-w-none prose-p:leading-[1.7] prose-p:my-2 prose-headings:font-normal prose-headings:mb-2 prose-headings:mt-4 prose-strong:font-normal prose-a:text-white prose-a:underline-offset-4 hover:prose-a:text-neutral-300">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
@@ -211,9 +211,9 @@ export function AnnouncementPopup() {
                 <div style={{ marginTop: 'auto' }}>
                   <button
                     onClick={handleCTA}
-                    style={{ width: '100%', padding: '14px 24px', borderRadius: '16px', fontSize: '16px', fontWeight: 400, backgroundColor: '#fff', color: '#000', border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
-                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#e5e5e5'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#fff'; }}
+                    style={{ width: '100%', padding: '14px 24px', borderRadius: '16px', fontSize: '16px', fontWeight: 400, backgroundColor: 'var(--color-text-inverse)', color: 'var(--color-text-primary)', border: 'none', cursor: 'pointer', transition: 'all 0.2s' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-text-placeholder)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-text-inverse)'; }}
                   >
                     {current.cta_label || "Check it out"}
                   </button>

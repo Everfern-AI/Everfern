@@ -9,8 +9,7 @@
  */
 
 export { createNavisTool } from './tool';
-export { NavisOrchestrator } from './agent/orchestrator';
-export { NavisExtensionOrchestrator } from './agent/extension-orchestrator';
+export { NavisOrchestrator } from './orchestrator';
 export { NavisLogger } from './logger';
 export { NAVIS_DECISION_SCHEMA } from './core/types';
 export type { NavisOptions, NavisResult } from './core/types';

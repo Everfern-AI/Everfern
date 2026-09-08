@@ -58,9 +58,9 @@ describe('Fix: ariaSnapshot for element capture', () => {
     expect(src).toContain("mode: 'ai'");
   });
 
-  it('element-capture.ts exports parseRefs helper', () => {
+  it('element-capture.ts contains parseRefsOptimized ref-parsing helper', () => {
     const src = read('element-capture.ts');
-    expect(src).toContain('export function parseRefs');
+    expect(src).toContain('function parseRefsOptimized');
   });
 });
 

@@ -33,6 +33,31 @@ import type { GraphStateType } from '../../state';
 
 // ── Mock dependencies ────────────────────────────────────────────────────────
 
+// Routing decisions now flow through CognitiveRouter (dynamic import in
+// brain.ts). Mock it to delegate to the runner's mocked client.chat, so the
+// per-test mockResolvedValueOnce routing scripts keep driving the decision.
+vi.mock('../../cognitive-router', () => ({
+  CognitiveRouter: class MockCognitiveRouter {
+    runner: any;
+    constructor(runner: any) {
+      this.runner = runner;
+    }
+    async route(): Promise<any> {
+      const response = await this.runner.client.chat({
+        messages: [{ role: 'user', content: 'routing decision' }],
+      });
+      const parsed = typeof response.content === 'string'
+        ? JSON.parse(response.content)
+        : response.content;
+      return {
+        decision: parsed.decision,
+        confidence: 1,
+        explanation: parsed.explanation,
+      };
+    }
+  },
+}));
+
 vi.mock('../../services/agent-runtime', () => ({
   runAgentStep: vi.fn(async (state: any, options: any) => {
     // Mock runAgentStep to return a response with no pending tool calls
@@ -59,7 +84,7 @@ vi.mock('../../mission-integrator', () => ({
   })),
 }));
 
-vi.mock('../../../lib/prompt-sync', () => ({
+vi.mock('../../../../lib/prompt-sync', () => ({
   loadPrompt: vi.fn(() => 'Mock system prompt'),
 }));
 
@@ -67,6 +92,9 @@ vi.mock('../../abort-manager', () => ({
   globalAbortManager: {
     abortController: new AbortController(),
   },
+  getConversationAbortManager: () => ({
+    abortController: new AbortController(),
+  }),
 }));
 
 vi.mock('../../services/node-utils', () => ({

@@ -360,6 +360,18 @@
   --diff-add-text-dark: #3fb950;
   --diff-del-text-dark: #f85149;
 
+  /* Syntax Highlighting Colors (CU-UI-03: AA-compliant light-theme values;
+     dark overrides live in the .dark block below) */
+  --color-syntax-comment: #626a75;
+  --color-syntax-keyword: #86198f;
+
+  /* Code chip/block tokens — light theme renders chips dark-on-light by
+     design; dark overrides live in the .dark block below */
+  --color-code-chip-bg: #2b2b2b;
+  --color-code-chip-border: #3a3a3a;
+  --color-code-chip-text: #5b8fe8;
+  --color-code-block-bg: #141414;
+
   /* Agent / Tool Colors */
   --color-analysing: #a1a1aa;
   --color-tool-call: var(--color-accent);
@@ -549,6 +561,14 @@
   --sidebar-settings-hover-bg: rgba(0, 0, 0, 0.06);
   --sidebar-settings-hover-border: rgba(0, 0, 0, 0.15);
   --sidebar-settings-hover-text: #111111;
+
+  /* CU-UI-08: named stacking tiers — adopted file-by-file; values sit above
+     the legacy ad-hoc 9999/10000 stragglers during migration */
+  --z-dropdown: 10050;
+  --z-panel: 10100;
+  --z-modal: 10200;
+  --z-chrome: 10300;
+  --z-toast: 10400;
 }
 
 /* ── Reset & Base ────────────────────────────────────────────────────────── */
@@ -681,17 +701,17 @@ a:hover {
 }
 
 .prose code {
-  background: #2b2b2b;
-  border: 1px solid #3a3a3a;
+  background: var(--color-code-chip-bg);
+  border: 1px solid var(--color-code-chip-border);
   border-radius: var(--radius-sm);
   padding: 0.15em 0.4em;
   font-size: 0.85em;
-  color: #5b8fe8;
+  color: var(--color-code-chip-text);
 }
 
 .prose pre {
-  background: #141414;
-  border: 1px solid #3a3a3a;
+  background: var(--color-code-block-bg);
+  border: 1px solid var(--color-code-chip-border);
   border-radius: var(--radius-md);
   padding: 1rem;
   overflow-x: auto;
@@ -745,7 +765,7 @@ a:hover {
 }
 
 .prose th {
-  background: #2b2b2b;
+  background: var(--color-code-chip-bg);
   font-weight: 600;
 }
 
@@ -782,30 +802,6 @@ a:hover {
   }
 }
 
-@keyframes slideInLeft {
-  from {
-    opacity: 0;
-    transform: translateX(-12px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-@keyframes slideInRight {
-  from {
-    opacity: 0;
-    transform: translateX(12px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
 @keyframes pulse {
 
   0%,
@@ -818,35 +814,6 @@ a:hover {
   }
 }
 
-@keyframes thinking {
-
-  0%,
-  80%,
-  100% {
-    transform: scale(0.6);
-    opacity: 0.4;
-  }
-
-  40% {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
-@keyframes gradientShift {
-  0% {
-    background-position: 0% 50%;
-  }
-
-  50% {
-    background-position: 100% 50%;
-  }
-
-  100% {
-    background-position: 0% 50%;
-  }
-}
-
 @keyframes spin {
   from {
     transform: rotate(0deg);
@@ -855,37 +822,6 @@ a:hover {
   to {
     transform: rotate(360deg);
   }
-}
-
-@keyframes sidebar-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes shimmer {
-  0% {
-    background-position: -200% 0;
-  }
-
-  100% {
-    background-position: 200% 0;
-  }
-}
-
-.animate-fade-in {
-  animation: fadeIn var(--transition-normal) ease both;
-}
-
-.animate-slide-left {
-  animation: slideInLeft var(--transition-normal) ease both;
-}
-
-.animate-slide-right {
-  animation: slideInRight var(--transition-normal) ease both;
 }
 
 .animate-pulse {
@@ -997,6 +933,20 @@ a:hover {
   box-shadow: var(--shadow-sm);
 }
 
+/* NR-PERF-07: honour reduced-transparency preference — disable stacked
+   backdrop blur surfaces for users who opt out (visual parity kept otherwise) */
+@media (prefers-reduced-transparency: reduce) {
+  .glass,
+  .glass-panel,
+  .glass-subtle,
+  .glossy,
+  .glossy-bubble,
+  .glossy-input {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
 /* ── Focus styles ────────────────────────────────────────────────────────── */
 
 :focus-visible {
@@ -1091,6 +1041,17 @@ a:hover {
   --interrupted-btn-text: #f3f4f6;
   --interrupted-btn-hover-bg: rgba(255, 255, 255, 0.14);
 
+  /* Syntax Highlighting Colors (CU-UI-03 dark overrides) */
+  --color-syntax-comment: #96948d;
+  --color-syntax-keyword: #d946ef;
+
+  /* Code chip/block tokens — dark values stand off dark surfaces (bg-subtle
+     tier chips, border from dark border-strong tier, link from syntax keyword) */
+  --color-code-chip-bg: #22201b;
+  --color-code-chip-border: #403c33;
+  --color-code-chip-text: #a5b4fc;
+  --color-code-block-bg: #181714;
+
   /* Navis Theme Colors */
   --color-navis-active-bg: rgba(99, 102, 241, 0.15);
   --color-navis-active-hover: rgba(99, 102, 241, 0.25);
@@ -1145,6 +1106,7 @@ a:hover {
 
 @theme inline {
   --font-sans: var(--font-sans);
+  --font-body: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -1176,6 +1138,7 @@ a:hover {
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
+  --color-on-surface: var(--color-text-primary);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -1200,62 +1163,9 @@ a:hover {
 
 /* ── Dashboard Toast Styles (Sonner) ─────────────────────────────────────── */
 
-.dashboard-toast {
-  background: #1a1a1a !important;
-  backdrop-filter: blur(20px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
-  border: 1px solid #3a3a3a !important;
-  border-radius: 0px !important;
-  box-shadow: none;
-  color: var(--color-text-primary) !important;
-  padding: 12px 16px !important;
-  font-family: var(--font-sans) !important;
-  font-size: 14px !important;
-  font-weight: 500 !important;
-}
-
-.dashboard-toast-success {
-  border-left: 4px solid #10b981 !important;
-}
-
-.dashboard-toast-error {
-  border-left: 4px solid var(--color-error) !important;
-}
-
-.dashboard-toast-content {
-  display: flex !important;
-  align-items: center !important;
-  gap: 12px !important;
-}
-
-@keyframes pulse-slow {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
 @keyframes pulse-dot {
   0%, 100% { opacity: 0.3; transform: scale(0.8); }
   50% { opacity: 1; transform: scale(1.2); }
-}
-
-@keyframes typing-cursor {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
-}
-
-/* Perplexity-style source card hover */
-.source-card {
-  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
-}
-.source-card:hover {
-  background: rgba(0, 0, 0, 0.02) !important;
-  border-color: rgba(0, 0, 0, 0.12) !important;
-  transform: translateY(-1px);
-}
-
-/* Preview container hover for VNC expand */
-.preview-container:hover .expand-overlay {
-  opacity: 1 !important;
 }
 
 /* ══════════════════════════════════════════════════════════════════════ */
@@ -1502,34 +1412,14 @@ a:hover {
   }
 }
 
-.dashboard-toast [data-icon] {
-  margin-right: 0 !important;
-}
-
-/* Agent Action Shimmer Text */
-@keyframes everfernShimmerText {
-  0% {
-    background-position: -200% 0;
+/* ── Reduced-motion global gate (XV.D) ─────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
-  100% {
-    background-position: 200% 0;
-  }
-}
-
-.everfern-shimmer-text {
-  background: linear-gradient(90deg, #71717a 0%, #e4e4e7 45%, #71717a 90%);
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent !important;
-  animation: everfernShimmerText 2.4s infinite linear;
-}
-
-:root:not(.dark) .everfern-shimmer-text {
-  background: linear-gradient(90deg, #71717a 0%, #18181b 45%, #71717a 90%);
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent !important;
-  animation: everfernShimmerText 2.4s infinite linear;
 }

@@ -242,8 +242,9 @@ export const ShimmerProgressComponent: React.FC<ShimmerProgressComponentProps> =
             <div className="w-16 h-1.5 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden">
               <motion.div
                 className={`h-full rounded-full ${getConfidenceColor(state.confidence)}`}
-                initial={{ width: 0 }}
-                animate={{ width: `${state.confidence * 100}%` }}
+                style={{ width: "100%", transformOrigin: "left center" }}
+                initial={{ scaleX: 0 }}
+                animate={{ scaleX: state.confidence }}
                 transition={{ duration: 0.5, ease: "easeOut" }}
               />
             </div>

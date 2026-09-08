@@ -19,14 +19,17 @@ export const createMemoryConsolidatorNode = (
       throw new Error('Execution aborted by user (stop button clicked)');
     }
 
-    // Run memory consolidation silently in the background
-    try {
-      // Only process if there are user messages in the state
-      const hasUserMsg = state.messages.some(m => {
-        const role = (m as any).role || (m as any).type || (m as any)._getType?.();
-        return role === 'user' || role === 'human';
-      });
-      if (!hasUserMsg) return {};
+    // XI.E: memory consolidation must NOT block graph END — run it
+    // fire-and-forget after the node returns. LLM call + memory writes all
+    // happen in the background with their own try/catch + timeout race.
+    void (async () => {
+      try {
+        // Only process if there are user messages in the state
+        const hasUserMsg = state.messages.some(m => {
+          const role = (m as any).role || (m as any).type || (m as any)._getType?.();
+          return role === 'user' || role === 'human';
+        });
+        if (!hasUserMsg) return;
 
       const formattedHistory = state.messages.map(m => {
         const role = (m as any).role || (m as any).type || (m as any)._getType?.() || 'unknown';
@@ -117,9 +120,10 @@ If no enduring memory should be saved (the common case), respond with:
       } else {
         console.log('[MemoryConsolidator] No enduring user preferences to save.');
       }
-    } catch (err: any) {
-      console.warn('[MemoryConsolidator] Silent memory consolidation skipped:', err?.message || String(err));
-    }
+      } catch (err: any) {
+        console.warn('[MemoryConsolidator] Silent memory consolidation skipped:', err?.message || String(err));
+      }
+    })();
 
     return {};
   };

@@ -16,8 +16,14 @@ export const createDebateChamberNode = (
 ) => {
   const integrator = createMissionIntegrator(missionTracker);
 
-  const emitDebateEvent = (type: string, debateId: string, data?: any, error?: string) => {
-    const debateEvent = { type, timestamp: new Date().toISOString(), debateId, data, error };
+  // CU-ST-03: conversation id for cross-chat isolation. `conversationId` is not
+  // a declared GraphState field; sibling nodes read `(state as any).conversationId`
+  // (call_model.ts:479, agent-runtime.ts:757) but nothing ever writes it into
+  // graph state (it only rides in executionContext). The reliably populated
+  // mapping is `state.missionId`, which runner.ts seeds with the conversation
+  // id at every graph invoke (runner.ts:1353, runner.ts:1393).
+  const emitDebateEvent = (type: string, debateId: string, conversationId: string | undefined, data?: any, error?: string) => {
+    const debateEvent = { type, timestamp: new Date().toISOString(), debateId, conversationId, data, error };
     eventQueue?.push({
       type: 'debate_event',
       debateEvent,
@@ -32,6 +38,11 @@ export const createDebateChamberNode = (
       throw new Error('Execution aborted by user (stop button clicked)');
     }
 
+    // CU-ST-03: conversation id for cross-chat isolation of broadcast events.
+    // Prefer an explicit `conversationId` if ever written into state, else fall
+    // back to `missionId` (which runner.ts seeds with the conversation id).
+    const conversationId = ((state as any).conversationId as string | undefined) ?? state.missionId ?? undefined;
+
     const intent = state.currentIntent || 'unknown';
     const lastUserMsg = (state.messages ?? []).filter((m: any) => {
       const role = m.role || m._getType?.();
@@ -44,7 +55,21 @@ export const createDebateChamberNode = (
     const debateDecision = shouldUseDebateChamber(intent, userInput);
     if (!debateDecision.shouldDebate) {
       logger.info(`Task intent "${intent}" skipped debate chamber — ${debateDecision.reason}`);
-      emitDebateEvent('debate_skipped', `debate-${Date.now()}`, { reason: debateDecision.reason });
+      emitDebateEvent('debate_skipped', `debate-${Date.now()}`, conversationId, { reason: debateDecision.reason });
+      return { debateResult: null };
+    }
+
+    // LP-01: local fast-path — never run the multi-agent debate (3+ extra
+    // LLM round trips) on local providers, even when the keyword gate above
+    // selected debate. Emits the same debate_skipped event the no-debate
+    // path uses, so the frontend sees the identical shape. Belt-and-braces:
+    // the local decomposer fast-path (LP-01) already prevents debate
+    // strategyContext from being injected, but debate_chamber remains
+    // graph-reachable for 'automate'/'task' intents (graph.ts:713), so the
+    // explicit gate is required. Cloud path is byte-identical below.
+    if ((runner.client as any)?.isLocal?.()) {
+      logger.info('Local provider — skipping debate chamber (LP-01 fast-path)');
+      emitDebateEvent('debate_skipped', `debate-${Date.now()}`, conversationId, { reason: 'Local provider fast-path (LP-01): debate skipped' });
       return { debateResult: null };
     }
 
@@ -76,7 +101,7 @@ export const createDebateChamberNode = (
 
     const debateId = `debate-${Date.now()}`;
     let debateSkipped = false;
-    emitDebateEvent('debate_start', debateId);
+    emitDebateEvent('debate_start', debateId, conversationId);
 
     // Create callback to emit phase completion events to frontend
     const onPhaseComplete = async (phase: 'vanguard' | 'phantom' | 'arbiter', proposal?: any, review?: any, finalPlan?: any) => {
@@ -97,7 +122,7 @@ export const createDebateChamberNode = (
         arbiter: 'arbiter_complete',
       };
 
-      emitDebateEvent(phaseEventMap[phase], debateId, frontendData);
+      emitDebateEvent(phaseEventMap[phase], debateId, conversationId, frontendData);
     };
 
     const engine = new PeerAgentDebateEngine(runner.client, {
@@ -120,7 +145,7 @@ export const createDebateChamberNode = (
       if (outcome.type === 'skip') {
         debateSkipped = true;
         logger.info(`[DebateChamber] Debate ${debateId} skipped by user`);
-        emitDebateEvent('debate_skipped', debateId, { reason: 'Skipped by user' });
+        emitDebateEvent('debate_skipped', debateId, conversationId, { reason: 'Skipped by user' });
         clearDebateSkip(debateId);
         return { debateResult: null };
       }
@@ -130,7 +155,7 @@ export const createDebateChamberNode = (
 
       const frontendData = DebateEventEmitter.formatDebateResultForFrontend(debateResult);
 
-      emitDebateEvent('debate_complete', debateResult.debateId, frontendData);
+      emitDebateEvent('debate_complete', debateResult.debateId, conversationId, frontendData);
 
 
 
@@ -156,7 +181,7 @@ export const createDebateChamberNode = (
     } catch (err: any) {
       clearDebateSkip(debateId);
       console.error(`[DebateChamber] Debate failed: ${err.message}`);
-      emitDebateEvent('debate_error', debateId, undefined, err.message.slice(0, 200));
+      emitDebateEvent('debate_error', debateId, conversationId, undefined, err.message.slice(0, 200));
 
       return { debateResult: null };
     }

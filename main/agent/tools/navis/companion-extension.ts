@@ -7,7 +7,7 @@ import { bridgeServer } from '../../../lib/extension-server';
 
 type NavisExtensionTarget = 'chrome' | 'firefox';
 
-export interface NavisCompanionPrepareResult {
+interface NavisCompanionPrepareResult {
   success: boolean;
   message: string;
   extensionPath: string;
@@ -38,8 +38,11 @@ async function resolveBrowser(selectedBrowserId: string): Promise<BrowserInfo | 
 function findExtensionSourceDir(): string {
   const candidates = [
     process.env.EVERFERN_NAVIS_EXTENSION_DIR,
-    path.resolve(process.cwd(), '..', 'extension-navis'),
+    // Vendored copy inside the monorepo (BK-PKG-03) — preferred over external
     path.resolve(process.cwd(), 'apps', 'extension-navis'),
+    path.resolve(process.cwd(), '..', 'extension-navis'),
+    path.resolve(__dirname, '..', '..', '..', '..', '..', 'apps', 'extension-navis'),
+    path.resolve(__dirname, '..', '..', '..', '..', '..', '..', 'apps', 'extension-navis'),
     path.resolve(__dirname, '..', '..', '..', '..', '..', 'extension-navis'),
     path.resolve(__dirname, '..', '..', '..', '..', '..', '..', 'extension-navis'),
     process.resourcesPath ? path.join(process.resourcesPath, 'extension-navis') : '',
@@ -86,8 +89,8 @@ function cleanDirContents(dir: string): void {
   }
 }
 
-export const CHROME_EXTENSION_STORE_URL = "https://chromewebstore.google.com/detail/everfern-navis/pipkiglicdhcacieghoinohgfibhkmgf?hl=en&authuser=0";
-export const FIREFOX_EXTENSION_STORE_URL = "https://addons.mozilla.org/en-US/firefox/addon/everfern-navis/";
+const CHROME_EXTENSION_STORE_URL = "https://chromewebstore.google.com/detail/everfern-navis/pipkiglicdhcacieghoinohgfibhkmgf?hl=en&authuser=0";
+const FIREFOX_EXTENSION_STORE_URL = "https://addons.mozilla.org/en-US/firefox/addon/everfern-navis/";
 
 function installInstructions(target: NavisExtensionTarget, extensionPath: string): string[] {
   if (target === 'firefox') {
@@ -106,7 +109,7 @@ function installInstructions(target: NavisExtensionTarget, extensionPath: string
   ];
 }
 
-export function ensureNavisCompanionExtension(
+function ensureNavisCompanionExtension(
   baseDir = extensionBaseDir(),
   target: NavisExtensionTarget = 'chrome',
 ): string {
@@ -205,8 +208,4 @@ export function getNavisCompanionStatus() {
 
 export function broadcastNavisCompanionProgress(event: Record<string, unknown>): void {
   bridgeServer.broadcastCommand('navis-progress', event);
-}
-
-export async function sendNavisCompanionCommand(command: string, data: any = {}, timeoutMs = 10000): Promise<any> {
-  return await bridgeServer.sendRequest(command, data, timeoutMs);
 }

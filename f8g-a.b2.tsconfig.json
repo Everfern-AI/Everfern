@@ -1,0 +1,41 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/app/chat/settings/DispatchSection.tsx",
+    "src/app/chat/settings/EmbeddingsSection.tsx",
+    "src/app/chat/settings/GeneralSection.tsx",
+    "src/app/chat/settings/HelpSection.tsx",
+    "src/app/chat/settings/KeybindsSection.tsx",
+    "src/app/chat/settings/LinuxVMSection.tsx",
+    "src/app/chat/settings/MemorySection.tsx",
+    "src/app/chat/settings/ModelsSection.tsx",
+    "src/app/chat/settings/OpenClawSection.tsx",
+    "src/app/chat/settings/PrivacySection.tsx",
+    "src/app/chat/settings/ProfileSection.tsx",
+    "src/app/chat/settings/RegisteredToolsList.tsx",
+    "src/app/chat/settings/SkillsSection.tsx",
+    "src/app/chat/settings/SystemHardwareSection.tsx",
+    "src/app/chat/settings/ToolPermissionsSection.tsx",
+    "src/app/chat/settings/ui.tsx",
+    "src/app/chat/settings/VisionSection.tsx",
+    "src/app/chat/settings/VoiceSection.tsx",
+    "src/components/files/file-viewer-helpers.ts",
+    "src/components/projects/CreateProjectModal.tsx",
+    "src/components/tools/file-icons.tsx",
+    "src/components/tools/LocalExecutionPermissionCard.tsx",
+    "src/components/tools/ToolDetailSidePanel.tsx",
+    "src/components/tools/use-downscaled-image.ts",
+    "src/components/tools/VisionDowngradeNotice.tsx",
+    "src/components/visuals/ShimmerProgressComponent.tsx",
+    "src/hooks/useFocusTrap.ts",
+    "src/hooks/useSubagentTracking.ts",
+    "src/lib/keyboard.ts",
+    "src/lib/secret-view.ts",
+    "src/lib/vision-defaults.ts",
+    "src/types/import-meta-env.d.ts"
+  ]
+}

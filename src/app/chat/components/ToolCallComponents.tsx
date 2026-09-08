@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     ChevronDownIcon,
@@ -16,7 +16,7 @@ import {
 } from "@heroicons/react/24/outline";
 import type { ToolCallDisplay, LiveToolCall } from '../types/index';
 import { MarkdownRenderer } from './MarkdownComponents';
-import { FaviconCitation } from './FaviconCitation';
+import { FaviconCitation } from '@/components/common/FaviconCitation';
 import { DiffViewer } from '@/components/diff-viewer';
 import { SyntaxHighlighter } from '../ArtifactsPanel';
 import { Loader } from '@/components/ui/animated-loading-svg-text-shimmer';
@@ -416,8 +416,127 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({ result, index }) =>
 };
 
 
+// ── CU-REND-06: memoization comparators (white-box hooks) ───────────────────
+// Stable-id + shallow-field equality for ToolCallDisplay. Object/array fields
+// (icon, args, data, subAgentProgress) have no stable id: they are compared by
+// reference, so any fresh object fails equality (fail-open re-render).
+const areToolCallDisplaysEqual = (a: ToolCallDisplay, b: ToolCallDisplay): boolean => {
+    if (a === b) return true;
+    if (a.id !== b.id) return false;
+    return (
+        a.status === b.status &&
+        a.toolName === b.toolName &&
+        a.agentName === b.agentName &&
+        a.label === b.label &&
+        a.color === b.color &&
+        a.output === b.output &&
+        a.durationMs === b.durationMs &&
+        a.base64Image === b.base64Image &&
+        a.displayName === b.displayName &&
+        a.description === b.description &&
+        a.phase === b.phase &&
+        a.thought === b.thought &&
+        a.currentNode === b.currentNode &&
+        a.orderIndex === b.orderIndex &&
+        a.icon === b.icon &&
+        a.args === b.args &&
+        a.data === b.data &&
+        a.subAgentProgress === b.subAgentProgress
+    );
+};
+
+interface ToolCallPillProps {
+    tc: ToolCallDisplay;
+    isLast?: boolean;
+    onClick?: () => void;
+    isSelected?: boolean;
+    // CU-STRM-04: explicit history marker for callers that know a row is
+    // committed history (default false keeps prior behavior).
+    isHistory?: boolean;
+}
+
+// Gate on the tc object (stable-id equality) + primitive/function props by
+// strict identity, so a changed onClick or isSelected always re-renders.
+const toolCallPillPropsAreEqual = (prev: ToolCallPillProps, next: ToolCallPillProps): boolean => {
+    if (prev === next) return true;
+    if (!areToolCallDisplaysEqual(prev.tc, next.tc)) return false;
+    if (prev.isLast !== next.isLast) return false;
+    if (prev.isSelected !== next.isSelected) return false;
+    if (prev.onClick !== next.onClick) return false;
+    if (prev.isHistory !== next.isHistory) return false;
+    return true;
+};
+
+const computerUseResultPropsAreEqual = (
+    prev: { tc: ToolCallDisplay },
+    next: { tc: ToolCallDisplay }
+): boolean => prev === next || areToolCallDisplaysEqual(prev.tc, next.tc);
+
+// Counter used by tests to observe how often partial-JSON extraction executes.
+export const __cuRend06ExtractionStats = { calls: 0 };
+
+export const __cuRend06MemoHooks = { areToolCallDisplaysEqual, toolCallPillPropsAreEqual };
+
+// ── InlineScreenshot (CU-STRM-06) ────────────────────────────────────────────
+// Full-size base64 screenshots (often multi-MB) were painted inline as raw data
+// URLs. The expanded preview is user-initiated and low-frequency, so we keep a
+// full-width img, but (1) always mark it loading="lazy" + decoding="async" and
+// (2) when the payload exceeds INLINE_BASE64_CAP chars (~1.5MB image), decode
+// once via an offscreen canvas capped at 800px wide and swap in the resulting
+// objectURL, revoking it on unmount/src change. DOM-free environments (SSR,
+// node tests) render the plain img untouched.
+const INLINE_BASE64_CAP = 2_000_000;
+const INLINE_SCREENSHOT_MAX_W = 800;
+
+const InlineScreenshot = ({ src, alt, style }: { src: string; alt?: string; style?: React.CSSProperties }) => {
+    const [swapSrc, setSwapSrc] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (typeof document === 'undefined' || src.length <= INLINE_BASE64_CAP) {
+            setSwapSrc(null);
+            return;
+        }
+        let revoked = false;
+        let objectUrl: string | null = null;
+        const img = new Image();
+        img.onload = () => {
+            if (revoked) return;
+            const naturalW = img.naturalWidth || INLINE_SCREENSHOT_MAX_W;
+            const scale = Math.min(1, INLINE_SCREENSHOT_MAX_W / naturalW);
+            if (scale >= 1) return; // already within cap; keep original
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.round(naturalW * scale));
+            canvas.height = Math.max(1, Math.round((img.naturalHeight || 1) * scale));
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            const mime = src.startsWith('data:image/png') ? 'image/png' : 'image/jpeg';
+            canvas.toBlob((blob) => {
+                if (revoked || !blob) return;
+                objectUrl = URL.createObjectURL(blob);
+                setSwapSrc(objectUrl);
+            }, mime, 0.85);
+        };
+        img.src = src;
+        return () => {
+            revoked = true;
+            if (objectUrl) URL.revokeObjectURL(objectUrl);
+        };
+    }, [src]);
+
+    return (
+        <img
+            src={swapSrc ?? src}
+            alt={alt ?? ''}
+            loading="lazy"
+            decoding="async"
+            style={style}
+        />
+    );
+};
+
 // ── Tool Call Tag Component ──────────────────────────────────────────────────
-const ToolCallTag = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay; isLast?: boolean; onClick?: () => void; isSelected?: boolean }) => {
+const ToolCallTagBase = ({ tc, isLast, onClick, isSelected }: ToolCallPillProps) => {
     const [expanded, setExpanded] = useState(false);
     const running = tc.status === 'running';
     const errored = tc.status === 'error';
@@ -602,14 +721,14 @@ const ToolCallTag = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay;
                             <div style={{ backgroundColor: 'var(--color-bg-base)', borderRadius: 10, maxHeight: 400, overflowY: 'auto', border: '1px solid var(--color-border)', boxShadow: 'inset 0 1px 4px rgba(0,0,0,0.02)' }}>
                                 {(tc.base64Image || tc.data?.screenshot || (tc.data?.screenshots && tc.data.screenshots.length > 0)) && (
                                     <div style={{ padding: 10, borderBottom: '1px solid var(--color-border)' }}>
-                                        <img src={`data:image/jpeg;base64,${tc.base64Image || (Array.isArray(tc.data?.screenshot) ? tc.data.screenshot[tc.data.screenshot.length - 1] : tc.data?.screenshot) || (Array.isArray(tc.data?.screenshots) ? tc.data.screenshots[tc.data.screenshots.length - 1].base64 : '')}`} alt="" style={{ width: '100%', borderRadius: 8, border: '1px solid var(--color-border)' }} />
+                                        <InlineScreenshot src={`data:image/jpeg;base64,${tc.base64Image || (Array.isArray(tc.data?.screenshot) ? tc.data.screenshot[tc.data.screenshot.length - 1] : tc.data?.screenshot) || (Array.isArray(tc.data?.screenshots) ? tc.data.screenshots[tc.data.screenshots.length - 1].base64 : '')}`} alt="" style={{ width: '100%', borderRadius: 8, border: '1px solid var(--color-border)' }} />
                                     </div>
                                 )}
                                 {tc.data?.preClickB64 && (
                                     <div style={{ padding: 10, borderBottom: '1px solid var(--color-border)' }}>
                                         <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 6, textAlign: 'center', letterSpacing: '0.04em' }}>Click Target</div>
                                         <div style={{ position: 'relative', width: '100%', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--color-border)' }}>
-                                            <img src={`data:image/png;base64,${tc.data.preClickB64}`} alt="" style={{ width: '100%', display: 'block' }} />
+                                            <InlineScreenshot src={`data:image/png;base64,${tc.data.preClickB64}`} alt="" style={{ width: '100%', display: 'block' }} />
                                             {tc.data.x !== undefined && tc.data.y !== undefined && tc.data.w && tc.data.h && (
                                                 <div style={{ position: 'absolute', left: `${(tc.data.x / tc.data.w) * 100}%`, top: `${(tc.data.y / tc.data.h) * 100}%`, width: 18, height: 18, backgroundColor: 'rgba(239,68,68,0.4)', border: '2px solid #e5e5e5', borderRadius: '50%', transform: 'translate(-50%, -50%)', zIndex: 10, pointerEvents: 'none' }} />
                                             )}
@@ -653,10 +772,16 @@ const ToolCallTag = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay;
     );
 };
 
+export const ToolCallTag = memo(ToolCallTagBase, toolCallPillPropsAreEqual);
+
 // ── ToolCallRow: Individual tool call in the ToolGroup ──────────────────────
-const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay, isLast?: boolean; onClick?: () => void; isSelected?: boolean }) => {
+const ToolCallRowBase = ({ tc, isLast, onClick, isSelected, isHistory }: ToolCallPillProps) => {
     const [expanded, setExpanded] = useState(false);
     const isRunning = tc.status === 'running';
+    // CU-STRM-04: history rows (committed done/error) must not spring on mount
+    // when a conversation loads. Explicit isHistory overrides; otherwise rows
+    // still executing (running) are treated as live and keep the entry spring.
+    const isHistoryRow = isHistory ?? !isRunning;
     const isError = tc.status === 'error';
     const isTerminal = tc.toolName === 'run_command' || tc.toolName === 'bash' || tc.toolName === 'run_terminal' || tc.toolName === 'terminal_execute' || tc.toolName === 'terminal_status';
     const cmdStr = (tc.args?.command || tc.args?.CommandLine || tc.args?.commandLine) as string | undefined;
@@ -742,9 +867,9 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
     return (
         <motion.div
             layout="position"
-            initial={{ opacity: 0, y: 4 }}
+            initial={isHistoryRow ? false : { opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ type: "spring", stiffness: 400, damping: 30 }}
+            transition={isHistoryRow ? { duration: 0 } : { type: "spring", stiffness: 400, damping: 30 }}
             className={`flex flex-col relative ${isLast ? '' : 'pb-6'}`}
         >
             {/* Vertical branch line */}
@@ -929,6 +1054,8 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
     );
 };
 
+export const ToolCallRow = memo(ToolCallRowBase, toolCallPillPropsAreEqual);
+
 
 // Optional: Styled Scrollbar for the diff area
 const scrollbarStyles = `
@@ -941,7 +1068,7 @@ const scrollbarStyles = `
 
 
 // ── ComputerUseResultCard ────────────────────────────────────────────────────
-const ComputerUseResultCard = ({ tc }: { tc: ToolCallDisplay }) => {
+const ComputerUseResultCardBase = ({ tc }: { tc: ToolCallDisplay }) => {
     // 3.2: Add state management to ComputerUseResultCard
     // Initialize with success status since component only renders when tc.status === 'done'
     const [taskStatus, setTaskStatus] = useState<'idle' | 'executing' | 'success' | 'error'>('success');
@@ -1134,9 +1261,11 @@ const ComputerUseResultCard = ({ tc }: { tc: ToolCallDisplay }) => {
     );
 };
 
+export const ComputerUseResultCard = memo(ComputerUseResultCardBase, computerUseResultPropsAreEqual);
+
 // ── LiveToolCallCard: Shows a tool call being constructed in real-time ──────
 // ── LiveToolCallCard: Shows a tool call being constructed in real-time ──────
-export const LiveToolCallCard = ({ toolName, partialArguments, isStreaming }: LiveToolCall) => {
+const LiveToolCallCardBase = ({ toolName, partialArguments, isStreaming }: LiveToolCall) => {
     const [cursorVisible, setCursorVisible] = useState(true);
 
     useEffect(() => {
@@ -1151,9 +1280,15 @@ export const LiveToolCallCard = ({ toolName, partialArguments, isStreaming }: Li
         .replace(/_/g, ' ')
         .replace(/\b\w/g, c => c.toUpperCase());
 
-    const fileDetails = extractStreamingFileDetails(partialArguments, toolName);
+    // CU-REND-06: extraction is memoized keyed on the raw partial string (plus
+    // toolName, which the parser also depends on) so re-renders with the same
+    // raw arguments do not re-scan the partial JSON.
+    const fileDetails = useMemo(() => {
+        __cuRend06ExtractionStats.calls += 1;
+        return extractStreamingFileDetails(partialArguments, toolName);
+    }, [partialArguments, toolName]);
 
-    if (fileDetails) {
+    if (fileDetails && isStreaming) {
         const { filePath, codeContent, actionType } = fileDetails;
         const fileName = filePath ? filePath.split(/[/\\]/).pop() : '';
         const directory = filePath && fileName ? filePath.substring(0, filePath.length - fileName.length).replace(/[/\\]+$/, '') : '';
@@ -1161,7 +1296,6 @@ export const LiveToolCallCard = ({ toolName, partialArguments, isStreaming }: Li
 
         return (
             <motion.div
-                layout
                 initial={{ opacity: 0, y: 8, scale: 0.98 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
@@ -1231,7 +1365,6 @@ export const LiveToolCallCard = ({ toolName, partialArguments, isStreaming }: Li
 
     return (
         <motion.div
-            layout
             initial={{ opacity: 0, y: 8, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
@@ -1312,4 +1445,6 @@ export const LiveToolCallCard = ({ toolName, partialArguments, isStreaming }: Li
     );
 };
 
-export { ToolCallTag, ToolCallRow, ComputerUseResultCard, SearchResultCard };
+export const LiveToolCallCard = memo(LiveToolCallCardBase);
+
+export { SearchResultCard };

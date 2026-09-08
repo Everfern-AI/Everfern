@@ -1,5 +1,5 @@
 'use client';
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
     XMarkIcon, 
@@ -12,6 +12,7 @@ import {
     PresentationChartBarIcon,
 } from '@heroicons/react/24/outline';
 import FileIcon from './FileIcon';
+import { shouldRefreshArtifacts } from '@/lib/artifacts-watch-filter';
 
 interface Artifact {
     id: string; // filename
@@ -52,6 +53,10 @@ const SYNTAX_COLORS = {
 };
 
 // ── 1. MARKDOWN VIEWER ──────────────────────────────────────────────
+/**
+ * Renders markdown text (headings, lists, tables, code blocks, inline
+ * styles) as React elements — no external markdown dependency.
+ */
 export function MarkdownViewer({ content }: { content: string }) {
     const renderMarkdown = (text: string) => {
         const lines = text.split('\n');
@@ -192,6 +197,11 @@ export function MarkdownViewer({ content }: { content: string }) {
 }
 
 // ── 2. EXCEL (XLSX/CSV) VIEWER ──────────────────────────────────────
+/**
+ * Excel-like grid for CSV/XLSX artifacts: renders parsed rows with
+ * sticky header/row headers, a formula bar, and budget/level-aware cell
+ * coloring.
+ */
 function ExcelViewer({ filename, content }: { filename: string; content: string | null }) {
     
     let parsedData: string[][] = [];
@@ -291,6 +301,10 @@ function ExcelViewer({ filename, content }: { filename: string; content: string 
 }
 
 // ── 3. POWERPOINT (PPT/PPTX) VIEWER ─────────────────────────────────
+/**
+ * Slide deck viewer: parses slides via main-process IPC, shows a clickable
+ * slide-thumbnail sidebar and a 16:9 stage with Prev/Next navigation.
+ */
 function PPTViewer({ filename, filePath }: { filename: string; filePath?: string }) {
     const [activeSlide, setActiveSlide] = useState(0);
     const [slides, setSlides] = useState<Array<{ title: string; subtitle: string; points: string[] }>>([]);
@@ -469,6 +483,11 @@ function PPTViewer({ filename, filePath }: { filename: string; filePath?: string
 }
 
 // ── 4. PDF DOCUMENT VIEWER ──────────────────────────────────────────
+/**
+ * In-app PDF preview with zoom and an "open with app" dropdown.
+ * Content can arrive as a base64 data URL, raw bytes via `filePath`
+ * (binary IPC preferred), or a plain blob URL fallback.
+ */
 export function PDFViewer({ filename, content, filePath }: { filename: string; content?: string | null; filePath?: string }) {
     const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
     const [loadingPdf, setLoadingPdf] = useState(true);
@@ -533,6 +552,15 @@ export function PDFViewer({ filename, content, filePath }: { filename: string; c
 
                 // 2. If filePath is provided, try reading via readImageDataUrl
                 if (filePath) {
+                    // NR-PERF-03: prefer binary IPC — no base64 inflation, no atob.
+                    const bytesRes = await (window as any).electronAPI?.system?.readFileBytes?.(filePath);
+                    if (isMounted && bytesRes && bytesRes.success && bytesRes.bytes instanceof Uint8Array) {
+                        const blob = new Blob([bytesRes.bytes as unknown as BlobPart], { type: 'application/pdf' });
+                        const bUrl = URL.createObjectURL(blob);
+                        if (isMounted) setPdfBlobUrl(bUrl);
+                        if (isMounted) setLoadingPdf(false);
+                        return;
+                    }
                     const imgRes = await (window as any).electronAPI?.system?.readImageDataUrl?.(filePath);
                     if (isMounted && imgRes && imgRes.success && imgRes.dataUrl) {
                         try {
@@ -639,7 +667,7 @@ export function PDFViewer({ filename, content, filePath }: { filename: string; c
                         justifyContent: 'center',
                         padding: '3px 8px',
                         borderRadius: 6,
-                        backgroundColor: '#ef4444',
+                        backgroundColor: 'var(--color-error)',
                         color: '#ffffff',
                         fontSize: 11,
                         fontWeight: 700,
@@ -747,7 +775,7 @@ export function PDFViewer({ filename, content, filePath }: { filename: string; c
                                     position: 'absolute',
                                     top: 'calc(100% + 6px)',
                                     right: 0,
-                                    zIndex: 9999,
+                                    zIndex: 'var(--z-dropdown)',
                                     backgroundColor: 'var(--color-bg-elevated)',
                                     border: '1px solid var(--color-border)',
                                     borderRadius: 12,
@@ -796,7 +824,7 @@ export function PDFViewer({ filename, content, filePath }: { filename: string; c
             <div style={{ flex: 1, position: 'relative', width: '100%', height: '100%', overflow: 'hidden', backgroundColor: 'var(--color-bg-subtle)' }}>
                 {loadingPdf ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--color-text-secondary)', gap: 12 }}>
-                        <div style={{ width: 24, height: 24, borderRadius: '50%', border: '2px solid rgba(239,68,68,0.2)', borderTopColor: '#ef4444', animation: 'spin 0.8s linear infinite' }} />
+                        <div style={{ width: 24, height: 24, borderRadius: '50%', border: '2px solid rgba(239,68,68,0.2)', borderTopColor: 'var(--color-error)', animation: 'spin 0.8s linear infinite' }} />
                         <span style={{ fontSize: 13 }}>Rendering PDF preview...</span>
                     </div>
                 ) : pdfBlobUrl ? (
@@ -812,7 +840,7 @@ export function PDFViewer({ filename, content, filePath }: { filename: string; c
                     />
                 ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--color-text-secondary)', gap: 16, padding: 32, textAlign: 'center' }}>
-                        <div style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: 'rgba(239,68,68,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444', fontSize: 22, fontWeight: 700 }}>
+                        <div style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: 'rgba(239,68,68,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-error)', fontSize: 22, fontWeight: 700 }}>
                             PDF
                         </div>
                         <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-primary)' }}>{filename}</div>
@@ -849,7 +877,7 @@ const INSPIRATION_TEMPLATES = [
         name: 'Climate Action & Carbon Impact Report.pdf',
         type: 'pdf',
         badge: 'PDF',
-        badgeColor: '#ef4444',
+        badgeColor: 'var(--color-error)',
         badgeBg: 'rgba(239,68,68,0.12)',
         title: 'Global Climate Impact Assessment',
         description: 'Comprehensive ESG carbon emissions breakdown with mitigation targets, renewable transition timeline, and regulatory compliance risk matrix.',
@@ -904,7 +932,7 @@ const INSPIRATION_TEMPLATES = [
         name: 'proforma_valuation_model.csv',
         type: 'csv',
         badge: 'CSV',
-        badgeColor: '#10b981',
+        badgeColor: 'var(--color-success)',
         badgeBg: 'rgba(16,185,129,0.12)',
         title: '5-Year Pro-Forma DCF Model',
         description: 'Multi-year financial valuation forecast covering revenue growth, gross margins, EBITDA, discounted cash flows, and terminal valuation.',
@@ -926,7 +954,7 @@ Terminal Valuation (8x),—,—,—,—,$174.4M`
         name: 'series_a_pitch_deck.pptx',
         type: 'pptx',
         badge: 'PPTX',
-        badgeColor: '#f59e0b',
+        badgeColor: 'var(--color-warning)',
         badgeBg: 'rgba(245,158,11,0.12)',
         title: 'Series A Pitch Presentation',
         description: '10-slide venture deck structuring Problem, Agentic AI Solution, Market Opportunity, Moat, Competitive Landscape, and Financial Milestones.',
@@ -1034,6 +1062,10 @@ All subprocess executions pass through strict environment isolation with explici
 ];
 
 // Syntax highlighting helper
+/**
+ * Legacy per-(language, token) color lookup — superseded by the hoisted
+ * SYNTAX_COLOR_SCHEMES below but kept for compatibility.
+ */
 const getSyntaxHighlightingColors = (language: string, token: string): string => {
     const colorMap: Record<string, Record<string, string>> = {
         javascript: { keyword: SYNTAX_COLORS.keyword, string: SYNTAX_COLORS.string, number: SYNTAX_COLORS.number, comment: SYNTAX_COLORS.comment, function: SYNTAX_COLORS.function },
@@ -1048,6 +1080,7 @@ const getSyntaxHighlightingColors = (language: string, token: string): string =>
 };
 
 // Detect language from filename
+/** Map a filename extension to a tokenizer language id (default: 'text'). */
 const detectLanguage = (filename: string): string => {
     const ext = filename.split('.').pop()?.toLowerCase() || '';
     const langMap: Record<string, string> = {
@@ -1059,105 +1092,214 @@ const detectLanguage = (filename: string): string => {
     return langMap[ext] || 'text';
 };
 
-// Syntax highlighter component
-export const SyntaxHighlighter = ({ code, language }: { code: string; language: string }) => {
-    const colorSchemes: Record<string, Record<string, string>> = {
-        python: {
-            keyword: SYNTAX_COLORS.keyword,
-            string: SYNTAX_COLORS.string,
-            number: SYNTAX_COLORS.number,
-            comment: SYNTAX_COLORS.comment,
-            function: SYNTAX_COLORS.function,
-        },
-        javascript: {
-            keyword: SYNTAX_COLORS.keyword,
-            string: SYNTAX_COLORS.string,
-            number: SYNTAX_COLORS.number,
-            comment: SYNTAX_COLORS.comment,
-            function: SYNTAX_COLORS.function,
-        },
-        typescript: {
-            keyword: SYNTAX_COLORS.keyword,
-            string: SYNTAX_COLORS.string,
-            number: SYNTAX_COLORS.number,
-            comment: SYNTAX_COLORS.comment,
-            function: SYNTAX_COLORS.function,
-        },
-        html: {
-            tag: SYNTAX_COLORS.tag,
-            attr: SYNTAX_COLORS.attr,
-            string: SYNTAX_COLORS.string,
-            comment: SYNTAX_COLORS.comment,
-        },
-        css: {
-            property: SYNTAX_COLORS.property,
-            value: SYNTAX_COLORS.value,
-            selector: SYNTAX_COLORS.selector,
-            comment: SYNTAX_COLORS.comment,
-        },
-        json: {
-            key: SYNTAX_COLORS.key,
-            string: SYNTAX_COLORS.string,
-            number: SYNTAX_COLORS.number,
-            boolean: SYNTAX_COLORS.boolean,
-        },
-    };
+// ── CU-STRM-02: per-line token LRU cache ──────────────────────────────────────
+// During streaming the `code` prop changes per chunk, which used to force a
+// full 3× matchAll + sort + token-map retokenization of EVERY line on EVERY
+// render. Unchanged (language, line) pairs now reuse the previously built
+// React node array by reference — elements are immutable, so sharing the
+// same array across renders/positions is safe (same pattern as
+// MarkdownComponents' blockCache).
 
-    const colors = colorSchemes[language] || {};
+// Hoisted to module scope so the schemes object is built once, not per render.
+const SYNTAX_COLOR_SCHEMES: Record<string, Record<string, string>> = {
+    python: {
+        keyword: SYNTAX_COLORS.keyword,
+        string: SYNTAX_COLORS.string,
+        number: SYNTAX_COLORS.number,
+        comment: SYNTAX_COLORS.comment,
+        function: SYNTAX_COLORS.function,
+    },
+    javascript: {
+        keyword: SYNTAX_COLORS.keyword,
+        string: SYNTAX_COLORS.string,
+        number: SYNTAX_COLORS.number,
+        comment: SYNTAX_COLORS.comment,
+        function: SYNTAX_COLORS.function,
+    },
+    typescript: {
+        keyword: SYNTAX_COLORS.keyword,
+        string: SYNTAX_COLORS.string,
+        number: SYNTAX_COLORS.number,
+        comment: SYNTAX_COLORS.comment,
+        function: SYNTAX_COLORS.function,
+    },
+    html: {
+        tag: SYNTAX_COLORS.tag,
+        attr: SYNTAX_COLORS.attr,
+        string: SYNTAX_COLORS.string,
+        comment: SYNTAX_COLORS.comment,
+    },
+    css: {
+        property: SYNTAX_COLORS.property,
+        value: SYNTAX_COLORS.value,
+        selector: SYNTAX_COLORS.selector,
+        comment: SYNTAX_COLORS.comment,
+    },
+    json: {
+        key: SYNTAX_COLORS.key,
+        string: SYNTAX_COLORS.string,
+        number: SYNTAX_COLORS.number,
+        boolean: SYNTAX_COLORS.boolean,
+    },
+};
+
+// Memory bound: each entry is a full React node array for one line, so the
+// cache must have a hard ceiling or it would grow monotonically across an
+// unbounded streaming session. 400 lines covers typical artifact files
+// (plus scrolling slack) while keeping retained nodes in the low MBs.
+const SYNTAX_LINE_CACHE_CAP = 400;
+const syntaxLineCache = new Map<string, React.ReactNode[]>();
+let syntaxCacheHits = 0, syntaxCacheMisses = 0;
+
+interface SyntaxLineCacheStats { size: number; hits: number; misses: number; cap: number; }
+
+/**
+ * Empties the per-line syntax cache and resets hit/miss counters.
+ * Intended for tests and hot language-switch invalidation.
+ */
+export const resetSyntaxLineCache = (): void => {
+    syntaxLineCache.clear();
+    syntaxCacheHits = 0;
+    syntaxCacheMisses = 0;
+};
+
+/**
+ * Snapshot of cache size, hit/miss counts, and the eviction cap.
+ * Read-only; used by tests to assert LRU behavior.
+ */
+export const getSyntaxLineCacheStats = (): SyntaxLineCacheStats => ({
+    size: syntaxLineCache.size,
+    hits: syntaxCacheHits,
+    misses: syntaxCacheMisses,
+    cap: SYNTAX_LINE_CACHE_CAP,
+});
+
+// Key separator: '\n' can never occur inside a cached line (lines are
+// split on '\n'), so no (language, line) pair can alias another key;
+// language must be part of the key since identical text tokenizes
+// differently under each language scheme.
+const syntaxCacheKeyFor = (language: string, line: string): string => `${language}\n${line}`;
+
+const syntaxCacheGet = (key: string): React.ReactNode[] | undefined => {
+    const cached = syntaxLineCache.get(key);
+    if (cached === undefined) {
+        syntaxCacheMisses++;
+        return undefined;
+    }
+    // LRU touch: delete+re-insert moves the key to the "newest" end so the
+    // next eviction sweep spares recently used lines.
+    // Ordering constraint: the touch must precede the hit return, and the
+    // delete+set pair must stay adjacent — a get() that skipped the touch
+    // (or reordered it) would let a hot line sit at the "oldest" end and be
+    // evicted while still in active use.
+    syntaxLineCache.delete(key);
+    syntaxLineCache.set(key, cached);
+    syntaxCacheHits++;
+    return cached;
+};
+
+const syntaxCacheSet = (key: string, tokens: React.ReactNode[]): void => {
+    // Delete-when-exists first so overwriting a key also refreshes its
+    // recency: a re-tokenized line moves to the "newest" end instead of
+    // keeping the stale oldest position from its previous insertion.
+    if (syntaxLineCache.has(key)) syntaxLineCache.delete(key);
+    syntaxLineCache.set(key, tokens);
+    // Evict from the front (oldest entry in insertion order) until within
+    // the cap — this is the entire LRU eviction policy.
+    // Map preserves insertion order, so the front key IS the least
+    // recently touched entry — a re-insertion from a get() hit moved it to
+    // the back. Evicting from the back instead would turn this into MRU
+    // and thrash exactly the lines still on screen.
+    while (syntaxLineCache.size > SYNTAX_LINE_CACHE_CAP) {
+        const oldest = syntaxLineCache.keys().next().value as string;
+        syntaxLineCache.delete(oldest);
+    }
+};
+
+// Pure tokenizer: builds the React node array for one line from scratch.
+// `colors` is the language's scheme (empty object for unsupported languages,
+// which takes the plain primary-colored early-return path).
+const tokenizeLine = (line: string, colors: Record<string, string>): React.ReactNode[] => {
+    if (!colors || Object.keys(colors).length === 0) {
+        return [<span key={line} style={{ color: 'var(--color-text-primary)' }}>{line}</span>];
+    }
+
+    // Comment detection
+    const commentMatch = line.match(/^(\s*)(#|\/\/|\/\*|<!--)(.*)/);
+    if (commentMatch) {
+        return [<span key={line} style={{ color: colors.comment || 'var(--color-text-tertiary)' }}>{line}</span>];
+    }
+
+    const tokens: Array<{ type: 'keyword' | 'string' | 'number' | 'text'; value: string; color?: string }> = [];
+
+    // Tokenize the line
+    const stringMatches = Array.from(line.matchAll(/(['"`])(.*?)\1/g));
+    const keywordMatches = Array.from(line.matchAll(/\b(if|else|for|while|function|def|class|return|const|let|var|import|export|from|async|await|try|catch|throw|new|this|true|false|null|undefined|and|or|not|in|is|lambda|def|self|super|pass|break|continue)\b/g));
+    const numberMatches = Array.from(line.matchAll(/\b(\d+\.?\d*)\b/g));
+
+    const allMatches = [
+        ...stringMatches.map(m => ({ ...m, type: 'string' })),
+        ...keywordMatches.map(m => ({ ...m, type: 'keyword' })),
+        ...numberMatches.map(m => ({ ...m, type: 'number' })),
+    ].sort((a, b) => a.index! - b.index!);
+
+    let lastIndex = 0;
+    allMatches.forEach((match) => {
+        if (match.index! > lastIndex) {
+            tokens.push({ type: 'text', value: line.slice(lastIndex, match.index) });
+        }
+        const colorMap: Record<string, string> = { string: colors.string, keyword: colors.keyword, number: colors.number };
+        const type = (match as any).type as 'string' | 'keyword' | 'number';
+        tokens.push({ type, value: match[0], color: colorMap[type] || 'var(--color-text-primary)' });
+        lastIndex = match.index! + match[0].length;
+    });
+
+    if (lastIndex < line.length) {
+        tokens.push({ type: 'text', value: line.slice(lastIndex) });
+    }
+
+    return tokens.map((token, idx) => (
+        <span key={idx} style={{ color: token.color || 'var(--color-text-primary)' }}>
+            {token.value}
+        </span>
+    )) || [<span key={line}>{line}</span>];
+};
+
+// Cache-fronted path used by SyntaxHighlighter (and tests): a hit skips
+// retokenization entirely; a miss tokenizes once and stores the node array.
+const tokenizeLineCached = (line: string, language: string): React.ReactNode[] => {
+    const key = syntaxCacheKeyFor(language, line);
+    const cached = syntaxCacheGet(key);
+    if (cached !== undefined) return cached;
+    const tokens = tokenizeLine(line, SYNTAX_COLOR_SCHEMES[language] || {});
+    syntaxCacheSet(key, tokens);
+    return tokens;
+};
+
+// Test hooks (pattern: __strm06TestHooks / getBlockCacheStats).
+/**
+ * Internal cache/tokenizer access for unit tests. Never call from
+ * production code — the exports exist only so tests can inspect and drive
+ * the LRU cache without rendering.
+ */
+export const __strm02Internals = {
+    lineCache: syntaxLineCache,
+    cacheKeyFor: syntaxCacheKeyFor,
+    tokenizeLine,
+    tokenizeLineCached,
+};
+
+// Syntax highlighter component
+/**
+ * Memoized line-by-line syntax highlighter for code artifacts. Splits
+ * `code` into lines and renders each through the LRU-cached tokenizer
+ * (see CU-STRM-02 above), so re-renders during streaming skip
+ * retokenization of unchanged lines.
+ */
+export const SyntaxHighlighter = React.memo(({ code, language }: { code: string; language: string }) => {
     const lines = code.split('\n');
 
-    const highlightLine = (line: string): React.ReactNode[] => {
-        if (!colors || Object.keys(colors).length === 0) {
-            return [<span key={line} style={{ color: 'var(--color-text-primary)' }}>{line}</span>];
-        }
-
-        // Comment detection
-        const commentMatch = line.match(/^(\s*)(#|\/\/|\/\*|<!--)(.*)/);
-        if (commentMatch) {
-            return [<span key={line} style={{ color: colors.comment || 'var(--color-text-tertiary)' }}>{line}</span>];
-        }
-
-        const result: React.ReactNode[] = [];
-        const stringPattern = /(['"`])(.*?)\1/g;
-        const keywordPattern = /\b(if|else|for|while|function|def|class|return|const|let|var|import|export|from|async|await|try|catch|throw|new|this|true|false|null|undefined|and|or|not|in|is|lambda|def|self|super|pass|break|continue)\b/g;
-        const numberPattern = /\b(\d+\.?\d*)\b/g;
-
-        let lastIndex = 0;
-        const tokens: Array<{ type: 'keyword' | 'string' | 'number' | 'text'; value: string; color?: string }> = [];
-
-        // Tokenize the line
-        let temp = line;
-        const stringMatches = Array.from(line.matchAll(stringPattern));
-        const keywordMatches = Array.from(line.matchAll(keywordPattern));
-        const numberMatches = Array.from(line.matchAll(numberPattern));
-
-        const allMatches = [
-            ...stringMatches.map(m => ({ ...m, type: 'string' })),
-            ...keywordMatches.map(m => ({ ...m, type: 'keyword' })),
-            ...numberMatches.map(m => ({ ...m, type: 'number' })),
-        ].sort((a, b) => a.index! - b.index!);
-
-        lastIndex = 0;
-        allMatches.forEach((match) => {
-            if (match.index! > lastIndex) {
-                tokens.push({ type: 'text', value: line.slice(lastIndex, match.index) });
-            }
-            const colorMap: Record<string, string> = { string: colors.string, keyword: colors.keyword, number: colors.number };
-            const type = (match as any).type as 'string' | 'keyword' | 'number';
-            tokens.push({ type, value: match[0], color: colorMap[type] || 'var(--color-text-primary)' });
-            lastIndex = match.index! + match[0].length;
-        });
-
-        if (lastIndex < line.length) {
-            tokens.push({ type: 'text', value: line.slice(lastIndex) });
-        }
-
-        return tokens.map((token, idx) => (
-            <span key={idx} style={{ color: token.color || 'var(--color-text-primary)' }}>
-                {token.value}
-            </span>
-        )) || [<span key={line}>{line}</span>];
-    };
+    const highlightLine = (line: string): React.ReactNode[] => tokenizeLineCached(line, language);
 
     return (
         <>
@@ -1168,8 +1310,14 @@ export const SyntaxHighlighter = ({ code, language }: { code: string; language: 
             ))}
         </>
     );
-};
+});
 
+/**
+ * Right-hand artifacts sidebar: tabs for Inspiration templates, your
+ * generated files, published sites, and a terminal. Auto-selects the
+ * artifact named by `selectedFileName`, and delegates plan approval to
+ * `onApprovePlan`.
+ */
 export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprovePlan, selectedFileName, projectPath }: ArtifactsPanelProps) {
     const [activeTab, setActiveTab] = useState<'inspiration' | 'yours' | 'sites' | 'terminal'>('yours');
     const [artifacts, setArtifacts] = useState<Artifact[]>([]);
@@ -1234,11 +1382,66 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
         }
     }, [isOpen]);
 
+    // NR-PERF-07: ask main to fs-watch this project's artifacts dir while
+    // the panel is open; failures are non-blocking (watch retries on reopen).
+    useEffect(() => {
+        if (!isOpen || !projectPath) return;
+        Promise.resolve((window as any).electronAPI?.artifacts?.watchProject?.(projectPath))
+            .catch((e) => console.error('Failed to watch project artifacts', e));
+    }, [isOpen, projectPath]);
+
+    // NR-PERF-07: push-refresh — main broadcasts debounced `artifacts:changed`
+    // events, so refetch here instead of polling. Skips events for other
+    // projects; coalesces bursts while a refetch is already in-flight.
+    const artifactsRefetchInFlightRef = React.useRef(false);
+    const artifactsRefetchQueuedRef = React.useRef(false);
+    const saveSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    useEffect(() => {
+        if (!isOpen) return;
+        const artifactsApi = (window as any).electronAPI?.artifacts;
+        if (!artifactsApi?.onArtifactsChanged) return;
+        const handleArtifactsChanged = (info: { source: string; projectPath?: string }) => {
+            if (!shouldRefreshArtifacts(info ?? { source: '' }, projectPath ?? undefined)) return;
+            if (artifactsRefetchInFlightRef.current) {
+                // A refetch is already running for this burst — flag a
+                // trailing re-run instead of stacking parallel fetches.
+                artifactsRefetchQueuedRef.current = true;
+                return;
+            }
+            artifactsRefetchInFlightRef.current = true;
+            Promise.resolve()
+                .then(async () => {
+                    await loadArtifacts();
+                    await loadAllSites();
+                })
+                .catch((e) => console.error('Failed to refresh artifacts on change', e))
+                .finally(() => {
+                    artifactsRefetchInFlightRef.current = false;
+                    if (artifactsRefetchQueuedRef.current) {
+                        artifactsRefetchQueuedRef.current = false;
+                        handleArtifactsChanged(info);
+                    }
+                });
+        };
+        const unsub = artifactsApi.onArtifactsChanged(handleArtifactsChanged);
+        // Prefer the returned unsubscribe fn; fall back to offArtifactsChanged
+        // with the same cb for preload builds that don't return one.
+        return () => {
+            if (typeof unsub === 'function') {
+                unsub();
+            } else if (artifactsApi.offArtifactsChanged) {
+                artifactsApi.offArtifactsChanged(handleArtifactsChanged);
+            }
+        };
+    }, [isOpen, projectPath]);
+
     // Auto-enter edit mode for plan files
     useEffect(() => {
         if (selectedCode) {
             setEditedContent(selectedCode.content);
             const isPlan = selectedCode.name === 'execution_plan.md';
+            // Plans always open in edit mode (review-then-approve flow); other
+            // previewable types open in preview mode by default.
             setIsEditing(isPlan);
             
             // Auto-switch to preview for specific file types if NOT a plan
@@ -1258,6 +1461,8 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
             setArtifactPath(displayPath);
 
             // Resolve actual absolute path for file open operations
+            // (project-scoped paths are already absolute; only the '~'-prefixed
+            // global path relies on OS expansion downstream).
             const homeDir = displayPath.startsWith('~')
                 ? displayPath // OS will expand
                 : displayPath;
@@ -1271,7 +1476,9 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
             // We use a slight delay to not block the initial render
             const extForPreload = selectedCode.name.split('.').pop()?.toLowerCase();
             if (extForPreload) {
-                setTimeout(() => {
+                // CU-LEAK-09: capture timer so re-runs (rapid file switches) cancel
+                // the stale preload before it can overwrite openApps for the wrong file.
+                const preloadTimer = setTimeout(() => {
                     const preloadPath = projectPath
                         ? `${projectPath}/.everfern/artifacts/${selectedCode.name}`
                         : `~/.everfern/artifacts/${selectedCode.chatId}/${selectedCode.name}`;
@@ -1279,9 +1486,15 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                         .then((apps: any[]) => { if (apps?.length) setOpenApps(apps); })
                         .catch(() => {});
                 }, 200);
+                return () => { clearTimeout(preloadTimer); };
             }
         }
     }, [selectedCode]);
+
+    // CU-LEAK-09: saveSuccess toast timer must not fire after unmount.
+    useEffect(() => () => {
+        if (saveSuccessTimerRef.current) clearTimeout(saveSuccessTimerRef.current);
+    }, []);
 
     // Handle auto-selection of specific file from props
     useEffect(() => {
@@ -1303,6 +1516,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
         try {
             const results = await (window as any).electronAPI?.artifacts.list(undefined, projectPath); // No chatId = load all for this project/global
             // Filter out exec/ temp files (Python scripts, shell scripts, JS/TS temp files)
+            // — these are agent scratch scripts, not user-facing deliverables.
             const EXEC_EXTS = ['.py', '.sh', '.bat', '.ps1', '.js', '.ts', '.tsx', '.jsx'];
             const filtered = (results || []).filter((a: any) => {
                 const ext = '.' + (a.name.split('.').pop() || '');
@@ -1370,7 +1584,8 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
             await (window as any).electronAPI?.artifacts.write(selectedCode.chatId, selectedCode.name, editedContent, projectPath);
             setSelectedCode(prev => prev ? { ...prev, content: editedContent } : null);
             setSaveSuccess(true);
-            setTimeout(() => setSaveSuccess(false), 2000);
+            if (saveSuccessTimerRef.current) clearTimeout(saveSuccessTimerRef.current);
+            saveSuccessTimerRef.current = setTimeout(() => setSaveSuccess(false), 2000);
         } catch (e) {
             console.error("Error saving artifact", e);
         } finally {
@@ -1474,7 +1689,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                         position: "fixed",
                         top: 0, left: 0, right: 0, bottom: 0,
                         backgroundColor: "var(--color-bg-base)",
-                        zIndex: 9999,
+                        zIndex: 'var(--z-panel)',
                         display: "flex",
                         flexDirection: "column",
                         color: "var(--color-text-primary)",
@@ -1609,7 +1824,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                                         position: 'absolute',
                                                         top: 'calc(100% + 6px)',
                                                         left: 0,
-                                                        zIndex: 9999,
+                                                        zIndex: 'var(--z-dropdown)',
                                                         backgroundColor: 'var(--color-bg-elevated)',
                                                         border: '1px solid var(--color-border)',
                                                         borderRadius: 12,
@@ -1732,6 +1947,8 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                         }
                                         return (
                                             <>
+                                                {/* Fallback preview: sandboxes the artifact HTML in an
+                                                    iframe (scripts allowed, no top navigation). */}
                                                 <iframe 
                                                     srcDoc={(editedContent || selectedCode.content)}
                                                     style={{ width: "100%", height: "100%", border: "none" }}
@@ -2261,7 +2478,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                             inset: 0,
                             backgroundColor: "rgba(0,0,0,0.5)",
                             backdropFilter: "blur(6px)",
-                            zIndex: 10000,
+                            zIndex: 'var(--z-modal)',
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",

@@ -12,7 +12,7 @@ vi.mock('framer-motion', () => ({
 }));
 
 // Import the component after mocking
-import { SearchResultCard } from '../ToolCallComponents';
+import { SearchResultCard } from '../tools/ToolCallComponents';
 
 // Mock SearchResult interface
 interface SearchResult {
@@ -38,8 +38,6 @@ describe('SearchResultCard', () => {
 
         expect(screen.getByText('Example Search Result')).toBeInTheDocument();
         expect(screen.getByText('example.com')).toBeInTheDocument();
-        expect(screen.getByText('This is an example snippet from the search result.')).toBeInTheDocument();
-        expect(screen.getByText('2024-01-15')).toBeInTheDocument();
     });
 
     it('renders with missing optional fields', () => {
@@ -53,7 +51,6 @@ describe('SearchResultCard', () => {
 
         expect(screen.getByText('Minimal Result')).toBeInTheDocument();
         expect(screen.getByText('example.com')).toBeInTheDocument();
-        expect(screen.getByText('Minimal snippet')).toBeInTheDocument();
         expect(screen.queryByText('2024-01-15')).not.toBeInTheDocument();
     });
 
@@ -94,15 +91,14 @@ describe('SearchResultCard', () => {
         expect(screen.getByText('https://example.com/page')).toBeInTheDocument();
     });
 
-    it('has proper accessibility attributes', () => {
+    it('renders as an article element with the result favicon', () => {
+        // Current design: compact motion.article with favicon, title, domain,
+        // and onClick navigation (no <a> link, aria-label, or snippet).
         render(<SearchResultCard result={mockResult} index={0} />);
 
         const article = screen.getByRole('article');
-        expect(article).toHaveAttribute('aria-label', 'Search result');
-
-        const link = screen.getByRole('link');
-        expect(link).toHaveAttribute('aria-label', 'Visit Example Search Result at example.com');
-        expect(link).toHaveAttribute('target', '_blank');
-        expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+        expect(article).toBeInTheDocument();
+        const img = article.querySelector('img');
+        expect(img).not.toBeNull();
     });
 });

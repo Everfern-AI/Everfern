@@ -115,18 +115,29 @@ export function ensurePlaywrightChromium(): void {
 
   const { bin, args } = getPlaywrightBin();
 
-  // On Windows, .cmd files need to be executed via cmd /c
-  const isWindows = process.platform === 'win32';
-  const finalBin = isWindows && bin.endsWith('.cmd') ? 'cmd' : bin;
-  const finalArgs = isWindows && bin.endsWith('.cmd') ? ['/c', bin, ...args] : args;
-
-  execFile(finalBin, finalArgs, { timeout: 5 * 60 * 1000, shell: true }, (err, stdout, stderr) => {
-    if (err) {
-      console.error('[Playwright] Failed to install Chromium:', err.message);
-      if (stderr) console.error('[Playwright] stderr:', stderr.trim());
-      return;
-    }
-    if (stdout) console.log('[Playwright] install output:', stdout.trim());
-    console.log('[Playwright] Chromium installed successfully.');
-  });
+  // MP-XPLAT-06: never shell:true. Shell interpolation with a .cmd path is a
+  // quoting/injection hazard; instead, win32 .cmd shims are executed via
+  // cmd.exe with explicit, separately-quoted arguments (/s /c honor the given
+  // argument boundaries). Non-win32 runs the binary directly.
+  if (process.platform === 'win32' && bin.endsWith('.cmd')) {
+    execFile('cmd.exe', ['/d', '/s', '/c', bin, ...args], { timeout: 5 * 60 * 1000 }, (err, stdout, stderr) => {
+      if (err) {
+        console.error('[Playwright] Failed to install Chromium:', err.message);
+        if (stderr) console.error('[Playwright] stderr:', stderr.trim());
+        return;
+      }
+      if (stdout) console.log('[Playwright] install output:', stdout.trim());
+      console.log('[Playwright] Chromium installed successfully.');
+    });
+  } else {
+    execFile(bin, args, { timeout: 5 * 60 * 1000 }, (err, stdout, stderr) => {
+      if (err) {
+        console.error('[Playwright] Failed to install Chromium:', err.message);
+        if (stderr) console.error('[Playwright] stderr:', stderr.trim());
+        return;
+      }
+      if (stdout) console.log('[Playwright] install output:', stdout.trim());
+      console.log('[Playwright] Chromium installed successfully.');
+    });
+  }
 }

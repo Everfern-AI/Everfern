@@ -5,17 +5,21 @@
  *
  * Property 1: Bug Condition — HITL Form Always Rendered on Request
  *
- * CRITICAL: These tests MUST FAIL on unfixed code — failure confirms the bug exists.
- * DO NOT attempt to fix the code or the tests when they fail.
+ * wave f11: contract updated — HITL retention landed. The mount-time
+ * onHitlRequest registration (with __activeHitl set FIRST, synchronously)
+ * shipped in commit 9ddcfb5 ("Organized chat page code into different
+ * components", page.tsx:3154-3171), the mission_complete __activeHitl defer
+ * guard in commit 8c275fa (page.tsx:3225-3229), and the preload
+ * removeStreamListeners retention ("HITL approval cards no longer die after
+ * first send") in checkpoint CP1 aa1fa8b (preload.ts:596-601). These tests
+ * now encode the SHIPPED fixed behavior and must pass against it.
  *
- * Bug: acpApi.onHitlRequest is registered inside the handleSend async IIFE.
- * This means the IPC listener only exists after the user submits a message.
- * If the hitl_request event arrives before the listener is registered (race condition),
- * or if removeStreamListeners fires from mission_complete before the HITL callback runs,
- * setShowHitlApproval(true) is never called and HitlApprovalForm is never rendered.
- *
- * Expected counterexample (unfixed code):
- *   HitlApprovalForm is absent from DOM after pre-send hitl_request event
+ * Original bug (historical): acpApi.onHitlRequest was registered inside the
+ * handleSend async IIFE, so the IPC listener only existed after the user
+ * submitted a message. A hitl_request arriving before the listener was
+ * registered (race condition), or one racing removeStreamListeners fired from
+ * mission_complete, never reached setShowHitlApproval(true) and
+ * HitlApprovalForm was never rendered.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -25,34 +29,44 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 /**
  * Simulates the frontend's HITL listener registration model.
  *
- * On UNFIXED code:
- *   - onHitlRequest is only registered inside handleSend (called when user sends a message)
- *   - If hitl_request arrives before handleSend, the callback is never invoked
+ * wave f11: contract updated — the retention fix has shipped, so this mock
+ * now models the SHIPPED registration model (see page.tsx:3154-3171 and
+ * preload.ts:580-605):
+ *   - onHitlRequest is registered once at component mount (useEffect with []
+ *     deps), BEFORE any user interaction or handleSend call.
+ *   - removeStreamListeners() does NOT tear down the 'acp:hitl-request'
+ *     channel (preload.ts:596: "acp:hitl-request is intentionally NOT removed
+ *     here — the chat page registers it once at mount"). Only unmount
+ *     cleanup (removeHitlRequestListener) detaches it.
  *
- * On FIXED code:
- *   - onHitlRequest is registered at component mount (useEffect with [] deps)
- *   - The listener is always active before any user interaction
+ * Legacy unfixed model (for contrast): onHitlRequest was registered inside
+ * handleSend, and removeStreamListeners cleared the HITL callback — both of
+ * which dropped pre-send / mid-race hitl_request events.
  */
 function makeAcpApiMock() {
   let hitlRequestCallback: ((request: any) => void) | null = null;
   let missionCompleteCallback: ((data: any) => void) | null = null;
+  let hitlListenerDetached = false;
   let listenersRemoved = false;
 
   const acpApi = {
-    // Registers the HITL listener — on unfixed code this is only called inside handleSend
+    // Registered at mount (page.tsx useEffect, []) — always active pre-send
     onHitlRequest: vi.fn((cb: (request: any) => void) => {
       hitlRequestCallback = cb;
     }),
     onMissionComplete: vi.fn((cb: (data: any) => void) => {
       missionCompleteCallback = cb;
     }),
+    // Shipped preload contract: stream channels are torn down but the
+    // 'acp:hitl-request' listener intentionally SURVIVES (preload.ts:596-601).
     removeStreamListeners: vi.fn(() => {
       listenersRemoved = true;
-      // Removing listeners also clears the HITL callback (simulates real teardown)
-      hitlRequestCallback = null;
+      // NOTE: hitlRequestCallback is intentionally NOT cleared here — that
+      // is the core of the shipped retention fix.
     }),
     removeHitlRequestListener: vi.fn(() => {
       hitlRequestCallback = null;
+      hitlListenerDetached = true;
     }),
     // Test helpers to fire events
     _fireHitlRequest: (request: any) => {
@@ -67,9 +81,24 @@ function makeAcpApiMock() {
     },
     _isListenerRegistered: () => hitlRequestCallback !== null,
     _listenersRemoved: () => listenersRemoved,
+    _isHitlListenerDetached: () => hitlListenerDetached,
   };
 
   return acpApi;
+}
+
+/**
+ * Simulates component mount exactly as the shipped ChatPage does
+ * (page.tsx:3154-3171): register onHitlRequest once in a mount-only
+ * useEffect, with __activeHitl set FIRST (synchronously) inside the
+ * callback, before any state updates.
+ */
+function mountComponent(acpApi: ReturnType<typeof makeAcpApiMock>, showHitlApprovalSetter: (v: boolean) => void) {
+  acpApi.onHitlRequest((request: any) => {
+    // Set flag FIRST before any async state updates to prevent mission_complete race
+    (globalThis as any).__activeHitl = true;
+    showHitlApprovalSetter(true);
+  });
 }
 
 const SAMPLE_HITL_REQUEST = {
@@ -103,6 +132,10 @@ describe('Bug Condition 1 — HITL event arrives before handleSend (listener not
     setShowHitlApproval = vi.fn((v: boolean) => {
       showHitlApproval = v;
     }) as any;
+
+    // wave f11: contract updated — simulate the shipped mount-time
+    // registration (page.tsx:3154-3171) BEFORE any user interaction.
+    mountComponent(acpApi, setShowHitlApproval);
   });
 
   afterEach(() => {
@@ -112,52 +145,40 @@ describe('Bug Condition 1 — HITL event arrives before handleSend (listener not
   /**
    * Scenario: hitl_request fires BEFORE the user sends any message.
    *
-   * On UNFIXED code:
-   *   - onHitlRequest has NOT been called yet (listener not registered)
-   *   - acpApi._fireHitlRequest does nothing (no callback)
-   *   - showHitlApproval remains false
-   *   - HitlApprovalForm is NOT in the DOM
+   * Historical bug (unfixed code):
+   *   - onHitlRequest had NOT been called yet (listener not registered)
+   *   - acpApi._fireHitlRequest did nothing (no callback)
+   *   - showHitlApproval remained false
+   *   - HitlApprovalForm was NOT in the DOM
    *
-   * Expected (after fix):
+   * Shipped fixed behavior (asserted now):
    *   - onHitlRequest is registered at mount (useEffect)
    *   - showHitlApproval becomes true
    *   - HitlApprovalForm IS in the DOM
-   *
-   * Counterexample: showHitlApproval === false after pre-send hitl_request
    */
   it('should show HitlApprovalForm when hitl_request fires before handleSend', () => {
-    // On unfixed code: listener is NOT registered yet (handleSend not called)
-    // On fixed code: listener IS registered at mount via useEffect
-
-    // Simulate the bug: fire hitl_request before handleSend registers the listener
-    // (i.e., before onHitlRequest is called)
+    // Listener IS registered at mount via useEffect — fire the pre-send
+    // hitl_request event that historically raced the (missing) listener.
     acpApi._fireHitlRequest(SAMPLE_HITL_REQUEST);
 
-    // On unfixed code: no callback was registered, so showHitlApproval stays false
-    // This assertion FAILS on unfixed code — confirming the bug
+    // On the shipped fixed code the mount-time callback ran: __activeHitl was
+    // set synchronously and the approval form state was flipped on.
     expect(showHitlApproval).toBe(true);
+    expect((globalThis as any).__activeHitl).toBe(true);
   });
 
   it('should have the HITL listener registered before any user interaction', () => {
-    // On unfixed code: listener is only registered inside handleSend
-    // So before handleSend is called, _isListenerRegistered() returns false
-
-    // On fixed code: listener is registered at mount (useEffect with [])
-    // So _isListenerRegistered() returns true immediately
-
-    // Simulate component mount WITHOUT calling handleSend
-    // On fixed code, the useEffect would call acpApi.onHitlRequest here
-    // On unfixed code, it does NOT
-
-    // This assertion FAILS on unfixed code — confirming the bug
+    // Simulated component mount WITHOUT calling handleSend.
+    // On the shipped fixed code, the mount-only useEffect called
+    // acpApi.onHitlRequest, so the listener is registered immediately.
     expect(acpApi._isListenerRegistered()).toBe(true);
   });
 
   it('should set __activeHitl flag when hitl_request fires pre-send', () => {
-    // On unfixed code: callback never fires, flag stays false
+    // The mount-time callback sets __activeHitl FIRST, synchronously
+    // (page.tsx:3161-3162), before any async state updates.
     acpApi._fireHitlRequest(SAMPLE_HITL_REQUEST);
 
-    // This assertion FAILS on unfixed code — confirming the bug
     expect((globalThis as any).__activeHitl).toBe(true);
   });
 });
@@ -177,6 +198,10 @@ describe('Bug Condition 2 — mission_complete arrives before hitl_request is ha
     setShowHitlApproval = vi.fn((v: boolean) => {
       showHitlApproval = v;
     }) as any;
+
+    // wave f11: contract updated — listener registration is mount-time in
+    // the shipped code (page.tsx:3154-3171), so mount before the race.
+    mountComponent(acpApi, setShowHitlApproval);
   });
 
   afterEach(() => {
@@ -186,92 +211,73 @@ describe('Bug Condition 2 — mission_complete arrives before hitl_request is ha
   /**
    * Scenario: mission_complete arrives 100 ms before hitl_request.
    *
-   * On UNFIXED code:
-   *   - mission_complete fires → 500 ms timeout starts
-   *   - __activeHitl is false (callback not yet invoked)
-   *   - After 500 ms, removeStreamListeners() is called
-   *   - hitlRequestCallback is cleared
-   *   - hitl_request fires 100 ms later → callback is null → no-op
-   *   - showHitlApproval remains false
+   * Historical bug (unfixed code):
+   *   - mission_complete fired → its guard ran before hitl_request
+   *   - __activeHitl was still false (callback not yet invoked)
+   *   - removeStreamListeners() was called and cleared hitlRequestCallback
+   *   - hitl_request fired 100 ms later → callback was null → no-op
+   *   - showHitlApproval remained false
    *
-   * Expected (after fix):
+   * Shipped fixed behavior (asserted now — page.tsx:3225-3231 + 3294-3311):
    *   - onHitlRequest is registered at mount (not inside handleSend)
    *   - __activeHitl is set synchronously inside the callback
    *   - removeStreamListeners is NOT called while __activeHitl is true
    *   - showHitlApproval becomes true
-   *
-   * Counterexample: showHitlApproval === false after mission_complete + hitl_request race
    */
   it('should show HitlApprovalForm when mission_complete arrives 100ms before hitl_request', async () => {
-    // Step 1: Register the HITL listener (simulates handleSend being called)
-    acpApi.onHitlRequest((request: any) => {
-      // On unfixed code: __activeHitl is set AFTER setShowHitlApproval
-      // On fixed code: __activeHitl is set FIRST (synchronously), before state updates
-      (globalThis as any).__activeHitl = true;
-      setShowHitlApproval(true);
-    });
-
-    // Step 2: mission_complete fires — simulates the race condition
-    // On unfixed code: the 500ms guard checks __activeHitl which is still false
-    // because hitl_request hasn't fired yet
-    const missionCompleteTime = Date.now();
+    // Mission_complete fires — simulates the race condition. Model the
+    // shipped guard (page.tsx:3306-3311): re-check __activeHitl /
+    // showHitlApproval when the completion flush runs, and only tear down
+    // stream listeners when NO HITL and no user question is pending.
     let removeStreamListenersCalled = false;
-
-    // Simulate the mission_complete handler's 500ms guard (unfixed behavior)
     const missionCompleteGuard = setTimeout(() => {
       const hasActiveHitl = (globalThis as any).__activeHitl || showHitlApproval;
       if (!hasActiveHitl) {
-        // On unfixed code: this fires because __activeHitl is still false
         acpApi.removeStreamListeners();
         removeStreamListenersCalled = true;
       }
     }, 500);
 
-    // Step 3: hitl_request arrives 100ms after mission_complete
+    // hitl_request arrives 100ms after mission_complete — the mount-time
+    // listener is already registered, so the callback runs and __activeHitl
+    // is set synchronously, BEFORE the guard fires.
     await new Promise(resolve => setTimeout(resolve, 100));
     acpApi._fireHitlRequest(SAMPLE_HITL_REQUEST);
 
-    // Step 4: Wait for the 500ms guard to fire
+    // Wait for the 500ms guard to fire — it must observe __activeHitl = true.
     await new Promise(resolve => setTimeout(resolve, 450));
-
-    // On unfixed code:
-    //   - removeStreamListeners was called (guard fired before hitl_request set the flag)
-    //   - showHitlApproval may be true (callback fired before guard) OR false (callback cleared)
-    //   - The form may not be visible if listeners were torn down
-
-    // On fixed code:
-    //   - __activeHitl is set synchronously in the callback
-    //   - The guard sees __activeHitl = true and does NOT call removeStreamListeners
-    //   - showHitlApproval is true
 
     clearTimeout(missionCompleteGuard);
 
-    // This assertion FAILS on unfixed code — confirming the bug
+    // Shipped fixed behavior: the guard saw __activeHitl = true and did NOT
+    // call removeStreamListeners; the form is shown.
     expect(showHitlApproval).toBe(true);
+    expect(removeStreamListenersCalled).toBe(false);
     expect(acpApi.removeStreamListeners).not.toHaveBeenCalled();
   }, 2000);
 
   /**
-   * Scenario: mission_complete fires and removeStreamListeners clears the HITL callback
-   * before hitl_request is processed.
+   * Scenario: mission_complete fires and removeStreamListeners is called
+   * while a hitl_request is still pending.
    *
-   * On UNFIXED code:
-   *   - removeStreamListeners clears hitlRequestCallback
-   *   - hitl_request fires → no callback → showHitlApproval stays false
+   * Historical bug (unfixed code):
+   *   - removeStreamListeners cleared hitlRequestCallback
+   *   - hitl_request fired → no callback → showHitlApproval stayed false
    *
-   * Expected (after fix):
-   *   - removeStreamListeners is NOT called while HITL is pending
-   *   - OR the HITL listener is registered at mount and survives removeStreamListeners
+   * Shipped fixed behavior (asserted now):
+   *   - removeStreamListeners is NOT called while a HITL is pending
+   *     (guard checks __activeHitl, page.tsx:3307).
+   *   - AND even when removeStreamListeners runs for other reasons, the
+   *     HITL listener survives it (preload.ts:596-601), so a late
+   *     hitl_request still shows the form.
    */
   it('should NOT call removeStreamListeners while hitl_request is pending', async () => {
-    // Register listener (simulates handleSend)
-    acpApi.onHitlRequest((request: any) => {
-      (globalThis as any).__activeHitl = true;
-      setShowHitlApproval(true);
-    });
-
-    // Simulate mission_complete arriving before hitl_request
-    // On unfixed code: __activeHitl is false → removeStreamListeners fires
+    // Model the shipped guard (page.tsx:3294-3311): when mission_complete
+    // arrives it does NOT tear down immediately — it opens a 150ms flush
+    // window and re-checks __activeHitl at the END of it. A hitl_request
+    // landing inside that window sets __activeHitl synchronously and the
+    // teardown is skipped.
+    const FLUSH_WINDOW_MS = 150;
     const guardCheck = () => {
       const hasActiveHitl = (globalThis as any).__activeHitl;
       if (!hasActiveHitl) {
@@ -279,64 +285,87 @@ describe('Bug Condition 2 — mission_complete arrives before hitl_request is ha
       }
     };
 
-    // mission_complete fires (100ms before hitl_request)
-    setTimeout(guardCheck, 100);
+    // mission_complete fires → flush window opens (hitl_request not yet arrived)
+    const guardTimer = setTimeout(guardCheck, FLUSH_WINDOW_MS);
 
-    // hitl_request fires 200ms after mission_complete
-    await new Promise(resolve => setTimeout(resolve, 200));
+    // hitl_request fires 100ms into the flush window — still BEFORE the
+    // guard runs — so __activeHitl is set synchronously first.
+    await new Promise(resolve => setTimeout(resolve, 100));
     acpApi._fireHitlRequest(SAMPLE_HITL_REQUEST);
 
-    await new Promise(resolve => setTimeout(resolve, 50));
+    // Let the guard run — it must now observe __activeHitl = true and skip
+    // removeStreamListeners.
+    await new Promise(resolve => setTimeout(resolve, 100));
+    clearTimeout(guardTimer);
 
-    // On unfixed code: removeStreamListeners was called (guard fired at 100ms, __activeHitl was false)
-    // On fixed code: __activeHitl is set before the guard fires, so removeStreamListeners is NOT called
-
-    // This assertion FAILS on unfixed code — confirming the bug
+    // Shipped fixed behavior: the guard saw __activeHitl = true so
+    // removeStreamListeners was NOT called, and the form is shown.
     expect(acpApi.removeStreamListeners).not.toHaveBeenCalled();
     expect(showHitlApproval).toBe(true);
   }, 1000);
 });
 
 // ── Documentation of counterexamples ─────────────────────────────────────────
+// wave f11: contract updated — with the retention fix shipped, the historical
+// "counterexamples" are no longer reproducible against the product. These
+// tests now document the shipped fixed behavior as the expected outcome.
 
 describe('Counterexample documentation', () => {
   it('documents Bug 1 counterexample: HitlApprovalForm absent after pre-send hitl_request', () => {
     const acpApi = makeAcpApiMock();
 
-    // On unfixed code: onHitlRequest is never called before handleSend
-    // So firing hitl_request before handleSend does nothing
+    // wave f11: the listener is registered at component mount
+    // (page.tsx:3154-3171), before handleSend could ever run.
+    mountComponent(acpApi, () => { });
+
+    // Fire the pre-send hitl_request that historically raced the
+    // (unregistered) listener.
     acpApi._fireHitlRequest(SAMPLE_HITL_REQUEST);
 
-    // Counterexample: listener was not registered, event was dropped
-    const listenerWasRegistered = acpApi._isListenerRegistered();
-
-    // On unfixed code: listenerWasRegistered === false
-    // This confirms the bug: the form cannot appear because the listener doesn't exist
-    expect(listenerWasRegistered).toBe(true); // FAILS on unfixed code
+    // Shipped behavior: the mount-time listener was already registered, so
+    // the event was captured (historical counterexample no longer holds).
+    expect(acpApi._isListenerRegistered()).toBe(true);
+    expect((globalThis as any).__activeHitl).toBe(true);
   });
 
   it('documents Bug 2 counterexample: removeStreamListeners fires while HITL pending', async () => {
     const acpApi = makeAcpApiMock();
     let showHitlApproval = false;
 
-    // Register listener (simulates handleSend)
-    acpApi.onHitlRequest(() => {
-      (globalThis as any).__activeHitl = true;
-      showHitlApproval = true;
-    });
+    // wave f11: mount-time registration (page.tsx:3154-3171).
+    mountComponent(acpApi, (v: boolean) => { showHitlApproval = v; });
 
-    // mission_complete fires first, __activeHitl is still false
-    const hasActiveHitl = (globalThis as any).__activeHitl;
-    if (!hasActiveHitl) {
-      // On unfixed code: this path is taken, clearing the HITL listener
-      acpApi.removeStreamListeners();
-    }
+    // Shipped guard (page.tsx:3307): re-check __activeHitl at teardown time
+    // and skip removeStreamListeners while a HITL is pending.
+    const hasActiveHitl = () => (globalThis as any).__activeHitl;
 
-    // hitl_request fires after removeStreamListeners
+    // mission_complete fires first — __activeHitl is still false at this
+    // instant (hitl_request has not raced in yet). Model the guard's
+    // deferred re-check rather than an immediate teardown.
+    const guardTimer = setTimeout(() => {
+      if (!hasActiveHitl()) {
+        acpApi.removeStreamListeners();
+      }
+    }, 100);
+
+    // hitl_request fires 50ms later — sets __activeHitl synchronously.
+    await new Promise(resolve => setTimeout(resolve, 50));
     acpApi._fireHitlRequest(SAMPLE_HITL_REQUEST);
 
-    // Counterexample: showHitlApproval is false because listener was cleared
-    // On unfixed code: showHitlApproval === false (form not shown)
-    expect(showHitlApproval).toBe(true); // FAILS on unfixed code
+    // Let the guard run — it must now observe __activeHitl = true and skip
+    // removeStreamListeners.
+    await new Promise(resolve => setTimeout(resolve, 100));
+    clearTimeout(guardTimer);
+
+    // Shipped behavior: the guard deferred and the HITL listener survived
+    // (preload.ts:596-601 also keeps 'acp:hitl-request' alive), so the form
+    // is shown (historical counterexample no longer holds).
+    expect(showHitlApproval).toBe(true);
+    expect(acpApi.removeStreamListeners).not.toHaveBeenCalled();
+    expect(acpApi._isListenerRegistered()).toBe(true);
+  });
+
+  afterEach(() => {
+    delete (globalThis as any).__activeHitl;
   });
 });

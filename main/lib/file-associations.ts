@@ -3,6 +3,18 @@
  *
  * Cross-platform: resolve which apps can open a given file extension,
  * fetching native icons via Electron's app.getFileIcon().
+ *
+ * Platform resolution ORDER (with per-platform fallbacks when the primary
+ * source is missing — registry absent, lsregister empty, no MIME match):
+ *  - win32:  HKCR registry (OpenWithProgids → OpenWithList), then a
+ *            well-known-editors seed list.
+ *  - darwin: LaunchServices (lsregister dump), then well-known /Applications
+ *            bundles.
+ *  - linux:  MIME-matched .desktop files across system + user application
+ *            dirs; no xdg-specific fallback list exists, so no matches
+ *            simply yields [].
+ *
+ * Results are cached per normalized extension for the process lifetime.
  */
 
 import * as fs from 'fs';
@@ -14,6 +26,69 @@ import { app, shell } from 'electron';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
+
+// ── winreg is Windows-only. Lazy dynamic-import (injected seam, MP-XPLAT-02)
+//    so non-Windows platforms never load it and tests can stub 'winreg'. ──
+// registryLoadAttempted guards against retrying the import on every call —
+// a failed load (missing package) is remembered for the process lifetime.
+let registryLib: any = null;
+let registryLoadAttempted = false;
+
+/**
+ * Resolve the winreg module on Windows (once). Returns the module, or null on
+ * non-Windows platforms / failed load — callers must treat null as "registry
+ * unavailable" and fall back gracefully.
+ */
+async function getRegistryLib(): Promise<any> {
+  if (!registryLoadAttempted && process.platform === 'win32') {
+    registryLoadAttempted = true;
+    try {
+      const mod: any = await import('winreg');
+      registryLib = mod && mod.__esModule && mod.default ? mod.default : mod;
+    } catch (e) {
+      console.warn('[FileAssociations] winreg unavailable — Windows registry lookup disabled:', e);
+    }
+  }
+  return registryLib;
+}
+
+// Registry access helpers (winreg-based — no shell `reg query` string parsing).
+// Both resolve empty/null on any failure (graceful degradation).
+// Both target HKCR (HKEY_CLASSES_ROOT): the merged system+user view of file
+// associations, so one hive covers both machine-wide and per-user entries.
+/** List all values under an HKCR key; resolves [] on any failure. */
+function regListValues(key: string): Promise<any[]> {
+  return new Promise(async (resolve) => {
+    const lib = await getRegistryLib();
+    if (!lib) return resolve([]);
+    try {
+      const regKey = new lib({ hive: lib.HKCR, key });
+      regKey.values((err: any, values: any[]) => {
+        if (err || !Array.isArray(values)) resolve([]);
+        else resolve(values);
+      });
+    } catch {
+      resolve([]);
+    }
+  });
+}
+
+/** Read a value under an HKCR key (default value when name omitted); resolves null on any failure. */
+function regGetValue(key: string, name: string = ''): Promise<string | null> {
+  return new Promise(async (resolve) => {
+    const lib = await getRegistryLib();
+    if (!lib) return resolve(null);
+    try {
+      const regKey = new lib({ hive: lib.HKCR, key });
+      regKey.get(name, (err: any, item: any) => {
+        if (err || !item) resolve(null);
+        else resolve(item.value);
+      });
+    } catch {
+      resolve(null);
+    }
+  });
+}
 
 export interface FileApp {
   name: string;       // Display name
@@ -31,10 +106,20 @@ const COMMON_FILE_EXTENSIONS = [
   'mp3', 'wav', 'ogg', 'm4a', 'mp4', 'webm', 'mov',
 ];
 
+// Result cache: normalized ext → resolved apps. Entries persist for the
+// process lifetime (successes AND failures — a failed lookup caches [] so it
+// is not retried).
 const appsByExt = new Map<string, FileApp[]>();
+// In-flight lookups: concurrent requests for the same ext share one promise
+// (single-flight dedupe) instead of racing duplicate platform scans.
 const pendingAppsByExt = new Map<string, Promise<FileApp[]>>();
 let preloadPromise: Promise<void> | null = null;
 
+/**
+ * Normalize a file path or raw extension string to a cache-key extension
+ * (lowercased, dot-stripped). Dotfiles (.gitignore, .env, ...) map to their
+ * own keys since path.extname() would not return them.
+ */
 function normalizeExtension(filePathOrExt: string): string {
   const input = String(filePathOrExt || '').trim();
   const base = path.basename(input).toLowerCase();
@@ -48,6 +133,12 @@ function normalizeExtension(filePathOrExt: string): string {
   return input.replace(/^\./, '').toLowerCase();
 }
 
+/**
+ * Resolve apps for one normalized extension via the platform-specific
+ * strategy. Cache-aware and single-flight: a completed cache entry returns
+ * immediately, concurrent callers share the in-flight promise. Failures
+ * resolve to [] (and are cached as such) rather than rejecting.
+ */
 async function resolveAppsForExt(ext: string): Promise<FileApp[]> {
   const normalizedExt = normalizeExtension(ext);
   if (!normalizedExt) return [];
@@ -55,6 +146,8 @@ async function resolveAppsForExt(ext: string): Promise<FileApp[]> {
   if (pendingAppsByExt.has(normalizedExt)) return pendingAppsByExt.get(normalizedExt)!;
 
   const loadPromise = (async () => {
+    // Dispatch by os.platform() (runtime value) — mirrors how tests stub the
+    // platform to exercise each strategy.
     const platform = os.platform();
     try {
       const apps =
@@ -76,6 +169,11 @@ async function resolveAppsForExt(ext: string): Promise<FileApp[]> {
   return loadPromise;
 }
 
+/**
+ * Warm the cache for many extensions with a small worker pool — bounded
+ * concurrency keeps registry/lsregister/.desktop scans from stampeding the
+ * system all at once.
+ */
 async function warmExtsInBatches(exts: string[], concurrency = 4): Promise<void> {
   let index = 0;
   const workers = Array.from({ length: Math.min(concurrency, exts.length) }, async () => {
@@ -87,6 +185,11 @@ async function warmExtsInBatches(exts: string[], concurrency = 4): Promise<void>
   await Promise.all(workers);
 }
 
+/**
+ * Warm the app-association cache for COMMON_FILE_EXTENSIONS after Electron
+ * is ready. Idempotent: repeated calls share one preload promise; a warm
+ * failure is logged and swallowed (cache fills lazily on demand later).
+ */
 export function preloadFileAppCache(): Promise<void> {
   if (preloadPromise) return preloadPromise;
   preloadPromise = (async () => {
@@ -100,6 +203,10 @@ export function preloadFileAppCache(): Promise<void> {
   return preloadPromise;
 }
 
+/**
+ * Cache introspection for diagnostics: readiness (preload done, no lookups
+ * in flight), which extensions are cached, and which are still resolving.
+ */
 export function getFileAppCacheStatus() {
   return {
     ready: Boolean(preloadPromise) && pendingAppsByExt.size === 0,
@@ -111,6 +218,14 @@ export function getFileAppCacheStatus() {
 // ──────────────────────────────────────────────────────────────────────────────
 // Open a file with a specific app (or default app if appPath not provided)
 // ──────────────────────────────────────────────────────────────────────────────
+/**
+ * Open `filePath` with the app at `appPath`, or with the OS default handler
+ * when appPath is omitted (Electron shell.openPath). All platform branches
+ * spawn detached so the launched app outlives the main process.
+ *
+ * @throws When shell.openPath reports an error, or the Windows `start`
+ *         command exits non-zero. Linux fire-and-forget spawn never rejects.
+ */
 export async function openFileWithApp(filePath: string, appPath?: string): Promise<void> {
   const platform = os.platform();
 
@@ -130,6 +245,8 @@ export async function openFileWithApp(filePath: string, appPath?: string): Promi
     await new Promise<void>((resolve, reject) => {
       proc.once('error', reject);
       proc.once('close', (code: number | null) => {
+        // `start` returns immediately after delegating to the app — a
+        // non-zero code means the launch itself failed (bad path, bad app).
         if (code) reject(new Error(`start exited with code ${code}`));
         else resolve();
       });
@@ -150,6 +267,10 @@ export async function openFileWithApp(filePath: string, appPath?: string): Promi
 // ──────────────────────────────────────────────────────────────────────────────
 // Fetch the icon for an app executable / bundle path as a base64 data URL
 // ──────────────────────────────────────────────────────────────────────────────
+/**
+ * Best-effort icon fetch; resolves '' when Electron is not ready or the
+ * icon lookup fails, so a missing icon never drops the app from results.
+ */
 async function fetchIcon(targetPath: string): Promise<string> {
   try {
     await app.whenReady();
@@ -163,33 +284,35 @@ async function fetchIcon(targetPath: string): Promise<string> {
 // ──────────────────────────────────────────────────────────────────────────────
 // WINDOWS – query registry for associations, fall back to known editors
 // ──────────────────────────────────────────────────────────────────────────────
+// Strategy ORDER: (1) OpenWithProgids ProgIds, (2) OpenWithList exe names,
+// (3) well-known editors. Strategies append (deduped by lowercase exe path,
+// registry results first) so earlier strategies never shadow later ones.
+// Each strategy degrades independently — a failure/miss just moves on.
 async function getWindowsApps(ext: string): Promise<FileApp[]> {
   const apps: Map<string, FileApp> = new Map();
 
   // --- Strategy 1: HKCR\.<ext>\OpenWithProgids → ProgId → shell\open\command
+  // (winreg-based — replaces shell `reg query` string parsing, MP-XPLAT-02)
   try {
-    const { stdout: progids } = await execAsync(
-      `reg query "HKCR\\.${ext}\\OpenWithProgids" /s 2>nul`
-    ).catch(() => ({ stdout: '' }));
-
-    const ids = progids
-      .split('\n')
-      .map(l => l.trim())
-      .filter(l => l && !l.startsWith('HKEY') && !l.startsWith('(Default)'))
-      .map(l => l.split(/\s+/)[0])
-      .filter(Boolean);
+    const progidValues = await regListValues(`\\.${ext}\\OpenWithProgids`);
+    const ids = progidValues.map((v: any) => v && v.name).filter((n: any) => n && n !== '@');
 
     for (const id of ids) {
       try {
-        const { stdout: cmd } = await execAsync(
-          `reg query "HKCR\\${id}\\shell\\open\\command" /ve 2>nul`
-        ).catch(() => ({ stdout: '' }));
-
-        const match = cmd.match(/"([^"]+\.exe)"|([A-Za-z]:[^"\s]+\.exe)/i);
-        if (match) {
-          const exePath = match[1] || match[2];
+        const commandVal = await regGetValue(`\\${id}\\shell\\open\\command`);
+        if (commandVal) {
+          let exePath = String(commandVal).trim();
+          if (exePath.startsWith('"')) {
+            const nextQuote = exePath.indexOf('"', 1);
+            if (nextQuote !== -1) exePath = exePath.substring(1, nextQuote);
+          } else {
+            // Unquoted: strip trailing args — take up to .exe boundary
+            const m = exePath.match(/^([A-Za-z]:\\[^"]+?\.exe)/i) || exePath.match(/^(\S+\.exe)/i);
+            exePath = m ? m[1] : exePath.split(/\s+-/)[0];
+          }
           if (exePath && fs.existsSync(exePath)) {
-            const name = path.basename(exePath, '.exe')
+            const name = path.win32.basename(exePath)
+              .replace(/\.exe$/i, '')
               .replace(/[-_]/g, ' ')
               .replace(/\b\w/g, c => c.toUpperCase());
             if (!apps.has(exePath.toLowerCase())) {
@@ -202,25 +325,46 @@ async function getWindowsApps(ext: string): Promise<FileApp[]> {
     }
   } catch { /* skip */ }
 
-  // --- Strategy 2: HKCR\.<ext>\OpenWithList
+  // --- Strategy 2: HKCR\.<ext>\OpenWithList (winreg-based)
+  // Values are bare exe names (e.g. "Code.exe") — resolve via fs probe of common
+  // dirs + execFile('where', [name]) fallback (no shell, no string interpolation).
+  // ProgIds are absent for some legacy associations; OpenWithList covers them.
   try {
-    const { stdout } = await execAsync(
-      `reg query "HKCR\\.${ext}\\OpenWithList" /s 2>nul`
-    ).catch(() => ({ stdout: '' }));
+    const owlValues = await regListValues(`\\.${ext}\\OpenWithList`);
+    const exeNames = owlValues.map((v: any) => v && v.name).filter((n: any) => n && n !== '@' && /\.exe$/i.test(n));
 
-    const exeNames = stdout
-      .split('\n')
-      .map(l => l.trim())
-      .filter(l => l && !l.startsWith('HKEY') && !l.startsWith('(Default)'))
-      .map(l => l.split(/\s+/)[0])
-      .filter(n => n.endsWith('.exe'));
+    const systemRoot = process.env.SystemRoot || 'C:\\Windows';
+    const searchDirs = [
+      `${systemRoot}\\System32`,
+      `${systemRoot}`,
+      'C:\\Program Files',
+      'C:\\Program Files (x86)',
+    ];
+    const whereFallback = (exeName: string): Promise<string | null> =>
+      new Promise((resolve) => {
+        try {
+          execFile('where', [exeName], { encoding: 'utf8' }, (err: any, stdout: string) => {
+            if (err || !stdout) return resolve(null);
+            resolve(String(stdout).trim().split('\n')[0].trim() || null);
+          });
+        } catch {
+          resolve(null);
+        }
+      });
 
     for (const exeName of exeNames) {
       try {
-        const { stdout: where } = await execAsync(`where "${exeName}" 2>nul`).catch(() => ({ stdout: '' }));
-        const exePath = where.trim().split('\n')[0].trim();
+        let exePath: string | null = null;
+        for (const dir of searchDirs) {
+          const candidate = path.join(dir, exeName);
+          try {
+            if (fs.existsSync(candidate)) { exePath = candidate; break; }
+          } catch { /* skip */ }
+        }
+        if (!exePath) exePath = await whereFallback(exeName);
         if (exePath && fs.existsSync(exePath)) {
-          const name = path.basename(exePath, '.exe')
+          const name = path.win32.basename(exePath)
+            .replace(/\.exe$/i, '')
             .replace(/[-_]/g, ' ')
             .replace(/\b\w/g, c => c.toUpperCase());
           if (!apps.has(exePath.toLowerCase())) {
@@ -232,7 +376,19 @@ async function getWindowsApps(ext: string): Promise<FileApp[]> {
     }
   } catch { /* skip */ }
 
+  // Registry yielded nothing on this platform? Surface it — the known-editors
+  // fallback below IS the surfaced state for the UI (MP-XPLAT-02).
+  // Fires once per extension when both registry strategies came up empty
+  // (including the winreg-unavailable case) — the fallback list then carries
+  // the result on its own.
+  if (apps.size === 0) {
+    console.warn(`[FileAssociations] No apps found via registry for .${ext} — falling back to known editors list`);
+  }
+
   // --- Strategy 3: Well-known editors on Windows (fallback seed)
+  // Last resort when the registry has no association for the extension:
+  // probe common install locations for popular editors and filter them by
+  // extension category so an image ext doesn't offer Word, etc.
   const knownEditors: { name: string; paths: string[] }[] = [
     {
       name: 'VS Code',
@@ -288,6 +444,8 @@ async function getWindowsApps(ext: string): Promise<FileApp[]> {
   const imageExts = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif', 'ico'];
 
   for (const { name, paths: candidates } of knownEditors) {
+    // Category filter: only offer an editor when the extension plausibly
+    // belongs to it (VS Code/Sublime accept all text-ish types via textExts).
     if (name === 'Microsoft Word' && !docExts.includes(ext)) continue;
     if (name === 'Microsoft Excel' && !sheetExts.includes(ext)) continue;
     if (name === 'Microsoft PowerPoint' && !pptExts.includes(ext)) continue;
@@ -309,6 +467,10 @@ async function getWindowsApps(ext: string): Promise<FileApp[]> {
 // ──────────────────────────────────────────────────────────────────────────────
 // MACOS – use lsregister to find app bundles for a UTI / extension
 // ──────────────────────────────────────────────────────────────────────────────
+// Primary source is the LaunchServices database (lsregister -dump) — the
+// authoritative list of registered handlers, including user installs outside
+// /Applications. Known-apps probing is the fallback when LaunchServices has
+// nothing (or the dump/parse fails) for this extension.
 async function getMacApps(ext: string): Promise<FileApp[]> {
   const apps: Map<string, FileApp> = new Map();
 
@@ -326,6 +488,8 @@ async function getMacApps(ext: string): Promise<FileApp[]> {
     const appPaths = stdout
       .split('\n')
       .map(l => {
+        // Extract the first .app bundle path from each lsregister line;
+        // existence-checked because the dump may reference stale entries.
         const m = l.match(/\/[^\s]+\.app/);
         return m ? m[0] : null;
       })
@@ -341,6 +505,8 @@ async function getMacApps(ext: string): Promise<FileApp[]> {
   } catch { /* skip */ }
 
   // Fallback: well-known macOS apps
+  // An empty exts array means "accepts any extension" (general editors);
+  // otherwise the app is offered only for its listed extensions.
   const knownMacApps: { name: string; appPath: string; exts: string[] }[] = [
     { name: 'VS Code', appPath: '/Applications/Visual Studio Code.app', exts: [] },
     { name: 'TextEdit', appPath: '/System/Applications/TextEdit.app', exts: ['txt', 'md', 'rtf'] },
@@ -368,11 +534,18 @@ async function getMacApps(ext: string): Promise<FileApp[]> {
 // ──────────────────────────────────────────────────────────────────────────────
 // LINUX – parse .desktop files for MIME type matches
 // ──────────────────────────────────────────────────────────────────────────────
+// Resolution chain: (optional) xdg-mime query for the default handler, then a
+// direct scan of system + user .desktop directories matching the extension's
+// candidate MIME types. There is no hardcoded known-apps fallback on Linux —
+// no matches simply returns [].
 async function getLinuxApps(ext: string): Promise<FileApp[]> {
   const apps: Map<string, FileApp> = new Map();
 
   try {
     // Resolve MIME type for extension
+    // xdg-mime names the *default* handler (stdout feeds nothing below — the
+    // scan matches on the candidate MIME types, not on this output); failures
+    // degrade to an unconditional .desktop scan.
     const { stdout: mime } = await execAsync(`xdg-mime query default application/x-${ext} 2>/dev/null || echo ""`).catch(() => ({ stdout: '' }));
     const mimeTypes = [`application/x-${ext}`, `text/x-${ext}`, `text/${ext}`, `application/${ext}`];
 
@@ -398,6 +571,8 @@ async function getLinuxApps(ext: string): Promise<FileApp[]> {
 
           let execPath = execMatch[1].replace(/%[uUfF]/g, '').trim().split(' ')[0];
           if (!execPath.startsWith('/')) {
+            // Relative Exec= commands (e.g. "code") must be resolved to an
+            // absolute path via which, or getFileIcon/spawn can't use them.
             const { stdout: which } = await execAsync(`which "${execPath}" 2>/dev/null`).catch(() => ({ stdout: '' }));
             execPath = which.trim();
           }
@@ -417,6 +592,16 @@ async function getLinuxApps(ext: string): Promise<FileApp[]> {
 // ──────────────────────────────────────────────────────────────────────────────
 // Main export: get apps for a file extension, cross-platform
 // ──────────────────────────────────────────────────────────────────────────────
+/**
+ * Get the apps that can open the given file, cross-platform, via the
+ * per-platform strategy chain. Cache-backed: the first call for an extension
+ * performs the (slow) platform scan; subsequent calls for the same extension
+ * are instant, and concurrent calls share a single in-flight scan.
+ *
+ * @param filePath A file path (or bare extension) whose associations to resolve.
+ * @returns Promise of up to 8 apps with display name, path, and icon.
+ *          Never rejects — a total resolution failure resolves to [].
+ */
 export async function getAppsForFile(filePath: string): Promise<FileApp[]> {
   const ext = normalizeExtension(filePath);
   return resolveAppsForExt(ext);

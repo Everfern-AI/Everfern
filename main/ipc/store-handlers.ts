@@ -112,4 +112,30 @@ export function registerStoreHandlers() {
       return { success: false };
     }
   });
+  // sites:open-folder — preload bridge + SitePreview existed since the first
+  // commit (f13.A census) but no handler was registered, so the unguarded
+  // renderer invoke rejected. Open the chat's site folder in the OS file
+  // manager, confining the path to SITES_DIR via the same guards as above.
+  ipcMain.handle('sites:open-folder', async (_e, chatId: string) => {
+    try {
+      const path = require('path') as typeof import('path');
+      const os = require('os') as typeof import('os');
+      const { shell } = require('electron') as typeof import('electron');
+      const { assertSafeSegment } = require('../lib/path-guard') as typeof import('../lib/path-guard');
+      const sitesDir = path.join(os.homedir(), '.everfern', 'sites');
+      const dir = path.join(sitesDir, assertSafeSegment(chatId, 'site name'));
+      const fs = require('fs') as typeof import('fs');
+      if (!fs.existsSync(dir)) {
+        return { success: false, error: 'Site folder not found' };
+      }
+      const openErr = await shell.openPath(dir);
+      if (openErr) {
+        return { success: false, error: openErr };
+      }
+      return { success: true };
+    } catch (err) {
+      console.error('[StoreHandlers] sites:open-folder rejected:', errMessage(err));
+      return { success: false, error: errMessage(err) };
+    }
+  });
 }

@@ -144,13 +144,13 @@ const ProviderDropdown: React.FC<ProviderDropdownProps> = ({
                                         gap: 12,
                                         cursor: isDisabled ? "not-allowed" : "pointer",
                                         backgroundColor: isSelected ? 'var(--color-bg-subtle)' : 'var(--color-bg-surface)',
-                                        borderBottom: index < providers.length - 1 ? `1px solid #f0f0f0` : "none",
+                                        borderBottom: index < providers.length - 1 ? `1px solid var(--color-border-subtle)` : "none",
                                         opacity: isDisabled ? 0.4 : 1,
                                         transition: "background-color 0.1s"
                                     }}
                                     onMouseEnter={(e) => {
                                         if (!isDisabled) {
-                                            e.currentTarget.style.backgroundColor = isSelected ? 'var(--color-bg-subtle)' : "#f9f9f9";
+                                            e.currentTarget.style.backgroundColor = isSelected ? 'var(--color-bg-subtle)' : 'var(--color-bg-hover)';
                                         }
                                     }}
                                     onMouseLeave={(e) => {

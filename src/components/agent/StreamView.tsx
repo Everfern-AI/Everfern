@@ -39,26 +39,26 @@ const StreamView = ({ content, isLive, showCursor = true }: StreamViewProps) => 
                         <div key={`code-${idx}`} style={{ margin: "8px 0" }}>
                             <div
                                 style={{
-                                    backgroundColor: "#1e1e2e",
+                                    backgroundColor: "var(--color-code-chip-bg)",
                                     borderRadius: "8px 8px 0 0",
                                     padding: "6px 12px",
                                     fontSize: 11,
                                     color: 'var(--color-text-tertiary)',
                                     fontFamily: "'JetBrains Mono', monospace",
-                                    borderBottom: "1px solid #333",
+                                    borderBottom: "1px solid var(--color-code-chip-border)",
                                 }}
                             >
                                 {codeLanguage || "code"}
                             </div>
                             <div
                                 style={{
-                                    backgroundColor: "#13131a",
+                                    backgroundColor: "var(--color-code-block-bg)",
                                     borderRadius: "0 8px 8px 8px",
                                     padding: "12px",
                                     fontFamily: "'JetBrains Mono', monospace",
                                     fontSize: 12,
                                     lineHeight: 1.6,
-                                    color: "#e2e8f0",
+                                    color: "var(--color-text-inverse)",
                                     overflowX: "auto",
                                     whiteSpace: "pre-wrap",
                                 }}
@@ -108,7 +108,7 @@ const StreamView = ({ content, isLive, showCursor = true }: StreamViewProps) => 
                         style={{
                             fontSize: 18,
                             fontWeight: 600,
-                            color: "#e5e5e5",
+                            color: "var(--color-text-inverse)",
                             margin: "14px 0 6px",
                             fontFamily: "system-ui, sans-serif",
                         }}
@@ -169,7 +169,7 @@ const StreamView = ({ content, isLive, showCursor = true }: StreamViewProps) => 
                         style={{
                             margin: "4px 0",
                             lineHeight: 1.7,
-                            color: "#e5e5e5",
+                            color: "var(--color-text-inverse)",
                         }}
                     >
                         {line}
@@ -184,7 +184,7 @@ const StreamView = ({ content, isLive, showCursor = true }: StreamViewProps) => 
                     style={{
                         margin: "4px 0",
                         lineHeight: 1.7,
-                        color: "#e5e5e5",
+                        color: "var(--color-text-inverse)",
                     }}
                 >
                     {line}
@@ -199,17 +199,17 @@ const StreamView = ({ content, isLive, showCursor = true }: StreamViewProps) => 
         <div
             ref={containerRef}
             style={{
-                backgroundColor: "#0d0d14",
+                backgroundColor: "var(--color-code-block-bg)",
                 borderRadius: 12,
                 padding: "16px 20px",
-                border: "1px solid #2a2a3a",
+                border: "1px solid var(--color-code-chip-border)",
                 minHeight: 60,
                 maxHeight: 400,
                 overflowY: "auto",
                 fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
                 fontSize: 14,
                 lineHeight: 1.7,
-                color: "#e2e8f0",
+                color: "var(--color-text-inverse)",
             }}
         >
             {renderedContent}
@@ -221,7 +221,7 @@ const StreamView = ({ content, isLive, showCursor = true }: StreamViewProps) => 
                         display: "inline-block",
                         width: 8,
                         height: 16,
-                        backgroundColor: "#6366f1",
+                        backgroundColor: "var(--color-navis-icon-color)",
                         marginLeft: 2,
                         verticalAlign: "text-bottom",
                     }}

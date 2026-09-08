@@ -283,22 +283,6 @@ export function resolveToolDisplay(toolName: string, args?: Record<string, unkno
       };
     }
 
-    case 'pptx_generator': {
-      const title = typeof args?.title === 'string' ? args.title.trim() : '';
-      const outputPath = typeof args?.outputPath === 'string' ? args.outputPath.trim() : '';
-      const slides = Array.isArray(args?.slides) ? args.slides : [];
-      const target = title || (outputPath ? basename(outputPath) : '');
-      return {
-        icon: React.createElement(PresentationChartBarIcon, { width: 16, height: 16 }),
-        label: target
-          ? `Generating deck: ${truncate(target, 60)}`
-          : slides.length
-            ? `Generating ${slides.length}-slide deck`
-            : 'Generating presentation',
-        color: '#8b5cf6'
-      };
-    }
-
     case 'visual_classification_sheet': {
       const directory = typeof args?.directory === 'string' ? args.directory.trim() : '';
       const question = typeof args?.question === 'string' ? args.question.trim() : '';

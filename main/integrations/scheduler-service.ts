@@ -12,29 +12,96 @@ import * as crypto from 'crypto';
 
 export class SchedulerService {
   private interval: NodeJS.Timeout | null = null;
+  private timeout: NodeJS.Timeout | null = null;
+  // MP-LEAK-02: task-retry delays from runTask() are tracked so stop() can
+  // cancel them (they would otherwise fire checkTasks-style work after stop).
+  private retryTimers = new Set<NodeJS.Timeout>();
   private isRunning = false;
   private runningTasks: Set<string> = new Set();
+  private stopped = false;
 
   /**
    * Start the scheduler.
+   *
+   * MP-LEAK-02: no periodic poll — checkTasks() schedules a one-shot
+   * setTimeout to the nearest task due time and reschedules after each pass.
    */
   start() {
-    if (this.interval) return;
+    if (this.timeout) return;
 
     console.log('[Scheduler] Starting scheduler service...');
-    // Check every minute
-    this.interval = setInterval(() => this.checkTasks(), 60000);
-    this.checkTasks(); // Initial check
+    this.stopped = false;
+    void this.checkTasks();
   }
 
   /**
-   * Stop the scheduler.
+   * Stop the scheduler. Idempotent.
    */
   stop() {
+    this.stopped = true;
     if (this.interval) {
       clearInterval(this.interval);
       this.interval = null;
     }
+    if (this.timeout) {
+      clearTimeout(this.timeout);
+      this.timeout = null;
+    }
+    for (const t of this.retryTimers) clearTimeout(t);
+    this.retryTimers.clear();
+  }
+
+  /**
+   * Re-evaluate the next wake-up time. Call after tasks are created, saved,
+   * or deleted — otherwise a newly created task due in 1 minute would wait
+   * out the previously scheduled (possibly hours-long or absent) timer.
+   */
+  poke() {
+    if (this.stopped) return;
+    // A scheduled timer is simply replaced; no timer (e.g. the previous pass
+    // found zero tasks) means checkTasks() runs and arms one if needed.
+    if (this.timeout) {
+      clearTimeout(this.timeout);
+      this.timeout = null;
+    }
+    void this.checkTasks();
+  }
+
+  /**
+   * Compute how long to wait until the next task is due (ms), capped at 1h.
+   * Returns 0 if something is due right now; Infinity if there are no tasks.
+   */
+  private computeWaitMs(tasks: ScheduledTask[], now: Date): number {
+    let nearest: number | null = null;
+
+    for (const task of tasks) {
+      if (!task.enabled) continue;
+      if (task.endsAt && now >= new Date(task.endsAt)) continue; // expired below
+
+      const candidates: number[] = [];
+      if (task.nextRun) {
+        candidates.push(new Date(task.nextRun).getTime());
+      } else if (!task.lastRun && task.startsAt) {
+        // Uninitialized task: startsAt is the only real due time. The check
+        // pass at/before that moment will initialize nextRun or fire it.
+        candidates.push(new Date(task.startsAt).getTime());
+      }
+
+      for (const t of candidates) {
+        if (!Number.isFinite(t)) continue;
+        const delta = t - now.getTime();
+        // Include overdue (delta <= 0) — they should run on the next check.
+        if (nearest === null || delta < nearest) nearest = delta;
+      }
+    }
+
+    if (nearest === null) return Infinity;
+    if (nearest <= 0) {
+      // Overdue task (likely just fired; its DB updateRunTimes lands async).
+      // Use a short floor instead of 0 so we never busy-spin while it lands.
+      return 500;
+    }
+    return Math.min(nearest, 60 * 60 * 1000); // cap at 1h so clock drift stays visible
   }
 
   /**
@@ -67,8 +134,34 @@ export class SchedulerService {
           }
         }
       }
+
+      // Reschedule: one-shot timeout to the nearest future due time.
+      if (!this.stopped) {
+        const fresh = await scheduledTasksStore.list();
+        const waitMs = this.computeWaitMs(fresh, new Date());
+        if (this.timeout) {
+          clearTimeout(this.timeout);
+          this.timeout = null;
+        }
+        if (Number.isFinite(waitMs)) {
+          this.timeout = setTimeout(() => {
+            this.timeout = null;
+            void this.checkTasks();
+          }, waitMs);
+          this.timeout.unref?.();
+        }
+        // waitMs === Infinity (no tasks) → no timer scheduled → zero wakeups.
+      }
     } catch (err) {
       console.error('[Scheduler] Error checking tasks:', err);
+      // Retry with a delayed one-shot (no permanent poll).
+      if (!this.stopped) {
+        this.timeout = setTimeout(() => {
+          this.timeout = null;
+          void this.checkTasks();
+        }, 60 * 1000);
+        this.timeout.unref?.();
+      }
     } finally {
       this.isRunning = false;
     }
@@ -197,6 +290,7 @@ export class SchedulerService {
   }
 
   private async runTask(task: ScheduledTask, attempt: number = 1) {
+    if (this.stopped) return;
     if (this.runningTasks.has(task.id) && attempt === 1) return;
     this.runningTasks.add(task.id);
     
@@ -249,7 +343,13 @@ export class SchedulerService {
           if (attempt < MAX_RETRIES) {
             const delayMs = Math.pow(2, attempt) * 5000; // 10s, 20s
             console.log(`[Scheduler] 🔄 Retrying task ${task.id} in ${delayMs}ms (Attempt ${attempt + 1}/${MAX_RETRIES})...`);
-            setTimeout(() => this.runTask(task, attempt + 1), delayMs);
+            // MP-LEAK-02: track the retry timer so stop() cancels it, and
+            // never fire a retry after the service has stopped.
+            const t = setTimeout(() => {
+              this.retryTimers.delete(t);
+              if (!this.stopped) this.runTask(task, attempt + 1);
+            }, delayMs);
+            this.retryTimers.add(t);
           }
         }
       })();

@@ -19,7 +19,7 @@ export default function IntegrationSettingsExample() {
                 style={{
                     padding: '8px 16px',
                     borderRadius: '8px',
-                    border: '1px solid #e5e5e0',
+                    border: '1px solid var(--color-border)',
                     backgroundColor: 'var(--color-bg-surface)',
                     cursor: 'pointer'
                 }}

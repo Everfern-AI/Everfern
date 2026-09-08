@@ -28,24 +28,8 @@ export type { ITaskToolMapper } from './TaskToolMapper.interface';
 export { TaskToolMapper } from './TaskToolMapper';
 
 // Component exports (will be added as components are implemented)
-export { TaskHeader } from './TaskHeader';
+export { TaskHeader } from '@/components/TaskDecomposer/TaskHeader';
 export { TaskSection } from './TaskSection';
 export { ToolCallGroup } from './ToolCallGroup';
 export { TimelineRenderer } from './TimelineRenderer';
 
-// Test utilities export
-export {
-  createMockTaskStep,
-  createMockDecomposedTask,
-  createMockToolCall,
-  createMockTaskToolMapping,
-  createMockToolCalls,
-  createMockTaskSteps,
-  waitFor,
-  randomToolCallId,
-  randomTaskStepId,
-  randomToolName,
-  randomStatus,
-  randomComplexity,
-  randomPriority,
-} from './__tests__/test-utils';

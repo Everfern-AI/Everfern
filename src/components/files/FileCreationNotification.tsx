@@ -16,7 +16,7 @@ interface FileCreationNotificationProps {
 }
 
 const AntigravityIcon = () => (
-    <div className="w-[18px] h-[18px] bg-[#111] rounded-[4px] flex items-center justify-center">
+    <div className="w-[18px] h-[18px] bg-[var(--color-text-primary)] rounded-[4px] flex items-center justify-center">
         <span className="text-white text-[10px] font-[900] font-mono">V</span>
     </div>
 );

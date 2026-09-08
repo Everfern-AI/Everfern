@@ -18,12 +18,6 @@ export interface AgentEvent {
     sessionKey?: string;
 }
 
-export interface RunContext {
-    sessionKey: string;
-    verboseLevel: number;
-    heartbeat: boolean;
-}
-
 type EventCallback = (event: AgentEvent) => void;
 
 class AgentEventEmitter {
@@ -126,6 +120,16 @@ export function removeAgentEvents(sessionKey: string): void {
     }
 }
 
+/**
+ * AG-MEM-07: Remove ALL agent event emitter sessions.
+ * Intended for app shutdown (before-quit) to drop every emitter and its listeners.
+ */
+export function clearAllAgentEvents(): void {
+    for (const key of [...sessions.keys()]) {
+        removeAgentEvents(key);
+    }
+}
+
 // Convenience event emitters for common event types
 export function emitLifecycle(sessionKey: string, type: string, data: Record<string, unknown> = {}) {
     return getAgentEvents(sessionKey).emit('lifecycle', type, data);
@@ -133,10 +137,6 @@ export function emitLifecycle(sessionKey: string, type: string, data: Record<str
 
 export function emitTool(sessionKey: string, type: string, data: Record<string, unknown> = {}) {
     return getAgentEvents(sessionKey).emit('tool', type, data);
-}
-
-export function emitAssistant(sessionKey: string, type: string, data: Record<string, unknown> = {}) {
-    return getAgentEvents(sessionKey).emit('assistant', type, data);
 }
 
 export function emitError(sessionKey: string, type: string, data: Record<string, unknown> = {}) {

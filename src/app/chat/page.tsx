@@ -1,46 +1,26 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback, useMemo, KeyboardEvent } from "react";
-import Image from "next/image";
+import { useState, useRef, useEffect, useCallback, useMemo, memo, KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { EverFernCloudLimitNotice, EverFernCloudUsageBanner, PromptWrapper } from "./components/EverFernCloudBanners";
-import { SuggestedFollowUps } from "./components/SuggestedFollowUps";
+import { PromptWrapper } from "./components/EverFernCloudBanners";
 import { ExecutionPlanPane } from "./components/ExecutionPlanPane";
 import {
     PlusIcon,
-    Cog6ToothIcon,
-    PaperAirplaneIcon,
     ChevronDownIcon,
     XMarkIcon,
     CheckIcon,
     PaperClipIcon,
     StopIcon,
-    KeyIcon,
-    ArrowDownOnSquareIcon,
     GlobeAltIcon,
     SparklesIcon,
     CpuChipIcon,
     TrashIcon,
-    ArrowTopRightOnSquareIcon,
     CheckCircleIcon,
     ChevronRightIcon,
     DocumentTextIcon,
     BellIcon,
-    UserCircleIcon,
-    Bars3CenterLeftIcon,
-    SparklesIcon as SparklesIcon2,
-    Cog8ToothIcon,
-    AcademicCapIcon,
-    MagnifyingGlassIcon,
-    ChevronUpIcon,
-
-    ArrowPathIcon,
-    EyeIcon,
-    StopCircleIcon,
     BriefcaseIcon,
-    HandThumbUpIcon,
-    HandThumbDownIcon,
     ArrowLeftIcon,
     EllipsisVerticalIcon,
     BookmarkIcon,
@@ -53,33 +33,26 @@ import { CheckIcon as CheckSolidIcon, BookmarkIcon as BookmarkSolidIcon } from "
 
 // Components
 import { AgentTimeline } from "../../components/AgentTimeline";
-import MissionProgressCard from './components/MissionProgressCard';
 import type { MissionTimeline as MissionTimelineType } from "../../components/MissionTimeline";
-import StreamView from "../../components/StreamView";
 import WindowControls from "../components/WindowControls";
 import Sidebar from "../components/Sidebar";
 import PermissionDialog from "../components/PermissionDialog";
 import DirectoryModal from '../components/DirectoryModal';
-import { FileExplorerView } from "../components/FileExplorerView";
 import { LoadingBreadcrumb, Loader } from '@/components/ui/animated-loading-svg-text-shimmer';
-import { useTheme } from "@/components/ThemeProvider";
-import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { useTheme } from "@/components/common/ThemeProvider";
+import { isSecretView, secretConfigured, type SecretView } from '@/lib/secret-view';
 import IntegrationSettings from '../../components/IntegrationSettings';
 
 // Chat-specific components
 import ArtifactsPanel from './ArtifactsPanel';
-import ArtifactsList from './ArtifactsList';
 import PlanViewerPanel from './PlanViewerPanel';
 import TasksPanel from './TasksPanel';
-import ScheduledTasksPanel from './components/ScheduledTasksPanel';
 import { useDebateStream } from './hooks/useDebateStream';
 import ScheduledTaskModal from './components/ScheduledTaskModal';
-import SitePreview from './SitePreview';
 import SettingsPage from './SettingsPage';
 import CustomizeModal from './CustomizeModal';
 import FileArtifact from './FileArtifact';
 import DocumentCard from './components/DocumentCard';
-import FileViewerPane from './FileViewerPane';
 import VoiceAssistantUI from './VoiceAssistantUI';
 import SurfaceCanvas from './SurfaceCanvas';
 import AnalyticsPage from './AnalyticsPage';
@@ -91,7 +64,9 @@ import { ComputerPane } from './components/ComputerPane';
 import ToolDetailSidePanel from '@/components/ToolDetailSidePanel';
 import FileViewerModal from './components/FileViewerModal';
 import { SubagentPanel } from './components/SubagentPanel';
-import { ToolCallDetailPane, PlanPreviewCard, type ToolCallDetail } from './components/ToolCallDetailPane';
+import { ToolCallDetailPane, type ToolCallDetail } from './components/ToolCallDetailPane';
+import { MessageRow, getAssistantMessageView, type AssistantMessageView } from './components/MessageRow';
+import LazyBase64Thumb from './components/LazyBase64Thumb';
 import { useSubagentTracking } from '@/hooks/useSubagentTracking';
 import { VisionDowngradeNotice } from '@/components/VisionDowngradeNotice';
 import { InterruptedResponseBanner } from './components/InterruptedResponseBanner';
@@ -107,31 +82,28 @@ import {
     OpenRouterLogo,
     OllamaLogo,
     LMStudioLogo,
-    HuggingFaceLogo,
     EverFernBglessLogo,
     MiniMaxLogo
 } from './components/ProviderLogos';
-import { WaveformIcon, FernStarburst } from './components/UIIcons';
-import { MarkdownRenderer, StreamingMarkdown } from './components/MarkdownComponents';
+import { StreamingMarkdown } from './components/MarkdownComponents';
 import { ContextTokenRing, VoiceButton, RateLimitContinueButton, CloudAuthLoginButton } from './components/UIHelpers';
-import { ToolCallTag, ToolCallRow, ComputerUseResultCard, LiveToolCallCard } from './components/ToolCallComponents';
-import { ReportContainer } from './components/ReportComponents';
+import { LiveToolCallCard } from './components/ToolCallComponents';
 import { InlineVisualization } from './components/InlineVisualization';
-import { PlanReviewCard, AgentWorkspaceCards, PlanArtifact } from './components/PlanComponents';
+import { PlanArtifact } from './components/PlanComponents';
 import { HitlApprovalForm, UserQuestionForm } from './components/FormComponents';
-import { PlanApprovalBanner } from './components/PlanApprovalBanner';
-import { ReasoningBranch, ReasoningPane, ProgressStepsIcon, ContextGridIcon, PaneSection, ReasoningBlock } from './components/ReasoningComponents';
 import { HealthCheckScreen } from './components/HealthCheckScreen';
 
 // Utils and types
 import { resolveToolDisplay } from "./tool-labels";
-import { formatDuration } from '../../lib/formatDuration';
-import { useAutoCollapse } from '../../hooks/use-auto-collapse';
 import type { ToolCallDisplay, Message, FileAttachment, FolderContext, ModelOption, SubAgentProgressEvent, LiveToolCall } from './types/index';
 import type { SurfaceData } from './SurfaceCanvas';
 import { stripAnsi, extractFileArtifacts } from './utils/helpers';
-import type { LocalExecutionRequest, LocalExecutionResponse } from '../../../preload/preload';
+import type { LocalExecutionRequest } from '../../../preload/preload';
 import LocalExecutionPermissionCard from './components/LocalExecutionPermissionCard';
+
+
+
+
 
 
 
@@ -158,6 +130,47 @@ function safeJsonParse<T>(value: string | null | undefined, fallback: T): T {
         return fallback;
     }
 }
+
+// CU-ST-05: length-keyed stable key for tool-call args.
+// JSON.stringify re-serialized the full args payload on every render-compare
+// call, including accumulated artifact content strings that can grow to
+// multiple MBs across a stream (O(n²) allocation churn per tick). Long
+// strings are instead keyed by length — the same precedent as the
+// base64Image/dataUrl/sheet keying inside getToolDetailPayloadKey — while
+// small scalars pass through, keeping the key cheap AND sensitive to the
+// changes the detail panel actually needs to react to.
+const ARGS_KEY_INLINE_MAX = 512;
+
+function stableArgsKey(value: unknown, seen?: WeakSet<object>): string {
+    if (value === null || value === undefined) return '~';
+    const t = typeof value;
+    if (t === 'string') {
+        const s = value as string;
+        return s.length > ARGS_KEY_INLINE_MAX ? `len:${s.length}` : `s:${s}`;
+    }
+    if (t === 'number' || t === 'boolean') return `${t[0]}:${String(value)}`;
+    if (t === 'bigint') return `g:${value}`;
+    if (Array.isArray(value)) {
+        if (seen?.has(value)) return 'cycle';
+        const s = seen ?? new WeakSet<object>();
+        s.add(value);
+        return `[${value.map(v => stableArgsKey(v, s)).join(',')}]`;
+    }
+    if (t === 'object') {
+        if (seen?.has(value)) return 'cycle';
+        const s = seen ?? new WeakSet<object>();
+        s.add(value);
+        const entries = Object.entries(value as Record<string, unknown>)
+            .map(([k, v]) => `${k}=${stableArgsKey(v, s)}`)
+            .join('|');
+        return `{${entries}}`;
+    }
+    return t; // function/symbol — identity-insensitive for diffing purposes
+}
+
+// CU-ST-05: per-args-object memo so the stable key is computed at most once
+// per args identity (mapToolCallForDetail passes args through by reference).
+const toolCallArgsKeyCache = new WeakMap<object, string>();
 
 // ── Orchestrator noise scrubber ───────────────────────────────────────────────
 // Strips internal orchestration lines that leak into streaming/stored content.
@@ -321,11 +334,6 @@ function generateFallbackTaskTitle(toolName: string, args: Record<string, unknow
     if (name === 'create_artifact') {
         const title = String(args.title || '').trim();
         return title ? `Creating: ${title.slice(0, 60)}` : 'Creating artifact';
-    }
-
-    // PPTX
-    if (name === 'pptx_generator') {
-        return 'Generating presentation';
     }
 
     // Fallback: clean up tool name
@@ -530,12 +538,100 @@ function extractSuggestedFollowUps(content: string): { cleanContent: string; fol
     return { cleanContent, followUps };
 }
 
-const SuggestedFollowUpsComponent = SuggestedFollowUps;
+// CU-REND-12: module constants (were rebuilt per render).
+const GREETING_MESSAGES = [
+    "What do you want to do, {name}?",
+    "Ready to build, {name}?",
+    "Back at it, {name}?"
+];
+
+// CU-REND-11: module-scope memoized toast (was inline → remounted every render).
+const CompletionToastHoisted = memo(function CompletionToast({
+    notification,
+    onSelect,
+    onDismiss,
+}: {
+    notification: { id: string; title: string } | null;
+    onSelect: (id: string) => void;
+    onDismiss: () => void;
+}) {
+    return (
+        <AnimatePresence>
+            {notification && (
+                <motion.div
+                    initial={{ opacity: 0, y: -20, x: 20 }}
+                    animate={{ opacity: 1, y: 0, x: 0 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    onClick={() => onSelect(notification.id)}
+                    className="glossy"
+                    style={{
+                        position: 'fixed',
+                        top: 24,
+                        right: 24,
+                        zIndex: 'var(--z-toast)',
+                        width: 320,
+                        backgroundColor: 'var(--color-bg-elevated)',
+                        border: '1px solid var(--color-border)',
+                        borderRadius: 16,
+                        padding: '16px 20px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 14,
+                    }}
+                >
+                    <div style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: 12,
+                        backgroundColor: 'rgba(34, 197, 94, 0.08)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: 'var(--color-success)',
+                        flexShrink: 0
+                    }}>
+                        <CheckCircleIcon width={24} height={24} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)', marginBottom: 2 }}>Task Complete</div>
+                        <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {notification.title} is ready
+                        </div>
+                    </div>
+                    <div style={{ color: 'var(--color-text-tertiary)' }}>
+                        <ChevronRightIcon width={16} height={16} />
+                    </div>
+                </motion.div>
+            )}
+        </AnimatePresence>
+    );
+});
+
+// CU-REND-04: derive an assistant message's display view (scrub + artifacts +
+// follow-ups). Pure; invoked once per message via the MessageRow WeakMap cache
+// instead of on every page render.
+const deriveAssistantMessageView = (msg: Message): AssistantMessageView => {
+    const scrubbedTrimmed = scrubOrchestratorNoise(toContentString(msg.content)).trim();
+    const { cleanContent, artifacts } = extractFileArtifacts(msg.content || '');
+    let displayContent = scrubOrchestratorNoise(cleanContent.trim());
+    if (displayContent === 'Working...' || displayContent === 'Working') {
+        displayContent = '';
+    }
+    const { cleanContent: finalContent, followUps } = extractSuggestedFollowUps(displayContent);
+    return {
+        scrubbedTrimmed,
+        displayContent,
+        finalContent,
+        followUps,
+        artifacts,
+        hasContent: finalContent.length > 0,
+    };
+};
 
 const isNavisHitl = (request: any) => {
     if (!request) return false;
-    const tools = request.details?.tools || [];
-    const hasNavisTool = tools.some((t: any) => {
+    const tools = request.details?.tools || [];    const hasNavisTool = tools.some((t: any) => {
         const name = (t.name || t.toolName || '').toLowerCase();
         return name.includes('navis');
     });
@@ -576,14 +672,6 @@ export default function ChatPage() {
             api.removeTitleUpdatedListener?.();
         };
     }, []);
-    const lastAssistantIdx = useMemo(() => {
-        for (let i = messages.length - 1; i >= 0; i--) {
-            if (messages[i].role === 'assistant') {
-                return i;
-            }
-        }
-        return -1;
-    }, [messages]);
     const [inputValue, setInputValue] = useState("");
     const [modelInfo, setModelInfo] = useState<{
         contextLength: number;
@@ -596,9 +684,12 @@ export default function ChatPage() {
     const [folderContexts, setFolderContexts] = useState<FolderContext[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const bypassLoadingRef = useRef(false);
+    // CU-UI-09: synchronous send latch. isLoading state lags a render behind,
+    // so a rapid double-fire (Enter + button click) could pass the state guard
+    // before setIsLoading(true) commits. Released in the send IIFE's finally,
+    // mirroring the isLoading lifecycle.
+    const sendingRef = useRef(false);
     const [sidebarOpen, setSidebarOpen] = useState(false);
-    const [folderHover, setFolderHover] = useState(false);
-    const [tooltipState, setTooltipState] = useState<{ visible: boolean; x: number; y: number; content: string }>({ visible: false, x: 0, y: 0, content: "" });
     const [viewingFile, setViewingFile] = useState<{ name: string; path: string } | null>(null);
 
     const [showArtifacts, setShowArtifacts] = useState(false);
@@ -626,6 +717,9 @@ export default function ChatPage() {
         { name: 'image-viewer', description: 'Image preview and visual inspections' },
     ]);
     const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
+    // CU-UI-07: Escape dismisses the slash menu without clearing the typed
+    // text; re-opens when the user types '/' again or changes the filter.
+    const [slashMenuDismissed, setSlashMenuDismissed] = useState(false);
     const [selectedSkill, setSelectedSkill] = useState<{ id: string; name: string } | null>(null);
 
     // Load available skills from backend
@@ -653,7 +747,7 @@ export default function ChatPage() {
         })();
     }, []);
 
-    const isSlashActive = inputValue.startsWith('/');
+    const isSlashActive = !slashMenuDismissed && inputValue.startsWith('/');
     const slashFilter = isSlashActive ? inputValue.slice(1).trim().toLowerCase() : '';
 
     const slashItems = useMemo(() => {
@@ -683,7 +777,10 @@ export default function ChatPage() {
 
     useEffect(() => {
         setSlashSelectedIndex(0);
-    }, [slashFilter]);
+        // CU-UI-07: un-dismiss when the input no longer starts with '/' so the
+        // menu re-opens on the next slash command.
+        if (!inputValue.startsWith('/')) setSlashMenuDismissed(false);
+    }, [slashFilter, inputValue]);
 
     // Poll for task.md to update TasksPanel
     useEffect(() => {
@@ -772,7 +869,6 @@ export default function ChatPage() {
         return () => clearInterval(interval);
     }, [activeConversationId]);
 
-    const [fileViewerPane, setFileViewerPane] = useState<{ toolId: string; filename: string; content: string; tab: 'code' | 'preview' } | null>(null);
     const [selectedModel, setSelectedModel] = useState("fern-1");
     const [availableModels, setAvailableModels] = useState<ModelOption[]>([]);
     const availableModelsRef = useRef<ModelOption[]>([]);
@@ -798,7 +894,7 @@ export default function ChatPage() {
     const [feedbackType, setFeedbackType] = useState<'up' | 'down'>('up');
     const [feedbackTargetIndex, setFeedbackTargetIndex] = useState<number | null>(null);
 
-    const { debate: debateData, isDebating, lastDebateId, skipDebate } = useDebateStream();
+    const { debate: debateData, isDebating, lastDebateId, skipDebate } = useDebateStream(activeConversationId);
     const handleSaveScheduledTask = async (task: { name?: string; description: string; cron: string; prompt: string; startsAt?: string; endsAt?: string }) => {
         try {
             await (window as any).electronAPI.scheduledTasks.save({
@@ -810,11 +906,9 @@ export default function ChatPage() {
             console.error('Failed to save scheduled task:', err);
         }
     };
-    const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
     const [showAddMenu, setShowAddMenu] = useState(false);
     const [randomGreeting, setRandomGreeting] = useState("");
     const [currentSites, setCurrentSites] = useState<any[]>([]);
-    const [settingsMotionBlur, setSettingsMotionBlur] = useState(true);
     const [activeTaskIds, setActiveTaskIds] = useState<string[]>([]);
     const [notification, setNotification] = useState<{ id: string; title: string } | null>(null);
     const [projects, setProjects] = useState<any[]>([]);
@@ -1228,11 +1322,25 @@ export default function ChatPage() {
         const fileNames = Array.isArray(data.fileNames) ? data.fileNames : [];
         const results = Array.isArray(data.results) ? data.results : [];
         const screenshot = data.screenshot;
-        let argsKey = '';
-        try {
-            argsKey = toolCall?.args ? JSON.stringify(toolCall.args) : '';
-        } catch {
-            argsKey = '';
+        // CU-ST-05: full JSON.stringify of args (which can carry multi-MB
+        // accumulated content strings) ran twice per render-compare tick. The
+        // WeakMap memoizes the length-keyed stable key per args object — same
+        // object reference, same key, zero re-serialization.
+        const argsObj = toolCall?.args as object | undefined;
+        let argsKey: string;
+        if (argsObj && (typeof argsObj === 'object' || typeof argsObj === 'string')) {
+            let cached = toolCallArgsKeyCache.get(argsObj);
+            if (cached === undefined) {
+                cached = stableArgsKey(argsObj);
+                try {
+                    toolCallArgsKeyCache.set(argsObj, cached);
+                } catch {
+                    /* non-gc-able target — fall through with uncached key */
+                }
+            }
+            argsKey = cached;
+        } else {
+            argsKey = argsObj === undefined ? '' : stableArgsKey(argsObj);
         }
         return [
             toolCall?.id || '',
@@ -1292,7 +1400,7 @@ export default function ChatPage() {
         setIsComputerPaneOpen(false); // Close computer pane to avoid overlap
     };
 
-    const handlePillClick = (tc: ToolCallDisplay) => {
+    const handlePillClick = useCallback((tc: ToolCallDisplay) => {
         // Don't open ToolCallDetailPane for terminal tools - show inline in timeline instead
         const toolLower = tc.toolName?.toLowerCase() || '';
         if (
@@ -1320,7 +1428,91 @@ export default function ChatPage() {
         }
 
         openToolDetailTab(mapToolCallForDetail(tc));
-    };
+    // openToolDetailTab/mapToolCallForDetail are render-scoped but only touch
+    // state setters + refs, so a stable identity here is safe (CU-REND-07).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // ── CU-REND-01/07: stable row callbacks (identity-safe; touch only setters/refs) ──
+    // ── CU-REND-10: stable Sidebar props — 9 inline arrows + fresh onToggle
+    // defeated any memoization and re-rendered the sidebar per chunk. ──
+    const toggleSidebar = useCallback(() => setSidebarOpen(v => !v), []);
+    const openPaneSettings = useCallback(() => { setShowSettings(true); setShowCustomizeModal(false); setShowArtifacts(false); setShowIntegrationSettings(false); setShowProjectsPage(false); setShowAnalyticsPage(false); }, []);
+    const openPaneArtifacts = useCallback(() => { setShowArtifacts(true); setShowSettings(false); setShowCustomizeModal(false); setShowIntegrationSettings(false); setShowProjectsPage(false); setShowAnalyticsPage(false); }, []);
+    const openPaneCustomize = useCallback(() => { setShowDirectoryModal(true); setShowSettings(false); setShowArtifacts(false); setShowIntegrationSettings(false); setShowProjectsPage(false); setShowAnalyticsPage(false); }, []);
+    const openPaneIntegrations = useCallback(() => { setShowIntegrationSettings(true); setShowSettings(false); setShowCustomizeModal(false); setShowArtifacts(false); setShowProjectsPage(false); setShowAnalyticsPage(false); }, []);
+    const openPaneProjects = useCallback(() => { setShowProjectsPage(true); setShowSettings(false); setShowCustomizeModal(false); setShowArtifacts(false); setShowIntegrationSettings(false); setShowAnalyticsPage(false); }, []);
+    const openPaneAnalytics = useCallback(() => { setShowAnalyticsPage(true); setShowProjectsPage(false); setShowSettings(false); setShowCustomizeModal(false); setShowArtifacts(false); setShowIntegrationSettings(false); }, []);
+    const handleSearchOpen = useCallback(() => setShowSearch(true), []);
+    const handleSearchClose = useCallback(() => setShowSearch(false), []);
+    const handleOpenArtifact = useCallback((name: string, path: string) => {
+        setViewingFile({ name, path });
+    }, []);
+
+    const handleFeedbackClick = useCallback((idx: number, type: 'up' | 'down') => {
+        setFeedbackTargetIndex(idx);
+        setFeedbackType(type);
+        setShowFeedbackModal(true);
+    }, []);
+
+    const handleOpenPlanPreview = useCallback((tc: ToolCallDisplay) => {
+        setSelectedToolCall({
+            id: tc.id,
+            toolName: tc.toolName || 'execution_plan',
+            status: tc.status === 'done' ? 'completed' : tc.status === 'error' ? 'failed' : 'executing',
+            startTime: Date.now(),
+            arguments: tc.args || {},
+            result: tc.data ? { data: tc.data } : undefined,
+        } as any);
+    }, []);
+
+    const handleCloudAuthLogin = useCallback(() => {
+        setCloudAuthError(false);
+        router.push('/auth');
+    }, [router]);
+
+    const handleContinueRateLimited = useCallback(() => {
+        setInputValue("continue");
+        const inputArea = document.querySelector('textarea') || document.querySelector('input[type="text"]');
+        if (inputArea) { (inputArea as any).focus(); }
+    }, []);
+
+    // msg-scoped handlers below read latest messages via the messagesRef
+    // declared above (line ~803) so their identity stays stable.
+
+    const handleEditPromptForStopped = useCallback((idx: number) => {
+        const msgs = messagesRef.current;
+        const prevUserMsg = msgs.slice(0, idx).reverse().find(m => m.role === 'user');
+        if (prevUserMsg) {
+            const promptText = typeof prevUserMsg.content === 'string' ? prevUserMsg.content : '';
+            setInputValue(promptText);
+            setTimeout(() => {
+                if (textareaRef.current) {
+                    textareaRef.current.focus();
+                    textareaRef.current.setSelectionRange(promptText.length, promptText.length);
+                    textareaRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }, 50);
+        }
+    }, []);
+
+    const handleTryAgainForStopped = useCallback((idx: number) => {
+        const msgs = messagesRef.current;
+        const prevUserMsg = msgs.slice(0, idx).reverse().find(m => m.role === 'user');
+        if (prevUserMsg) {
+            const promptText = typeof prevUserMsg.content === 'string' ? prevUserMsg.content : '';
+            const userMsgIndex = msgs.findIndex(m => m.id === prevUserMsg.id);
+            const historyBeforeAssistant = msgs.slice(0, userMsgIndex);
+            handleSendRef.current?.(promptText, historyBeforeAssistant, false);
+        }
+    }, []);
+
+    // CU-REND-04: page-level accessor for the MessageRow WeakMap cache (used by
+    // the noise skip-check so historical messages never re-scrub per render).
+    const getAssistantMessageViewCached = useCallback(
+        (msg: Message) => getAssistantMessageView(msg, deriveAssistantMessageView),
+        [deriveAssistantMessageView]
+    );
 
     const maybeOpenUserUrlTool = (tc: ToolCallDisplay) => {
         if (tc.toolName !== 'show_user_url') return;
@@ -1351,23 +1543,6 @@ export default function ChatPage() {
             return next;
         });
     };
-
-    const loadingMessages = ["marinating...", "schlepping...", "concocting...", "honking..."];
-    const greetingMessages = [
-        "What do you want to do, {name}?",
-        "Ready to build, {name}?",
-        "Back at it, {name}?"
-    ];
-
-    useEffect(() => {
-        if (isLoading) {
-            setLoadingMsgIdx(0);
-            const interval = setInterval(() => {
-                setLoadingMsgIdx(prev => (prev + 1) % loadingMessages.length);
-            }, 2500);
-            return () => clearInterval(interval);
-        }
-    }, [isLoading]);
 
     // Inject CSS for token ring tooltip hover
     useEffect(() => {
@@ -1412,20 +1587,30 @@ export default function ChatPage() {
         return () => window.removeEventListener('send-chat-message', handleSendChatEvent);
     }, []);
 
+    // CU-LEAK-05: mount-once dispatch listener with explicit cleanup; the
+    // previously-captured handleHitlApproval/handleQuestionSubmit identities
+    // went stale, so route them through refs.
+    const handleHitlApprovalRef = useRef<any>(null);
+    const handleQuestionSubmitRef2 = useRef<any>(null);
+    useEffect(() => {
+        handleHitlApprovalRef.current = handleHitlApproval;
+        handleQuestionSubmitRef2.current = handleQuestionSubmit;
+    });
+
     useEffect(() => {
         const api = (window as any).electronAPI;
         if (!api?.system?.onDispatchCommand) return;
 
-        api.system.onDispatchCommand((command: string, model?: string) => {
-            console.log('[Dispatch] Received command from web:', command, model ? `(model: ${model})` : '');
+        const unbind = api.system.onDispatchCommand((command: string, model?: string) => {
+            if (import.meta.env.DEV) console.log('[Dispatch] Received command from web:', command, model ? `(model: ${model})` : '');
             if (!command?.trim()) return;
 
             if (command.startsWith('[HITL_APPROVED]')) {
-                handleHitlApproval(true, true);
+                handleHitlApprovalRef.current?.(true, true);
                 return;
             }
             if (command.startsWith('[HITL_REJECTED]')) {
-                handleHitlApproval(false, true);
+                handleHitlApprovalRef.current?.(false, true);
                 return;
             }
             if (command.startsWith('[INTERNAL_SYSTEM_RESPONSE_QUESTION_ID_')) {
@@ -1442,7 +1627,7 @@ export default function ChatPage() {
                             const answers: Record<string, string[]> = {
                                 [questionObj.question]: [optionObj.value]
                             };
-                            handleQuestionSubmit(answers);
+                            handleQuestionSubmitRef2.current?.(answers);
                         }
                     }
                 }
@@ -1461,6 +1646,8 @@ export default function ChatPage() {
                 if (handleSendRef.current) handleSendRef.current(command);
             }, 0);
         });
+        // CU-LEAK-05: explicit teardown (HMR/StrictMode accumulate listeners otherwise).
+        return () => { if (typeof unbind === 'function') unbind(); };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -1468,7 +1655,7 @@ export default function ChatPage() {
     const [config, setConfig] = useState<any>(null);
     const [settingsEngine, setSettingsEngine] = useState<"online" | "local" | "everfern" | null>("everfern");
     const [settingsProvider, setSettingsProvider] = useState<string | null>(null);
-    const [settingsApiKey, setSettingsApiKey] = useState("");
+    const [settingsApiKey, setSettingsApiKey] = useState<SecretView | string>("");
     const [settingsCustomModel, setSettingsCustomModel] = useState("");
 
     // Slow local LLM hardware notice state
@@ -1529,7 +1716,8 @@ export default function ChatPage() {
             if (sessionStr) session = JSON.parse(sessionStr);
         } catch { }
 
-        const isLoggedIn = !!(session?.accessToken || session?.token || (config?.apiKey && config?.apiKey.length > 5));
+        // MP-SEC-11: apiKey is a redacted SecretView object — never a raw string.
+        const isLoggedIn = !!(session?.accessToken || session?.token || secretConfigured((config?.apiKey as any)));
 
         if (!isLoggedIn) {
             router.push('/auth');
@@ -1566,12 +1754,9 @@ export default function ChatPage() {
         setDismissedLocalSlowWarning(true);
         setShowModelSelector(true);
     }, []);
-    const [currentPlan, setCurrentPlan] = useState<any | null>(null);
     const [executionPlan, setExecutionPlan] = useState<{ title?: string; content: string } | null>(null);
     const [isExecutionPlanPaneOpen, setIsExecutionPlanPaneOpen] = useState<boolean>(true);
     const [progressExpanded, setProgressExpanded] = useState<boolean>(true);
-    const [reportPane, setReportPane] = useState<{ label: string; path: string } | null>(null);
-    const [contextItems, setContextItems] = useState<{ id: string; type: 'file' | 'web' | 'app'; label: string; base64Image?: string; appName?: string; appLogo?: string }[]>([]);
     const [isValidatingModel, setIsValidatingModel] = useState(false);
     const [modelValidationStatus, setModelValidationStatus] = useState<"none" | "success" | "error">("none");
     const [showOnboarding, setShowOnboarding] = useState(false);
@@ -1640,12 +1825,14 @@ export default function ChatPage() {
     useEffect(() => {
         const api = (window as any).electronAPI;
         if (!api?.system?.onDispatchActive) return;
-        api.system.onDispatchActive(() => {
+        const unbind = api.system.onDispatchActive(() => {
             dispatchBroadcastRef.current = (event: string, data: any) => {
                 (window as any).electronAPI?.system?.broadcastDispatch?.(event, data);
             };
             setIsDispatchReady(true);
         });
+        // CU-LEAK-05: explicit teardown for HMR/StrictMode.
+        return () => { if (typeof unbind === 'function') unbind(); };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -1680,25 +1867,13 @@ export default function ChatPage() {
         dismissed: boolean;
     } | null>(null);
 
-    // Multiple questions panel state (unused - kept for legacy compat)
-    const [userQuestions, setUserQuestions] = useState<Array<{
-        question: string;
-        options: string[];
-        multiSelect?: boolean;
-    }>>([]);
-    const [isUserQuestionsOpen, setIsUserQuestionsOpen] = useState(false);
     const [showSearch, setShowSearch] = useState(false);
 
     // Current node tracking for better status display
     const [currentNode, setCurrentNode] = useState<string>("");
     const [currentPhase, setCurrentPhase] = useState<"triage" | "planning" | "execution" | "validation" | "completion" | undefined>(undefined);
-    const [activeContextTab, setActiveContextTab] = useState<'Overview' | 'Resources' | 'Permissions' | 'History'>('Overview');
     const [instructionsExpanded, setInstructionsExpanded] = useState(true);
     const [contextExpanded, setContextExpanded] = useState(true);
-    const [instructions, setInstructions] = useState('');
-
-    // Sub-agent progress pane state
-    const [zoomedScreenshot, setZoomedScreenshot] = useState<string | null>(null);
 
     // Get user-friendly node names with enhanced phase context
     const getNodeDisplayName = (nodeName: string): string => {
@@ -1741,7 +1916,6 @@ export default function ChatPage() {
         };
         return nodeNames[nodeName] || (nodeName ? `Working on ${nodeName.replace(/_/g, ' ')}` : 'Working');
     };
-    const [modelCallInfo, setModelCallInfo] = useState<{ model: string; toolsCount: number } | null>(null);
     const [missionTimeline, setMissionTimeline] = useState<MissionTimelineType | null>(null);
     const [missionComplete, setMissionComplete] = useState(false);
 
@@ -1751,17 +1925,17 @@ export default function ChatPage() {
     const [settingsVlmCloudProvider, setSettingsVlmCloudProvider] = useState("ollama");
     const [settingsVlmCloudModel, setSettingsVlmCloudModel] = useState("qwen3-vl:235b-cloud");
     const [settingsVlmCloudUrl, setSettingsVlmCloudUrl] = useState("https://ollama.com");
-    const [settingsVlmCloudKey, setSettingsVlmCloudKey] = useState("");
+    const [settingsVlmCloudKey, setSettingsVlmCloudKey] = useState<SecretView | string>("");
 
     // Voice state
     const [voiceProvider, setVoiceProvider] = useState<"everfern" | "deepgram" | "elevenlabs" | "local" | null>(null);
-    const [voiceDeepgramKey, setVoiceDeepgramKey] = useState("");
-    const [voiceElevenlabsKey, setVoiceElevenlabsKey] = useState("");
+    const [voiceDeepgramKey, setVoiceDeepgramKey] = useState<SecretView | string>("");
+    const [voiceElevenlabsKey, setVoiceElevenlabsKey] = useState<SecretView | string>("");
 
     // Embedding state
     const [embeddingProvider, setEmbeddingProvider] = useState("everfern");
     const [embeddingModel, setEmbeddingModel] = useState("qwen/qwen3-embedding-8b");
-    const [embeddingApiKey, setEmbeddingApiKey] = useState("");
+    const [embeddingApiKey, setEmbeddingApiKey] = useState<SecretView | string>("");
     const [isRecording, setIsRecording] = useState(false);
     const [voiceTranscript, setVoiceTranscript] = useState("");
     const [voiceLoading, setVoiceLoading] = useState(false);
@@ -1772,7 +1946,6 @@ export default function ChatPage() {
 
     // Permission state
     const [showPermissionModal, setShowPermissionModal] = useState(false);
-    const [permissionsGranted, setPermissionsGranted] = useState(false);
 
     // HITL Approval state
     const [showHitlApproval, setShowHitlApproval] = useState(false);
@@ -1794,10 +1967,6 @@ export default function ChatPage() {
     // Plan card state
     const [activePlan, setActivePlan] = useState<{ content: string; chatId: string } | null>(null);
 
-    // JSON Viewer state
-    const [isJsonViewerOpen, setIsJsonViewerOpen] = useState(false);
-    const [lastEventJson, setLastEventJson] = useState<string>("");
-    const [lastEventType, setLastEventType] = useState<string>("");
     const [contextTokens, setContextTokens] = useState<{ used: number; max: number; systemTokens?: number; chatTokens?: number; inputTokens?: number; outputTokens?: number; toolSchemaTokens?: number; truncatedTools?: number; schemaTokenSavings?: number }>({ used: 0, max: 128000, systemTokens: 0, chatTokens: 0 });
     const [activeSurface, setActiveSurface] = useState<SurfaceData | null>(null);
 
@@ -1823,17 +1992,30 @@ export default function ChatPage() {
             return rest;
         };
 
-        const doBroadcast = () => {
-            const state = stateForBroadcastRef.current;
-            dispatchBroadcastRef.current!('state_update', {
-                messages: state.messages.map(m => ({
+        // CU-REND-09: committed messages are immutable — serialize each ONCE
+        // and reuse the view on every 200ms broadcast instead of re-mapping the
+        // entire history (O(history) JSON per tick → O(new messages) amortized).
+        const broadcastMsgCache = new WeakMap<object, any>();
+        const serializeBroadcastMessage = (m: any) => {
+            let view = broadcastMsgCache.get(m);
+            if (!view) {
+                view = {
                     id: m.id,
                     role: m.role,
                     content: m.content,
                     toolCalls: m.toolCalls?.map(sanitizeToolCall),
                     missionTimeline: (m as any).missionTimeline,
                     timestamp: m.timestamp instanceof Date ? m.timestamp.getTime() : m.timestamp,
-                })),
+                };
+                broadcastMsgCache.set(m, view);
+            }
+            return view;
+        };
+
+        const doBroadcast = () => {
+            const state = stateForBroadcastRef.current;
+            dispatchBroadcastRef.current!('state_update', {
+                messages: state.messages.map(serializeBroadcastMessage),
                 streamingContent: state.streamingContent,
                 liveToolCalls: state.liveToolCalls?.map(sanitizeToolCall),
                 streamingThought: state.streamingThought,
@@ -1954,27 +2136,27 @@ export default function ChatPage() {
 
     // Local Execution Permission State (Task 7.1 & 7.2)
     const [localExecutionRequest, setLocalExecutionRequest] = useState<LocalExecutionRequest | null>(null);
-    const [localAlwaysAllowed, setLocalAlwaysAllowed] = useState(false);
     const localAlwaysAllowedRef = useRef(false);
     const answeredLocalExecutionRequestIdsRef = useRef<Set<string>>(new Set());
 
     // Reset localAlwaysAllowed and answeredToolCallIdsRef when conversationId changes (Task 7.2)
     useEffect(() => {
-        setLocalAlwaysAllowed(false);
         localAlwaysAllowedRef.current = false;
         answeredToolCallIdsRef.current.clear();
         answeredLocalExecutionRequestIdsRef.current.clear();
     }, [activeConversationId]);
 
-    const applyToolCallApprovalStatus = useCallback((requestId: string, approved: boolean, alwaysAllow: boolean, allowPrefix?: boolean, command?: string) => {
+    const applyToolCallApprovalStatus = useCallback((requestId: string, approved: boolean, alwaysAllow: boolean, allowPrefix?: boolean, command?: string, silent?: boolean) => {
         const updatedToolCalls = liveToolCallsRef.current.map(tc => (
             tc.id === requestId
                 ? {
                     ...tc,
                     status: approved ? "done" as const : "error" as const,
-                    output: approved
-                        ? 'Permission approved. Running local command...'
-                        : (command ? `Permission denied.\n\n${command}` : 'Permission denied.'),
+                    output: silent
+                        ? 'Auto-approved — "Always allow" is active for this chat until you switch conversations. Manage saved permissions in Settings → Tool Permissions.'
+                        : approved
+                            ? 'Permission approved. Running local command...'
+                            : (command ? `Permission denied.\n\n${command}` : 'Permission denied.'),
                     data: { ...(tc.data || {}), approved, alwaysAllow, allowPrefix },
                 }
                 : tc
@@ -1983,7 +2165,7 @@ export default function ChatPage() {
         setLiveToolCalls(updatedToolCalls);
     }, []);
 
-    const respondToLocalExecutionRequest = useCallback((request: LocalExecutionRequest, approved: boolean, alwaysAllow: boolean, allowPrefix?: boolean) => {
+    const respondToLocalExecutionRequest = useCallback((request: LocalExecutionRequest, approved: boolean, alwaysAllow: boolean, allowPrefix?: boolean, silent?: boolean) => {
         if (!request?.requestId || answeredLocalExecutionRequestIdsRef.current.has(request.requestId)) {
             return;
         }
@@ -1991,14 +2173,13 @@ export default function ChatPage() {
         answeredLocalExecutionRequestIdsRef.current.add(request.requestId);
         if (alwaysAllow) {
             localAlwaysAllowedRef.current = true;
-            setLocalAlwaysAllowed(true);
         }
 
         const acpApi = (window as any).electronAPI?.acp;
         acpApi?.sendLocalExecutionResponse?.({ requestId: request.requestId, approved, alwaysAllow, allowPrefix: allowPrefix ?? false });
 
         setLocalExecutionRequest(current => current?.requestId === request.requestId ? null : current);
-        applyToolCallApprovalStatus(request.requestId, approved, alwaysAllow, allowPrefix, request.command);
+        applyToolCallApprovalStatus(request.requestId, approved, alwaysAllow, allowPrefix, request.command, silent);
     }, [applyToolCallApprovalStatus]);
 
     // Persistent local execution request listener (survives stream cleanup)
@@ -2007,11 +2188,12 @@ export default function ChatPage() {
         if (!acpApi?.onLocalExecutionRequest) return;
         acpApi.onLocalExecutionRequest((request: LocalExecutionRequest) => {
             if (request.conversationId && request.conversationId !== activeConversationIdRef.current) {
-                console.log(`[Frontend] Ignoring local execution request for stale conversation: ${request.conversationId}`);
+                if (import.meta.env.DEV) console.log(`[Frontend] Ignoring local execution request for stale conversation: ${request.conversationId}`);
                 return;
             }
             if (localAlwaysAllowedRef.current) {
-                respondToLocalExecutionRequest(request, true, true);
+                // CU-ST-04: silently auto-approved by the session's "Always allow" choice — disclose it in the tool-call output (no card is shown).
+                respondToLocalExecutionRequest(request, true, true, undefined, true);
                 return;
             }
             setLocalExecutionRequest(request);
@@ -2019,7 +2201,7 @@ export default function ChatPage() {
         acpApi.onLocalExecutionResolved?.((resolved: { requestId: string; approved: boolean; alwaysAllow: boolean; conversationId?: string }) => {
             if (!resolved?.requestId) return;
             if (resolved.conversationId && resolved.conversationId !== activeConversationIdRef.current) {
-                console.log(`[Frontend] Ignoring local execution resolved for stale conversation: ${resolved.conversationId}`);
+                if (import.meta.env.DEV) console.log(`[Frontend] Ignoring local execution resolved for stale conversation: ${resolved.conversationId}`);
                 return;
             }
             answeredLocalExecutionRequestIdsRef.current.add(resolved.requestId);
@@ -2031,7 +2213,6 @@ export default function ChatPage() {
             });
             if (resolved.alwaysAllow) {
                 localAlwaysAllowedRef.current = true;
-                setLocalAlwaysAllowed(true);
             }
             applyToolCallApprovalStatus(resolved.requestId, resolved.approved, resolved.alwaysAllow);
         });
@@ -2087,152 +2268,36 @@ export default function ChatPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [liveToolCalls, isToolDetailOpen, activeToolDetailTabId]);
 
-    useEffect(() => {
-        const handleProgress = (_: any, data: any) => {
-            const conversationId = data?.conversationId;
-            if (conversationId && conversationId !== activeConversationId) {
-                setActiveTaskIds(prev => prev.includes(conversationId) ? prev : [...prev, conversationId]);
-            }
-        };
-
-        const handleComplete = (_: any, data: any) => {
-            const conversationId = data?.conversationId;
-            if (conversationId) {
-                setActiveTaskIds(prev => prev.filter(id => id !== conversationId));
-                if (conversationId !== activeConversationId) {
-                    // Find title from history or use default
-                    const convTitle = "Chat task";
-                    setNotification({ id: conversationId, title: convTitle });
-                    // Auto-hide toast after 8 seconds
-                    setTimeout(() => setNotification(prev => prev?.id === conversationId ? null : prev), 8000);
-                }
-            }
-        };
-
-        const api = (window as any).electronAPI;
-        if (api?.on) {
-            api.on('agent-progress', handleProgress);
-            api.on('agent-complete', handleComplete);
-            return () => {
-                api.off?.('agent-progress', handleProgress);
-                api.off?.('agent-complete', handleComplete);
-            };
-        }
-    }, [activeConversationId]);
-
-    const CompletionToast = () => (
-        <AnimatePresence>
-            {notification && (
-                <motion.div
-                    initial={{ opacity: 0, y: -20, x: 20 }}
-                    animate={{ opacity: 1, y: 0, x: 0 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    onClick={() => {
-                        handleSelectConversation(notification.id);
-                        setNotification(null);
-                    }}
-                    className="glossy"
-                    style={{
-                        position: 'fixed',
-                        top: 24,
-                        right: 24,
-                        zIndex: 9999,
-                        width: 320,
-                        backgroundColor: 'var(--color-bg-elevated)',
-                        border: '1px solid var(--color-border)',
-                        borderRadius: 16,
-                        padding: '16px 20px',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 14,
-                    }}
-                >
-                    <div style={{
-                        width: 40,
-                        height: 40,
-                        borderRadius: 12,
-                        backgroundColor: 'rgba(34, 197, 94, 0.08)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: '#10b981',
-                        flexShrink: 0
-                    }}>
-                        <CheckCircleIcon width={24} height={24} />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)', marginBottom: 2 }}>Task Complete</div>
-                        <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {notification.title} is ready
-                        </div>
-                    </div>
-                    <div style={{ color: 'var(--color-text-tertiary)' }}>
-                        <ChevronRightIcon width={16} height={16} />
-                    </div>
-                </motion.div>
-            )}
-        </AnimatePresence>
-    );
-
-    // ── Persistence ─────────────────────────────────────────────────────────────
-    useEffect(() => {
-        // Restore from session storage on mount
-        const savedThought = sessionStorage.getItem('everfern_streaming_thought');
-        const savedTools = sessionStorage.getItem('everfern_live_tool_calls');
-        const savedLoading = sessionStorage.getItem('everfern_is_loading');
-
-        if (savedThought) {
-            setStreamingThought(savedThought);
-            streamingThoughtRef.current = savedThought;
-        }
-        if (savedTools) {
-            try {
-                const tools = JSON.parse(savedTools);
-                setLiveToolCalls(tools);
-                liveToolCallsRef.current = tools;
-            } catch (e) { console.error('Failed to restore live tool calls:', e); }
-        }
-        if (savedLoading === 'true') {
-            // If it was loading when refreshed, we might need to reconnect.
-            // Safety timeout: if no stream events arrive within 5s, auto-clear the stuck state.
-            // This handles the case where the renderer was hot-reloaded (Fast Refresh) while
-            // the backend stream was running — the `done:true` IPC message was consumed by
-            // the old renderer instance and will never arrive again.
-            setIsLoading(true);
-            const safetyTimer = setTimeout(() => {
-                setIsLoading(prev => {
-                    if (prev) {
-                        console.warn('[ChatPage] Safety timeout: isLoading was stuck after renderer refresh — auto-clearing.');
-                        sessionStorage.removeItem('everfern_is_loading');
-                        sessionStorage.removeItem('everfern_streaming_thought');
-                        sessionStorage.removeItem('everfern_live_tool_calls');
-                        setStreamingThought('');
-                        setLiveToolCalls([]);
-                        liveToolCallsRef.current = [];
-                    }
-                    return false;
-                });
-            }, 5000);
-            // Cancel the timer as soon as any real stream event arrives
-            const cleanup = (window as any).electronAPI?.acp?.onStreamChunk?.(() => {
-                clearTimeout(safetyTimer);
-                cleanup?.();
-            });
-        }
+    // CU-REND-11: CompletionToast hoisted to module scope (see CompletionToastHoisted)
+    // and rendered with stable props — the inline definition remounted every render,
+    // breaking its AnimatePresence exit animation.
+    const dismissNotification = useCallback(() => setNotification(null), []);
+    const handleToastSelect = useCallback((id: string) => {
+        handleSelectConversation(id);
+        setNotification(null);
+    // handleSelectConversation is a plain function; calling it through a ref-less
+    // stable wrapper is safe — it only reads state via refs/setters at call time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    useEffect(() => {
-        if (isLoading) {
-            sessionStorage.setItem('everfern_streaming_thought', streamingThought);
-            sessionStorage.setItem('everfern_live_tool_calls', JSON.stringify(liveToolCalls));
-            sessionStorage.setItem('everfern_is_loading', 'true');
-        } else {
-            sessionStorage.removeItem('everfern_streaming_thought');
-            sessionStorage.removeItem('everfern_live_tool_calls');
-            sessionStorage.removeItem('everfern_is_loading');
-        }
-    }, [streamingThought, liveToolCalls, isLoading]);
+    // CU-REND-09: Sidebar is React.memo'd; passing the plain handlers churned
+    // prop identity every render (streaming re-renders defeat the memo). Stable
+    // wrappers — same pattern as handleToastSelect above; they only fire
+    // post-render so the late const bindings are safe at call time.
+    const handleSelectConversationStable = useCallback((id: string) => {
+        handleSelectConversation(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+    const handleNewChatStable = useCallback(() => {
+        handleNewChat();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // CU-ST-01: the sessionStorage restore block + 5s safety timer + 2s mirror
+    // were removed. Main-side drafts (createDraftSaveDebouncer in
+    // stream-handlers.ts) already cover refresh recovery, and an orphaned
+    // `isLoading=true` restore could wedge sends (handleSend's isLoading guard).
+    // The resetConversationUiState cleanup below still clears any stale keys.
 
     const assistantMessageIdRef = useRef<string | null>(null);
 
@@ -2245,6 +2310,38 @@ export default function ChatPage() {
     const pendingNarrativeRef = useRef<string>("");
     const streamingThoughtRef = useRef("");
     const toolCallMap = useRef<Map<string, string>>(new Map());
+    // CU-REND-03/CU-LEAK-06: single coalesced 50ms flush owned by this component
+    // (replaces the shared window.__streamingThrottler global whose timer could
+    // fire after unmount/conversation switch and collide under double-mounts).
+    const streamingFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const streamingFlushScheduledRef = useRef(false);
+    // CU-REND-03: coalesce the 4 per-event setStates (content/thought/tools)
+    // into ONE batched commit per 50ms tick.
+    const flushStreamingState = useCallback(() => {
+        streamingFlushScheduledRef.current = false;
+        setStreamingContent(streamingContentRef.current);
+        setStreamingThought(streamingThoughtRef.current);
+        setLiveToolCalls([...liveToolCallsRef.current]);
+        setStreamingToolCalls([...streamingToolCallsRef.current]);
+    }, []);
+
+    const scheduleStreamingFlush = useCallback(() => {
+        if (streamingFlushScheduledRef.current) return;
+        streamingFlushScheduledRef.current = true;
+        streamingFlushTimerRef.current = setTimeout(flushStreamingState, 50);
+    }, [flushStreamingState]);
+
+    const cancelStreamingFlush = useCallback(() => {
+        streamingFlushScheduledRef.current = false;
+        if (streamingFlushTimerRef.current) {
+            clearTimeout(streamingFlushTimerRef.current);
+            streamingFlushTimerRef.current = null;
+        }
+    }, []);
+
+    // CU-LEAK-06: never let the flush timer outlive the component.
+    useEffect(() => cancelStreamingFlush, [cancelStreamingFlush]);
+
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const chatScrollRef = useRef<HTMLDivElement>(null);
     const [isScrolledUp, setIsScrolledUp] = useState(false);
@@ -2265,6 +2362,9 @@ export default function ChatPage() {
         isRecordingRef.current = isRecording;
     }, [isRecording]);
     const [audioLevels, setAudioLevels] = useState<number[]>(new Array(25).fill(15));
+    // CU-REND-02: latest per-frame levels live in a ref; state commits are throttled.
+    const audioLevelsRef = useRef<number[]>(new Array(25).fill(15));
+    const lastLevelCommitRef = useRef(0);
     const animationFrameRef = useRef<number | null>(null);
     const hasReceivedUsageData = useRef(false);
     const isMessageCommittedRef = useRef(false);
@@ -2343,6 +2443,9 @@ export default function ChatPage() {
         // Detach per-run stream listeners when changing the visible chat. The backend may
         // continue saving the old run, but stale chunks must not mutate the new chat view.
         (window as any).electronAPI?.acp?.removeStreamListeners?.();
+        // CU-LEAK-06: cancel any pending coalesced flush so a stale 50ms timer
+        // from the previous conversation can't fire state updates into the new one.
+        cancelStreamingFlush();
 
         messagesRef.current = [];
         setMessages([]);
@@ -2374,8 +2477,6 @@ export default function ChatPage() {
         hasReceivedUsageData.current = false;
         missionTimelineRef.current = null;
 
-        setCurrentPlan(null);
-        setContextItems([]);
         setExecutionPlan(null);
         setIsExecutionPlanPaneOpen(false);
         setActivePlan(null);
@@ -2389,7 +2490,6 @@ export default function ChatPage() {
         setPanelTasks([]);
         setShowTasksPanel(false);
         setTasksFilePath(undefined);
-        setInstructions("");
         setActiveUserQuestions([]);
         activeUserQuestionRef.current = false;
         setCloudAuthError(false);
@@ -2469,10 +2569,10 @@ export default function ChatPage() {
     useEffect(() => {
         if (displayName) {
             const nameStr = displayName.charAt(0).toUpperCase() + displayName.slice(1);
-            const msg = greetingMessages[Math.floor(Math.random() * greetingMessages.length)];
+            const msg = GREETING_MESSAGES[Math.floor(Math.random() * GREETING_MESSAGES.length)];
             setRandomGreeting(msg.replace("{name}", nameStr));
         } else {
-            const msg = greetingMessages[Math.floor(Math.random() * greetingMessages.length)];
+            const msg = GREETING_MESSAGES[Math.floor(Math.random() * GREETING_MESSAGES.length)];
             setRandomGreeting(msg.replace(", {name}", ""));
         }
     }, [displayName]);
@@ -2529,7 +2629,6 @@ export default function ChatPage() {
                 if (res.success && res.config) {
                     setConfig(res.config);
                     if (res.config.model) setSelectedModel(res.config.model);
-                    if (res.config.motionBlur !== undefined) setSettingsMotionBlur(res.config.motionBlur);
                     if (res.config.voice) {
                         setVoiceProvider(res.config.voice.provider || null);
                         setVoiceDeepgramKey(res.config.voice.deepgramKey || "");
@@ -2788,11 +2887,24 @@ export default function ChatPage() {
         ta.style.height = `${Math.min(ta.scrollHeight, 300)}px`;
     }, [inputValue]);
 
+    // CU-STRM-03: coalesce stream-rate scroll triggers into one rAF frame with
+    // instant ("auto") scroll — queued smooth scrolls per 50ms flush janked the
+    // layout; the scroll-to-bottom button keeps the smooth behavior for users.
+    const autoScrollRafRef = useRef<number | null>(null);
     useEffect(() => {
-        if (!isScrolledUp) {
-            messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-        }
-    }, [messages, streamingContent, liveToolCalls, streamingThought]);
+        if (isScrolledUp) return;
+        if (autoScrollRafRef.current !== null) return;
+        autoScrollRafRef.current = requestAnimationFrame(() => {
+            autoScrollRafRef.current = null;
+            messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+        });
+        return () => {
+            if (autoScrollRafRef.current !== null) {
+                cancelAnimationFrame(autoScrollRafRef.current);
+                autoScrollRafRef.current = null;
+            }
+        };
+    }, [messages, streamingContent, liveToolCalls, streamingThought, isScrolledUp]);
 
     useEffect(() => {
         const el = chatScrollRef.current;
@@ -2811,13 +2923,13 @@ export default function ChatPage() {
 
     // Debug: Log when activeUserQuestions changes
     useEffect(() => {
-        console.log('[Frontend] activeUserQuestions changed:', activeUserQuestions);
-        console.log('[Frontend] activeUserQuestions.length:', activeUserQuestions.length);
+        if (import.meta.env.DEV) console.log('[Frontend] activeUserQuestions changed:', activeUserQuestions);
+        if (import.meta.env.DEV) console.log('[Frontend] activeUserQuestions.length:', activeUserQuestions.length);
         if (activeUserQuestions.length > 0) {
-            console.log('[Frontend] ✅ Approval form should be visible now');
-            console.log('[Frontend] First question:', activeUserQuestions[0]);
+            if (import.meta.env.DEV) console.log('[Frontend] ✅ Approval form should be visible now');
+            if (import.meta.env.DEV) console.log('[Frontend] First question:', activeUserQuestions[0]);
         } else {
-            console.log('[Frontend] ⚠️ No active questions - form will not show');
+            if (import.meta.env.DEV) console.log('[Frontend] ⚠️ No active questions - form will not show');
         }
     }, [activeUserQuestions]);
 
@@ -2922,6 +3034,9 @@ export default function ChatPage() {
                         setIsRecording(prev => !prev);
                         break;
                 }
+                // CU-UI-05: a matched custom keybind must not fall through to
+                // the Ctrl+U / Ctrl+Shift+J built-ins below.
+                return;
             }
 
             // File attachment shortcut (Ctrl+U)
@@ -2930,25 +3045,10 @@ export default function ChatPage() {
                 handleAttachment('all');
                 return;
             }
-
-            // Developer JSON Viewer shortcut (Ctrl+Shift+J)
-            if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toUpperCase() === "J") {
-                e.preventDefault();
-                handleShowJsonViewer();
-            }
         };
         window.addEventListener("keydown", handleKeyDown as any);
         return () => window.removeEventListener("keydown", handleKeyDown as any);
     }, [handleAttachment]);
-
-    // Listen for acp:show-json-viewer event from main process
-    useEffect(() => {
-        const handleShowJsonViewerEvent = async () => {
-            handleShowJsonViewer();
-        };
-        window.addEventListener("acp:show-json-viewer", handleShowJsonViewerEvent as EventListener);
-        return () => window.removeEventListener("acp:show-json-viewer", handleShowJsonViewerEvent as EventListener);
-    }, []);
 
     // Register HITL listener at mount so events are never missed regardless of timing
     useEffect(() => {
@@ -2956,7 +3056,7 @@ export default function ChatPage() {
         if (!acpApi?.onHitlRequest) return;
 
         acpApi.onHitlRequest((request: any) => {
-            console.log('[HITL] ✅ Approval request received in frontend (mount listener):', request);
+            if (import.meta.env.DEV) console.log('[HITL] ✅ Approval request received in frontend (mount listener):', request);
             // Set flag FIRST before any async state updates to prevent mission_complete race
             (window as any).__activeHitl = true;
             setHitlRequest(request);
@@ -2981,7 +3081,7 @@ export default function ChatPage() {
                 setActiveTaskIds(prev => prev.includes(conversationId) ? prev : [...prev, conversationId]);
                 return;
             }
-            console.log('[Mission] Step update received (persistent):', step?.name, step?.status);
+            if (import.meta.env.DEV) console.log('[Mission] Step update received (persistent):', step?.name, step?.status);
             setMissionTimeline(timeline);
             missionTimelineRef.current = timeline;
             setIsExecutionPlanPaneOpen(false);
@@ -2995,7 +3095,7 @@ export default function ChatPage() {
                 setActiveTaskIds(prev => prev.includes(conversationId) ? prev : [...prev, conversationId]);
                 return;
             }
-            console.log('[Mission] Phase change received (persistent):', phase);
+            if (import.meta.env.DEV) console.log('[Mission] Phase change received (persistent):', phase);
             setMissionTimeline(timeline);
             missionTimelineRef.current = timeline;
             setIsExecutionPlanPaneOpen(false);
@@ -3004,7 +3104,7 @@ export default function ChatPage() {
 
         acpApi.onMissionComplete(({ conversationId, assistantMessageId, thinkingDuration, title }: { conversationId?: string; assistantMessageId?: string; timeline?: any; steps?: any[]; thinkingDuration?: { startTime: number; endTime?: number; duration?: number }; title?: string }) => {
             if (conversationId && conversationId !== activeConversationIdRef.current) {
-                console.log('[Mission] Ignoring completion for background conversation:', conversationId);
+                if (import.meta.env.DEV) console.log('[Mission] Ignoring completion for background conversation:', conversationId);
                 setActiveTaskIds(prev => prev.filter(id => id !== conversationId));
                 setNotification({ id: conversationId, title: title || 'Chat task' });
                 setTimeout(() => setNotification(prev => prev?.id === conversationId ? null : prev), 8000);
@@ -3016,17 +3116,17 @@ export default function ChatPage() {
                 return;
             }
             if (assistantMessageId && assistantMessageId !== assistantMessageIdRef.current) {
-                console.log('[Mission] Ignoring completion for stale session:', assistantMessageId, 'current active:', assistantMessageIdRef.current);
+                if (import.meta.env.DEV) console.log('[Mission] Ignoring completion for stale session:', assistantMessageId, 'current active:', assistantMessageIdRef.current);
                 return;
             }
-            console.log('[Mission] Mission complete received (persistent)');
+            if (import.meta.env.DEV) console.log('[Mission] Mission complete received (persistent)');
 
             // CRITICAL: Check __activeHitl flag BEFORE processing mission_complete
             const hasActiveHitl = (window as any).__activeHitl || showHitlApproval;
             const hasActiveUserQuestion = activeUserQuestionRef.current || activeUserQuestions.length > 0;
 
             if (hasActiveHitl || hasActiveUserQuestion) {
-                console.log(`[Frontend] ⏸️ Mission complete received but ${hasActiveHitl ? 'HITL' : 'user question'} is active - committing message and deferring completion`);
+                if (import.meta.env.DEV) console.log(`[Frontend] ⏸️ Mission complete received but ${hasActiveHitl ? 'HITL' : 'user question'} is active - committing message and deferring completion`);
                 if (!isMessageCommittedRef.current) {
                     isMessageCommittedRef.current = true;
                     const finalContent = streamingContentRef.current || "";
@@ -3052,12 +3152,15 @@ export default function ChatPage() {
                         setLiveToolCalls([]);
                         setStreamingToolCalls([]);
                         streamingToolCallsRef.current = [];
+                        // CU-LEAK-08: updater stays pure (no saves inside —
+                        // StrictMode double-invocation used to double-save).
+                        let committed: Message[] | null = null;
                         setMessages(prev => {
                             const existingIdx = prev.findIndex(m => m.id === assistantMsg.id);
                             if (existingIdx >= 0) {
                                 const final = [...prev];
                                 final[existingIdx] = { ...prev[existingIdx], ...assistantMsg };
-                                saveConversation(final);
+                                committed = final;
                                 return final;
                             }
                             if (prev.length > 0) {
@@ -3068,15 +3171,16 @@ export default function ChatPage() {
                                     if (lastClean === newClean && lastClean.length > 0) {
                                         const final = [...prev];
                                         final[final.length - 1] = { ...lastMsg, ...assistantMsg, id: lastMsg.id };
-                                        saveConversation(final);
+                                        committed = final;
                                         return final;
                                     }
                                 }
                             }
                             const final = [...prev, assistantMsg];
-                            saveConversation(final);
+                            committed = final;
                             return final;
                         });
+                        if (committed) saveConversation(committed).catch(err => console.error("[ChatPage] saveConversation failed:", err));
                     }
                 }
                 setIsLoading(false);
@@ -3102,7 +3206,7 @@ export default function ChatPage() {
                 const hasActiveHitlNow = (window as any).__activeHitl || showHitlApproval;
 
                 if (hasActiveUserQuestionNow || hasActiveHitlNow) {
-                    console.log(`[Frontend] ⏸️ ${hasActiveHitlNow ? 'HITL' : 'User question'} detected - committing accumulated content before pausing`);
+                    if (import.meta.env.DEV) console.log(`[Frontend] ⏸️ ${hasActiveHitlNow ? 'HITL' : 'User question'} detected - committing accumulated content before pausing`);
                     setIsLoading(false);
                     const hasAnything = finalContent || finalThought || finalToolCalls.length > 0;
                     if (hasAnything) {
@@ -3125,12 +3229,15 @@ export default function ChatPage() {
                         setStreamingThought("");
                         streamingContentRef.current = "";
                         streamingThoughtRef.current = "";
+                        // CU-LEAK-08: updater stays pure (no saves inside —
+                        // StrictMode double-invocation used to double-save).
+                        let committed: Message[] | null = null;
                         setMessages(prev => {
                             const existingIdx = prev.findIndex(m => m.id === assistantMsg.id);
                             if (existingIdx >= 0) {
                                 const final = [...prev];
                                 final[existingIdx] = { ...prev[existingIdx], ...assistantMsg };
-                                saveConversation(final);
+                                committed = final;
                                 return final;
                             }
                             if (prev.length > 0) {
@@ -3141,15 +3248,16 @@ export default function ChatPage() {
                                     if (lastClean === newClean && lastClean.length > 0) {
                                         const final = [...prev];
                                         final[final.length - 1] = { ...lastMsg, ...assistantMsg, id: lastMsg.id };
-                                        saveConversation(final);
+                                        committed = final;
                                         return final;
                                     }
                                 }
                             }
                             const final = [...prev, assistantMsg];
-                            saveConversation(final);
+                            committed = final;
                             return final;
                         });
+                        if (committed) saveConversation(committed).catch(err => console.error("[ChatPage] saveConversation failed:", err));
                     }
                     return;
                 }
@@ -3173,12 +3281,14 @@ export default function ChatPage() {
                     setStreamingToolCalls([]);
                     streamingToolCallsRef.current = [];
                     setIsLoading(false);
+                    // CU-LEAK-08: pure updater — save moved out (StrictMode safety).
+                    let committed: Message[] | null = null;
                     setMessages(prev => {
                         const existingIdx = prev.findIndex(m => m.id === assistantMsg.id);
                         if (existingIdx >= 0) {
                             const final = [...prev];
                             final[existingIdx] = { ...prev[existingIdx], ...assistantMsg };
-                            saveConversation(final);
+                            committed = final;
                             return final;
                         }
                         if (prev.length > 0) {
@@ -3189,15 +3299,16 @@ export default function ChatPage() {
                                 if (lastClean === newClean && lastClean.length > 0) {
                                     const final = [...prev];
                                     final[final.length - 1] = { ...lastMsg, ...assistantMsg, id: lastMsg.id };
-                                    saveConversation(final);
+                                    committed = final;
                                     return final;
                                 }
                             }
                         }
                         const final = [...prev, assistantMsg];
-                        saveConversation(final);
+                        committed = final;
                         return final;
                     });
+                    if (committed) saveConversation(committed).catch(err => console.error("[ChatPage] saveConversation failed:", err));
                 } else {
                     setStreamingContent("");
                     setStreamingThought("");
@@ -3236,27 +3347,6 @@ export default function ChatPage() {
             // at the start of each handleSend and after mission complete
         };
     }, []);
-
-    const handleShowJsonViewer = async () => {
-        try {
-            // Try to get full chat history first, fall back to last event
-            const chatHistory = await (window as any).electronAPI?.debug?.getChatHistory();
-            if (chatHistory) {
-                setLastEventJson(JSON.stringify(chatHistory, null, 2));
-                setLastEventType(chatHistory.type || "chat_history");
-                setIsJsonViewerOpen(true);
-            } else {
-                const lastEvent = await (window as any).electronAPI?.debug?.getLastEvent();
-                if (lastEvent) {
-                    setLastEventJson(JSON.stringify(lastEvent, null, 2));
-                    setLastEventType(lastEvent.type || "unknown");
-                    setIsJsonViewerOpen(true);
-                }
-            }
-        } catch (err) {
-            console.error("Failed to get JSON:", err);
-        }
-    };
 
     // Removed handleAddContextFolder
 
@@ -3359,7 +3449,7 @@ export default function ChatPage() {
             acpApi.onToolStart(({ toolName, toolArgs, toolCallId, conversationId }: { toolName: string; toolArgs: Record<string, unknown>; toolCallId?: string; conversationId?: string }) => {
                 if (conversationId && conversationId !== activeConversationIdRef.current) return;
                 if (toolName === 'ask_user_question') {
-                    console.log('[Frontend] Received ask_user_question tool_start:', JSON.stringify({ toolName, toolArgs }, null, 2));
+                    if (import.meta.env.DEV) console.log('[Frontend] Received ask_user_question tool_start:', JSON.stringify({ toolName, toolArgs }, null, 2));
                 }
 
                 // ask_user_question and approve_actions are handled exclusively by the
@@ -3488,7 +3578,7 @@ export default function ChatPage() {
                 if (record?.conversationId && record.conversationId !== activeConversationIdRef.current) return;
                 // Debug: Log the tool call structure
                 if (record.toolName === 'ask_user_question') {
-                    console.log('[Frontend] 📥 Received ask_user_question tool call');
+                    if (import.meta.env.DEV) console.log('[Frontend] 📥 Received ask_user_question tool call');
                 }
 
                 // ask_user_question and approve_actions are handled exclusively by the
@@ -3524,13 +3614,6 @@ export default function ChatPage() {
                     setLiveToolCalls(updated);
                     if (record.toolName === 'show_user_url') {
                         openToolDetailTab(mapToolCallForDetail(updated[existingIdx]));
-                    }
-
-                    // Auto-open PPTX viewer when pptx_generator completes
-                    if (record.toolName === 'pptx_generator' && record.result?.success && record.result?.data?.path) {
-                        const path = record.result.data.path;
-                        const filename = path.split(/[\\/]/).pop() || 'Presentation';
-                        setViewingFile({ name: filename, path });
                     }
 
                     // Auto-open PPTX viewer when present_files completes with a .pptx file
@@ -3589,8 +3672,8 @@ export default function ChatPage() {
                     const completionCost = (completionTokens || 0) * modelInfo.completionPricing;
                     const totalCost = promptCost + completionCost;
 
-                    console.log(`[Pricing] Prompt Cost: $${promptCost.toFixed(6)}, Completion Cost: $${completionCost.toFixed(6)}, Total Cost: $${totalCost.toFixed(6)}`);
-                    console.log(`[Pricing] Model: ${selectedModel}, Rates: Prompt $${modelInfo.promptPricing.toExponential()} / token, Completion $${modelInfo.completionPricing.toExponential()} / token`);
+                    if (import.meta.env.DEV) console.log(`[Pricing] Prompt Cost: $${promptCost.toFixed(6)}, Completion Cost: $${completionCost.toFixed(6)}, Total Cost: $${totalCost.toFixed(6)}`);
+                    if (import.meta.env.DEV) console.log(`[Pricing] Model: ${selectedModel}, Rates: Prompt $${modelInfo.promptPricing.toExponential()} / token, Completion $${modelInfo.completionPricing.toExponential()} / token`);
                 }
 
                 hasReceivedUsageData.current = true;
@@ -3647,10 +3730,13 @@ export default function ChatPage() {
                         return;
                     }
                 }
+                // CU-REND-03: route per-chunk state updates through the 50ms
+                // coalescer — this handler previously bypassed it with direct
+                // setStreamingContent/setLiveToolCalls per chunk.
                 if (!done) {
                     if (delta) {
                         streamingContentRef.current += delta;
-                        setStreamingContent(streamingContentRef.current);
+                        scheduleStreamingFlush();
 
                         // Update create_artifact tool with streaming content
                         const artifactToolIdx = liveToolCallsRef.current.findIndex(
@@ -3666,14 +3752,13 @@ export default function ChatPage() {
                                 }
                             };
                             liveToolCallsRef.current = updated;
-                            setLiveToolCalls(updated);
                         }
                     }
                 } else {
                     // Don't mark as done yet - wait for mission_complete event
                     if (delta) {
                         streamingContentRef.current += delta;
-                        setStreamingContent(streamingContentRef.current);
+                        scheduleStreamingFlush();
 
                         // Update create_artifact tool with final streaming content
                         const artifactToolIdx = liveToolCallsRef.current.findIndex(
@@ -3689,7 +3774,6 @@ export default function ChatPage() {
                                 }
                             };
                             liveToolCallsRef.current = updated;
-                            setLiveToolCalls(updated);
                         }
                     }
                 }
@@ -3774,7 +3858,13 @@ export default function ChatPage() {
             isFullSave // Use the provided parameter
         } as any;
 
-        if ((window as any).electronAPI?.history?.save) await (window as any).electronAPI.history.save(conversation);
+        // CU-ST-02: surface save failures instead of silently dropping them
+        // (a rejected floating promise here used to be an unhandled rejection).
+        try {
+            if ((window as any).electronAPI?.history?.save) await (window as any).electronAPI.history.save(conversation);
+        } catch (saveError) {
+            console.error('[ChatPage] Failed to save conversation:', saveError, { conversationId: id, messageCount: msgs.length, isFullSave });
+        }
 
         // Non-blocking: trigger AI call in the background to give a title of the chat / rename
         const firstUserMsg = msgs.find(m => m.role === 'user');
@@ -3782,31 +3872,41 @@ export default function ChatPage() {
             titleGeneratedConvsRef.current.add(id);
             const currentM = availableModels.find(m => m.id === selectedModel);
             const providerType = currentM?.providerType || config?.provider || 'everfern';
-            const apiKey = config?.keys?.[providerType] || config?.apiKey;
+            // MP-SEC-11: never send key material from the renderer — main-side
+            // chat-title-generator loads the key from its own config/vault.
             (window as any).electronAPI?.chat?.generateTitle?.(id, firstUserMsg.content, {
                 providerType,
                 model: selectedModel,
-                apiKey,
             });
         }
-    }, [config?.apiKey, config?.keys, config?.provider, folderContexts, persistableToolCalls, selectedModel, availableModels]);
+    }, [config?.provider, folderContexts, persistableToolCalls, selectedModel, availableModels]);
 
     const handlePlayVoiceResponse = useCallback(async (text: string) => {
-        if (!voiceOutputEnabled || !voiceProvider || !voiceElevenlabsKey) return;
+        if (!voiceOutputEnabled || !voiceProvider || !secretConfigured(voiceElevenlabsKey)) return;
         try {
             setVoicePlayback(true);
             if (voiceProvider === "elevenlabs") {
-                const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceVoiceId}?optimize_streaming_latency=0`, { method: 'POST', headers: { 'xi-api-key': voiceElevenlabsKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ text, model_id: 'eleven_monolingual_v1', voice_settings: { stability: 0.5, similarity_boost: 0.75 } }) });
-                if (response.ok) {
-                    const audioBlob = await response.blob();
-                    const audioUrl = URL.createObjectURL(audioBlob);
-                    if (!audioPlaybackRef.current) audioPlaybackRef.current = new Audio();
-                    const audio = audioPlaybackRef.current;
-                    audio.src = audioUrl;
-                    audio.onended = () => { setVoicePlayback(false); URL.revokeObjectURL(audioUrl); };
-                    audio.onerror = () => { setVoicePlayback(false); URL.revokeObjectURL(audioUrl); };
-                    await audio.play();
-                } else { setVoicePlayback(false); }
+                // MP-SEC-11: the raw key lives only in the main-side vault.
+                // A SecretView echo can't be used here — only an in-session
+                // typed key (plain string) can drive the direct API call.
+                // Otherwise fall back to local speech synthesis below.
+                // TODO(main): add a tts:synthesize IPC that reads the vault.
+                const rawKey = typeof voiceElevenlabsKey === 'string' ? voiceElevenlabsKey : '';
+                if (rawKey) {
+                    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceVoiceId}?optimize_streaming_latency=0`, { method: 'POST', headers: { 'xi-api-key': rawKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ text, model_id: 'eleven_monolingual_v1', voice_settings: { stability: 0.5, similarity_boost: 0.75 } }) });
+                    if (response.ok) {
+                        const audioBlob = await response.blob();
+                        const audioUrl = URL.createObjectURL(audioBlob);
+                        if (!audioPlaybackRef.current) audioPlaybackRef.current = new Audio();
+                        const audio = audioPlaybackRef.current;
+                        audio.src = audioUrl;
+                        audio.onended = () => { setVoicePlayback(false); URL.revokeObjectURL(audioUrl); };
+                        audio.onerror = () => { setVoicePlayback(false); URL.revokeObjectURL(audioUrl); };
+                        await audio.play();
+                        return;
+                    } else { setVoicePlayback(false); return; }
+                }
+                setVoicePlayback(false);
             }
         } catch (error) { console.error('Voice playback error:', error); setVoicePlayback(false); }
     }, [voiceOutputEnabled, voiceProvider, voiceElevenlabsKey, voiceVoiceId]);
@@ -3886,23 +3986,23 @@ export default function ChatPage() {
 
         try {
             const res = await (window as any).electronAPI.loadConfig();
-            if (!res.success || !res.config?.apiKey) {
-                alert("Please log in to submit feedback.");
+            // MP-SEC-11: apiKey is a redacted SecretView; gate on .configured.
+            // The raw key never crosses back into the renderer — feedback is
+            // submitted via the narrow feedback:submit channel (main-side
+            // handler validates, redacts, and persists the entry).
+            const submitViaIpc = (window as any).electronAPI?.submitFeedback;
+            if (!res.success || !secretConfigured((res.config?.apiKey as any))) {
+                if (typeof submitViaIpc !== 'function') {
+                    alert("Please log in to submit feedback.");
+                    return;
+                }
+            }
+            if (typeof submitViaIpc === 'function') {
+                const submitRes = await submitViaIpc.call((window as any).electronAPI, type, reason, customReason, contextMessages);
+                if (!submitRes?.success) throw new Error(submitRes?.error || 'Failed to submit feedback');
                 return;
             }
-
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.everfern.app";
-            const reqRes = await fetch(`${API_URL}/api/feedback`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${res.config.apiKey}` },
-                body: JSON.stringify({
-                    feedback_type: type,
-                    reason,
-                    custom_reason: customReason,
-                    context_data: contextMessages
-                })
-            });
-            if (!reqRes.ok) throw new Error('Failed to submit feedback');
+            alert("Please log in to submit feedback.");
         } catch (err) {
             console.error('Error submitting feedback:', err);
         }
@@ -3913,11 +4013,16 @@ export default function ChatPage() {
         if (loadPromiseRef.current) {
             await loadPromiseRef.current;
         }
-        console.log('[Frontend handleSend] CALLED - Starting new message send', { skipAddUserMessage });
+        if (import.meta.env.DEV) console.log('[Frontend handleSend] CALLED - Starting new message send', { skipAddUserMessage });
         const textToUse = typeof overrideValue === 'string'
             ? overrideValue
             : (selectedSkill ? `/skill ${selectedSkill.name} ${inputValue}`.trim() : inputValue);
-        if ((!textToUse.trim() && attachments.length === 0 && folderContexts.length === 0) || (isLoading && !bypassLoadingRef.current)) return;
+        // CU-UI-09: sendingRef is a synchronous latch — it closes the double-send
+        // window between fire #1 and the isLoading state commit. Internal resumes
+        // (HITL answers, auto-continue) pass explicit arguments and are exempt.
+        const isInternalResume = typeof overrideValue === 'string' || currentMessages !== undefined || skipAddUserMessage === true;
+        if ((!textToUse.trim() && attachments.length === 0 && folderContexts.length === 0)
+            || ((isLoading || sendingRef.current) && !bypassLoadingRef.current && !isInternalResume)) return;
         bypassLoadingRef.current = false;
 
         let newMessages: Message[];
@@ -3936,7 +4041,7 @@ export default function ChatPage() {
             setMessages(newMessages);
 
             // Immediately save the user message to prevent data loss
-            saveConversation(newMessages);
+            saveConversation(newMessages).catch(err => console.error("[ChatPage] saveConversation failed:", err));
         }
 
         // Ensure conversation ID is established synchronously before any async operations
@@ -3959,6 +4064,9 @@ export default function ChatPage() {
         }
 
         setIsLoading(true);
+        // CU-UI-09: close the latch before the first await so concurrent fires
+        // of this same callback are rejected by the synchronous guard above.
+        sendingRef.current = true;
         setLiveToolCalls([]);
         setStreamingToolCalls([]);
         streamingToolCallsRef.current = [];
@@ -3987,12 +4095,12 @@ export default function ChatPage() {
         // This prevents race condition where old handler sets flag to true after we reset it
         const api = (window as any).electronAPI?.acp;
         if (api?.removeStreamListeners) {
-            console.log('[Frontend handleSend] Removing old stream listeners');
+            if (import.meta.env.DEV) console.log('[Frontend handleSend] Removing old stream listeners');
             api.removeStreamListeners();
         }
 
         // Now it's safe to reset the flag - no old handlers can interfere
-        console.log('[Frontend handleSend] Resetting isMessageCommittedRef to false');
+        if (import.meta.env.DEV) console.log('[Frontend handleSend] Resetting isMessageCommittedRef to false');
         isMessageCommittedRef.current = false;
 
         (async () => {
@@ -4017,12 +4125,12 @@ export default function ChatPage() {
 
                 api.onToolStart(({ toolName, toolArgs, toolCallId, conversationId }: { toolName: string; toolArgs: Record<string, unknown>, toolCallId?: string; conversationId?: string }) => {
                     if (conversationId && conversationId !== activeConversationIdRef.current) return;
-                    console.log('[Frontend] 🔧 Received tool_start:', toolName, 'with args:', toolArgs);
-                    console.log('[Frontend] Current liveToolCalls length BEFORE adding:', liveToolCallsRef.current.length);
-                    console.log('[Frontend] Current liveToolCalls:', liveToolCallsRef.current.map(tc => ({ id: tc.id, toolName: tc.toolName, status: tc.status })));
+                    if (import.meta.env.DEV) console.log('[Frontend] 🔧 Received tool_start:', toolName, 'with args:', toolArgs);
+                    if (import.meta.env.DEV) console.log('[Frontend] Current liveToolCalls length BEFORE adding:', liveToolCallsRef.current.length);
+                    if (import.meta.env.DEV) console.log('[Frontend] Current liveToolCalls:', liveToolCallsRef.current.map(tc => ({ id: tc.id, toolName: tc.toolName, status: tc.status })));
 
                     if (toolName === 'ask_user_question' || toolName === 'approve_actions') {
-                        console.log(`[Frontend] Received ${toolName} tool_start:`, JSON.stringify({ toolName, toolArgs }, null, 2));
+                        if (import.meta.env.DEV) console.log(`[Frontend] Received ${toolName} tool_start:`, JSON.stringify({ toolName, toolArgs }, null, 2));
                         // Set the flag immediately so mission_complete doesn't clear the form
                         activeUserQuestionRef.current = true;
                         return;
@@ -4037,7 +4145,7 @@ export default function ChatPage() {
                     }
 
                     const display = resolveToolDisplay(toolName, toolArgs);
-                    console.log('[Frontend] Resolved display for', toolName, ':', display);
+                    if (import.meta.env.DEV) console.log('[Frontend] Resolved display for', toolName, ':', display);
 
                     const placeholder = liveToolCallsRef.current.find(t =>
                         t.id.startsWith('streaming-') && t.toolName === toolName
@@ -4058,8 +4166,8 @@ export default function ChatPage() {
                     };
                     const mapKey = toolCallId || (toolName + '_running');
 
-                    console.log('[Frontend] Created new ToolCallDisplay:', { id: newTc.id, toolName: newTc.toolName, label: newTc.label, status: newTc.status });
-                    console.log('[Frontend] Adding to toolCallMap with key:', mapKey, 'id:', newTc.id);
+                    if (import.meta.env.DEV) console.log('[Frontend] Created new ToolCallDisplay:', { id: newTc.id, toolName: newTc.toolName, label: newTc.label, status: newTc.status });
+                    if (import.meta.env.DEV) console.log('[Frontend] Adding to toolCallMap with key:', mapKey, 'id:', newTc.id);
                     toolCallMap.current.set(mapKey, newTc.id);
 
 
@@ -4074,9 +4182,9 @@ export default function ChatPage() {
                     setLiveToolCalls(updatedToolCalls);
                     maybeOpenUserUrlTool(newTc);
 
-                    console.log('[Frontend] ✅ Added tool to timeline:', toolName);
-                    console.log('[Frontend] Total tools AFTER adding:', liveToolCallsRef.current.length);
-                    console.log('[Frontend] Updated liveToolCalls:', liveToolCallsRef.current.map(tc => ({ id: tc.id, toolName: tc.toolName, label: tc.label, status: tc.status })));
+                    if (import.meta.env.DEV) console.log('[Frontend] ✅ Added tool to timeline:', toolName);
+                    if (import.meta.env.DEV) console.log('[Frontend] Total tools AFTER adding:', liveToolCallsRef.current.length);
+                    if (import.meta.env.DEV) console.log('[Frontend] Updated liveToolCalls:', liveToolCallsRef.current.map(tc => ({ id: tc.id, toolName: tc.toolName, label: tc.label, status: tc.status })));
 
                 });
                 api.onToolUpdate?.(applyLiveToolUpdate);
@@ -4106,7 +4214,7 @@ export default function ChatPage() {
                 api.onSubagentEvent?.((event: any) => {
                     if (event?.conversationId && event.conversationId !== activeConversationIdRef.current) return;
                     if (event.type === 'subagent_event') {
-                        console.log('[Frontend] 🤖 Subagent event received:', event.subagentEventType, event.agent);
+                        if (import.meta.env.DEV) console.log('[Frontend] 🤖 Subagent event received:', event.subagentEventType, event.agent);
                         subagent.handleStreamEvent(event);
                         setShowSubagentPanel(true);
                     }
@@ -4114,6 +4222,13 @@ export default function ChatPage() {
 
 
                 let accumulated = "";
+                // CU-REND-05: incremental tool_call tag scan state — instead of
+                // re-running matchAll over the ENTIRE accumulated buffer per chunk
+                // (O(n²)), scan only the delta tail after the last closed tag.
+                const toolTagScan = { pos: 0, count: 0, seenUnclosedStart: -1 };
+                const resetToolTagScan = () => { toolTagScan.pos = 0; toolTagScan.count = 0; toolTagScan.seenUnclosedStart = -1; };
+                const TOOL_CALL_TAG_RE = /<tool_call>([\s\S]*?)(?:<\/tool_call>|$)/gi;
+                const TOOL_CALL_TAG_OPEN = '<' + 'tool_call';
 
                 api.onToolCall((record: any) => {
                     if (record?.conversationId && record.conversationId !== activeConversationIdRef.current) return;
@@ -4121,30 +4236,30 @@ export default function ChatPage() {
 
                     // Debug: Log the tool call structure
                     if (record.toolName === 'ask_user_question' || record.toolName === 'approve_actions') {
-                        console.log(`[Frontend] 📥 Received ${record.toolName} tool call`);
-                        console.log('[Frontend] Tool call data:', JSON.stringify(record, null, 2));
-                        console.log('[Frontend] Current activeUserQuestions length:', activeUserQuestions.length);
-                        console.log('[Frontend] Current __activeUserQuestion flag:', activeUserQuestionRef.current);
+                        if (import.meta.env.DEV) console.log(`[Frontend] 📥 Received ${record.toolName} tool call`);
+                        if (import.meta.env.DEV) console.log('[Frontend] Tool call data:', JSON.stringify(record, null, 2));
+                        if (import.meta.env.DEV) console.log('[Frontend] Current activeUserQuestions length:', activeUserQuestions.length);
+                        if (import.meta.env.DEV) console.log('[Frontend] Current __activeUserQuestion flag:', activeUserQuestionRef.current);
                     }
 
                     // CRITICAL: Handle ask_user_question or approve_actions FIRST, before checking existingId
                     // HITL approval sends tool_call without tool_start, so existingId won't exist
                     if ((record.toolName === 'ask_user_question' || record.toolName === 'approve_actions') && record.result?.success && record.result?.data) {
                         if (recordTcId && answeredToolCallIdsRef.current.has(recordTcId)) {
-                            console.log(`[Frontend] ⏭️ Skipping already-answered HITL tool call: ${recordTcId}`);
+                            if (import.meta.env.DEV) console.log(`[Frontend] ⏭️ Skipping already-answered HITL tool call: ${recordTcId}`);
                             return;
                         }
 
-                        console.log(`[Frontend] ✅ Processing ${record.toolName} (HITL or regular)`);
-                        console.log('[Frontend] Result data:', JSON.stringify(record.result.data, null, 2));
+                        if (import.meta.env.DEV) console.log(`[Frontend] ✅ Processing ${record.toolName} (HITL or regular)`);
+                        if (import.meta.env.DEV) console.log('[Frontend] Result data:', JSON.stringify(record.result.data, null, 2));
 
                         // CRITICAL: Set flag IMMEDIATELY to prevent race condition with mission_complete
                         activeUserQuestionRef.current = true;
-                        console.log('[Frontend] Set __activeUserQuestion flag to true');
+                        if (import.meta.env.DEV) console.log('[Frontend] Set __activeUserQuestion flag to true');
 
                         const data = record.result.data;
                         const normalizeOpts = (opts: any[]) => {
-                            console.log('[Frontend] Normalizing options:', opts);
+                            if (import.meta.env.DEV) console.log('[Frontend] Normalizing options:', opts);
                             return (opts || []).map((opt: any) => ({
                                 label: typeof opt === 'string' ? opt : opt.label || opt.value || String(opt),
                                 value: typeof opt === 'string' ? opt : opt.value || opt.label || String(opt),
@@ -4153,9 +4268,9 @@ export default function ChatPage() {
                         };
 
                         if (data.questions && Array.isArray(data.questions) && data.questions.length > 0) {
-                            console.log('[Frontend] Found questions array with', data.questions.length, 'questions');
+                            if (import.meta.env.DEV) console.log('[Frontend] Found questions array with', data.questions.length, 'questions');
                             const normalized = data.questions.map((q: any) => {
-                                console.log('[Frontend] Normalizing question:', q);
+                                if (import.meta.env.DEV) console.log('[Frontend] Normalizing question:', q);
                                 return {
                                     toolCallId: recordTcId,
                                     question: q.question,
@@ -4164,14 +4279,14 @@ export default function ChatPage() {
                                     previewMarkdown: data.preview || undefined,
                                 };
                             });
-                            console.log('[Frontend] Normalized questions:', normalized);
+                            if (import.meta.env.DEV) console.log('[Frontend] Normalized questions:', normalized);
                             setActiveUserQuestions(normalized);
-                            console.log(`[Frontend] ✅ Called setActiveUserQuestions with ${normalized.length} questions`);
+                            if (import.meta.env.DEV) console.log(`[Frontend] ✅ Called setActiveUserQuestions with ${normalized.length} questions`);
 
                             // Force a re-render
                             setIsLoading(false);
                         } else if (data.question) {
-                            console.log('[Frontend] Found single question:', data.question);
+                            if (import.meta.env.DEV) console.log('[Frontend] Found single question:', data.question);
                             const normalized = [{
                                 toolCallId: recordTcId,
                                 question: typeof data.question === 'string' ? data.question : data.question.question,
@@ -4179,9 +4294,9 @@ export default function ChatPage() {
                                 multiSelect: data.multiSelect || false,
                                 previewMarkdown: data.preview || undefined,
                             }];
-                            console.log('[Frontend] Normalized single question:', normalized);
+                            if (import.meta.env.DEV) console.log('[Frontend] Normalized single question:', normalized);
                             setActiveUserQuestions(normalized);
-                            console.log('[Frontend] ✅ Called setActiveUserQuestions with 1 question');
+                            if (import.meta.env.DEV) console.log('[Frontend] ✅ Called setActiveUserQuestions with 1 question');
 
                             // Force a re-render
                             setIsLoading(false);
@@ -4192,14 +4307,13 @@ export default function ChatPage() {
                         }
 
                         // Don't process further for ask_user_question or approve_actions - it doesn't need timeline display
-                        console.log(`[Frontend] Returning early from ${record.toolName} handler`);
+                        if (import.meta.env.DEV) console.log(`[Frontend] Returning early from ${record.toolName} handler`);
                         return;
                     } else if (record.toolName === 'ask_user_question' || record.toolName === 'approve_actions') {
                         console.error('[Frontend] ❌ ask_user_question tool_call missing required data');
                         console.error('[Frontend] Record:', JSON.stringify(record, null, 2));
                     }
 
-                    if (record.toolName === 'create_plan' || record.toolName === 'update_plan_step') { if (record.result?.success && record.result?.data) setCurrentPlan(record.result.data); }
                     if (record.toolName === 'todo_write') {
                         if (record.result?.success && record.result?.data) {
                             setPanelTasks(record.result.data.tasks);
@@ -4237,6 +4351,8 @@ export default function ChatPage() {
                                     toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
                                     missionTimeline: missionTimelineRef.current,
                                 };
+                                // CU-LEAK-08: pure updater — save moved out (StrictMode safety).
+                                let committedPlan: Message[] | null = null;
                                 setMessages(prev => {
                                     // Prevent duplicate message if the last message is identical
                                     if (prev.length > 0 && prev[prev.length - 1].role === 'assistant' && prev[prev.length - 1].content === assistantMsg.content) {
@@ -4244,18 +4360,16 @@ export default function ChatPage() {
                                         return prev;
                                     }
                                     const final = [...prev, assistantMsg];
-                                    saveConversation(final);
+                                    committedPlan = final;
                                     return final;
                                 });
+                                if (committedPlan) saveConversation(committedPlan).catch(err => console.error("[ChatPage] saveConversation failed:", err));
                                 setStreamingContent("");
                                 setStreamingThought("");
                                 setIsLoading(false);
                                 return [];
                             });
                         }
-                    }
-                    if (record.result?.success) {
-                        if (record.toolName === 'read_file') { setContextItems(prev => { const exists = prev.some(i => i.label === record.result.data?.name || i.label === record.args.path); if (!exists) return [...prev, { id: crypto.randomUUID(), type: 'file', label: record.result.data?.name || record.args.path }]; return prev; }); }
                     }
                     const key = record.id || record.toolCallId || (record.toolName + '_running');
                     const existingId = toolCallMap.current.get(key);
@@ -4285,20 +4399,12 @@ export default function ChatPage() {
                     // Filter out fun startup messages, keep only actual thoughts
                     if (!['🎬 Let\'s do this!'].includes(content)) {
                         streamingThoughtRef.current += content;
-                        if (!(window as any).__streamingThrottler) {
-                            (window as any).__streamingThrottler = setTimeout(() => {
-                                setStreamingContent(streamingContentRef.current);
-                                setStreamingThought(streamingThoughtRef.current);
-                                setLiveToolCalls([...liveToolCallsRef.current]);
-                                setStreamingToolCalls([...streamingToolCallsRef.current]);
-                                (window as any).__streamingThrottler = null;
-                            }, 50);
-                        }
+                        scheduleStreamingFlush();
                     }
                 });
                 api.onUsage(({ promptTokens, completionTokens, totalTokens, conversationId, systemPromptTokens, outputTokens, toolSchemaTokens, truncatedTools, schemaTokenSavings }: any) => {
                     if (conversationId && conversationId !== activeConversationIdRef.current) return;
-                    console.log(`[Token Usage] Prompt: ${promptTokens}, Completion: ${completionTokens}, Total: ${totalTokens}`);
+                    if (import.meta.env.DEV) console.log(`[Token Usage] Prompt: ${promptTokens}, Completion: ${completionTokens}, Total: ${totalTokens}`);
 
                     // Calculate pricing using model info if available
                     if (modelInfo) {
@@ -4306,8 +4412,8 @@ export default function ChatPage() {
                         const completionCost = completionTokens * modelInfo.completionPricing;
                         const totalCost = promptCost + completionCost;
 
-                        console.log(`[Pricing] Prompt Cost: $${promptCost.toFixed(6)}, Completion Cost: $${completionCost.toFixed(6)}, Total Cost: $${totalCost.toFixed(6)}`);
-                        console.log(`[Pricing] Model: ${selectedModel}, Rates: Prompt $${modelInfo.promptPricing.toExponential()} / token, Completion $${modelInfo.completionPricing.toExponential()} / token`);
+                        if (import.meta.env.DEV) console.log(`[Pricing] Prompt Cost: $${promptCost.toFixed(6)}, Completion Cost: $${completionCost.toFixed(6)}, Total Cost: $${totalCost.toFixed(6)}`);
+                        if (import.meta.env.DEV) console.log(`[Pricing] Model: ${selectedModel}, Rates: Prompt $${modelInfo.promptPricing.toExponential()} / token, Completion $${modelInfo.completionPricing.toExponential()} / token`);
                     }
 
                     hasReceivedUsageData.current = true;
@@ -4339,7 +4445,7 @@ export default function ChatPage() {
 
                 api.onShowPlan?.(({ content, conversationId }: { chatId: string; content: string; conversationId?: string }) => {
                     if (conversationId && conversationId !== activeConversationIdRef.current) return;
-                    console.log('[Plan] Execution plan detected, saving accumulated content');
+                    if (import.meta.env.DEV) console.log('[Plan] Execution plan detected, saving accumulated content');
                     if (isMessageCommittedRef.current || isHandlingPlanRef.current) return;
                     isMessageCommittedRef.current = true;
                     isHandlingPlanRef.current = true;
@@ -4359,6 +4465,8 @@ export default function ChatPage() {
                             toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
                             missionTimeline: missionTimelineRef.current,
                         };
+                        // CU-LEAK-08: pure updater — save moved out (StrictMode safety).
+                        let committedPlanDetail: Message[] | null = null;
                         setMessages(prev => {
                             // Prevent duplicate message if the last message is identical
                             if (prev.length > 0 && prev[prev.length - 1].role === 'assistant') {
@@ -4371,9 +4479,10 @@ export default function ChatPage() {
                                 }
                             }
                             const updatedMessages = [...prev, assistantMsg];
-                            saveConversation(updatedMessages);
+                            committedPlanDetail = updatedMessages;
                             return updatedMessages;
                         });
+                        if (committedPlanDetail) saveConversation(committedPlanDetail).catch(err => console.error("[ChatPage] saveConversation failed:", err));
                     }
 
                     setExecutionPlan({ content });
@@ -4396,6 +4505,7 @@ export default function ChatPage() {
                     setLiveToolCalls([]);
                     setStreamingToolCalls([]);
                     streamingToolCallsRef.current = [];
+                    resetToolTagScan();
 
                     // Stop loading - wait for user to approve plan
                     setIsLoading(false);
@@ -4439,19 +4549,11 @@ export default function ChatPage() {
                             return tc;
                         });
                         liveToolCallsRef.current = updated;
-                        if (!(window as any).__streamingThrottler) {
-                            (window as any).__streamingThrottler = setTimeout(() => {
-                                setStreamingContent(streamingContentRef.current);
-                                setStreamingThought(streamingThoughtRef.current);
-                                setLiveToolCalls([...liveToolCallsRef.current]);
-                                setStreamingToolCalls([...streamingToolCallsRef.current]);
-                                (window as any).__streamingThrottler = null;
-                            }, 50);
-                        }
+                        scheduleStreamingFlush();
                     }
                 });
 
-                console.log('[Frontend handleSend] Registering NEW onStreamChunk handler');
+                if (import.meta.env.DEV) console.log('[Frontend handleSend] Registering NEW onStreamChunk handler');
                 api.onToolCallStart(({ index, toolName, conversationId }: { index: number; toolName: string; conversationId?: string }) => {
                     if (conversationId && conversationId !== activeConversationIdRef.current) return;
                     const newEntry: LiveToolCall = { index, toolName, partialArguments: '', isStreaming: true };
@@ -4467,15 +4569,7 @@ export default function ChatPage() {
                             t.index === index ? { ...t, partialArguments: t.partialArguments + argumentsDelta } : t
                         );
                         streamingToolCallsRef.current = updated;
-                        if (!(window as any).__streamingThrottler) {
-                            (window as any).__streamingThrottler = setTimeout(() => {
-                                setStreamingContent(streamingContentRef.current);
-                                setStreamingThought(streamingThoughtRef.current);
-                                setLiveToolCalls([...liveToolCallsRef.current]);
-                                setStreamingToolCalls([...streamingToolCallsRef.current]);
-                                (window as any).__streamingThrottler = null;
-                            }, 50);
-                        }
+                        scheduleStreamingFlush();
                     }
                 });
 
@@ -4491,10 +4585,10 @@ export default function ChatPage() {
                 api.onStreamChunk(({ delta, done, conversationId, assistantMessageId }: { delta: string; done: boolean; conversationId?: string; assistantMessageId?: string }) => {
                     if (conversationId && conversationId !== activeConversationIdRef.current) return;
                     if (assistantMessageId && assistantMessageId !== assistantMessageIdRef.current) {
-                        console.log('[Frontend onStreamChunk] Ignoring chunk for stale session:', assistantMessageId);
+                        if (import.meta.env.DEV) console.log('[Frontend onStreamChunk] Ignoring chunk for stale session:', assistantMessageId);
                         return;
                     }
-                    console.log(`[Frontend onStreamChunk] delta="${delta}", done=${done}, isMessageCommittedRef=${isMessageCommittedRef.current}`);
+                    if (import.meta.env.DEV) console.log(`[Frontend onStreamChunk] delta="${delta}", done=${done}, isMessageCommittedRef=${isMessageCommittedRef.current}`);
                     if (delta && (delta.includes('"Unauthorized"') || delta.includes('"error":"Unauthorized"') || delta.includes('401') || delta.toLowerCase().includes('unauthorized'))) {
                         let is401 = false;
                         try {
@@ -4521,15 +4615,7 @@ export default function ChatPage() {
                     if (!done) {
                         accumulated += delta;
                         streamingContentRef.current = accumulated;
-                        if (!(window as any).__streamingThrottler) {
-                            (window as any).__streamingThrottler = setTimeout(() => {
-                                setStreamingContent(streamingContentRef.current);
-                                setStreamingThought(streamingThoughtRef.current);
-                                setLiveToolCalls([...liveToolCallsRef.current]);
-                                setStreamingToolCalls([...streamingToolCallsRef.current]);
-                                (window as any).__streamingThrottler = null;
-                            }, 50);
-                        }
+                        scheduleStreamingFlush();
 
                         // Update create_artifact tool with streaming content
                         const artifactToolIdx = liveToolCallsRef.current.findIndex(
@@ -4548,17 +4634,44 @@ export default function ChatPage() {
                             // Throttled by the main onStreamChunk updater
                         }
 
-                        // Detect tool calls while streaming
-                        const toolCallMatches = Array.from(accumulated.matchAll(/<tool_call>([\s\S]*?)(?:<\/tool_call>|$)/gi));
-                        let hasNewTools = false;
+                        // Detect tool calls while streaming — CU-REND-05: only the
+                        // tail after the last closed tag is (re)scanned per chunk,
+                        // never the whole accumulated buffer (was O(n^2)).
+                        // Ordinals (streaming-0, streaming-1, ...) match the old
+                        // whole-buffer matchAll ordering: tags are found in
+                        // document order and each is counted exactly once.
+                        {
+                            const region = accumulated.slice(toolTagScan.pos);
+                            const regionOffset = toolTagScan.pos;
+                            // CU-REND-05: true O(delta) — when no open tag is
+                            // pending, advance pos past tagless text (keeping a
+                            // partial opener suffix) so the scanned region stays
+                            // chunk-sized, not buffer-sized.
+                            let pendingTag = false;
+                            for (const match of region.matchAll(TOOL_CALL_TAG_RE)) {
+                                const absStart = regionOffset + (match.index ?? 0);
+                                const closed = match[0].endsWith('</tool_call>');
+                                const content = (match[1] || '').trim();
+                                const nameMatch = content.match(/"name":\s*"([^"]+)"/);
 
-                        toolCallMatches.forEach((match, index) => {
-                            const streamingId = `streaming-${index}`;
-                            const content = match[1].trim();
-
-                            // Try to find tool name in the partial JSON
-                            const nameMatch = content.match(/"name":\s*"([^"]+)"/);
-                            if (nameMatch) {
+                                if (toolTagScan.seenUnclosedStart === absStart) {
+                                    // Previously counted unclosed tag — now closed?
+                                    if (closed) {
+                                        toolTagScan.pos = absStart + match[0].length;
+                                        toolTagScan.seenUnclosedStart = -1;
+                                    } else {
+                                        toolTagScan.pos = absStart; // keep rescanning from its start
+                                        pendingTag = true;
+                                    }
+                                    continue;
+                                }
+                                if (!nameMatch) {
+                                    // Name not fully streamed yet — rescan this tag next chunk.
+                                    toolTagScan.pos = absStart;
+                                    pendingTag = true;
+                                    break;
+                                }
+                                const streamingId = `streaming-${toolTagScan.count++}`;
                                 const toolName = nameMatch[1];
                                 const existing = liveToolCallsRef.current.find(t => t.id === streamingId);
 
@@ -4573,13 +4686,26 @@ export default function ChatPage() {
                                         subAgentProgress: subAgentProgress.get(streamingId) || []
                                     };
                                     liveToolCallsRef.current = [...liveToolCallsRef.current, newTc];
-                                    hasNewTools = true;
+                                }
+                                if (closed) {
+                                    toolTagScan.pos = absStart + match[0].length;
+                                } else {
+                                    toolTagScan.seenUnclosedStart = absStart;
+                                    toolTagScan.pos = absStart;
+                                    pendingTag = true;
                                 }
                             }
-                        });
-
-                        if (hasNewTools) {
-                            // Throttled by the main onStreamChunk updater
+                            if (!pendingTag) {
+                                // No open tag awaiting data — everything past pos
+                                // is consumed or tagless. Advance to the end,
+                                // keeping a partial-opener suffix (an opener may
+                                // straddle a chunk boundary) for the next scan.
+                                let keep = 0;
+                                for (let k = Math.min(TOOL_CALL_TAG_OPEN.length - 1, region.length); k > 0; k--) {
+                                    if (region.endsWith(TOOL_CALL_TAG_OPEN.slice(0, k))) { keep = k; break; }
+                                }
+                                toolTagScan.pos = regionOffset + region.length - keep;
+                            }
                         }
                     } else {
                         api.removeStreamListeners();
@@ -4589,6 +4715,7 @@ export default function ChatPage() {
                             setLiveToolCalls([]);
                             setStreamingToolCalls([]);
                             streamingToolCallsRef.current = [];
+                            resetToolTagScan();
                             setIsLoading(false);
                             return;
                         }
@@ -4625,13 +4752,16 @@ export default function ChatPage() {
                             setLiveToolCalls([]);
                             setStreamingToolCalls([]);
                             streamingToolCallsRef.current = [];
+                            resetToolTagScan();
                             setIsLoading(false);
+                            // CU-LEAK-08: pure updater — save moved out (StrictMode safety).
+                            let committed: Message[] | null = null;
                             setMessages(prev => {
                                 const existingIdx = prev.findIndex(m => m.id === assistantMsg.id);
                                 if (existingIdx >= 0) {
                                     const final = [...prev];
                                     final[existingIdx] = { ...prev[existingIdx], ...assistantMsg };
-                                    saveConversation(final);
+                                    committed = final;
                                     return final;
                                 }
                                 if (prev.length > 0) {
@@ -4642,17 +4772,18 @@ export default function ChatPage() {
                                         if (lastClean === newClean && lastClean.length > 0) {
                                             const final = [...prev];
                                             final[final.length - 1] = { ...lastMsg, ...assistantMsg, id: lastMsg.id };
-                                            saveConversation(final);
+                                            committed = final;
                                             return final;
                                         }
                                     }
                                 }
                                 const final = [...prev, assistantMsg];
-                                saveConversation(final);
+                                committed = final;
                                 return final;
                             });
+                            if (committed) saveConversation(committed).catch(err => console.error("[ChatPage] saveConversation failed:", err));
 
-                            if (voiceOutputEnabled && voiceProvider === "elevenlabs" && voiceElevenlabsKey && !wasStopped)
+                            if (voiceOutputEnabled && voiceProvider === "elevenlabs" && secretConfigured(voiceElevenlabsKey) && !wasStopped)
                                 handlePlayVoiceResponse(assistantMsg.content);
                         } else {
                             // No content at all - just clean up
@@ -4661,6 +4792,7 @@ export default function ChatPage() {
                             setLiveToolCalls([]);
                             setStreamingToolCalls([]);
                             streamingToolCallsRef.current = [];
+                            resetToolTagScan();
                             setIsLoading(false);
                         }
 
@@ -4670,7 +4802,7 @@ export default function ChatPage() {
                         }
                     }
                 });
-                console.log('[Frontend handleSend] Sending stream request:', { model: selectedModel, providerType: currentM?.providerType || 'everfern', messageCount: newMessages.length, conversationId: activeConversationIdRef.current });
+                if (import.meta.env.DEV) console.log('[Frontend handleSend] Sending stream request:', { model: selectedModel, providerType: currentM?.providerType || 'everfern', messageCount: newMessages.length, conversationId: activeConversationIdRef.current });
 
                 // Fire-and-forget: ensure non-image attachments are cloned to the Linux VM
                 const sys = (window as any).electronAPI?.system;
@@ -4871,6 +5003,8 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                     missionTimeline: missionTimelineRef.current,
                     limitReached: isLimitReached || undefined,
                 };
+                // CU-LEAK-08: pure updater — save moved out (StrictMode safety).
+                let committedErr: Message[] | null = null;
                 setMessages(prev => {
                     // Prevent duplicate message if the last message is identical
                     if (prev.length > 0 && prev[prev.length - 1].role === 'assistant') {
@@ -4883,14 +5017,22 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                         }
                     }
                     const final = [...prev, assistantMsg];
-                    saveConversation(final);
+                    committedErr = final;
                     return final;
                 });
+                if (committedErr) saveConversation(committedErr).catch(err => console.error("[ChatPage] saveConversation failed:", err));
                 setLiveToolCalls([]);
                 setStreamingToolCalls([]);
                 streamingToolCallsRef.current = [];
                 setStreamingContent("");
                 setStreamingThought("");
+                setIsLoading(false);
+            } finally {
+                // CU-UI-09: always release the synchronous send latch and clear
+                // the loading state, even on paths that early-return via the
+                // committed-message guard. Without finally, a throw before the
+                // catch's setIsLoading(false) wedged every future send.
+                sendingRef.current = false;
                 setIsLoading(false);
             }
         })();
@@ -4907,7 +5049,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
         // Populate answeredToolCallIdsRef with any toolCallId from activeUserQuestions (Task 7.2)
         activeUserQuestions.forEach(q => {
             if ((q as any).toolCallId) {
-                console.log(`[Frontend] 📝 Marking tool call ID as answered: ${(q as any).toolCallId}`);
+                if (import.meta.env.DEV) console.log(`[Frontend] 📝 Marking tool call ID as answered: ${(q as any).toolCallId}`);
                 answeredToolCallIdsRef.current.add((q as any).toolCallId);
             }
         });
@@ -4951,7 +5093,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
             }
 
             setMessages(finalHistory);
-            saveConversation(finalHistory);
+            saveConversation(finalHistory).catch(err => console.error("[ChatPage] saveConversation failed:", err));
         }
 
         isMessageCommittedRef.current = false;
@@ -4991,37 +5133,41 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
     }, [handleSend, activeUserQuestions]);
 
     // Listen for processed HITL responses from backend
+    // CU-LEAK-04: register ONCE at mount (handleSend identity churned with
+    // every keystroke → the listener was silently replaced mid-flight, and
+    // removeStreamListeners' removal of this channel opened dead windows).
     useEffect(() => {
         const acpApi = (window as any).electronAPI?.acp;
         if (!acpApi?.onHitlResponseProcessed) return;
 
         acpApi.onHitlResponseProcessed((data: { message: string; shouldSendAsMessage: boolean }) => {
-            console.log('[HITL] ✅ Processed HITL response received:', data);
+            if (import.meta.env.DEV) console.log('[HITL] ✅ Processed HITL response received:', data);
 
             if (data.shouldSendAsMessage) {
                 // Automatically send the HITL response as a new user message
-                console.log('[HITL] 🔄 Sending HITL response as user message:', data.message);
+                if (import.meta.env.DEV) console.log('[HITL] 🔄 Sending HITL response as user message:', data.message);
 
                 // Set the input value and trigger send
                 setInputValue(data.message);
 
                 // Trigger send after a brief delay to ensure state is updated
                 setTimeout(() => {
-                    handleSend(data.message);
+                    handleSendRef.current?.(data.message);
                 }, 100);
             }
         });
 
         return () => {
-            // Cleanup is handled by removeStreamListeners
+            acpApi.removeHitlResponseProcessedListener?.();
         };
-    }, [handleSend, setInputValue]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const handleHitlApproval = useCallback((approved: boolean | string, sendMessage: boolean = true) => {
         if (!hitlRequest) return;
 
         const isApprovedBool = typeof approved === 'string' ? !approved.includes('REJECT') : Boolean(approved);
-        console.log('[HITL] User decision:', isApprovedBool ? 'approved' : 'rejected', 'sendMessage:', sendMessage);
+        if (import.meta.env.DEV) console.log('[HITL] User decision:', isApprovedBool ? 'approved' : 'rejected', 'sendMessage:', sendMessage);
 
         // Persist the resolution to disk so it won't re-appear on next app launch
         const convId = activeConversationIdRef.current || activeConversationId;
@@ -5088,7 +5234,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
 
         // Mark HITL request ID as answered
         if (hitlRequest?.id) {
-            console.log(`[Frontend] 📝 Marking HITL request ID as answered: ${hitlRequest.id}`);
+            if (import.meta.env.DEV) console.log(`[Frontend] 📝 Marking HITL request ID as answered: ${hitlRequest.id}`);
             answeredToolCallIdsRef.current.add(hitlRequest.id);
         }
 
@@ -5097,13 +5243,23 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
 
         // Commit to state and save
         setMessages(finalHistory);
-        saveConversation(finalHistory);
+        saveConversation(finalHistory).catch(err => console.error("[ChatPage] saveConversation failed:", err));
 
         // Trigger handleSend with the user response and committed history
         setTimeout(() => {
             handleSend(responseText, finalHistory);
         }, 50);
     }, [hitlRequest, messages, saveConversation, selectedModel, availableModels, pursueGoalMode, folderContexts, activeConversationId, handleSend]);
+
+    // ── CU-REND-11: MessageRow memo was defeated on every streaming flush by
+    // two inline-arrow props (fresh identity per render → memo never held).
+    // Route through the CU-LEAK-05 ref so identity is stable across renders. ──
+    const onNavisApprove = useCallback((sendMessage: boolean) => {
+        handleHitlApprovalRef.current?.(true, sendMessage);
+    }, []);
+    const onNavisReject = useCallback((sendMessage: boolean) => {
+        handleHitlApprovalRef.current?.(false, sendMessage);
+    }, []);
 
     const handleSelectSlashItem = useCallback((item: { id: string; name: string; type: 'action' | 'skill' }) => {
         if (item.id === 'add-files') {
@@ -5229,7 +5385,9 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
     };
 
     const handleKeyDown = useCallback((e: KeyboardEvent<HTMLTextAreaElement>) => {
-        if (inputValue.startsWith('/') && slashItems.length > 0) {
+        // CU-UI-07: typing '/' always re-opens a dismissed menu.
+        if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) setSlashMenuDismissed(false);
+        if (inputValue.startsWith('/') && slashItems.length > 0 && !slashMenuDismissed) {
             if (e.key === 'ArrowDown') {
                 e.preventDefault();
                 setSlashSelectedIndex(prev => (prev + 1) % slashItems.length);
@@ -5250,7 +5408,8 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
             }
             if (e.key === 'Escape') {
                 e.preventDefault();
-                setInputValue('');
+                // CU-UI-07: close the menu only — keep the typed slash text.
+                setSlashMenuDismissed(true);
                 return;
             }
         }
@@ -5262,7 +5421,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
         }
 
         if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
-    }, [inputValue, slashItems, slashSelectedIndex, handleSelectSlashItem, handleSend, selectedSkill]);
+    }, [inputValue, slashItems, slashSelectedIndex, slashMenuDismissed, handleSelectSlashItem, handleSend, selectedSkill]);
 
     const handleNewChat = () => {
         conversationSwitchSeqRef.current += 1;
@@ -5395,7 +5554,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                 {showModelSelector && (
                     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }} transition={{ duration: 0.15 }}
                         className="glossy"
-                        style={{ position: "absolute", bottom: "calc(100% + 8px)", right: 0, width: 320, backgroundColor: "var(--color-bg-elevated)", border: "1px solid var(--color-border)", borderRadius: 12, padding: 6, zIndex: 9999 }}>
+                        style={{ position: "absolute", bottom: "calc(100% + 8px)", right: 0, width: 320, backgroundColor: "var(--color-bg-elevated)", border: "1px solid var(--color-border)", borderRadius: 12, padding: 6, zIndex: 'var(--z-dropdown)' }}>
                         <div style={{ padding: "8px 10px 4px", fontSize: 10, fontWeight: 700, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Models</div>
                         <div style={{ maxHeight: 320, overflowY: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--color-border) transparent" }}>
                             {availableModels.map(model => {
@@ -5477,7 +5636,10 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
 
         if (settingsEngine === "local") {
             updated.provider = settingsProvider || "ollama";
-            const trimmedKey = settingsApiKey?.trim() || '';
+            // Local engines use this field as a server URL — only meaningful
+            // when the user typed a plain string (MP-SEC-11: it may also hold
+            // a SecretView echo, which is never a URL).
+            const trimmedKey = (typeof settingsApiKey === 'string' ? settingsApiKey.trim() : '') || '';
             const isValidHttp = /^https?:\/\//i.test(trimmedKey);
             updated.baseUrl = isValidHttp ? trimmedKey : (updated.provider === "lmstudio" ? "http://localhost:1234/v1" : "http://localhost:11434");
         }
@@ -5494,7 +5656,11 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
             // to avoid using stale values from previous provider selections
             const shouldOmitBaseUrl = settingsVlmCloudProvider === 'everfern' || settingsVlmCloudProvider === 'openrouter';
 
-            let finalCloudKey = settingsVlmCloudKey.trim() || undefined;
+            // MP-SEC-11: a typed string sets the key; a SecretView echo keeps
+            // the stored one (main-side merge). Never a raw read-back.
+            let finalCloudKey: SecretView | string | undefined =
+                (typeof settingsVlmCloudKey === 'string' && settingsVlmCloudKey.trim()) || undefined;
+            if (isSecretView(settingsVlmCloudKey)) finalCloudKey = settingsVlmCloudKey;
             if (settingsVlmCloudProvider === 'everfern' && !finalCloudKey) {
                 try {
                     const sessionStr = localStorage.getItem('everfern_cloud_session');
@@ -5521,8 +5687,18 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                 baseUrl: "http://localhost:11434"
             };
         }
-        if (voiceProvider && (voiceProvider === 'everfern' || voiceProvider === 'local' || voiceDeepgramKey.trim() || voiceElevenlabsKey.trim())) { updated.voice = { provider: voiceProvider, deepgramKey: voiceDeepgramKey.trim() || undefined, elevenlabsKey: voiceElevenlabsKey.trim() || undefined }; }
-        // Embedding config
+        // MP-SEC-11: SecretView echoes keep stored keys (main-side merge);
+        // typed strings set them. No raw values round-trip here.
+        const voiceDgTyped = typeof voiceDeepgramKey === 'string' ? voiceDeepgramKey.trim() : '';
+        const voiceElTyped = typeof voiceElevenlabsKey === 'string' ? voiceElevenlabsKey.trim() : '';
+        if (voiceProvider && (voiceProvider === 'everfern' || voiceProvider === 'local' || secretConfigured(voiceDeepgramKey) || secretConfigured(voiceElevenlabsKey) || voiceDgTyped || voiceElTyped)) {
+            updated.voice = {
+                provider: voiceProvider,
+                deepgramKey: voiceDgTyped || (isSecretView(voiceDeepgramKey) ? voiceDeepgramKey : undefined),
+                elevenlabsKey: voiceElTyped || (isSecretView(voiceElevenlabsKey) ? voiceElevenlabsKey : undefined),
+            };
+        }
+        // Embedding config — echo the SecretView / typed string as-is.
         updated.embedding = { provider: embeddingProvider, model: embeddingModel, apiKey: embeddingApiKey };
         setConfig(updated);
         if ((window as any).electronAPI?.saveConfig) await (window as any).electronAPI.saveConfig(updated);
@@ -5893,8 +6069,6 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
         </div>
     );
 
-    const renderShortcutsLegend = () => null;
-
     const renderComposerRightActions = (showVolumeToggle = false) => (
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <ContextTokenRing
@@ -5927,7 +6101,10 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
             {isLoading ? (
                 <button onClick={() => {
                     console.log('[Frontend] Stop button clicked - aborting agent');
-                    (window as any).electronAPI?.acp?.stop?.();
+                    // Scope the abort to the active conversation so stopping one
+                    // stream doesn't kill runs in other conversations (main-side
+                    // `acp:stop` falls back to global abort only without a convId).
+                    (window as any).electronAPI?.acp?.stop?.({ conversationId: activeConversationIdRef.current ?? undefined });
 
                     if (isMessageCommittedRef.current) return;
                     isMessageCommittedRef.current = true;
@@ -5951,18 +6128,21 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                         missionTimeline: missionTimelineRef.current,
                     };
 
+                    // CU-LEAK-08: pure updater — save moved out (StrictMode safety).
+                    let committedStopped: Message[] | null = null;
                     setMessages(prev => {
                         const existingIdx = prev.findIndex(m => m.id === assistantMsg.id);
                         if (existingIdx >= 0) {
                             const final = [...prev];
                             final[existingIdx] = { ...prev[existingIdx], ...assistantMsg };
-                            saveConversation(final);
+                            committedStopped = final;
                             return final;
                         }
                         const final = [...prev, assistantMsg];
-                        saveConversation(final);
+                        committedStopped = final;
                         return final;
                     });
+                    if (committedStopped) saveConversation(committedStopped).catch(err => console.error("[ChatPage] saveConversation failed:", err));
 
                     // Clean up state
                     setIsLoading(false);
@@ -5974,7 +6154,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
 
                     console.log('[Frontend] Agent stopped and message saved to history');
                 }}
-                    style={{ width: 32, height: 32, borderRadius: 10, background: "rgba(239, 68, 68, 0.15)", border: "none", color: "#ef4444", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                    style={{ width: 32, height: 32, borderRadius: 10, background: "var(--color-error-dim)", border: "none", color: "var(--color-error)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
                     <StopIcon width={16} height={16} />
                 </button>
             ) : (
@@ -6083,7 +6263,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                     {attachments.map(a => (
                         <div key={a.id} style={{ position: "relative", display: "flex", alignItems: "center", gap: 10, padding: "6px 12px 6px 6px", backgroundColor: "var(--color-bg-subtle)", borderRadius: 8, border: "1px solid var(--color-border)" }}>
                             {a.mimeType.startsWith("image/") && a.base64 ? (
-                                <div style={{ width: 40, height: 40, borderRadius: 6, backgroundImage: `url(${a.base64})`, backgroundSize: "cover", backgroundPosition: "center", flexShrink: 0 }} />
+                                <LazyBase64Thumb base64={a.base64} size={40} borderRadius={6} />
                             ) : (
                                 <div style={{ width: 40, height: 40, borderRadius: 6, backgroundColor: "var(--color-bg-surface)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                                     <PaperClipIcon width={20} height={20} color="var(--color-text-tertiary)" />
@@ -6434,80 +6614,6 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
         />
     );
 
-
-    const playVoiceResponse = useCallback(async (text: string) => {
-        return new Promise<void>(async (resolve) => {
-            if (voiceProvider === "elevenlabs" && voiceElevenlabsKey) {
-                try {
-                    setVoicePlayback(true);
-                    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceVoiceId}?optimize_streaming_latency=0`, {
-                        method: 'POST',
-                        headers: {
-                            'xi-api-key': voiceElevenlabsKey,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            text,
-                            model_id: 'eleven_monolingual_v1',
-                            voice_settings: { stability: 0.5, similarity_boost: 0.75 }
-                        })
-                    });
-                    if (response.ok) {
-                        const audioBlob = await response.blob();
-                        const audioUrl = URL.createObjectURL(audioBlob);
-                        if (!audioPlaybackRef.current) audioPlaybackRef.current = new Audio();
-                        const audio = audioPlaybackRef.current;
-                        audio.src = audioUrl;
-                        audio.onended = () => {
-                            setVoicePlayback(false);
-                            URL.revokeObjectURL(audioUrl);
-                            resolve();
-                        };
-                        audio.onerror = () => {
-                            setVoicePlayback(false);
-                            URL.revokeObjectURL(audioUrl);
-                            resolve();
-                        };
-                        await audio.play();
-                        return;
-                    }
-                } catch (error) {
-                    console.error('ElevenLabs TTS error:', error);
-                }
-            }
-
-            // Fallback: Web Speech API (window.speechSynthesis)
-            if (typeof window !== 'undefined' && window.speechSynthesis) {
-                try {
-                    setVoicePlayback(true);
-                    window.speechSynthesis.cancel();
-
-                    const utterance = new SpeechSynthesisUtterance(text);
-                    utterance.onend = () => {
-                        setVoicePlayback(false);
-                        resolve();
-                    };
-                    utterance.onerror = () => {
-                        setVoicePlayback(false);
-                        resolve();
-                    };
-                    const voices = window.speechSynthesis.getVoices();
-                    const englishVoice = voices.find(v => v.lang.startsWith('en') && v.name.includes('Google')) || voices.find(v => v.lang.startsWith('en'));
-                    if (englishVoice) utterance.voice = englishVoice;
-
-                    window.speechSynthesis.speak(utterance);
-                } catch (e) {
-                    console.error('SpeechSynthesis fallback error:', e);
-                    setVoicePlayback(false);
-                    resolve();
-                }
-            } else {
-                setVoicePlayback(false);
-                resolve();
-            }
-        });
-    }, [voiceProvider, voiceElevenlabsKey, voiceVoiceId]);
-
     const handleRecordToggle = useCallback(async () => {
         if (!isRecordingRef.current) {
             setVoiceLoading(true);
@@ -6541,7 +6647,15 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                         const val = dataArray[dataIdx] || 0;
                         return Math.max(15, (val / 255) * 75 + 15);
                     });
-                    setAudioLevels(levels);
+                    // CU-REND-02: keep the waveform fed via ref every frame, but
+                    // commit to React state at most ~10x/sec — 60fps setAudioLevels
+                    // re-rendered the entire 8k-line page per frame.
+                    audioLevelsRef.current = levels;
+                    const nowMs = Date.now();
+                    if (nowMs - lastLevelCommitRef.current >= 100) {
+                        lastLevelCommitRef.current = nowMs;
+                        setAudioLevels(levels);
+                    }
 
                     // Forward audio levels to overlay
                     if (typeof window !== 'undefined' && (window as any).electronAPI?.voiceOverlay?.sendAudioLevels) {
@@ -6581,7 +6695,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                         cancelAnimationFrame(animationFrameRef.current);
                         animationFrameRef.current = null;
                     }
-                    setAudioLevels(new Array(25).fill(15));
+                    { audioLevelsRef.current = new Array(25).fill(15); setAudioLevels(new Array(25).fill(15)); }
 
                     // Send final flat levels
                     if (typeof window !== 'undefined' && (window as any).electronAPI?.voiceOverlay?.sendAudioLevels) {
@@ -6597,17 +6711,21 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                     if (voiceProvider === "deepgram" || voiceProvider === "everfern") {
                         try {
                             const sys = (window as any).electronAPI?.system;
+                            // MP-SEC-11: never send key material to main — the
+                            // stored deepgram key lives in the main-side vault.
+                            // (Only an in-session typed key may be forwarded.)
+                            const typedDeepgramKey = typeof voiceDeepgramKey === 'string' ? voiceDeepgramKey.trim() : '';
                             if (sys?.transcribeAudio) {
-                                const res = await sys.transcribeAudio(arrayBuffer, voiceDeepgramKey.trim() || undefined);
+                                const res = await sys.transcribeAudio(arrayBuffer, typedDeepgramKey || undefined);
                                 if (res && res.success) {
                                     transcript = res.transcript || '';
                                 } else if (res?.error) {
                                     console.error('[Voice] Transcription error:', res.error);
                                 }
-                            } else if (voiceDeepgramKey.trim()) {
+                            } else if (typedDeepgramKey) {
                                 const response = await fetch('https://api.deepgram.com/v1/listen?model=nova-2&language=en', {
                                     method: 'POST',
-                                    headers: { 'Authorization': `Token ${voiceDeepgramKey.trim()}`, 'Content-Type': 'audio/webm' },
+                                    headers: { 'Authorization': `Token ${typedDeepgramKey}`, 'Content-Type': 'audio/webm' },
                                     body: arrayBuffer
                                 });
                                 if (response.ok) {
@@ -6720,7 +6838,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                 cancelAnimationFrame(animationFrameRef.current);
                 animationFrameRef.current = null;
             }
-            setAudioLevels(new Array(25).fill(15));
+            { audioLevelsRef.current = new Array(25).fill(15); setAudioLevels(new Array(25).fill(15)); }
             if (typeof window !== 'undefined' && (window as any).electronAPI?.voiceOverlay?.sendAudioLevels) {
                 (window as any).electronAPI.voiceOverlay.sendAudioLevels(new Array(25).fill(15));
             }
@@ -6747,15 +6865,29 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
         };
     }, []);
 
+    // CU-LEAK-03: refs so the overlay registration effect runs ONCE; the
+    // callback identities churned with every keystroke/stream chunk before.
+    const handleRecordToggleRef = useRef(handleRecordToggle);
+    const handleQuestionSubmitRef = useRef(handleQuestionSubmit);
+    const handleSelectConversationRef = useRef(handleSelectConversation);
+    const voiceCfgRef = useRef({ voiceProvider, voiceElevenlabsKey, voiceDeepgramKey, showSearch: showSearch });
+    useEffect(() => {
+        handleRecordToggleRef.current = handleRecordToggle;
+        handleQuestionSubmitRef.current = handleQuestionSubmit;
+        handleSelectConversationRef.current = handleSelectConversation;
+        voiceCfgRef.current = { voiceProvider, voiceElevenlabsKey, voiceDeepgramKey, showSearch: showSearch };
+    });
+
     useEffect(() => {
         if (typeof window !== 'undefined' && (window as any).electronAPI) {
             (window as any).electronAPI.voiceOverlay.onStateChange((data: any) => {
                 if (data.state === 'listening') {
-                    const isVoiceEnabled = !!voiceProvider && (
-                        voiceProvider === 'everfern' ||
-                        voiceProvider === 'local' ||
-                        voiceProvider === 'deepgram' ||
-                        (voiceProvider === 'elevenlabs' && !!voiceElevenlabsKey?.trim())
+                    const { voiceProvider: vProvider, voiceElevenlabsKey: vElKey } = voiceCfgRef.current;
+                    const isVoiceEnabled = !!vProvider && (
+                        vProvider === 'everfern' ||
+                        vProvider === 'local' ||
+                        vProvider === 'deepgram' ||
+                        (vProvider === 'elevenlabs' && secretConfigured(vElKey))
                     );
                     if (!isVoiceEnabled) {
                         console.log('[VoiceOverlay] Voice mode is disabled/unconfigured. Broadcasting error.');
@@ -6776,11 +6908,11 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                             overlayIdleTimeoutRef.current = null;
                         }
                         setRecordingSource('overlay');
-                        handleRecordToggle();
+                        handleRecordToggleRef.current();
                     }
                 } else if (data.state === 'executing') {
                     if (isRecordingRef.current) {
-                        handleRecordToggle();
+                        handleRecordToggleRef.current();
                     }
                 } else if (data.state === 'idle') {
                     setRecordingSource(null);
@@ -6794,7 +6926,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                 }
                 if (data && data.type === 'select-history') {
                     console.log('[VoiceOverlay] Loading conversation selected via voice overlay:', data.conversationId);
-                    handleSelectConversation(data.conversationId);
+                    handleSelectConversationRef.current(data.conversationId);
                     // Automatically transition to listening state after a brief timeout
                     setTimeout(() => {
                         if (typeof window !== 'undefined' && (window as any).electronAPI?.voiceOverlay) {
@@ -6802,9 +6934,9 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                         }
                     }, 500);
                 } else if (data && data.type === 'followup') {
-                    handleSend(data.query);
+                    handleSendRef.current?.(data.query);
                 } else {
-                    handleQuestionSubmit(data);
+                    handleQuestionSubmitRef.current(data);
                 }
             });
 
@@ -6817,7 +6949,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                         action: 'Continuing execution...'
                     });
                 }
-                handleSend("continue");
+                handleSendRef.current?.("continue");
             };
             const handleShowHistoryShortcut = () => {
                 console.log('[Shortcut] Received show-history shortcut, opening history in overlay');
@@ -6837,7 +6969,8 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                 (window as any).electronAPI.off('shortcut:show-history', handleShowHistoryShortcut);
             };
         }
-    }, [handleRecordToggle, handleQuestionSubmit, handleSend, setShowSearch, voiceProvider, voiceDeepgramKey, handleSelectConversation]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const prevIsLoadingRef = useRef(false);
     useEffect(() => {
@@ -6945,12 +7078,16 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
             <div style={{ height: "100vh", backgroundColor: "var(--color-bg-base)", color: "var(--color-text-primary)", fontFamily: "var(--font-sans)", display: "flex", overflow: "hidden" }}>
                 <PermissionDialog />
                 <ArtifactsPanel isOpen={showArtifacts} onClose={() => { setShowArtifacts(false); setSelectedArtifactName(null); }} activeChatId={activeConversationId} selectedFileName={selectedArtifactName} projectPath={folderContexts[0]?.path} />
-                <FileViewerModal
-                    file={viewingFile}
-                    onClose={() => setViewingFile(null)}
-                    chatId={activeConversationId || "default"}
-                    projectPath={folderContexts[0]?.path}
-                />
+                <AnimatePresence>
+                    {viewingFile && (
+                        <FileViewerModal
+                            file={viewingFile}
+                            onClose={() => setViewingFile(null)}
+                            chatId={activeConversationId || "default"}
+                            projectPath={folderContexts[0]?.path}
+                        />
+                    )}
+                </AnimatePresence>
                 <PlanViewerPanel isOpen={showPlanViewer} onClose={() => setShowPlanViewer(false)} content={planViewerContent} onApprove={handleApprovePlan} />
 
                 <VoiceAssistantUI
@@ -6970,23 +7107,23 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                 />
                 <Sidebar
                     isOpen={sidebarOpen}
-                    onToggle={() => setSidebarOpen(!sidebarOpen)}
+                    onToggle={toggleSidebar}
                     activeConversationId={activeConversationId}
                     activeTaskIds={activeTaskIds}
-                    onSelectConversation={handleSelectConversation}
-                    onNewChat={handleNewChat}
-                    onSettingsClick={() => { setShowSettings(true); setShowCustomizeModal(false); setShowArtifacts(false); setShowIntegrationSettings(false); setShowProjectsPage(false); setShowAnalyticsPage(false); }}
-                    onArtifactsClick={() => { setShowArtifacts(true); setShowSettings(false); setShowCustomizeModal(false); setShowIntegrationSettings(false); setShowProjectsPage(false); setShowAnalyticsPage(false); }}
-                    onCustomizeClick={() => { setShowDirectoryModal(true); setShowSettings(false); setShowArtifacts(false); setShowIntegrationSettings(false); setShowProjectsPage(false); setShowAnalyticsPage(false); }}
-                    onIntegrationClick={() => { setShowIntegrationSettings(true); setShowSettings(false); setShowCustomizeModal(false); setShowArtifacts(false); setShowProjectsPage(false); setShowAnalyticsPage(false); }}
-                    onProjectsClick={() => { setShowProjectsPage(true); setShowSettings(false); setShowCustomizeModal(false); setShowArtifacts(false); setShowIntegrationSettings(false); setShowAnalyticsPage(false); }}
-                    onAnalyticsClick={() => { setShowAnalyticsPage(true); setShowProjectsPage(false); setShowSettings(false); setShowCustomizeModal(false); setShowArtifacts(false); setShowIntegrationSettings(false); }}
+                    onSelectConversation={handleSelectConversationStable}
+                    onNewChat={handleNewChatStable}
+                    onSettingsClick={openPaneSettings}
+                    onArtifactsClick={openPaneArtifacts}
+                    onCustomizeClick={openPaneCustomize}
+                    onIntegrationClick={openPaneIntegrations}
+                    onProjectsClick={openPaneProjects}
+                    onAnalyticsClick={openPaneAnalytics}
                     showSearch={showSearch}
-                    onSearchOpen={() => setShowSearch(true)}
-                    onSearchClose={() => setShowSearch(false)}
+                    onSearchOpen={handleSearchOpen}
+                    onSearchClose={handleSearchClose}
                 />
 
-                <CompletionToast />
+                <CompletionToastHoisted notification={notification} onSelect={handleToastSelect} onDismiss={dismissNotification} />
 
                 <motion.div
                     initial={false}
@@ -7019,7 +7156,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                 >
                                     <BellIcon width={20} height={20} />
                                     {(activeTaskIds.length > 0 || notification) && (
-                                        <span style={{ position: "absolute", top: 2, right: 2, width: 14, height: 14, backgroundColor: "#ef4444", borderRadius: "50%", color: "#ffffff", fontSize: 9, display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid var(--color-bg-base)", fontWeight: 700 }}>
+                                        <span style={{ position: "absolute", top: 2, right: 2, width: 14, height: 14, backgroundColor: "var(--color-error)", borderRadius: "50%", color: "#ffffff", fontSize: 9, display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid var(--color-bg-base)", fontWeight: 700 }}>
                                             {activeTaskIds.length + (notification ? 1 : 0)}
                                         </span>
                                     )}
@@ -7040,7 +7177,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                             <div style={{ maxHeight: 300, overflowY: "auto", padding: "8px 0" }}>
                                                 {notification && (
                                                     <div style={{ padding: "10px 16px", borderBottom: activeTaskIds.length > 0 ? "1px solid var(--color-border-subtle)" : "none", display: "flex", gap: 12, alignItems: "flex-start" }}>
-                                                        <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "#ef4444", marginTop: 6, flexShrink: 0 }} />
+                                                        <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "var(--color-error)", marginTop: 6, flexShrink: 0 }} />
                                                         <div>
                                                             <div style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)" }}>{notification.title}</div>
                                                             <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>Click to view details</div>
@@ -7091,12 +7228,6 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                         setActiveConversationId(project.id);
                                         activeConversationIdRef.current = project.id;
                                         setFolderContexts([{ id: project.id, path: project.path, name: project.name }]);
-                                        setContextItems([{
-                                            id: crypto.randomUUID(),
-                                            type: 'folder' as any,
-                                            label: project.name,
-                                            path: project.path
-                                        } as any]);
                                         setShowProjectsPage(false);
                                     }}
                                 />
@@ -7110,13 +7241,13 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                         justifyContent: 'space-between',
                                         padding: '7px 16px',
                                         backgroundColor: 'rgba(245, 158, 11, 0.08)',
-                                        borderBottom: '1px solid rgba(245, 158, 11, 0.15)',
+                                        borderBottom: '1px solid var(--color-warning-dim)',
                                         fontSize: 12,
                                         color: 'var(--color-text-secondary)',
                                         zIndex: 10,
                                     }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                            <ExclamationTriangleIcon className="w-4 h-4 text-amber-500 shrink-0" style={{ width: 15, height: 15, color: '#f59e0b', flexShrink: 0 }} />
+                                            <ExclamationTriangleIcon className="w-4 h-4 text-amber-500 shrink-0" style={{ width: 15, height: 15, color: 'var(--color-warning)', flexShrink: 0 }} />
                                             <span>{envWarning}</span>
                                         </div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -7179,7 +7310,6 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                             type="button"
                                                             onClick={() => {
                                                                 setFolderContexts([]);
-                                                                setContextItems([]);
                                                                 setShowProjectsPage(true);
                                                             }}
                                                             style={{
@@ -7247,7 +7377,6 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                                     if ((window as any).electronAPI?.projects?.delete) {
                                                                                         await (window as any).electronAPI.projects.delete(activeProjectObj.id);
                                                                                         setFolderContexts([]);
-                                                                                        setContextItems([]);
                                                                                         setShowProjectsPage(true);
                                                                                         const list = await (window as any).electronAPI.projects.list();
                                                                                         setProjects(list || []);
@@ -7380,7 +7509,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                                         background: isProjectBookmarked ? "rgba(245, 158, 11, 0.12)" : "none", 
                                                                                         border: "none", 
                                                                                         cursor: "pointer", 
-                                                                                        color: isProjectBookmarked ? "#f59e0b" : "var(--color-text-tertiary)", 
+                                                                                        color: isProjectBookmarked ? "var(--color-warning)" : "var(--color-text-tertiary)", 
                                                                                         padding: 6, 
                                                                                         display: "flex", 
                                                                                         borderRadius: 8,
@@ -7390,7 +7519,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                                     onMouseEnter={e => { if (!isProjectBookmarked) e.currentTarget.style.background = "var(--color-bg-hover)"; }}
                                                                                     onMouseLeave={e => { if (!isProjectBookmarked) e.currentTarget.style.background = "none"; }}>
                                                                                     {isProjectBookmarked ? (
-                                                                                        <BookmarkSolidIcon width={18} height={18} color="#f59e0b" />
+                                                                                        <BookmarkSolidIcon width={18} height={18} color="var(--color-warning)" />
                                                                                     ) : (
                                                                                         <BookmarkIcon width={18} height={18} />
                                                                                     )}
@@ -7414,7 +7543,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                                             width: 4,
                                                                                             height: Math.max(6, level * 0.5),
                                                                                             borderRadius: 2,
-                                                                                            backgroundColor: "var(--color-accent, #3b82f6)",
+                                                                                            backgroundColor: "var(--color-accent)",
                                                                                             transition: "height 0.08s cubic-bezier(0.25, 0.8, 0.25, 1)",
                                                                                         }}
                                                                                         className="waveform-bar"
@@ -7619,7 +7748,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                         marginBottom: 10,
                                                                         padding: "12px 14px",
                                                                         backgroundColor: "#faf9f7",
-                                                                        border: "1px solid #e8e6d9",
+                                                                        border: "1px solid var(--color-border)",
                                                                         borderLeft: "3px solid #6366f1",
                                                                         borderRadius: 10,
                                                                         display: "flex",
@@ -7672,7 +7801,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                                 fontSize: 12, fontWeight: 500,
                                                                                 padding: "4px 12px", borderRadius: 6,
                                                                                 backgroundColor: "transparent", color: "#4a4846",
-                                                                                border: "1px solid #e8e6d9", cursor: "pointer",
+                                                                                border: "1px solid var(--color-border)", cursor: "pointer",
                                                                             }}
                                                                         >
                                                                             Do it differently
@@ -7715,7 +7844,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                                         width: 4,
                                                                                         height: Math.max(6, level * 0.5),
                                                                                         borderRadius: 2,
-                                                                                        backgroundColor: "var(--color-accent, #3b82f6)",
+                                                                                        backgroundColor: "var(--color-accent)",
                                                                                         transition: "height 0.08s cubic-bezier(0.25, 0.8, 0.25, 1)",
                                                                                     }}
                                                                                     className="waveform-bar"
@@ -7754,7 +7883,6 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                     </div>
                                                                 </div>
                                                             </PromptWrapper>
-                                                            {renderShortcutsLegend()}
 
                                                             {/* Quick prompt chips */}
                                                             <div style={{ marginTop: 24, display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
@@ -7830,13 +7958,13 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
 
 
 
-                                        {/* Messages */}
+                                        {/* Messages — CU-REND-01/04: memoized rows, cached per-message view */}
                                         <AnimatePresence mode="popLayout">
                                             {messages.map((msg, idx) => {
                                                 // Skip assistant messages that are purely noise with no other value
                                                 if (msg.role === 'assistant') {
-                                                    const scrubbed = scrubOrchestratorNoise(toContentString(msg.content)).trim();
-                                                    const hasVisibleContent = scrubbed.length > 0;
+                                                    const view = getAssistantMessageViewCached(msg);
+                                                    const hasVisibleContent = view.scrubbedTrimmed.length > 0;
                                                     const hasToolCalls = msg.toolCalls && msg.toolCalls.length > 0;
                                                     const hasReasoning = !!msg.reasoning_content;
                                                     const isLatest = idx === messages.length - 1;
@@ -7851,356 +7979,46 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                 }
 
                                                 return (
-                                                    <motion.div
+                                                    <MessageRow
                                                         key={msg.id}
-                                                        initial={{ opacity: 0, y: 30, scale: 0.95 }}
-                                                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                                                        exit={{ opacity: 0, y: -20, scale: 0.95 }}
-                                                        transition={{ type: "spring", stiffness: 400, damping: 30, delay: Math.min(idx * 0.05, 0.2) }}
-                                                        layout={idx === messages.length - 1}
-                                                        style={{ marginBottom: 28, display: "flex", flexDirection: "column", alignItems: msg.role === "user" ? "flex-end" : "flex-start", width: "100%" }}
-                                                    >
-
-                                                        <div className={msg.role === "user" ? "glossy-bubble" : ""} style={{ maxWidth: msg.role === "user" ? "80%" : "100%", width: msg.role === "user" ? "auto" : "100%", padding: msg.role === "user" ? "12px 18px" : "0", borderRadius: msg.role === "user" ? 16 : 0, borderTopRightRadius: msg.role === "user" ? 4 : 0, background: msg.role === "user" ? "var(--color-user-bubble)" : "transparent", border: msg.role === "user" ? "1px solid var(--color-user-bubble-border)" : "none", fontSize: 15, lineHeight: 1.7 }}>
-                                                            {msg.role === "user" ? (
-                                                                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                                                                    {msg.attachments && msg.attachments.length > 0 && (
-                                                                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                                                                            {msg.attachments.map(a => (
-                                                                                <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", backgroundColor: "var(--color-bg-subtle)", borderRadius: 8, border: "1px solid var(--color-border)", maxWidth: '100%' }}>
-                                                                                    {a.mimeType.startsWith("image/") && a.base64 ? <div style={{ width: 32, height: 32, borderRadius: 4, backgroundImage: `url(${a.base64})`, backgroundSize: "cover", backgroundPosition: "center", flexShrink: 0 }} /> : <PaperClipIcon width={16} height={16} color="var(--color-text-tertiary)" />}
-                                                                                    <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-                                                                                        <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-primary)", maxWidth: 200, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={a.path || a.name}>{a.name}</span>
-                                                                                        <span style={{ fontSize: 10, color: "var(--color-text-tertiary)" }}>{(a.size / 1024).toFixed(1)} KB</span>
-                                                                                        {a.path && (
-                                                                                            <span style={{ fontSize: 9, color: "var(--color-text-placeholder)", maxWidth: 200, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 1 }} title={a.path}>
-                                                                                                {a.path}
-                                                                                            </span>
-                                                                                        )}
-                                                                                    </div>
-                                                                                </div>
-                                                                            ))}
-                                                                        </div>
-                                                                    )}
-                                                                    {(() => {
-                                                                        const msgContentStr = toContentString(msg.content);
-                                                                        if (!msgContentStr) return null;
-                                                                        const parts = msgContentStr.split(/\n\n\[Shared folder context\]\n/);
-                                                                        const mainText = parts[0];
-                                                                        const folderContextBlock = parts.length > 1 ? parts[1].split("\n\nNote:")[0] : null;
-                                                                        const folderLines = folderContextBlock ? folderContextBlock.split('\n').filter(l => l.startsWith('- ')).map(l => l.substring(2).trim()) : [];
-                                                                        const isPlanApproved = mainText?.startsWith('[PLAN_APPROVED]');
-                                                                        const planText = isPlanApproved ? mainText.replace('[PLAN_APPROVED]\n', '').trim() : null;
-                                                                        return (
-                                                                            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                                                                                {isPlanApproved ? (
-                                                                                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                                                                                        <PlanApprovalBanner />
-                                                                                        {planText && planText !== 'I have reviewed and approved your execution plan. Please proceed with the execution as planned.' && (
-                                                                                            <span style={{ color: "var(--color-text-primary)", whiteSpace: "pre-wrap" }}>{planText}</span>
-                                                                                        )}
-                                                                                    </div>
-                                                                                ) : (
-                                                                                    mainText && <span style={{ color: "var(--color-text-primary)", whiteSpace: "pre-wrap" }}>{mainText}</span>
-                                                                                )}
-                                                                                {folderLines.length > 0 && (
-                                                                                    <div style={{ padding: "12px 16px", backgroundColor: "var(--color-bg-surface)", border: "1px solid var(--color-border)", borderRadius: 12 }}>
-                                                                                        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--color-text-tertiary)", marginBottom: 8, display: "flex", alignItems: "center", gap: 6, textTransform: "uppercase" }}>
-                                                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-                                                                                            Shared context
-                                                                                        </div>
-                                                                                        <div style={{ fontSize: 13, color: "var(--color-text-secondary)", display: "flex", flexDirection: "column", gap: 4 }}>
-                                                                                            {folderLines.map((line, idx) => <div key={idx} style={{ wordBreak: "break-all", display: "flex", gap: 6 }}><span style={{ color: "var(--color-text-tertiary)" }}>-</span> {line}</div>)}
-                                                                                        </div>
-                                                                                    </div>
-                                                                                )}
-                                                                            </div>
-                                                                        );
-                                                                    })()}
-                                                                </div>
-                                                            ) : (
-                                                                <>
-                                                                    <div
-                                                                        className="overflow-y-auto pr-3 custom-scrollbar"
-                                                                        style={{
-                                                                            width: "100%",
-                                                                            maxHeight: "calc(100vh - 280px)",
-                                                                            position: "relative",
-                                                                            paddingLeft: "0px",
-                                                                            marginBottom: msg.content?.trim() ? "14px" : "0px",
-                                                                        }}
-                                                                    >
-                                                                        <AgentTimeline
-                                                                            key={`timeline-${msg.id}`}
-                                                                            toolCalls={msg.toolCalls || []}
-                                                                            thought={msg.thought}
-                                                                            reasoningContent={msg.reasoning_content}
-                                                                            isLive={false}
-                                                                            currentPhase={currentPhase}
-                                                                            currentNode={currentNode}
-                                                                            subAgentProgress={subAgentProgress}
-                                                                            generatedTitle={msg.generatedTitle}
-                                                                            missionTimeline={msg.missionTimeline || missionTimeline}
-                                                                            onPillClick={handlePillClick}
-                                                                        />
-                                                                    </div>
-
-
-                                                                    {(() => {
-                                                                        const { cleanContent, artifacts } = extractFileArtifacts(msg.content || '');
-                                                                        let displayContent = scrubOrchestratorNoise(cleanContent.trim());
-                                                                        if (displayContent === 'Working...' || displayContent === 'Working') {
-                                                                            displayContent = '';
-                                                                        }
-                                                                        const { cleanContent: finalContent, followUps } = extractSuggestedFollowUps(displayContent);
-                                                                        const hasContent = finalContent.length > 0;
-                                                                        const hasToolCalls = msg.toolCalls && msg.toolCalls.length > 0;
-
-                                                                        return (
-                                                                            <>
-                                                                                {hasContent ? (
-                                                                                    <StreamingMarkdown content={finalContent} isLive={false} isLatest={idx === messages.length - 1} />
-                                                                                ) : hasToolCalls ? (
-                                                                                    <div style={{ fontSize: 13, color: 'var(--color-text-tertiary)', fontStyle: 'italic', padding: '8px 0' }}>
-
-                                                                                    </div>
-                                                                                ) : null}
-                                                                                {msg.limitReached && <EverFernCloudLimitNotice />}
-                                                                                {artifacts.map((art, i) => {
-                                                                                    const ext = art.path.split('.').pop()?.toLowerCase() || '';
-                                                                                    const isPremiumDoc = ext === 'md';
-                                                                                    return (
-                                                                                        <div key={i} style={{ width: '100%', display: 'flex', justifyContent: 'flex-start' }}>
-                                                                                            {isPremiumDoc ? (
-                                                                                                <DocumentCard
-                                                                                                    path={art.path}
-                                                                                                    description={art.description}
-                                                                                                    chatId={activeConversationId || ""}
-                                                                                                    onOpenArtifact={(name) => {
-                                                                                                        setViewingFile({ name, path: art.path });
-                                                                                                    }}
-                                                                                                />
-                                                                                            ) : (
-                                                                                                <FileArtifact
-                                                                                                    path={art.path}
-                                                                                                    description={art.description}
-                                                                                                    chatId={activeConversationId || ""}
-                                                                                                    onOpenArtifact={(name) => {
-                                                                                                        setViewingFile({ name, path: art.path });
-                                                                                                    }}
-                                                                                                />
-                                                                                            )}
-                                                                                        </div>
-                                                                                    );
-                                                                                })}
-                                                                                {followUps.length > 0 && (
-                                                                                    <SuggestedFollowUpsComponent
-                                                                                        followUps={followUps}
-                                                                                        onSelect={(text) => handleSend(text)}
-                                                                                    />
-                                                                                )}
-                                                                            </>
-                                                                        );
-                                                                    })()}
-                                                                    {/* Presented File Cards — Claude-style file presentation after message text */}
-                                                                    {(() => {
-                                                                        const presentFileCalls = msg.toolCalls?.filter(
-                                                                            (tc: any) => tc.toolName === 'present_files' && tc.data?.files && Array.isArray(tc.data.files)
-                                                                        ) || [];
-                                                                        if (presentFileCalls.length === 0) return null;
-                                                                        const presentedFiles = presentFileCalls.flatMap((tc: any) => tc.data.files);
-                                                                        return (
-                                                                            <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6, width: '100%' }}>
-                                                                                {presentedFiles.map((file: any, fi: number) => {
-                                                                                    const filePath = file.path || '';
-                                                                                    const fileDesc = file.title || file.description || undefined;
-                                                                                    return (
-                                                                                        <FileArtifact
-                                                                                            key={`presented-${fi}-${filePath}`}
-                                                                                            path={filePath}
-                                                                                            description={fileDesc}
-                                                                                            chatId={activeConversationId || ""}
-                                                                                            onOpenArtifact={(name) => {
-                                                                                                setViewingFile({ name, path: filePath });
-                                                                                            }}
-                                                                                        />
-                                                                                    );
-                                                                                })}
-                                                                            </div>
-                                                                        );
-                                                                    })()}
-                                                                    <ReportContainer
-                                                                        content={msg.content}
-                                                                        onView={(label, path) => {
-                                                                            const filename = path.split(/[\\/]/).pop() || label;
-                                                                            setViewingFile({ name: filename, path });
-                                                                        }}
-                                                                    />
-                                                                    {msg.role === "assistant" && currentSites.length > 0 && currentSites.some(site => site.chatId === activeConversationId) && (
-                                                                        <div style={{ marginTop: 12 }}>
-                                                                            {currentSites.filter(site => site.chatId === activeConversationId).map(site => <SitePreview key={site.id} chatId={activeConversationId || ""} filename={site.id} />)}
-                                                                        </div>
-                                                                    )}
-
-                                                                    {msg.toolCalls?.filter(tc => tc.toolName === 'visualize').map(tc => (
-                                                                        <InlineVisualization
-                                                                            key={tc.id}
-                                                                            html={tc.args?.html as string || ''}
-                                                                            css={tc.args?.css as string}
-                                                                            js={tc.args?.js as string}
-                                                                            title={tc.args?.title as string}
-                                                                            height={tc.args?.height as number}
-                                                                        />
-                                                                    ))}
-                                                                    {/* Plan Preview Card - Show when execution_plan tool is present */}
-                                                                    {msg.toolCalls?.filter(tc => tc.toolName === 'execution_plan').map(tc => {
-                                                                        const planContent = tc.data?.content || '';
-                                                                        const planTitle = planContent.match(/^# Execution Plan:\s*(.+)$/m)?.[1] || 'Execution Plan';
-                                                                        const stepCount = (planContent.match(/^### /gm) || []).length;
-                                                                        return (
-                                                                            <div key={tc.id} style={{ marginTop: 12, marginBottom: 8 }}>
-                                                                                <PlanPreviewCard
-                                                                                    title={planTitle}
-                                                                                    description="Click to view the full execution plan with all steps and details."
-                                                                                    stepCount={stepCount}
-                                                                                    completedCount={0}
-                                                                                    onClick={() => {
-                                                                                        // Open the tool call detail pane for this plan
-                                                                                        setSelectedToolCall({
-                                                                                            id: tc.id,
-                                                                                            toolName: tc.toolName || 'execution_plan',
-                                                                                            status: tc.status === 'done' ? 'completed' : tc.status === 'error' ? 'failed' : 'executing',
-                                                                                            startTime: Date.now(),
-                                                                                            arguments: tc.args || {},
-                                                                                            result: tc.data ? { data: tc.data } : undefined,
-                                                                                        });
-                                                                                    }}
-                                                                                    onApprove={() => {
-                                                                                        // Handle plan approval
-                                                                                        const approvalMsg = `[PLAN_APPROVED]\nI have reviewed and approved your execution plan. Please proceed with the execution as planned.`;
-                                                                                        handleSend(approvalMsg);
-                                                                                    }}
-                                                                                />
-                                                                            </div>
-                                                                        );
-                                                                    })}
-                                                                    {/* Interrupted Response Banner (when user stops message) */}
-                                                                    {msg.stopped && (
-                                                                        <InterruptedResponseBanner
-                                                                            onEditPrompt={() => {
-                                                                                const prevUserMsg = messages.slice(0, idx).reverse().find(m => m.role === 'user');
-                                                                                if (prevUserMsg) {
-                                                                                    const promptText = typeof prevUserMsg.content === 'string' ? prevUserMsg.content : '';
-                                                                                    setInputValue(promptText);
-                                                                                    setTimeout(() => {
-                                                                                        if (textareaRef.current) {
-                                                                                            textareaRef.current.focus();
-                                                                                            textareaRef.current.setSelectionRange(promptText.length, promptText.length);
-                                                                                            textareaRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                                                                        }
-                                                                                    }, 50);
-                                                                                }
-                                                                            }}
-                                                                            onTryAgain={() => {
-                                                                                const prevUserMsg = messages.slice(0, idx).reverse().find(m => m.role === 'user');
-                                                                                if (prevUserMsg) {
-                                                                                    const promptText = typeof prevUserMsg.content === 'string' ? prevUserMsg.content : '';
-                                                                                    const userMsgIndex = messages.findIndex(m => m.id === prevUserMsg.id);
-                                                                                    const historyBeforeAssistant = messages.slice(0, userMsgIndex);
-                                                                                    handleSend(promptText, historyBeforeAssistant, false);
-                                                                                }
-                                                                            }}
-                                                                        />
-                                                                    )}
-                                                                    <RateLimitContinueButton content={msg.content} onContinue={() => { setInputValue("continue"); const inputArea = document.querySelector('textarea') || document.querySelector('input[type="text"]'); if (inputArea) { (inputArea as any).focus(); } }} />
-                                                                    <CloudAuthLoginButton content={toContentString(msg.content)} providerType={currentModel?.providerType} onLogin={() => { setCloudAuthError(false); router.push('/auth'); }} />
-                                                                    {idx === messages.length - 1 && activeUserQuestions.length > 0 && isNavisQuestion(activeUserQuestions) && (
-                                                                        <div style={{ marginTop: 16, width: '100%', maxWidth: '720px' }}>
-                                                                            <UserQuestionForm
-                                                                                questions={activeUserQuestions}
-                                                                                onSubmit={handleQuestionSubmit}
-                                                                                previewMarkdown={activeUserQuestions[0]?.previewMarkdown}
-                                                                                isInline={true}
-                                                                            />
-                                                                        </div>
-                                                                    )}
-                                                                    {idx === messages.length - 1 && showHitlApproval && hitlRequest && isNavisHitl(hitlRequest) && (
-                                                                        <div style={{ marginTop: 16, width: '100%', maxWidth: '720px' }}>
-                                                                            <HitlApprovalForm
-                                                                                request={hitlRequest}
-                                                                                onApprove={(sendMessage) => handleHitlApproval(true, sendMessage)}
-                                                                                onReject={(sendMessage) => handleHitlApproval(false, sendMessage)}
-                                                                                isInline={true}
-                                                                            />
-                                                                        </div>
-                                                                    )}
-
-                                                                    <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: 12 }}>
-                                                                        <button
-                                                                            onClick={() => handleUndoTurn(idx)}
-                                                                            title="Undo Turn"
-                                                                            className="hover:text-zinc-600 transition-colors"
-                                                                            style={{
-                                                                                background: 'transparent',
-                                                                                border: 'none',
-                                                                                padding: '4px',
-                                                                                color: 'var(--color-text-tertiary)',
-                                                                                cursor: 'pointer',
-                                                                                display: 'flex',
-                                                                                alignItems: 'center',
-                                                                                justifyContent: 'center'
-                                                                            }}
-                                                                        >
-                                                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                                                                <path d="M3 7v6h6" />
-                                                                                <path d="M21 17a9 9 0 00-9-9 9 9 0 00-6 2.3L3 13" />
-                                                                            </svg>
-                                                                        </button>
-
-                                                                        <button
-                                                                            onClick={() => { setFeedbackTargetIndex(idx); setFeedbackType('down'); setShowFeedbackModal(true); }}
-                                                                            title="Thumbs Down"
-                                                                            className="hover:text-red-500 transition-colors"
-                                                                            style={{
-                                                                                background: 'transparent',
-                                                                                border: 'none',
-                                                                                padding: '4px',
-                                                                                color: 'var(--color-text-tertiary)',
-                                                                                cursor: 'pointer',
-                                                                                display: 'flex',
-                                                                                alignItems: 'center',
-                                                                                justifyContent: 'center'
-                                                                            }}
-                                                                        >
-                                                                            <HandThumbDownIcon className="w-4 h-4" />
-                                                                        </button>
-
-                                                                        <button
-                                                                            onClick={() => { setFeedbackTargetIndex(idx); setFeedbackType('up'); setShowFeedbackModal(true); }}
-                                                                            title="Thumbs Up"
-                                                                            className="hover:text-green-500 transition-colors"
-                                                                            style={{
-                                                                                background: 'transparent',
-                                                                                border: 'none',
-                                                                                padding: '4px',
-                                                                                color: 'var(--color-text-tertiary)',
-                                                                                cursor: 'pointer',
-                                                                                display: 'flex',
-                                                                                alignItems: 'center',
-                                                                                justifyContent: 'center'
-                                                                            }}
-                                                                        >
-                                                                            <HandThumbUpIcon className="w-4 h-4" />
-                                                                        </button>
-                                                                    </div>
-                                                                </>
-                                                            )}
-                                                        </div>
-                                                    </motion.div>
+                                                        msg={msg}
+                                                        idx={idx}
+                                                        isLast={idx === messages.length - 1}
+                                                        chatId={activeConversationId || ""}
+                                                        activeConversationId={activeConversationId}
+                                                        currentPhase={currentPhase}
+                                                        currentNode={currentNode}
+                                                        subAgentProgress={subAgentProgress}
+                                                        missionTimeline={missionTimeline}
+                                                        sites={currentSites}
+                                                        currentModel={currentModel}
+                                                        activeUserQuestions={activeUserQuestions}
+                                                        showHitlApproval={showHitlApproval}
+                                                        hitlRequest={hitlRequest}
+                                                        deriveView={deriveAssistantMessageView}
+                                                        onPillClick={handlePillClick}
+                                                        onOpenArtifact={handleOpenArtifact}
+                                                        onSend={handleSendRef.current ?? handleSend}
+                                                        onUndoTurn={handleUndoTurn}
+                                                        onFeedback={handleFeedbackClick}
+                                                        onOpenPlanPreview={handleOpenPlanPreview}
+                                                        onEditPromptForStopped={handleEditPromptForStopped}
+                                                        onTryAgainForStopped={handleTryAgainForStopped}
+                                                        onContinueRateLimited={handleContinueRateLimited}
+                                                        onNavisApprove={onNavisApprove}
+                                                        onNavisReject={onNavisReject}
+                                                        onQuestionSubmit={handleQuestionSubmit}
+                                                        onCloudAuthLogin={handleCloudAuthLogin}
+                                                        onSetInputValue={setInputValue}
+                                                        isNavisQuestion={isNavisQuestion}
+                                                        isNavisHitl={isNavisHitl}
+                                                        toContentString={toContentString}
+                                                    />
                                                 );
                                             })
                                             }
                                         </AnimatePresence>
+
 
 
                                         {/* Live streaming state - hide if last message already has this content (prevent duplicates).
@@ -8400,7 +8218,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                     <div className="relative pointer-events-none h-0">
                                         {/* Progressive blur above the composer */}
                                         <div
-                                            className="absolute bottom-0 left-0 right-0 pointer-events-none h-24 z-10"
+                                            className="absolute bottom-0 left-0 right-0 pointer-events-none h-24 z-[var(--z-dropdown)]"
                                             style={{
                                                 background: 'linear-gradient(to bottom, var(--color-bg-surface-transparent), var(--color-bg-surface) 75%)',
                                             }}
@@ -8422,7 +8240,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                     }}
                                                     whileHover={{ scale: 1.15, opacity: 0.9 }}
                                                     whileTap={{ scale: 0.9 }}
-                                                    className="pointer-events-auto absolute left-1/2 -translate-x-1/2 z-20 w-11 h-11 rounded-full flex items-center justify-center cursor-pointer shadow-2xl backdrop-blur-md"
+                                                    className="pointer-events-auto absolute left-1/2 -translate-x-1/2 z-[var(--z-panel)] w-11 h-11 rounded-full flex items-center justify-center cursor-pointer shadow-2xl backdrop-blur-md"
                                                     style={{
                                                         bottom: 24,
                                                         backgroundColor: 'var(--color-text-primary)',
@@ -8469,34 +8287,29 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                 </div>
                                                             </div>
 
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                                                <button
+                                                                    onClick={async () => {
+                                                                        try {
+                                                                            await (window as any).electronAPI?.grantPermission?.();
+                                                                        } catch (e) {
+                                                                            console.log('[Permission] Grant request failed:', e);
+                                                                        }
+                                                                        setShowPermissionModal(false);
+                                                                    }}
+                                                                    style={{ padding: "6px 16px", backgroundColor: "var(--color-text-primary)", color: "var(--color-text-inverse)", border: "none", borderRadius: 10, cursor: "pointer", fontSize: 12, fontWeight: 600 }}
+                                                                >
+                                                                    Grant
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => setShowPermissionModal(false)}
+                                                                    style={{ padding: "6px 16px", backgroundColor: "transparent", color: "var(--color-text-secondary)", border: "1px solid var(--color-border)", borderRadius: 10, cursor: "pointer", fontSize: 12, fontWeight: 600 }}
+                                                                >
+                                                                    Not now
+                                                                </button>
                                                             </div>
                                                         </div>
                                                     </div>
-                                                </motion.div>
-                                            )}
-                                        </AnimatePresence>
-
-                                        {/* Screenshot Zoom Overlay */}
-                                        <AnimatePresence>
-                                            {zoomedScreenshot && (
-                                                <motion.div
-                                                    initial={{ opacity: 0 }}
-                                                    animate={{ opacity: 1 }}
-                                                    exit={{ opacity: 0 }}
-                                                    onClick={() => setZoomedScreenshot(null)}
-                                                    style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40, cursor: 'zoom-out', backdropFilter: 'blur(8px)' }}
-                                                >
-                                                    <motion.div
-                                                        initial={{ scale: 0.9, y: 20 }}
-                                                        animate={{ scale: 1, y: 0 }}
-                                                        style={{ maxWidth: '95%', maxHeight: '95%', position: 'relative' }}
-                                                    >
-                                                        <img src={zoomedScreenshot} style={{ maxWidth: '100%', maxHeight: '85vh', borderRadius: 16, boxShadow: '0 30px 60px rgba(0,0,0,0.8)', border: '1px solid rgba(255,255,255,0.1)' }} />
-                                                        <div style={{ position: 'absolute', top: -48, right: 0, color: '#fff', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, background: 'rgba(255,255,255,0.1)', padding: '8px 16px', borderRadius: 20, backdropFilter: 'blur(4px)' }}>
-                                                            <XMarkIcon width={18} height={18} strokeWidth={2.5} /> Close Preview
-                                                        </div>
-                                                    </motion.div>
                                                 </motion.div>
                                             )}
                                         </AnimatePresence>
@@ -8663,7 +8476,6 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                     </div>
                                                 </div>
                                             </PromptWrapper>
-                                            {renderShortcutsLegend()}
                                             <div style={{ textAlign: "center", fontSize: 11, color: "#71717a", marginTop: 14 }}>
                                                 Everfern is an agentic AI and can make mistakes. Please double-check responses.
                                             </div>
@@ -8820,12 +8632,6 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                             setActiveConversationId(projId);
                             activeConversationIdRef.current = projId;
                             setFolderContexts([{ id: projId, path: project.path, name: project.name }]);
-                            setContextItems([{
-                                id: crypto.randomUUID(),
-                                type: 'folder' as any,
-                                label: project.name,
-                                path: project.path
-                            } as any]);
                             setShowProjectsPage(false);
                         }
                     }}

@@ -11,8 +11,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import PillNarrativeTimeline from '../PillNarrativeTimeline';
-import type { NarrativeTimeline, Task, ToolPill } from '../../../../main/agent/runner/pill-narrative/types';
+import PillNarrativeTimeline from '../agent/PillNarrativeTimeline';
+import type { NarrativeTimeline, Task, ToolPill } from '../../../main/agent/runner/pill-narrative/types';
 
 /**
  * Create a mock timeline for testing
@@ -39,7 +39,9 @@ function createMockTimeline(): NarrativeTimeline {
     title: 'Search for information',
     description: 'Search the web for relevant information',
     pills: [pill1, pill2],
-    status: 'pending',
+    // Completed: the component's reconciliation keeps pending tasks expanded,
+    // so only completed tasks honor manual collapse.
+    status: 'completed',
   };
 
   const timeline: NarrativeTimeline = {

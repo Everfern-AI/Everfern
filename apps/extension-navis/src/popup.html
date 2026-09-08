@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EverFern Navis</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <main class="popup-shell">
+    <div class="brand-row">
+      <img class="brand-mark" src="logos/everfern-rounded.png" alt="EverFern" />
+      <div>
+        <h1>EverFern Navis</h1>
+        <p id="statusText">Checking desktop bridge...</p>
+      </div>
+    </div>
+    <div id="statusCapsule" class="status-capsule disconnected">
+      <span></span>
+      <strong>Disconnected</strong>
+    </div>
+    <button id="openPanel" type="button">Show page panel</button>
+    <button id="captureTab" type="button" class="secondary">Capture current tab</button>
+    <div class="mini-stats">
+      <span id="eventStat">0 events</span>
+      <span id="modeStat">extension-first</span>
+    </div>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

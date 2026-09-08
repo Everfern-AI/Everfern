@@ -20,8 +20,9 @@
  * - All non-terminal tools are registered and callable
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { getBaseTools } from '../../../runner/tools_manager';
+import { AIClient, getPooledAIClient } from '../../../../lib/ai-client';
 import { getPiCodingTools } from '../../../tools/pi-tools';
 import { plannerTool } from '../../../tools/planner';
 import { memorySaveTool } from '../../../tools/memory-save';
@@ -31,6 +32,18 @@ import { askUserTool } from '../../../tools/ask-user';
 import { presentFilesTool } from '../../../tools/present-files';
 import type { AgentTool, ToolResult } from '../../../runner/types';
 import * as fc from 'fast-check';
+
+// AI-PERF-01: wrap the real ai-client module so getPooledAIClient is a spy
+// delegating to the real pool — every other tool import keeps real behavior.
+vi.mock('../../../../lib/ai-client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../lib/ai-client')>();
+  return {
+    ...actual,
+    getPooledAIClient: vi.fn((config: Parameters<typeof getPooledAIClient>[0]) =>
+      actual.getPooledAIClient(config)
+    ),
+  };
+});
 
 describe('Terminal Pi-Tools Integration Preservation', () => {
   // Helper to check if a tool result follows the ToolResult schema
@@ -284,6 +297,53 @@ describe('Terminal Pi-Tools Integration Preservation', () => {
       console.log('Note: Pi-tools dynamic import not available in test environment (expected)');
       expect(true).toBe(true); // Pass the test - pi-tools are verified in integration
     }
+  });
+
+  // AI-PERF-01: the Navis vision fallback client must be acquired through
+  // the client pool (getPooledAIClient), never via `new AIClient(...)` —
+  // unpooled clients skip warm-connection reuse. The runner gets a lease it
+  // releases in runStream()'s outer finally (also asserted below).
+  it('AI-PERF-01: vision fallback client is acquired via getPooledAIClient', () => {
+    const getPooled = vi.mocked(getPooledAIClient);
+    getPooled.mockClear();
+
+    const mockRunner = {
+      client: {
+        getFullConfig: () => ({
+          provider: 'anthropic',
+          vlm: {
+            engine: 'local',
+            provider: 'ollama',
+            model: 'llava',
+            apiKey: 'sk-vlm-key',
+            baseUrl: 'http://localhost:11434',
+          },
+        }),
+      } as any,
+      config: {
+        visionModel: 'llava',
+        ollamaBaseUrl: 'http://localhost:11434',
+        checkPermission: async () => true,
+        requestPermission: async () => true,
+        vlm: { engine: 'local', provider: 'ollama', model: 'llava' },
+      },
+    };
+
+    getBaseTools(mockRunner as any);
+
+    const visionCall = getPooled.mock.calls.find(
+      (call) =>
+        (call[0] as any)?.provider === 'ollama' && (call[0] as any)?.model === 'llava'
+    );
+    expect(visionCall, 'getPooledAIClient must be used for the vision client').toBeTruthy();
+    // The lease the runner releases in runStream()'s finally must carry the
+    // exact config passed to getPooledAIClient and the client it returned.
+    const pooledResult = getPooled.mock.results.find(
+      (r) => r.value === (mockRunner as any).visionClientLease.client
+    );
+    expect(pooledResult, 'leased client must be a getPooledAIClient return value').toBeTruthy();
+    expect((mockRunner as any).visionClientLease.config).toBe((visionCall as any)[0]);
+    expect((mockRunner as any).visionClientLease.client).toBeInstanceOf(AIClient);
   });
 
   it('Property 2: Preservation - Tool execute functions return ToolResult', async () => {

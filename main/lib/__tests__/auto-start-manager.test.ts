@@ -64,6 +64,9 @@ describe('AutoStartManager', () => {
       const info = autoStartManager.getPlatformInfo();
       expect(info.platform).toBe('Windows');
       expect(info.method).toContain('app.setLoginItemSettings');
+      // MP-XPLAT-05: truthful reporting — registry Run key is what
+      // app.setLoginItemSettings uses on Windows
+      expect(info.location).toContain('Registry');
     });
 
     it('should detect macOS platform', () => {
@@ -71,6 +74,12 @@ describe('AutoStartManager', () => {
       const info = autoStartManager.getPlatformInfo();
       expect(info.platform).toBe('macOS');
       expect(info.method).toContain('app.setLoginItemSettings');
+      // MP-XPLAT-05: darwin uses app.setLoginItemSettings (SMAppService-backed),
+      // NOT a hand-rolled LaunchAgent plist — doc must not claim LaunchAgents files
+      expect(info.method).toContain('SMAppService');
+      expect(info.location).toContain('Login Items');
+      expect(info.location).not.toContain('LaunchAgents');
+      expect(info.method).not.toContain('LaunchAgent)');
     });
 
     it('should detect Linux platform', () => {
@@ -78,6 +87,8 @@ describe('AutoStartManager', () => {
       const info = autoStartManager.getPlatformInfo();
       expect(info.platform).toBe('Linux');
       expect(info.method).toContain('desktop file');
+      // location is the actual desktop file path
+      expect(info.location).toContain('everfern-desktop.desktop');
     });
   });
 
@@ -104,7 +115,9 @@ describe('AutoStartManager', () => {
         expect.stringContaining('[Desktop Entry]'),
         'utf8'
       );
-      expect(mockFs.chmodSync).toHaveBeenCalledWith(path.join('/home/user', '.config', 'autostart', 'everfern-desktop.desktop'), 0o755);
+      // MP-XPLAT-05: desktop files are data files, not executables — 0644 per XDG spec
+      expect(mockFs.chmodSync).toHaveBeenCalledWith(path.join('/home/user', '.config', 'autostart', 'everfern-desktop.desktop'), 0o644);
+      expect(mockFs.chmodSync).not.toHaveBeenCalledWith(path.join('/home/user', '.config', 'autostart', 'everfern-desktop.desktop'), 0o755);
     });
 
     it('should disable auto-start on Linux', async () => {
@@ -128,6 +141,27 @@ describe('AutoStartManager', () => {
       expect(content).toContain('Name=EverFern');
       expect(content).toContain('Exec="/mock/path/to/everfern.exe" --auto-start');
       expect(content).toContain('NoDisplay=true');
+    });
+
+    it('should include TryExec (plain path, no quotes) after Exec (MP-XPLAT-05)', async () => {
+      await autoStartManager.enable();
+
+      const writeCall = mockFs.writeFileSync.mock.calls.find(call =>
+        call[0].toString().includes('everfern-desktop.desktop')
+      );
+      expect(writeCall).toBeDefined();
+      const content = writeCall![1] as string;
+
+      // TryExec: plain absolute path of the executable — no quotes
+      expect(content).toContain('TryExec=/mock/path/to/everfern.exe');
+      expect(content).not.toContain('TryExec="/mock/path/to/everfern.exe"');
+
+      // TryExec must come right after the Exec line
+      const lines = content.split('\n');
+      const execIdx = lines.findIndex((l: string) => l.startsWith('Exec='));
+      const tryExecIdx = lines.findIndex((l: string) => l.startsWith('TryExec='));
+      expect(execIdx).toBeGreaterThanOrEqual(0);
+      expect(tryExecIdx).toBe(execIdx + 1);
     });
   });
 

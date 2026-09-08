@@ -42,7 +42,7 @@ export function VisionDowngradeNotice({ isVisible, onClose }: VisionDowngradeNot
                         position: 'fixed',
                         bottom: 24,
                         right: 24,
-                        zIndex: 9999,
+                        zIndex: 'var(--z-toast)',
                         maxWidth: 360,
                     }}
                 >
@@ -60,13 +60,13 @@ export function VisionDowngradeNotice({ isVisible, onClose }: VisionDowngradeNot
                                 width: 36,
                                 height: 36,
                                 borderRadius: 10,
-                                backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                                backgroundColor: 'var(--color-warning-dim)',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 flexShrink: 0,
                             }}>
-                                <EyeIcon width={18} height={18} color="#f59e0b" />
+                                <EyeIcon width={18} height={18} color="var(--color-warning)" />
                             </div>
                             <div style={{ flex: 1, minWidth: 0 }}>
                                 <h4 style={{
@@ -92,7 +92,7 @@ export function VisionDowngradeNotice({ isVisible, onClose }: VisionDowngradeNot
                                             border: 'none',
                                             padding: 0,
                                             marginLeft: 4,
-                                            color: '#f59e0b',
+                                            color: 'var(--color-warning)',
                                             fontWeight: 600,
                                             cursor: 'pointer',
                                             textDecoration: 'underline',

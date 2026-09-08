@@ -10,6 +10,7 @@ import { getSubagentRegistry, generateAgentId, type SubagentEntry, type AgentTyp
 import { getSwarmMemory, type MemoryFact } from './swarm-memory';
 import {
     getAgentEvents,
+    removeAgentEvents,
     emitTool,
     emitLifecycle
 } from '../infra/agent-events';
@@ -21,6 +22,8 @@ import {
 } from '../sessions/session-lifecycle-events';
 import { resolvePromptPlaceholders } from './system-prompt';
 
+/** Per-agent-type wait timeouts (ms) used by waitForCompletion when the
+ *  caller doesn't pass an explicit timeout. */
 export const AGENT_TIMEOUTS: Record<AgentType, number> = {
     'web-explorer': 900000, // 15 minutes
     'coding-specialist': 600000, // 10 minutes
@@ -28,6 +31,8 @@ export const AGENT_TIMEOUTS: Record<AgentType, number> = {
     'generic': 300000, // 5 minutes
 };
 
+/** Options controlling one spawn() call. `runner` must be supplied so the
+ *  sub-agent executes on an isolated session of its own. */
 export interface SpawnOptions {
     parentSessionId: string;
     task: string;
@@ -52,7 +57,9 @@ export interface SpawnOptions {
     runner: SubagentRunner;
 }
 
-export interface SpawnedAgent {
+/** Live handle to a spawned sub-agent: identity, depth, an abort() control,
+ *  and a completion promise callers can await. */
+interface SpawnedAgent {
     agentId: string;
     parentSessionId: string;
     sessionKey: string;
@@ -67,14 +74,8 @@ export interface SpawnedAgent {
     completion?: Promise<void>;
 }
 
-export interface SpawnResult {
-    success: boolean;
-    agentId: string;
-    sessionKey: string;
-    result?: string;
-    error?: string;
-}
-
+/** The minimal execution surface the spawner needs from a runner: either a
+ *  batched run() or a streaming runStream() the sub-agent pipes through. */
 export interface SubagentRunner {
     /** Session key of the currently executing sub-agent (for depth tracking in nested spawns). */
     currentAgentSessionKey?: string;
@@ -105,6 +106,11 @@ export interface SubagentRunner {
     ): AsyncGenerator<any, void, unknown>;
 }
 
+/**
+ * Orchestrates the subagent lifecycle: depth enforcement, registration, prompt
+ * assembly, execution behind a 10-slot concurrency queue, and wait/abort APIs.
+ * Obtain the shared instance via getSubagentSpawner().
+ */
 class SubagentSpawner {
     private maxGlobalDepth: number = 20; // Effectively unlimited for user needs, but prevents true infinite loops
     private activeAgents: number = 0;
@@ -136,6 +142,9 @@ class SubagentSpawner {
 
     private releaseSlot(): void {
         this.activeAgents--;
+        // Hand the slot to the next queued spawn synchronously (the increment
+        // happens here, not after its promise resolves) so a racing acquireSlot
+        // can't steal the slot between release and wakeup.
         if (this.queue.length > 0) {
             const next = this.queue.shift();
             if (next) {
@@ -168,6 +177,11 @@ class SubagentSpawner {
     }
 
 
+    /**
+     * Spawns a sub-agent: enforces depth limits, registers it, wires events,
+     * and launches runSubagent in the background (the returned completion
+     * promise is how callers await it).
+     */
     async spawn(options: SpawnOptions): Promise<SpawnedAgent> {
         const {
             parentSessionId,
@@ -212,6 +226,9 @@ class SubagentSpawner {
             throw new Error(`Maximum spawn depth (${sponsorEntry.maxDepth}) exceeded`);
         }
 
+        // Hard ceiling of 4 effective nesting levels — this overrides the
+        // per-agent maxDepth check above (default 20) and backstops the
+        // "depth < 4" spawn rule in the awareness prompt below.
         if (currentDepth > 4) {
             throw new Error(`Maximum spawn depth (3) exceeded`);
         }
@@ -246,6 +263,9 @@ class SubagentSpawner {
         }
 
         const agentId = generateAgentId();
+        // The trailing UUID fragment guarantees session-key uniqueness even if
+        // agentIds ever collide (e.g. registry restored from disk); the
+        // `agent:` prefix marks the key as a sub-agent session for sponsor lookups.
         const sessionKey = `agent:${agentId}:${crypto.randomUUID().substring(0, 8)}`;
 
         const enrichedTask = context ? `[CONTEXT: ${context}]\n\n${task}` : task;
@@ -306,6 +326,11 @@ class SubagentSpawner {
         return spawnedAgent;
     }
 
+    /**
+     * Executes a spawned sub-agent: acquires a concurrency slot, subscribes to
+     * swarm-memory sync, runs the retry loop, and always records a terminal
+     * registry state. Never throws — failures are captured as registry errors.
+     */
     private async runSubagent(agent: SpawnedAgent, runner: SubagentRunner, model?: string, systemPrompt?: string, parentHistory: Array<{ role: 'user' | 'assistant'; content: string | any[] }> = []): Promise<void> {
         const registry = getSubagentRegistry();
         const swarm = getSwarmMemory();
@@ -412,6 +437,8 @@ class SubagentSpawner {
                             agent.parentSessionId,
                             systemPrompt,
                             entry?.projectId,
+                            // `true` = isSubagent (7th runStream positional arg):
+                            // the runner treats this as a sub-agent stream.
                             true,
                             undefined,
                             false,
@@ -419,6 +446,9 @@ class SubagentSpawner {
                             (runner as any).reasoningEffort
                         );
 
+                        // Buffer reasoning deltas and flush at most every 150ms
+                        // so a fast token stream can't flood the parent timeline
+                        // with one event per chunk.
                         let reasoningBuffer = '';
                         let reasoningTimer: ReturnType<typeof setTimeout> | null = null;
                         const flushReasoning = () => {
@@ -466,6 +496,9 @@ class SubagentSpawner {
                             // Forward subagent-progress events (e.g. rich navis browser actions)
                             if (event.type === 'subagent-progress') {
                                 flushReasoning();
+                                // Re-emit nested events one level deeper than the
+                                // child reported so grandchildren nest under this
+                                // agent's branch rather than beside it.
                                 const nestedBranchLevel = event.data?.timelineBranch?.branchLevel
                                     ? (event.data.timelineBranch.branchLevel as number) + 1
                                     : agent.depth;
@@ -538,9 +571,22 @@ class SubagentSpawner {
                 (runner as any).currentAgentSessionKey = undefined;
             }
             unsubscribe();
+            // AG-MEM-07: release the per-subagent event emitter so long sessions
+            // don't accumulate one emitter per spawn. The parent conversation's
+            // emitter (agent.parentSessionKey) is intentionally kept — the parent
+            // may still be live.
+            // try/catch guards against a circular-import window where the
+            // agent-events module isn't initialized yet during teardown.
+            try {
+                removeAgentEvents(agent.sessionKey);
+            } catch { /* agent-events module unavailable */ }
         }
     }
 
+    /**
+     * Spawns one sub-agent per task; collect per-task failures in `errors`
+     * instead of aborting the batch, so partial spawns remain usable.
+     */
     async spawnMultiple(
         parentSessionId: string,
         tasks: string[],
@@ -574,31 +620,38 @@ class SubagentSpawner {
         return { spawned, errors };
     }
 
+    /**
+     * Waits (event-driven) for a single agent to reach a terminal status.
+     * On timeout, falls back to returning the entry only if it is already
+     * terminal — otherwise rethrows so callers never see a stale "done" entry.
+     */
     async waitForAgent(
         agentId: string,
         timeoutMs: number
     ): Promise<SubagentEntry | undefined> {
+        // AG-CORR-20: event-driven wait via the registry (promise + listeners)
+        // replaces the 100ms poll loop that spun for up to 300s per spawn.
         const registry = getSubagentRegistry();
-        const startTime = Date.now();
-
-        while (true) {
+        try {
+            return await registry.waitForAgent(agentId, timeoutMs);
+        } catch (err) {
+            // On timeout, only fall back to a returned entry when it is
+            // already terminal (mirrors old semantics: terminal = done).
+            // Re-throw otherwise so callers can distinguish "still running"
+            // from "finished between the rejection and this lookup".
             const entry = registry.get(agentId);
-            if (!entry) {
-                await new Promise(resolve => setTimeout(resolve, 100));
-                continue;
-            }
-
-            if (entry.status === 'completed' || entry.status === 'failed' || entry.status === 'aborted') {
+            if (entry && (entry.status === 'completed' || entry.status === 'failed' || entry.status === 'aborted')) {
                 return entry;
             }
-
-            if (Date.now() - startTime > timeoutMs) {
-                throw new Error(`Timeout waiting for agent ${agentId} (${timeoutMs}ms)`);
-            }
-            await new Promise(resolve => setTimeout(resolve, 100));
+            throw err;
         }
     }
 
+    /**
+     * Blocks until all of a parent's children are terminal, polling every
+     * 100ms (no per-agent waiter map here, unlike waitForAgent). Throws on
+     * timeout with the effective timeout for the agent type.
+     */
     async waitForCompletion(
         parentSessionId: string,
         timeoutMs?: number,
@@ -621,6 +674,10 @@ class SubagentSpawner {
     /**
      * Aborts all active sub-agents
      * Used during cleanup when execution completes
+     */
+    /**
+     * Aborts all non-terminal sub-agents and updates their registry entries.
+     * Best-effort: individual abort failures are logged, not thrown.
      */
     async abortAll(): Promise<void> {
         const registry = getSubagentRegistry();
@@ -646,6 +703,9 @@ export { SubagentSpawner };
 // Singleton
 let spawnerInstance: SubagentSpawner | null = null;
 
+/**
+ * Lazily creates and returns the shared SubagentSpawner singleton.
+ */
 export function getSubagentSpawner(): SubagentSpawner {
     if (!spawnerInstance) {
         spawnerInstance = new SubagentSpawner();

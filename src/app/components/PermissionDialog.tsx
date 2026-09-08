@@ -68,7 +68,7 @@ export default function PermissionDialog() {
                                 position: 'fixed',
                                 inset: 0,
                                 backgroundColor: 'rgba(0, 0, 0, 0.6)',
-                                zIndex: 9998,
+                                zIndex: 'calc(var(--z-modal) - 1)',
                             }}
                         />
 
@@ -89,7 +89,7 @@ export default function PermissionDialog() {
                                 height: 'fit-content',
                                 backgroundColor: 'var(--color-bg-surface)',
                                 borderRadius: 16,
-                                zIndex: 9999,
+                                zIndex: 'var(--z-modal)',
                                 display: 'flex',
                                 flexDirection: 'column',
                                 overflow: 'hidden',

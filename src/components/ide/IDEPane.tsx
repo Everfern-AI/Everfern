@@ -19,7 +19,7 @@ export function IDEPane({ visible = true }: any) {
   ];
 
   return (
-    <div className="glossy" style={{ border: '1px solid #e5e7eb', borderRadius: '12px', overflow: 'hidden', backgroundColor: '#1e1e1e', color: '#d4d4d4', fontFamily: 'monospace', fontSize: '13px', margin: '16px 0' }}>
+    <div className="glossy" style={{ border: '1px solid var(--color-border)', borderRadius: '12px', overflow: 'hidden', backgroundColor: '#1e1e1e', color: '#d4d4d4', fontFamily: 'monospace', fontSize: '13px', margin: '16px 0' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', padding: '8px 12px', backgroundColor: '#2d2d2d', borderBottom: '1px solid #3e3e42' }}>
         <span style={{ fontSize: '11px', color: '#858587', marginRight: '8px' }}>⚙</span>
