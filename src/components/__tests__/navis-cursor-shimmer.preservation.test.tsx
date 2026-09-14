@@ -24,7 +24,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import * as fc from 'fast-check';
-import { ComputerUseResultCard } from '../tools/ToolCallComponents';
+import { ComputerUseResultCard } from '../ToolCallComponents';
 
 // ── Mock Data ────────────────────────────────────────────────────────────────
 

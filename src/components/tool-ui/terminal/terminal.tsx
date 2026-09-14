@@ -179,7 +179,7 @@ function TerminalOutput({
         <div className="overflow-x-auto p-4">
           {/* Command echo line */}
           {command && (
-            <div className="mb-3 pb-2 border-b border-[#2d2d3a] text-[var(--color-navis-icon-color)] text-xs">
+            <div className="mb-3 pb-2 border-b border-[#2d2d3a] text-[#6366f1] text-xs">
               <span className="text-[#64748b] mr-2">$</span>
               <span className="text-[#e2e8f0]">{command}</span>
             </div>

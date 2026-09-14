@@ -101,9 +101,9 @@ export default function PlanViewer({ taskTitle, steps, isOpen, onApprove, onClos
                         }}
                       >
                         {isDone ? (
-                          <Check size={13} strokeWidth={2} style={{ color: 'var(--color-success)' }} />
+                          <Check size={13} strokeWidth={2} style={{ color: '#10b981' }} />
                         ) : isInProgress ? (
-                          <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--color-info)' }} />
+                          <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#3b82f6' }} />
                         ) : (
                           <span style={{ fontSize: 11, color: 'rgba(255, 255, 255, 0.3)', fontFamily: 'monospace' }}>
                             {index + 1}
@@ -177,8 +177,8 @@ export default function PlanViewer({ taskTitle, steps, isOpen, onApprove, onClos
                   padding: '6px 14px',
                   borderRadius: 6,
                   border: 'none',
-                  backgroundColor: 'var(--color-text-inverse)',
-                  color: 'var(--color-text-primary)',
+                  backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                  color: '#111',
                   fontSize: 12,
                   fontWeight: 600,
                   cursor: 'pointer',
@@ -187,7 +187,7 @@ export default function PlanViewer({ taskTitle, steps, isOpen, onApprove, onClos
                   gap: 6,
                 }}
               >
-                <Play size={12} fill="var(--color-text-primary)" />
+                <Play size={12} fill="#111" />
                 Approve & Execute
               </button>
             </div>
@@ -223,7 +223,7 @@ export function InlinePlanSteps({ steps }: { steps: PlanStep[] }) {
                 style={{
                   width: 14,
                   height: 1,
-                  backgroundColor: isDone ? 'var(--color-success-dim)' : 'rgba(255, 255, 255, 0.1)',
+                  backgroundColor: isDone ? 'rgba(16, 185, 129, 0.4)' : 'rgba(255, 255, 255, 0.1)',
                   flexShrink: 0,
                 }}
               />
@@ -237,9 +237,9 @@ export function InlinePlanSteps({ steps }: { steps: PlanStep[] }) {
               }}
             >
               {isDone ? (
-                <Check size={12} strokeWidth={2} style={{ color: 'var(--color-success)' }} />
+                <Check size={12} strokeWidth={2} style={{ color: '#10b981' }} />
               ) : isInProgress ? (
-                <div style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--color-info)' }} />
+                <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#3b82f6' }} />
               ) : (
                 <div style={{ width: 4, height: 4, borderRadius: '50%', background: 'rgba(255, 255, 255, 0.2)' }} />
               )}

@@ -15,8 +15,7 @@ import { interrupt } from '@langchain/langgraph';
 import type { MissionTracker } from '../mission-tracker';
 import { createMissionIntegrator } from '../mission-integrator';
 import type { AIClient } from '../../../lib/ai-client';
-import { runWithAgentContext } from '../../tools/pi-tools';
-import { getRollbackManager } from '../../persistence/rollback-manager';
+import { setAgentContext, clearAgentContext } from '../../tools/pi-tools';
 import { redirectComputerUseCallsToNavis } from '../tool-routing';
 import { syncTaskPlan } from '../task-plan-helper';
 import {
@@ -206,16 +205,13 @@ export const createExecuteToolsNode = (
     // Use missionId as the task identifier; fall back to a timestamped ID when unavailable.
     const rollbackTaskId = state.missionId || `exec-task-${Date.now()}`;
     const rollbackStepNumber = state.iterations || 0;
-    // AG-SAF-05: arm the rollback-manager workspace containment allowlist so
-    // file snapshots are only accepted for files inside the workspace (or
-    // ~/.everfern fallback). Without this the allowlist stays empty and the
-    // containment gate no-ops in production.
     try {
-      getRollbackManager().setAllowedRoots([runner.workspaceDir || path.join(os.homedir(), '.everfern')]);
-    } catch (err) {
-      console.warn('[ExecuteTools] Failed to arm rollback allowed roots:', err);
+      setAgentContext(rollbackTaskId, rollbackStepNumber);
+      console.log(`[ExecuteTools] Rollback context set: taskId=${rollbackTaskId}, step=${rollbackStepNumber}`);
+    } catch (ctxError) {
+      // Non-fatal: log and continue; rollback tracking will be skipped for this execution
+      console.warn('[ExecuteTools] Failed to set rollback context:', ctxError);
     }
-    // AG-CORR-13: context is applied per-group via runWithAgentContext below.
 
     // ── Harness Integration ──────────────────────────────────────────
     const harnessConfig = createHarnessConfig(rollbackTaskId, 'coding_harness');
@@ -263,17 +259,12 @@ export const createExecuteToolsNode = (
       }));
 
       // Enhanced Parallel Execution with Synchronization
-      // AG-CORR-13: each group runs inside a scoped agent context so
-      // concurrent conversations never clobber each other's rollback
-      // taskId/stepNumber (was a module-global in pi-tools).
-      const groupResult = await runWithAgentContext(rollbackTaskId, rollbackStepNumber, () =>
-        executeSynchronizedParallelGroup(
-          groupTools,
-          tools,
-          g + 1,
-          eventQueue,
-          (update) => runner.telemetry.info(update)
-        )
+      const groupResult = await executeSynchronizedParallelGroup(
+        groupTools,
+        tools,
+        g + 1,
+        eventQueue,
+        (update) => runner.telemetry.info(update)
       );
 
       newRecords.push(...groupResult.results);
@@ -464,8 +455,13 @@ export const createExecuteToolsNode = (
 
     nodeIntegrator.completeNode('execute_tools', `Completed ${calls.length} tool calls`);
 
-    // AG-CORR-13: rollback context is scoped per-group (runWithAgentContext) —
-    // no global to clear anymore.
+    // Clear rollback context after tool execution completes.
+    // Requirements 4.1, 4.2, 4.3, 5.1, 5.2: Clean up context to prevent stale tracking.
+    try {
+      clearAgentContext();
+    } catch (ctxError) {
+      console.warn('[ExecuteTools] Failed to clear rollback context:', ctxError);
+    }
 
     // Sync .everfern/task_plan.md checkboxes & progress
     // PERF: Fire-and-forget — task plan sync is cosmetic bookkeeping, don't block return to brain
@@ -475,6 +471,12 @@ export const createExecuteToolsNode = (
 
     return result;
     } catch (error) {
+      // Clear rollback context even when execution fails to prevent stale state.
+      try {
+        clearAgentContext();
+      } catch (ctxError) {
+        console.warn('[ExecuteTools] Failed to clear rollback context on error:', ctxError);
+      }
       nodeIntegrator.failNode('execute_tools', error instanceof Error ? error.message : String(error));
       throw error;
     }

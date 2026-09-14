@@ -22,7 +22,6 @@ import { MessagePlatform } from './platform-interface';
 import { AgentRunner } from '../agent/runner/runner';
 import { ACPManager } from '../acp/manager';
 import { AIClient } from '../lib/ai-client';
-import { warnOnceEnvKeyFallback } from '../lib/env-key-fallback';
 
 /**
  * Integration configuration interface
@@ -50,7 +49,7 @@ export interface IntegrationConfig {
 /**
  * Message handler configuration
  */
-interface MessageHandlerConfig {
+export interface MessageHandlerConfig {
   integrationConfig: IntegrationConfig;
   acpManager: ACPManager;
   botManager: BotIntegrationManager;
@@ -1077,7 +1076,6 @@ export class MessageHandler extends EventEmitter {
         everfern: process.env.EVERFERN_API_KEY,
       };
       if (envMap[normalizedProvider]) {
-        warnOnceEnvKeyFallback(normalizedProvider);
         return envMap[normalizedProvider]!;
       }
 

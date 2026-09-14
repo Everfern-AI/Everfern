@@ -1,7 +1,7 @@
 "use client";
 
 import React from 'react';
-import { useTheme } from '@/components/common/ThemeProvider';
+import { useTheme } from '@/components/ThemeProvider';
 
 export function EverFernCloudLimitNotice() {
     return (

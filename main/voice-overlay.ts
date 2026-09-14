@@ -27,160 +27,33 @@ export class VoiceOverlayManager {
   private isListening = false;
   private otherKeyPressed = false;
   private startListeningTimeout: NodeJS.Timeout | null = null;
-  // MP-SEC-07: idle-scoped keyboard hook. uIOhook captures every keystroke
-  // system-wide while running, so it is now armed lazily when voice features
-  // are actually used (voice-overlay:set-state activity) and stopped when the
-  // overlay goes idle — instead of running for the whole app lifetime.
-  private hookRunning = false;
-  private hookArmed = false;
-  // MP-SEC-07: once shutdown() has run, never re-arm — otherwise a late
-  // 'voice-overlay:set-state' activity during quit would call uIOhook.start()
-  // AFTER the quit path believes the system-wide keyboard hook is stopped.
-  private isShutDown = false;
-  private stopHookOnIdleTimer: NodeJS.Timeout | null = null;
-  private static readonly IDLE_STOP_DELAY_MS = 60_000;
 
   constructor() {
     console.log('[VoiceOverlay] Initializing manager...');
     this.initOverlayWindow();
-    // MP-SEC-07: hook setup is deferred — see armHook().
+    this.setupHook();
     this.setupIpc();
-  }
-
-  /**
-   * Register the global keydown/keyup listeners and start the OS hook.
-   * Idempotent: only installs listeners once; only calls start() when needed.
-   */
-  private armHook(): void {
-    if (this.hookArmed || !uIOhook) {
-      if (!uIOhook) {
-        console.warn('[VoiceOverlay] Cannot arm hook — uiohook-napi not available on this platform/build.');
-      }
-      return;
-    }
-    this.hookArmed = true;
-
-    console.log('[VoiceOverlay] Arming uIOhook (voice activity detected)...');
-    try {
-      uIOhook.on('keydown', (e: any) => {
-        if (e.keycode === UiohookKey.Ctrl || e.keycode === UiohookKey.CtrlRight) {
-          this.isCtrlDown = true;
-        } else if (e.keycode === UiohookKey.Alt || e.keycode === UiohookKey.AltRight) {
-          this.isAltDown = true;
-        } else {
-          this.otherKeyPressed = true;
-        }
-        this.checkState();
-      });
-
-      uIOhook.on('keyup', (e: any) => {
-        if (e.keycode === UiohookKey.Ctrl || e.keycode === UiohookKey.CtrlRight) {
-          this.isCtrlDown = false;
-          this.otherKeyPressed = false;
-        } else if (e.keycode === UiohookKey.Alt || e.keycode === UiohookKey.AltRight) {
-          this.isAltDown = false;
-          this.otherKeyPressed = false;
-        } else {
-          // MP-CORR-11: pure-function-of-current-flags — releasing ANY
-          // non-modifier key also clears the latch, so tapping X while
-          // holding Ctrl+Alt then releasing X re-arms listening instead
-          // of staying stuck until the modifiers are released.
-          this.otherKeyPressed = false;
-        }
-        this.checkState();
-      });
-
-      this.startHook();
-    } catch (err) {
-      console.error('[VoiceOverlay] Failed to arm uIOhook:', err);
-      this.hookArmed = false;
-    }
-  }
-
-  private startHook(): void {
-    if (this.hookRunning || !uIOhook || !this.hookArmed) return;
-    try {
-      uIOhook.start();
-      this.hookRunning = true;
-      console.log('[VoiceOverlay] uIOhook started successfully.');
-    } catch (err) {
-      console.error('[VoiceOverlay] Failed to start uIOhook:', err);
-    }
-  }
-
-  /**
-   * Stop the OS-global keyboard hook and schedule an automatic stop after a
-   * period of overlay idleness (privacy + battery: no system-wide keystroke
-   * capture while voice features are unused).
-   */
-  private stopHook(): void {
-    if (!this.hookRunning || !uIOhook) return;
-    try {
-      uIOhook.stop();
-      this.hookRunning = false;
-      this.isCtrlDown = false;
-      this.isAltDown = false;
-      this.otherKeyPressed = false;
-      this.wasCtrlAltDown = false;
-      console.log('[VoiceOverlay] uIOhook stopped — overlay idle.');
-    } catch (err) {
-      console.error('[VoiceOverlay] Failed to stop uIOhook:', err);
-    }
-  }
-
-  /**
-   * Called on any voice-overlay activity. Arms the hook (first use) and
-   * pushes back the idle auto-stop.
-   */
-  private noteVoiceActivity(): void {
-    if (this.isShutDown) return; // quit path already tore the hook down
-    if (!this.hookArmed) this.armHook();
-    this.startHook();
-    if (this.stopHookOnIdleTimer) clearTimeout(this.stopHookOnIdleTimer);
-    this.stopHookOnIdleTimer = setTimeout(() => {
-      this.stopHookOnIdleTimer = null;
-      this.stopHook();
-    }, VoiceOverlayManager.IDLE_STOP_DELAY_MS);
-    this.stopHookOnIdleTimer.unref?.();
-  }
-
-  /**
-   * Public teardown for the quit path: stops the hook and cancels timers.
-   */
-  shutdown(): void {
-    this.isShutDown = true;
-    if (this.stopHookOnIdleTimer) {
-      clearTimeout(this.stopHookOnIdleTimer);
-      this.stopHookOnIdleTimer = null;
-    }
-    if (this.startListeningTimeout) {
-      clearTimeout(this.startListeningTimeout);
-      this.startListeningTimeout = null;
-    }
-    this.stopHook();
   }
 
   private setupIpc() {
     ipcMain.on('voice-overlay:audio-levels', (event, levels) => {
-      // MP-CORR-11: send audio levels ONLY to the overlay window, and only
-      // if it exists, is not destroyed, and is visible. (The main window
-      // generates these events, so forwarding them anywhere else is noise.)
-      if (this.overlayWindow && !this.overlayWindow.isDestroyed() && this.overlayWindow.isVisible()) {
-        this.overlayWindow.webContents.send('voice-overlay:audio-levels', levels);
-      }
+      BrowserWindow.getAllWindows().forEach(win => {
+        if (!win.isDestroyed() && win !== this.overlayWindow) {
+          // You might not want to send audio levels to ALL windows, but for now it's fine, 
+          // actually the main window generates it, so let's only send to overlay.
+          if (win === this.overlayWindow && win.isVisible()) {
+             win.webContents.send('voice-overlay:audio-levels', levels);
+          }
+        } else if (win === this.overlayWindow && !win.isDestroyed() && win.isVisible()) {
+           win.webContents.send('voice-overlay:audio-levels', levels);
+        }
+      });
     });
 
     ipcMain.on('voice-overlay:set-state', (event, payload) => {
       console.log(`[VoiceOverlay] Set state IPC:`, payload);
       const stateStr = typeof payload === 'string' ? payload : (payload?.state || 'idle');
-
-      // MP-SEC-07: any voice-overlay activity arms the lazy global hook and
-      // pushes back its idle auto-stop; 'idle' keeps the timer running so an
-      // unused overlay never keeps the OS-wide keystroke hook alive.
-      if (stateStr !== 'idle') {
-        this.noteVoiceActivity();
-      }
-
+      
       const broadcastState = (p: any) => {
         const payloadObj = typeof p === 'string' ? { state: p } : p;
         BrowserWindow.getAllWindows().forEach(win => {
@@ -308,18 +181,16 @@ export class VoiceOverlayManager {
         }
       });
 
-      // MP-CORR-11: user-closed window must null the ref, else later
-      // showInactive()/setBounds() calls hit a destroyed BrowserWindow.
-      this.overlayWindow.on('closed', () => {
-        this.overlayWindow = null;
-      });
-
       const isDev = !app.isPackaged;
       const overlayUrl = isDev ? 'http://localhost:3001/overlay' : 'everfern-app://./overlay/index.html';
-
+      
       console.log(`[VoiceOverlay] Loading URL: ${overlayUrl}`);
-
-      this.overlayWindow.loadURL(overlayUrl).catch(e => console.error('[VoiceOverlay] Failed to load URL:', e));
+      
+      if (isDev) {
+        this.overlayWindow.loadURL(overlayUrl).catch(e => console.error('[VoiceOverlay] Failed to load URL:', e));
+      } else {
+        this.overlayWindow.loadURL(overlayUrl).catch(e => console.error('[VoiceOverlay] Failed to load URL:', e));
+      }
 
       this.overlayWindow.setIgnoreMouseEvents(true);
       console.log('[VoiceOverlay] Window initialized.');
@@ -328,7 +199,45 @@ export class VoiceOverlayManager {
     }
   }
 
+  private setupHook() {
+    if (!uIOhook) {
+      console.warn('[VoiceOverlay] Skipping hook setup — uiohook-napi not available on this platform/build.');
+      return;
+    }
+    console.log('[VoiceOverlay] Setting up uIOhook...');
+    
+    try {
+      uIOhook.on('keydown', (e: any) => {
+        if (e.keycode === UiohookKey.Ctrl || e.keycode === UiohookKey.CtrlRight) {
+          this.isCtrlDown = true;
+        } else if (e.keycode === UiohookKey.Alt || e.keycode === UiohookKey.AltRight) {
+          this.isAltDown = true;
+        } else {
+          this.otherKeyPressed = true;
+        }
+        this.checkState();
+      });
+
+      uIOhook.on('keyup', (e: any) => {
+        if (e.keycode === UiohookKey.Ctrl || e.keycode === UiohookKey.CtrlRight) {
+          this.isCtrlDown = false;
+          this.otherKeyPressed = false;
+        } else if (e.keycode === UiohookKey.Alt || e.keycode === UiohookKey.AltRight) {
+          this.isAltDown = false;
+          this.otherKeyPressed = false;
+        }
+        this.checkState();
+      });
+
+      uIOhook.start();
+      console.log('[VoiceOverlay] uIOhook started successfully.');
+    } catch (err) {
+      console.error('[VoiceOverlay] Failed to start uIOhook:', err);
+    }
+  }
+
   private wasCtrlAltDown = false;
+
   private checkState() {
     const shouldListen = this.isCtrlDown && this.isAltDown;
     
@@ -374,60 +283,5 @@ export class VoiceOverlayManager {
         }
       }
     }
-  }
-}
-
-// Lazy singleton factory (MP-LIFE-03): the overlay BrowserWindow and its
-// everfern-app:// page load cost ~120MB RSS at cold start, so the manager is
-// constructed on first use (first 'voice-overlay:set-state' / 'audio-levels'
-// IPC from the renderer), never eagerly at startup. Mirrors the
-// getComputerOverlayManager() pattern in computer-overlay.ts. Both factories
-// only run after the protocol handlers are registered in app.whenReady (lazy
-// first use can only originate from a loaded renderer, which is itself later
-// than protocol registration), so everfern-app:// URLs always resolve.
-let _instance: VoiceOverlayManager | null = null;
-
-export function getVoiceOverlayManager(): VoiceOverlayManager {
-  if (!_instance) {
-    _instance = new VoiceOverlayManager();
-  }
-  return _instance;
-}
-
-/**
- * MP-LIFE-03/MP-SEC-07 gate helper: shut down the overlay ONLY if the lazy
- * factory ever constructed one. Never constructs on shutdown (calling
- * getVoiceOverlayManager() here would defeat the lazy-creation savings).
- */
-export function shutdownVoiceOverlayIfCreated(): void {
-  if (_instance) {
-    _instance.shutdown();
-    _instance = null;
-  }
-}
-
-/**
- * MP-LIFE-03: lazy IPC bridge. Registers lightweight forwarders for the
- * renderer voice channels; the FIRST message on either channel constructs
- * the VoiceOverlayManager (whose own setupIpc registers the real
- * handlers). Before any voice IPC, no overlay window and no global keyboard
- * hook exist at all.
- */
-export function registerVoiceOverlayIpcBridge(): void {
-  const lazyChannels = ['voice-overlay:set-state', 'voice-overlay:audio-levels'] as const;
-  for (const channel of lazyChannels) {
-    ipcMain.on(channel, function lazyVoiceForwarder(...args: any[]) {
-      // Construct-on-first-use; the manager's setupIpc registers the real
-      // listener, so remove this throwaway forwarder and re-dispatch.
-      ipcMain.removeListener(channel, lazyVoiceForwarder);
-      try {
-        getVoiceOverlayManager();
-      } catch (err) {
-        console.error('[VoiceOverlay] Lazy construction failed:', err);
-        return;
-      }
-      // Re-emit so the newly registered real handler receives this message.
-      ipcMain.emit(channel, ...args);
-    });
   }
 }

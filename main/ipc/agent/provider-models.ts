@@ -45,17 +45,7 @@ export function registerProviderModelHandlers(): void {
       if (!fs.existsSync(resolved)) {
         return { error: 'File not found.' };
       }
-      // Symlink containment: realpath the target (and the sandbox root) so a
-      // link planted inside ~/.everfern/screenshots cannot point outside it.
-      const realResolved = fs.realpathSync(resolved);
-      const realAllowed = fs.realpathSync(allowedDir);
-      const realPrefix = realAllowed.endsWith(path.sep) ? realAllowed : realAllowed + path.sep;
-      const realResolvedNorm = isWindows ? realResolved.toLowerCase() : realResolved;
-      const realPrefixNorm = isWindows ? realPrefix.toLowerCase() : realPrefix;
-      if (!realResolvedNorm.startsWith(realPrefixNorm)) {
-        return { error: 'Access denied: path resolves outside the screenshots directory.' };
-      }
-      const buf = fs.readFileSync(realResolved);
+      const buf = fs.readFileSync(resolved);
       const ext = path.extname(resolved).toLowerCase();
       const mime = ext === '.png' ? 'image/png' : 'image/jpeg';
       const base64 = buf.toString('base64');

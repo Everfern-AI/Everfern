@@ -4,15 +4,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { SyntaxHighlighter } from '../files/ArtifactsPanel';
 import { Renderer } from '@openuidev/react-lang';
 import { uiLibrary } from '@/lib/openui-library';
-import { useFocusTrap } from '@/hooks/useFocusTrap';
 
 // ── Link Confirmation Popup ───────────────────────────────────────────────────
 const LinkPopup = ({ url, label, onClose }: { url: string; label: string; onClose: () => void }) => {
     const openInBrowser = () => {
         const api = (window as any).electronAPI;
-        // Electron: shell.openExternal routes to the system browser instead
-        // of spawning a window we don't control; the web fallback hardens
-        // window.open with noopener,noreferrer (no reverse tab-nabbing).
         if (api?.system?.openExternal) {
             api.system.openExternal(url);
         } else {
@@ -21,24 +17,17 @@ const LinkPopup = ({ url, label, onClose }: { url: string; label: string; onClos
         onClose();
     };
 
-    // CU-UI-11: dialog semantics + Esc/Tab trap + focus restore via shared hook.
-    const popupRef = useFocusTrap<HTMLDivElement>({ active: true, onEscape: onClose });
-
     return (
         <AnimatePresence>
             <div
                 style={{
-                    position: 'fixed', inset: 0, zIndex: 'var(--z-modal)',
+                    position: 'fixed', inset: 0, zIndex: 9999,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     backgroundColor: 'var(--color-bg-overlay)',
                 }}
                 onClick={onClose}
             >
                 <motion.div
-                    ref={popupRef}
-                    role="dialog"
-                    aria-modal="true"
-                    aria-label={`Open link: ${label}`}
                     initial={{ opacity: 0, scale: 0.95, y: 8 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95, y: 8 }}
@@ -127,15 +116,7 @@ const InlineLink = ({ href, label }: { href: string, label: string }) => {
     return (
         <>
             <span
-                role="link"
-                tabIndex={0}
-                aria-label={`${label} (opens confirmation dialog)`}
                 onClick={e => { e.preventDefault(); e.stopPropagation(); setShowPopup(true); }}
-                onKeyDown={e => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault(); e.stopPropagation(); setShowPopup(true);
-                    }
-                }}
                 style={{
                     color: 'var(--color-accent)',
                     textDecoration: 'underline',

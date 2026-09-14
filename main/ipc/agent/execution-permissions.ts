@@ -3,63 +3,23 @@ import { dismissPermissionNotification } from '../../lib/permission-notification
 import { getLocalExecutionResolvers } from '../../agent/tools/pi-tools';
 import { requestDebateSkip } from '../../agent/runner/debate-skip';
 
-// MP-CORR-23: the old single-slot resolver was overwritten by overlapping
-// permission prompts (second prompt silently killed the first). Key by
-// requestId and resolve each independently.
-const agentPermissionResolvers = new Map<string, (granted: boolean) => void>();
-/** Default approval timeout: dismiss/ignored dialogs release the agent instead of hanging forever. */
-const AGENT_PERMISSION_TIMEOUT_MS = 5 * 60 * 1000;
-
-export function setAgentPermissionResolver(requestId: string, resolver: ((granted: boolean) => void) | null) {
-  if (resolver === null) {
-    agentPermissionResolvers.delete(requestId);
-  } else {
-    agentPermissionResolvers.set(requestId, resolver);
-  }
-}
-
-/** Register a resolver that auto-times-out (denies) if the user never responds. */
-export function registerAgentPermissionResolver(
-  requestId: string,
-  resolver: (granted: boolean) => void
-): void {
-  agentPermissionResolvers.set(requestId, resolver);
-  setTimeout(() => {
-    if (agentPermissionResolvers.get(requestId) === resolver) {
-      agentPermissionResolvers.delete(requestId);
-      console.warn(`[agent:permission] Request ${requestId} timed out without a response — denying.`);
-      try { resolver(false); } catch (err) { console.error('[agent:permission] Timeout resolver threw:', err); }
-    }
-  }, AGENT_PERMISSION_TIMEOUT_MS).unref?.();
-}
-
+let agentPermissionResolver: ((granted: boolean) => void) | null = null;
 const handledLocalExecutionResponses = new Set<string>();
+
+export function setAgentPermissionResolver(resolver: ((granted: boolean) => void) | null) {
+  agentPermissionResolver = resolver;
+}
 
 export function registerExecutionPermissionHandlers(): void {
   ipcMain.handle('debate:skip', (_event, debateId: string) => {
     return { success: requestDebateSkip(debateId) };
   });
 
-  ipcMain.handle('agent:permission-response', (_event, payload: { requestId?: string; granted?: boolean } | boolean) => {
-    // MP-CORR-23: payload may be a requestId-scoped object or the legacy
-    // bare boolean from older preload versions — resolve one pending resolver,
-    // never the singleton slot.
-    if (typeof payload === 'object' && payload !== null && payload.requestId) {
-      const resolver = agentPermissionResolvers.get(payload.requestId);
-      if (resolver) {
-        agentPermissionResolvers.delete(payload.requestId);
-        resolver(!!payload.granted);
-      }
-      return { success: true };
+  ipcMain.handle('agent:permission-response', (_event, granted: boolean) => {
+    if (agentPermissionResolver) {
+      agentPermissionResolver(granted);
+      agentPermissionResolver = null;
     }
-    const granted = typeof payload === 'boolean' ? payload : !!payload;
-    const firstKey = agentPermissionResolvers.keys().next().value;
-    if (firstKey !== undefined) {
-      const resolver = agentPermissionResolvers.get(firstKey);
-      agentPermissionResolvers.delete(firstKey);
-      resolver?.(granted);
-    }
-    return { success: true };
   });
 
   ipcMain.on('acp:local-execution-response', (_event, response: { requestId: string; approved: boolean; alwaysAllow: boolean; allowPrefix?: boolean }) => {

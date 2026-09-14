@@ -92,9 +92,9 @@ const T = {
   accentHover: 'rgba(68, 64, 60, 0.1)',
   success: '#22c55e',
   successFaint: 'rgba(34, 197, 94, 0.08)',
-  warning: 'var(--color-warning)',
+  warning: '#f59e0b',
   warningFaint: 'rgba(245, 158, 11, 0.08)',
-  error: 'var(--color-error)',
+  error: '#ef4444',
   errorFaint: 'rgba(239, 68, 68, 0.08)',
   r8: 8,
   r12: 12,
@@ -199,7 +199,7 @@ function FileOperationView({ toolCall, onClose }: { toolCall: ToolCallDetail; on
   let diffLines: DiffLine[] = [];
 
   if (isWrite) {
-    diffLines = content.split('\n').map(l => ({ prefix: '+', text: l, color: 'var(--diff-add-text-dark)' }));
+    diffLines = content.split('\n').map(l => ({ prefix: '+', text: l, color: '#3fb950' }));
   } else if (isRead) {
     diffLines = content.split('\n').map(l => ({ prefix: '', text: l, color: '#c9d1d9' }));
   } else if (hasDiff) {
@@ -207,15 +207,15 @@ function FileOperationView({ toolCall, onClose }: { toolCall: ToolCallDetail; on
     const oldLines = oldContent.split('\n');
     const newLines = content.split('\n');
     // For now, just show all old as removed and all new as added
-    oldLines.forEach(l => diffLines.push({ prefix: '-', text: l, color: 'var(--diff-del-text-dark)' }));
-    newLines.forEach(l => diffLines.push({ prefix: '+', text: l, color: 'var(--diff-add-text-dark)' }));
+    oldLines.forEach(l => diffLines.push({ prefix: '-', text: l, color: '#f85149' }));
+    newLines.forEach(l => diffLines.push({ prefix: '+', text: l, color: '#3fb950' }));
   } else {
     diffLines = content.split('\n').map(l => ({ prefix: '', text: l, color: '#c9d1d9' }));
   }
 
   const actionLabel = isWrite ? 'write' : isEdit ? 'edit' : 'view';
   const badgeLabel = isWrite ? 'Write Operation' : isEdit ? 'Edit Operation' : 'Read Operation';
-  const badgeColor = isWrite ? 'var(--diff-add-text-dark)' : isEdit ? 'var(--diff-del-text-dark)' : '#58a6ff';
+  const badgeColor = isWrite ? '#3fb950' : isEdit ? '#f85149' : '#58a6ff';
 
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
@@ -442,9 +442,6 @@ function FileOperationView({ toolCall, onClose }: { toolCall: ToolCallDetail; on
 }
 
 /* ── Multi-Language Syntax Highlighter ─────────────────────────────── */
-/* One Dark palette — rendered only inside dark-by-design terminal/error
-   surfaces (FileOperationView renders exclusively on the error path inside
-   hardcoded #141414/#0d0d0d chrome); do not use on theme-following surfaces. */
 export function highlightLine(line: string, ext: string): string {
   const h = esc(line);
   if (!h.trim()) return h;
@@ -926,7 +923,7 @@ function NavisReportViewer({ report, isRunning }: { report: string; isRunning: b
     border: '#2c2b29',
     codeBg: '#1e1e1c',
     headerColor: '#f5f5f0',
-    accent: 'var(--color-warning)',
+    accent: '#f59e0b',
     accentFaint: 'rgba(245, 158, 11, 0.1)',
   };
 
@@ -1686,18 +1683,158 @@ export function ToolCallDetailPane({
   );
 }
 
+/* ============================================================
+   CODE EDITOR PREVIEW FOR WRITE/EDIT TOOLS
+   ============================================================ */
+
+interface CodeLine {
+  text: string;
+  type: 'added' | 'removed' | 'normal';
+}
+
+interface ParsedFileDiff {
+  filePath: string;
+  fileName: string;
+  codeLines: CodeLine[];
+  addedCount: number;
+  removedCount: number;
+  rawContent?: string;
+}
+
 /* CU-UI-01: esc() runs FIRST so raw model text can never reach innerHTML;
    only the trusted tags injected below are literal HTML. Later passes cannot
    match inside the injected style="..." attributes (they contain no
    backticks/asterisks/underscores). */
 export function formatInline(raw: string): string {
   let f = esc(raw);
-  f = f.replace(/`(.*?)`/g, '<code style="background-color: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 11px; color: var(--color-accent);">$1</code>');
-  f = f.replace(/\*\*(.*?)\*\*/g, '<strong style="color: var(--color-text-primary);">$1</strong>');
-  f = f.replace(/__(.*?)__/g, '<strong style="color: var(--color-text-primary);">$1</strong>');
-  f = f.replace(/\*(.*?)\*/g, '<em style="color: var(--color-text-secondary);">$1</em>');
-  f = f.replace(/_(.*?)_/g, '<em style="color: var(--color-text-secondary);">$1</em>');
+  f = f.replace(/`(.*?)`/g, '<code style="background-color: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 11px; color: #38bdf8;">$1</code>');
+  f = f.replace(/\*\*(.*?)\*\*/g, '<strong style="color: #f0f6fc;">$1</strong>');
+  f = f.replace(/__(.*?)__/g, '<strong style="color: #f0f6fc;">$1</strong>');
+  f = f.replace(/\*(.*?)\*/g, '<em style="color: #c9d1d9;">$1</em>');
+  f = f.replace(/_(.*?)_/g, '<em style="color: #c9d1d9;">$1</em>');
   return f;
+}
+
+function FileMarkdownViewer({ content }: { content: string }) {
+  const lines = (content || '').split('\n');
+  const elements: React.ReactNode[] = [];
+  let inCodeBlock = false;
+  let codeBlockContent: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    if (line.trim().startsWith('```')) {
+      if (inCodeBlock) {
+        inCodeBlock = false;
+        const code = codeBlockContent.join('\n');
+        codeBlockContent = [];
+        elements.push(
+          <pre key={`code-${i}`} style={{
+            backgroundColor: '#0d1117',
+            color: '#c9d1d9',
+            padding: '12px 16px',
+            borderRadius: 6,
+            overflowX: 'auto',
+            fontSize: 11,
+            fontFamily: T.mono,
+            margin: '8px 0',
+            border: '1px solid #30363d',
+          }}>
+            <code>{code}</code>
+          </pre>
+        );
+      } else {
+        inCodeBlock = true;
+      }
+      continue;
+    }
+
+    if (inCodeBlock) {
+      codeBlockContent.push(line);
+      continue;
+    }
+
+    if (line.startsWith('# ')) {
+      elements.push(<h1 key={`h1-${i}`} style={{ fontSize: 18, fontWeight: 700, margin: '16px 0 8px', borderBottom: '1px solid #30363d', paddingBottom: 4, color: '#f0f6fc' }}>{line.substring(2)}</h1>);
+      continue;
+    }
+    if (line.startsWith('## ')) {
+      elements.push(<h2 key={`h2-${i}`} style={{ fontSize: 15, fontWeight: 600, margin: '14px 0 6px', borderBottom: '1px solid #21262d', paddingBottom: 4, color: '#f0f6fc' }}>{line.substring(3)}</h2>);
+      continue;
+    }
+    if (line.startsWith('### ')) {
+      elements.push(<h3 key={`h3-${i}`} style={{ fontSize: 13, fontWeight: 600, margin: '12px 0 4px', color: '#58a6ff' }}>{line.substring(4)}</h3>);
+      continue;
+    }
+
+    if (line.includes('|') && i + 1 < lines.length && lines[i + 1].includes('---')) {
+      const headers = line.split('|').map(h => h.trim()).filter(Boolean);
+      i += 2;
+      const rows: string[][] = [];
+      while (i < lines.length && lines[i].includes('|')) {
+        const cells = lines[i].split('|').map(c => c.trim()).filter(Boolean);
+        if (cells.length > 0) rows.push(cells);
+        i++;
+      }
+      i--;
+      elements.push(
+        <div key={`table-${i}`} style={{ overflowX: 'auto', margin: '10px 0' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+            <thead>
+              <tr style={{ background: '#161b22' }}>
+                {headers.map((h, j) => (
+                  <th key={j} style={{ padding: '6px 10px', border: '1px solid #30363d', textAlign: 'left', color: '#8b949e', fontWeight: 600 }} dangerouslySetInnerHTML={{ __html: formatInline(h) }} />
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, ri) => (
+                <tr key={ri} style={{ background: ri % 2 === 0 ? '#0d1117' : '#161b22' }}>
+                  {row.map((cell, ci) => (
+                    <td key={ci} style={{ padding: '6px 10px', border: '1px solid #21262d', color: '#c9d1d9' }} dangerouslySetInnerHTML={{ __html: formatInline(cell) }} />
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+      continue;
+    }
+
+    if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
+      const content = line.trim().substring(2);
+      elements.push(
+        <li key={`li-${i}`} style={{ marginLeft: 16, margin: '4px 0', fontSize: 12, color: '#c9d1d9', lineHeight: 1.5 }}
+          dangerouslySetInnerHTML={{ __html: formatInline(content) }}
+        />
+      );
+      continue;
+    }
+
+    if (line.trim() === '---') {
+      elements.push(<hr key={`hr-${i}`} style={{ border: 'none', borderTop: '1px solid #30363d', margin: '14px 0' }} />);
+      continue;
+    }
+
+    if (line.trim() === '') {
+      elements.push(<div key={`spacer-${i}`} style={{ height: 6 }} />);
+      continue;
+    }
+
+    elements.push(
+      <p key={`p-${i}`} style={{ fontSize: 12, lineHeight: 1.6, margin: '6px 0', color: '#c9d1d9' }}
+        dangerouslySetInnerHTML={{ __html: formatInline(line) }}
+      />
+    );
+  }
+
+  return (
+    <div style={{ padding: '16px 20px', overflowY: 'auto', height: '100%', fontFamily: T.sans }}>
+      {elements}
+    </div>
+  );
 }
 
 function FileSpreadsheetViewer({ content, fileName }: { content: string; fileName: string }) {
@@ -1817,7 +1954,7 @@ function FilePdfViewer({ filePath, fileName }: { filePath: string; fileName: str
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#0d1117' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', background: '#161b22', borderBottom: '1px solid #30363d' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <FileText size={14} color="var(--color-error-light)" />
+          <FileText size={14} color="#f87171" />
           <span style={{ fontSize: 11, fontWeight: 600, color: '#f0f6fc', fontFamily: T.mono }}>{fileName}</span>
         </div>
         <button
@@ -1852,7 +1989,7 @@ function FilePdfViewer({ filePath, fileName }: { filePath: string; fileName: str
           />
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#8b949e', gap: 12, padding: 24, textAlign: 'center' }}>
-            <FileText size={36} color="var(--color-error-light)" />
+            <FileText size={36} color="#f87171" />
             <div style={{ fontSize: 13, fontWeight: 600, color: '#f0f6fc' }}>{fileName}</div>
             <div style={{ fontSize: 11, maxWidth: 360 }}>PDF file is ready. Click below to view with your system PDF reader.</div>
             <button
@@ -1877,6 +2014,230 @@ function FilePdfViewer({ filePath, fileName }: { filePath: string; fileName: str
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function parseSingleFileDiff(
+  item: any,
+  defaultPath: string,
+  isWrite: boolean,
+  isRead: boolean,
+  toolCallResult?: any
+): ParsedFileDiff {
+  const filePathRaw = item?.path || item?.filePath || item?.TargetFile || item?.file || item?.targetFile || defaultPath || 'unknown_file';
+  const filePath = typeof filePathRaw === 'string' ? filePathRaw : String(filePathRaw);
+  const fileName = filePath.split(/[/\\]/).pop() || filePath;
+
+  let codeLines: CodeLine[] = [];
+  let rawContent = '';
+
+  if (isWrite && !item?.edits && !item?.oldString && !item?.find && !item?.TargetContent) {
+    let content = item?.content || item?.text || item?.CodeContent || item?.html
+      || item?.code || item?.data || item?.body || item?.fileContent
+      || item?.source || item?.output || item?.file_content || '';
+
+    if (!content && toolCallResult) {
+      const r = toolCallResult;
+      if (typeof r === 'string' && r.length > 0 && !r.startsWith('{')) {
+        content = r;
+      } else if (r?.data?.content) {
+        content = r.data.content;
+      } else if (r?.output && typeof r.output === 'string' && !r.output.startsWith('{')) {
+        content = r.output;
+      } else if (Array.isArray(r?.content)) {
+        content = r.content
+          .filter((c: any) => c.type === 'text')
+          .map((c: any) => c.text)
+          .join('\n');
+      }
+    }
+
+    rawContent = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
+    const lines = typeof content === 'string' ? content.split('\n') : [];
+    codeLines = lines.map(line => ({ text: line, type: 'added' as const }));
+  } else if (isRead) {
+    let outputText = '';
+    if (toolCallResult) {
+      if (typeof toolCallResult === 'string') {
+        outputText = toolCallResult;
+      } else if (typeof toolCallResult.output === 'string') {
+        outputText = toolCallResult.output;
+      } else if (Array.isArray(toolCallResult.content)) {
+        outputText = toolCallResult.content
+          .filter((c: any) => c.type === 'text')
+          .map((c: any) => c.text)
+          .join('\n');
+      } else {
+        outputText = JSON.stringify(toolCallResult);
+      }
+    } else {
+      outputText = 'Reading file contents...';
+    }
+    rawContent = outputText;
+    const lines = outputText.split('\n');
+    codeLines = lines.map(line => ({ text: line, type: 'normal' as const }));
+  } else {
+    const findStr = item?.find || item?.TargetContent || item?.oldString || item?.old_string || item?.search || '';
+    const replaceStr = item?.replace || item?.ReplacementContent || item?.newString || item?.new_string || item?.insert || '';
+    const chunks = item?.ReplacementChunks || item?.chunks || item?.edits || item?.replacements || [];
+
+    if (chunks && Array.isArray(chunks) && chunks.length > 0) {
+      chunks.forEach((chunk: any, idx: number) => {
+        if (idx > 0) {
+          codeLines.push({ text: '...', type: 'normal' });
+        }
+        const oldText = chunk.oldString || chunk.oldText || chunk.TargetContent || chunk.old_string || chunk.find || '';
+        const newText = chunk.newString || chunk.newText || chunk.ReplacementContent || chunk.new_string || chunk.replace || '';
+        if (oldText) {
+          oldText.split('\n').forEach((line: string) => {
+            codeLines.push({ text: line, type: 'removed' });
+          });
+        }
+        if (newText) {
+          newText.split('\n').forEach((line: string) => {
+            codeLines.push({ text: line, type: 'added' });
+          });
+        }
+      });
+    } else {
+      if (findStr) {
+        findStr.split('\n').forEach((line: string) => {
+          codeLines.push({ text: line, type: 'removed' });
+        });
+      }
+      if (replaceStr) {
+        replaceStr.split('\n').forEach((line: string) => {
+          codeLines.push({ text: line, type: 'added' });
+        });
+      }
+    }
+    rawContent = replaceStr || findStr || '';
+  }
+
+  if (codeLines.length === 0) {
+    codeLines = [{ text: '// No changes specified or empty content', type: 'normal' }];
+  }
+
+  let addedCount = 0;
+  let removedCount = 0;
+  codeLines.forEach(l => {
+    if (l.type === 'added') addedCount++;
+    if (l.type === 'removed') removedCount++;
+  });
+
+  return { filePath, fileName, codeLines, addedCount, removedCount, rawContent };
+}
+
+function CodeEditorPreview({ toolCall }: { toolCall: ToolCallDetail }) {
+  const args = toolCall.arguments || (toolCall as any).args || {};
+  const toolNameLower = toolCall.toolName.toLowerCase();
+  
+  const isWrite = (toolNameLower.includes('write') || toolNameLower.includes('create_artifact') || toolNameLower.includes('save')) && !toolNameLower.includes('todo_write');
+  const isEdit = toolNameLower.includes('edit') || toolNameLower.includes('replace');
+  const isRead = toolNameLower.includes('read') || toolNameLower.includes('view_file');
+
+  const files = args.files || args.FileEdits || args.edits || (args.path || args.filePath || args.TargetFile ? [args] : []);
+  const parsedFiles: ParsedFileDiff[] = files.map((f: any) => parseSingleFileDiff(f, args.path || args.filePath || args.TargetFile, isWrite, isRead, toolCall.result));
+
+  if (parsedFiles.length === 0) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: T.textMuted, fontFamily: T.sans }}>
+        No file content to display
+      </div>
+    );
+  }
+
+  // Simple syntax highlighter matching One Dark theme
+  const highlightSyntax = (code: string, fileName: string): string => {
+    const h0 = esc(code);
+    const stash: StyleAttrStash = [];
+
+    // Keywords (purple)
+    const keywords = /\b(import|export|from|const|let|var|function|return|if|else|for|while|class|interface|type|extends|implements|async|await|try|catch|throw|new|this|typeof|instanceof|default|as|yield|void|delete|in|of)\b/g;
+    let h = hl(stash, h0, keywords, '<span style="color: #c678dd">$1</span>');
+
+    // Types (yellow/orange)
+    const types = /\b(string|number|boolean|any|void|null|undefined|object|Array|Promise|React|ComponentProps|ReactNode|JSX|Element|boolean|Record|Map|Set|Date|Error|RegExp)\b/g;
+    h = hl(stash, h, types, '<span style="color: #e5c07b">$1</span>');
+
+    // Strings (green)
+    h = hl(stash, h, /(&quot;.*?&quot;|'[^']*'|`[^`]*`)/g, '<span style="color: #98c379">$1</span>');
+
+    // Comments (gray)
+    h = hl(stash, h, /(\/\/.*$|\/\*[\s\S]*?\*\/)/gm, '<span style="color: #5c6370">$1</span>');
+
+    // Functions (blue)
+    h = hl(stash, h, /(\w+)(?=\()/g, '<span style="color: #61afef">$1</span>');
+
+    // Numbers (orange)
+    h = hl(stash, h, /\b\d+\.?\d*\b/g, '<span style="color: #d19a66">$1</span>');
+
+    // Properties (red)
+    h = hl(stash, h, /(\w+)(?=:)/g, '<span style="color: #e06c75">$1</span>');
+
+    return unstashInjectedStyles(h, stash);
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 16 }}>
+      {parsedFiles.map((file, idx) => {
+        const fileExt = file.fileName.split('.').pop()?.toUpperCase() || '';
+        
+        return (
+          <div key={idx} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {/* File type label */}
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', letterSpacing: '0.02em', textTransform: 'lowercase' }}>
+              {fileExt.toLowerCase()}
+            </div>
+            
+            {/* Clean code card - One Dark style */}
+            <div style={{ 
+              background: '#141414', 
+              borderRadius: 10,
+              padding: '14px 0',
+              overflow: 'auto',
+              border: '1px solid rgba(255,255,255,0.06)'
+            }}>
+              {file.codeLines.map((line, lineIdx) => (
+                <div
+                  key={lineIdx}
+                  style={{
+                    display: 'flex',
+                    fontSize: 13,
+                    fontFamily: '"JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, monospace',
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {/* Line number */}
+                  <span style={{ 
+                    width: 50, 
+                    padding: '0 12px', 
+                    textAlign: 'right', 
+                    color: '#4a4a4a', 
+                    userSelect: 'none', 
+                    flexShrink: 0,
+                    fontSize: 12
+                  }}>
+                    {lineIdx + 1}
+                  </span>
+                  {/* Code with syntax highlighting */}
+                  <span 
+                    style={{ 
+                      padding: '0 12px', 
+                      color: '#abb2bf', 
+                      whiteSpace: 'pre-wrap', 
+                      wordBreak: 'break-word',
+                      flex: 1
+                    }}
+                    dangerouslySetInnerHTML={{ __html: highlightSyntax(line.text, file.fileName) }}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

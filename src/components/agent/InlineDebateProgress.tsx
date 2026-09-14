@@ -124,13 +124,13 @@ export function InlineDebateProgress({
             <Check
               size={15}
               strokeWidth={2}
-              style={{ color: 'var(--color-success)', flexShrink: 0 }}
+              style={{ color: '#10b981', flexShrink: 0 }}
             />
           ) : debate?.finalPlan.goNogo === 'no-go' ? (
             <AlertCircle
               size={15}
               strokeWidth={1.75}
-              style={{ color: 'var(--color-error)', flexShrink: 0 }}
+              style={{ color: '#ef4444', flexShrink: 0 }}
             />
           ) : (
             <Scale
@@ -217,7 +217,7 @@ export function InlineDebateProgress({
                     width: 6,
                     height: 6,
                     borderRadius: '50%',
-                    background: debate?.proposal?.id ? 'var(--color-success)' : isDebating && phase === 'proposal' ? 'var(--color-info)' : 'rgba(255, 255, 255, 0.2)',
+                    background: debate?.proposal?.id ? '#10b981' : isDebating && phase === 'proposal' ? '#3b82f6' : 'rgba(255, 255, 255, 0.2)',
                     marginTop: 6,
                     flexShrink: 0,
                   }}
@@ -251,7 +251,7 @@ export function InlineDebateProgress({
                     width: 6,
                     height: 6,
                     borderRadius: '50%',
-                    background: debate?.review?.id ? (debate.review.assessment === 'viable' ? 'var(--color-success)' : 'var(--color-warning)') : isDebating && phase === 'review' ? 'var(--color-info)' : 'rgba(255, 255, 255, 0.2)',
+                    background: debate?.review?.id ? (debate.review.assessment === 'viable' ? '#10b981' : '#f59e0b') : isDebating && phase === 'review' ? '#3b82f6' : 'rgba(255, 255, 255, 0.2)',
                     marginTop: 6,
                     flexShrink: 0,
                   }}
@@ -263,7 +263,7 @@ export function InlineDebateProgress({
                   </div>
                   {debate?.review?.id ? (
                     <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.45, color: 'rgba(255, 255, 255, 0.6)' }}>
-                      Assessment: <span style={{ textTransform: 'capitalize', color: debate.review.assessment === 'viable' ? 'var(--color-success)' : 'var(--color-warning)' }}>{debate.review.assessment}</span> ({debate.review.concernCount} concerns flagged)
+                      Assessment: <span style={{ textTransform: 'capitalize', color: debate.review.assessment === 'viable' ? '#10b981' : '#f59e0b' }}>{debate.review.assessment}</span> ({debate.review.concernCount} concerns flagged)
                     </p>
                   ) : isDebating && phase === 'review' ? (
                     <p style={{ margin: 0, fontSize: 12.5, color: 'rgba(255, 255, 255, 0.45)', fontStyle: 'italic' }}>
@@ -282,7 +282,7 @@ export function InlineDebateProgress({
                     width: 6,
                     height: 6,
                     borderRadius: '50%',
-                    background: debate?.finalPlan?.id ? (debate.finalPlan.goNogo === 'go' ? 'var(--color-success)' : debate.finalPlan.goNogo === 'no-go' ? 'var(--color-error)' : 'var(--color-warning)') : isDebating && phase === 'arbitration' ? 'var(--color-info)' : 'rgba(255, 255, 255, 0.2)',
+                    background: debate?.finalPlan?.id ? (debate.finalPlan.goNogo === 'go' ? '#10b981' : debate.finalPlan.goNogo === 'no-go' ? '#ef4444' : '#f59e0b') : isDebating && phase === 'arbitration' ? '#3b82f6' : 'rgba(255, 255, 255, 0.2)',
                     marginTop: 6,
                     flexShrink: 0,
                   }}

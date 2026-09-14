@@ -119,7 +119,6 @@ function extractPreviousIntent(history: any[]): IntentType | null {
 
 // ── Fallback Stubs for Testing and Minimal Compatibility ──────────────
 
-/** Compatibility stub — always returns 'task'. See classifyIntentLocal for the real local classifier. */
 export function classifyIntentHeuristic(userInput: string, history: any[] = []): IntentClassification {
   return {
     intent: 'task',
@@ -128,7 +127,6 @@ export function classifyIntentHeuristic(userInput: string, history: any[] = []):
   };
 }
 
-/** Compatibility stub — always returns 'task'; used when there is no AI client or the AI call fails. */
 export function classifyIntentFallback(userInput: string, history: any[] = []): IntentClassification {
   return {
     intent: 'task',
@@ -137,13 +135,6 @@ export function classifyIntentFallback(userInput: string, history: any[] = []): 
   };
 }
 
-/**
- * Pre-classifier for short affirmatives ("yes", "ok", "go ahead"): instead of
- * classifying the affirmative itself, inherit the previous user turn's intent —
- * checked against intentCache first, then message attachments/heuristics.
- * Returns null when the input isn't a short affirmative, meaning "defer to
- * the next classifier in the chain" (keyword rules or the AI classifier).
- */
 export function classifyIntentFast(userInput: string, history: any[] = []): IntentClassification | null {
   const normalized = userInput.toLowerCase().trim();
 
@@ -185,31 +176,12 @@ export function classifyIntentFast(userInput: string, history: any[] = []): Inte
 
 // ── Main AI Classification ────────────────────────────────────────────
 
-// In-process cache of AI classifications, keyed by (input, history, operatorMode).
-// Only the AI path uses it — the local fast-path skips this cache because its
-// regex rules cost less than building the history-heavy cache key (its
-// affirmative-inheritance step still reads it via classifyIntentFast).
 const intentCache = new Map<string, IntentClassification>();
 
-/** Clears the in-process AI classification cache (e.g. between sessions or tests). */
 export function clearIntentCache(): void {
   intentCache.clear();
 }
 
-/**
- * AI classification pipeline — the cloud/router path. The triage node's local
- * fast-path bypasses this entirely when the provider is local.
- * Precedence: intentCache hit → short-affirmative inheritance
- * (classifyIntentFast) → AI classifier → 'task' fallback (no client or error).
- * Every result is memoized in intentCache.
- *
- * @param userInput Latest user message; "[Form Response]" inputs are rewritten
- *                  to the prior non-form user message to preserve intent context
- * @param client AI client; when omitted the fallback stub is returned
- * @param history Conversation history, used for inheritance and the cache key
- * @param workspaceRoot Roots the SOUL.md/AGENTS.md lookups folded into the prompt
- * @param operatorMode Manual Pursue-goal flag; affects the prompt and cache key
- */
 export async function classifyIntent(
   userInput: string,
   client?: AIClient,
@@ -273,13 +245,6 @@ export async function classifyIntent(
   }
 }
 
-/**
- * The single LLM call the local fast-path exists to skip: assembles the system
- * prompt (TRIAGE_SYSTEM_PROMPT + SOUL.md + AGENTS.md), races the chat call
- * against a timeout (60s local, 5s cloud, 1.5s under vitest), then parses the
- * JSON reply. On timeout/failure/parse error it falls back to 'task'.
- * Param semantics as in classifyIntent.
- */
 export async function classifyIntentAI(
   client: AIClient,
   userInput: string,
@@ -346,8 +311,6 @@ export async function classifyIntentAI(
     const response = await Promise.race([chatPromise, timeoutPromise]) as any;
 
     let content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
-    // Some models wrap the JSON reply in <think>…</think> blocks or markdown
-    // fences — strip both before parsing.
     content = content.replace(/<think>[\s\S]*?<\/think>/g, '');
     content = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
 
@@ -368,146 +331,8 @@ export async function classifyIntentAI(
   }
 }
 
-// ── Local Fast-Path Keyword Classifier ────────────────────────────────
-// Normalized keyword rules mapped to the real IntentType enum. Used only
-// when runner.client.isLocal() — the cloud branch is byte-identical.
-// Null (no rule match) falls back to 'task'.
-//
-// Safe/cheap by construction: each rule is one precompiled regex tested with
-// .test() against lowercased text — deterministic, allocation-light, free of
-// nested quantifiers (no catastrophic backtracking), and with no network or
-// state access, so it can run on every request without memoization. The
-// check order inside classifyIntentLocal is part of the contract: the first
-// matching rule wins.
-
-// Web/URL presence ⇒ research. The "NEG" is the negations: (?<!no ) skips
-// "no <website>"-style phrasing, and the lookahead after "browser" excludes
-// extension/plugin/add-on mentions so extension work falls through to coding.
-const LOCAL_NEG_URL_BROWSER_EXT = /(?<!no )\b(?:https?:\/\/|www\.|\.com\b|\.org\b|\.io\b|\burl\b|\bwebsite\b|\bweb page\b|\bwebpage\b|\bweb site\b|\binternet\b|\bgoogle\b|\bsearch (?:the )?(?:web|internet|online)\b|\bbrowse\b|\bgmail\b|\bdocs\.google\b|\bdrive\.google\b|\bbrowser\b(?!\s*(?:extension|plugin|add-?on))\b|\bbrowser tab)/;
-
-const LOCAL_AUTOMATE_RE = /\b(?:click|type into|press (?:the )?(?:button|key)|gui|desktop (?:app|application|window)|native (?:app|ui|window)|computer use|control (?:my|the) (?:screen|computer|mouse|keyboard|desktop)|use the computer|automate the (?:desktop|app|gui)|double-?click|right-?click|drag (?:and drop|the))/;
-
-const LOCAL_RESEARCH_RE = /\b(?:research|look up|find (?:out|information|reviews)|look\s?up|compare (?:prices|options|products)|book (?:a )?(?:flight|hotel|trip)|trip plan|itinerary|weather|news (?:about|on))\b|\b(?:search|google)\b/;
-
-const LOCAL_BUILD_RE = /\b(?:scaffold|bootstrap|set up a new|create a new (?:project|app|application|repo(?:sitory)?|template|workspace)|build (?:me )?(?:a|an|the) (?:new |brand-new )?(?:project|app|application|repo(?:sitory)?|template|website from scratch)|start a new (?:project|app)|initialize (?:a|an) (?:project|repo))\b/;
-
-const LOCAL_ANALYZE_RE = /\b(?:analy[sz]e|analy[sz]is|chart|visuali[sz]e|visuali[sz]ation|\bgraph\b|\bplot\b|generate (?:a )?report|statistics|summary of (?:the )?(?:data|csv)|dataset|\bcsv\b|\bxlsx\b|\bspreadsheet\b|pivot table)\b/;
-
-const LOCAL_FIX_RE = /\b(?:fix|debug|\bbug\b|\bbugs\b|error|crash(?:es|ed|ing)?|broken|not working|fails?|failing|exception|stack trace|regression|hotfix|patch (?:the )?(?:bug|issue))\b/;
-
-const LOCAL_CODE_RE = /\b(?:code|coding|function|script|refactor|implement|typescript|javascript|python|java\b|\brust\b|\bgo lang|\bgolang\b|api|component|class|regex|unit test|compile|module|library|algorithm|programming|program(?:ming)?)\b/;
-
-const LOCAL_BACKGROUND_RE = /\b(?:background (?:task|agent|job|process|monitor)|silent(?:ly)? (?:run|check|monitor)|cron|schedule (?:a|this|the)? ?(?:task|job|run)|every \d+ ?(?:min|minute|hour)s?|check (?:file|build|lint) status)\b/;
-
-const LOCAL_CONVERSATION_RE = /\b(?:^hi\b|^hello\b|^hey\b|^yo\b|thanks|thank you|good (?:morning|evening|afternoon)|how are you|nice to meet|^bye\b|goodbye|great job|well done|sounds good|awesome)\b/;
-
-const LOCAL_QUESTION_RE = /\b(?:^what\b|^why\b|^how\b|^when\b|^who\b|^where\b|^which\b|^is\b|^are\b|^does\b|^do\b|^can you explain|^explain\b|^tell me about|^what's\b|^who's\b|^define\b|^describe\b)\b|\?$/;
-
-// Action verbs, used only as a NEGATIVE filter: a question/conversation-shaped
-// request containing any of these is actionable, so it must not become chat.
-const LOCAL_ACTION_NEG_RE = /\b(?:write|create|fix|build|make|add|remove|delete|refactor|implement|run|execute|deploy|send|open|click|analyze|research|organize|rename|move|install)\b/;
-
-/**
- * Local fast-path intent classifier — deterministic, synchronous, and free of
- * LLM/router calls. The triage node runs this BEFORE any AI classification
- * whenever the provider is local (see createTriageNode), because local models
- * are slow/unreliable at JSON classification while these rules answer in
- * microseconds. There is no deferral to the LLM: it never returns 'operator'
- * (operator mode is opt-in and AI-judged only), and unmatched input simply
- * becomes 'task'.
- *
- * Rule precedence (first match wins): short-affirmative inheritance
- * (classifyIntentFast) → background_task → research (web, non-extension) →
- * automate (desktop GUI, non-web) → build → analyze → fix → coding →
- * conversation → question → 'task' fallback. fix is checked before coding so
- * bug reports don't route to coding, and research/automate mutually exclude
- * each other (web vs desktop).
- *
- * Cheap by construction: precompiled regexes over lowercased input, no
- * network, no intentCache writes (affirmative inheritance may read it).
- *
- * @param userInput Latest user message; normalized internally
- * @param history Conversation history — only consulted for short-affirmative
- *                context inheritance ("yes", "ok", ...)
- * @returns Classification whose reasoning is prefixed "Local fast-path:"
- */
-export function classifyIntentLocal(
-  userInput: string,
-  history: any[] = []
-): IntentClassification {
-  // Short affirmatives — inherit prior intent from history (same as fast path)
-  const inherited = classifyIntentFast(userInput, history);
-  if (inherited) {
-    return inherited;
-  }
-
-  const text = (userInput || '').toLowerCase().trim();
-
-  if (!text) {
-    return { intent: 'task', confidence: 0.4, reasoning: 'Local fast-path: empty input, default task' };
-  }
-
-  // background_task: silent/scheduled/cron background loops or status watchers
-  if (LOCAL_BACKGROUND_RE.test(text)) {
-    return { intent: 'background_task', confidence: 0.85, reasoning: 'Local fast-path: background/scheduled task keywords' };
-  }
-
-  // research: web/URL/browser — but NOT "browser extension" (that's coding)
-  // The second test strips the first web match and re-checks the remainder:
-  // inputs like "open example.com and fix the browser extension" would
-  // otherwise let the URL alone win and misroute extension work to research.
-  if (LOCAL_NEG_URL_BROWSER_EXT.test(text) && !/browser (?:extension|plugin|add-?on)/.test(text.replace(LOCAL_NEG_URL_BROWSER_EXT, ''))) {
-    return { intent: 'research', confidence: 0.85, reasoning: 'Local fast-path: URL/browser/web keywords (non-extension)' };
-  }
-  // research keywords lose when desktop-automation verbs also appear
-  // (e.g. "click the search button" is automate, not research)
-  if (LOCAL_RESEARCH_RE.test(text) && !LOCAL_AUTOMATE_RE.test(text)) {
-    return { intent: 'research', confidence: 0.8, reasoning: 'Local fast-path: research/web keywords' };
-  }
-
-  // automate: desktop GUI automation — NOT websites/browser-based tasks
-  if (LOCAL_AUTOMATE_RE.test(text) && !LOCAL_NEG_URL_BROWSER_EXT.test(text)) {
-    return { intent: 'automate', confidence: 0.8, reasoning: 'Local fast-path: desktop GUI automation keywords' };
-  }
-
-  // build: scaffolding new projects/apps/repos
-  if (LOCAL_BUILD_RE.test(text)) {
-    return { intent: 'build', confidence: 0.8, reasoning: 'Local fast-path: scaffold/build-new-project keywords' };
-  }
-
-  // analyze: data processing, reports, charts
-  if (LOCAL_ANALYZE_RE.test(text)) {
-    return { intent: 'analyze', confidence: 0.8, reasoning: 'Local fast-path: data analysis keywords' };
-  }
-
-  // fix: distinct from coding — diagnosing/repairing broken behavior
-  if (LOCAL_FIX_RE.test(text)) {
-    return { intent: 'fix', confidence: 0.8, reasoning: 'Local fast-path: bug/fix keywords' };
-  }
-
-  // coding: writing/editing code (checked after fix so bug reports route to fix)
-  if (LOCAL_CODE_RE.test(text)) {
-    return { intent: 'coding', confidence: 0.8, reasoning: 'Local fast-path: coding keywords' };
-  }
-
-  // conversation: greetings/small talk (short, no actionable content)
-  if (LOCAL_CONVERSATION_RE.test(text) && text.length < 60 && !LOCAL_ACTION_NEG_RE.test(text)) {
-    return { intent: 'conversation', confidence: 0.8, reasoning: 'Local fast-path: greeting/small-talk keywords' };
-  }
-
-  // question — but only when it does not carry an actionable verb
-  if ((LOCAL_QUESTION_RE.test(text) || text.endsWith('?')) && !LOCAL_ACTION_NEG_RE.test(text)) {
-    return { intent: 'question', confidence: 0.75, reasoning: 'Local fast-path: question without action verbs' };
-  }
-
-  // null match → task
-  return { intent: 'task', confidence: 0.5, reasoning: 'Local fast-path: no keyword match, default task' };
-}
-
 /**
  * Check if task is read-only (no mutations)
- * — gates downstream flows (e.g. planner) so question/conversation intents
- * skip mutation-capable tool paths.
  */
 export function isReadOnlyTask(intent: IntentType): boolean {
   return ['question', 'conversation'].includes(intent);

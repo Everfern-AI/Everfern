@@ -16,9 +16,13 @@ import {
     Globe,
     Sparkles,
     X,
+    Coffee,
     Check,
+    Shield,
+    Star,
     Heart,
     ExternalLink,
+    Zap,
     RefreshCw,
     Download,
     Layers,
@@ -27,14 +31,9 @@ import {
 
 import WindowControls from "../components/WindowControls";
 import LinuxVMSetupStep from "./LinuxVMSetupStep";
-import { useTheme } from "@/components/common/ThemeProvider";
-import dynamic from "next/dynamic";
-
-// NR-PERF-05/NR-BUN-02: load lottie-react + its JSON lazily so the setup
-// bundle stays light; the animation data is cached at module scope so remounts
-// of step 9 never refetch it.
-const Lottie = dynamic(() => import("lottie-react").then((m) => m.Lottie), { ssr: false });
-let heartPixelAnimationCache: any = null;
+import { useTheme } from "@/components/ThemeProvider";
+import { Lottie } from "lottie-react";
+import heartPixelAnimation from "../../../public/lottie/heart-pixel.json";
 
 // ── Provider Logos ────────────────
 
@@ -85,6 +84,21 @@ const LMStudioLogo = ({ size = 20 }: { size?: number }) => (
 const EverFernBglessLogo = ({ size = 20, isDark = false }: { size?: number; isDark?: boolean }) => (
     <Image src={isDark ? "/images/logos/everfern-withoutbg.png" : "/images/logos/black-logo-withoutbg.png"} alt="EverFern Cloud" width={size} height={size} priority loading="eager" className={isDark ? "" : "dark:invert opacity-90"} />
 );
+
+const PhosphorStar = ({ size = 24, color = "currentColor", weight = "fill" }: { size?: number; color?: string; weight?: "fill" | "regular" | "duotone" }) => {
+    if (weight === "fill") {
+        return (
+            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} fill={color} viewBox="0 0 256 256">
+                <path d="M234.5,114.38l-45.1,39.36,13.51,58.6a16,16,0,0,1-23.84,17.34l-51.11-31-51,31a16,16,0,0,1-23.84-17.34L66.61,153.8,21.5,114.38a16,16,0,0,1,9.11-28.06l59.46-5.15,23.21-55.36a15.95,15.95,0,0,1,29.44,0h0L166,81.17l59.44,5.15a16,16,0,0,1,9.11,28.06Z" />
+            </svg>
+        );
+    }
+    return (
+        <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} fill={color} viewBox="0 0 256 256">
+            <path d="M239.2,97.29a16,16,0,0,0-13.81-11l-59.44-5.15L142.74,25.82a15.95,15.95,0,0,0-29.48,0L89.62,81.17,30.16,86.32A16,16,0,0,0,21,113.62l45.1,39.36-13.51,58.6a16,16,0,0,0,23.84,17.34l51-31,51.11,31a16,16,0,0,0,23.84-17.34l-13.51-58.6L234.5,114.38A16,16,0,0,0,239.2,97.29Zm-15.26,11-45.1,39.36a8,8,0,0,0-2.46,7.59l13.52,58.6a.48.48,0,0,1,0,.15.34.34,0,0,1-.08.06.49.49,0,0,1-.18,0,.56.56,0,0,1-.19-.07l-51.11-31a8,8,0,0,0-8.28,0l-51,31a.56.56,0,0,1-.19.07.49.49,0,0,1-.18,0,.34.34,0,0,1-.08-.06.48.48,0,0,1,0-.15l13.52-58.6a8,8,0,0,0-2.46-7.59L29.93,108.31a.48.48,0,0,1-.11-.12.44.44,0,0,1,0-.2.4.4,0,0,1,.1-.17.47.47,0,0,1,.18-.08l59.45-5.15a8,8,0,0,0,6.71-4.87l23.21-55.36a.54.54,0,0,1,.17-.18.42.42,0,0,1,.2,0,.42.42,0,0,1,.2,0,.54.54,0,0,1,.17.18l23.22,55.36a8,8,0,0,0,6.71,4.87l59.45,5.15a.47.47,0,0,1,.18.08.4.4,0,0,1,.1.17.44.44,0,0,1,0,.2A.48.48,0,0,1,223.94,108.31Z" />
+        </svg>
+    );
+};
 
 const PhosphorMicrophone = ({ size = 36, color = "currentColor" }: { size?: number; color?: string }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} fill={color} viewBox="0 0 256 256">
@@ -148,6 +162,35 @@ const DiscordIcon = ({ size = 24 }: { size?: number }) => (
 );
 
 // ── Types ────────────────
+type LogKind = "info" | "cmd" | "success" | "warn" | "err" | "done" | "fail" | "pip" | "dl" | "muted";
+
+interface LogLine {
+    line: string;
+    step: number;
+    kind: LogKind;
+    // pip progress fields (optional)
+    pkg?: string;
+    pct?: number;
+    speed?: string;
+    eta?: string;
+}
+
+// ── Log color map ────────────────
+function logColor(kind: LogKind): string {
+    switch (kind) {
+        case "info": return "#60a5fa";   // blue — status messages
+        case "cmd": return "#a78bfa";   // purple — shell commands
+        case "pip": return "#f9a8d4";   // pink — pip package names
+        case "dl": return "#34d399";   // green — download/clone lines
+        case "success": return "#4ade80";   // bright green — success
+        case "done": return "#4ade80";   // bright green
+        case "warn": return "#fb923c";   // orange — warnings
+        case "err": return "#f87171";   // red — errors
+        case "fail": return 'var(--color-error)';   // red — fatal
+        case "muted": return "#3f3f46";   // very dim — separators
+        default: return "#71717a";   // gray — generic output
+    }
+}
 
 // Shared transition config
 const pageVariants = {
@@ -184,51 +227,192 @@ const BackButton = ({ onClick }: { onClick: () => void }) => (
     </button>
 );
 
-// NR-PERF-05/NR-BUN-02: step-9 heart animation — fetches the Lottie JSON on
-// mount (module-scope cache) and renders nothing until it's available.
-function HeartPixelLottie() {
-    const [animation, setAnimation] = useState<any>(heartPixelAnimationCache);
+// ── Steam animation for coffee cup ────────────────
+const steamKeyframes = `
+@keyframes steam {
+    0%   { transform: translateY(0)   scaleX(1);   opacity: 0.7; }
+    50%  { transform: translateY(-8px) scaleX(1.2); opacity: 0.4; }
+    100% { transform: translateY(-16px) scaleX(0.8); opacity: 0; }
+}
+@keyframes spinnerAnim {
+    to { transform: rotate(360deg); }
+}
+`;
 
-    useEffect(() => {
-        let cancelled = false;
-        if (heartPixelAnimationCache) {
-            setAnimation(heartPixelAnimationCache);
-            return;
-        }
-        fetch("/lottie/heart-pixel.json")
-            .then((res) => res.json())
-            .then((data) => {
-                heartPixelAnimationCache = data;
-                if (!cancelled) setAnimation(data);
-            })
-            .catch((err) => console.error("Failed to load heart animation:", err));
-        return () => {
-            cancelled = true;
-        };
-    }, []);
-
-    if (!animation) {
-        return <div style={{ width: 76, height: 76, margin: "0 auto 16px" }} />;
-    }
+// ── Coffee Break Banner ────────────────
+function CoffeeBreakBanner({ currentPkg, pipPct, pipSpeed, overallPct }: {
+    currentPkg: string;
+    pipPct: number;
+    pipSpeed: string;
+    overallPct: number;
+}) {
     return (
-        <div
-            style={{
-                width: 76,
-                height: 76,
-                margin: "0 auto 16px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-            }}
-        >
-            <Lottie src={animation} autoplay loop style={{ width: 76, height: 76 }} />
+        <div style={{
+            background: "rgba(32,30,36,0.04)",
+            border: "1px solid rgba(32,30,36,0.1)",
+            borderRadius: 16,
+            padding: "16px 20px",
+            display: "flex",
+            alignItems: "center",
+            gap: 18,
+            marginBottom: 14,
+        }}>
+            {/* Coffee cup SVG with steam */}
+            <style>{steamKeyframes}</style>
+            <div style={{ flexShrink: 0, position: "relative" }}>
+                <svg width="52" height="52" viewBox="0 0 52 52" fill="none">
+                    {/* Steam trails */}
+                    <path d="M17 12 Q19 7 17 2" stroke='var(--color-primary)' strokeWidth="1.5" strokeLinecap="round"
+                        style={{ animation: "steam 2s ease-in-out infinite", animationDelay: "0s", opacity: 0.7 }} />
+                    <path d="M23 12 Q25 6 23 1" stroke='var(--color-primary)' strokeWidth="1.5" strokeLinecap="round"
+                        style={{ animation: "steam 2s ease-in-out infinite", animationDelay: "0.4s", opacity: 0.7 }} />
+                    <path d="M29 12 Q31 7 29 2" stroke='var(--color-primary)' strokeWidth="1.5" strokeLinecap="round"
+                        style={{ animation: "steam 2s ease-in-out infinite", animationDelay: "0.8s", opacity: 0.7 }} />
+                    {/* Cup body */}
+                    <rect x="9" y="15" width="28" height="22" rx="4"
+                        fill="rgba(59,130,246,0.1)" stroke="rgba(59,130,246,0.35)" strokeWidth="1.2" />
+                    {/* Liquid surface */}
+                    <rect x="11" y="27" width="24" height="8" rx="2"
+                        fill="rgba(59,130,246,0.18)" />
+                    {/* Handle */}
+                    <path d="M37 19 Q45 19 45 26 Q45 33 37 33"
+                        stroke="rgba(59,130,246,0.35)" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+                    {/* Saucer */}
+                    <ellipse cx="23" cy="39" rx="17" ry="3.5"
+                        fill="rgba(59,130,246,0.07)" stroke="rgba(59,130,246,0.2)" strokeWidth="1" />
+                </svg>
+            </div>
+
+            <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>Take a coffee break</span>
+                    <span style={{
+                        fontSize: 9, fontWeight: 700, textTransform: "uppercase" as const,
+                        letterSpacing: "0.12em", background: "rgba(59,130,246,0.15)",
+                        color: 'var(--color-primary)', padding: "2px 7px", borderRadius: 999,
+                    }}>Installing</span>
+                </div>
+                <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', lineHeight: 1.6, margin: "0 0 10px" }}>
+                    This might take a few minutes. Dependencies are being downloaded automatically.
+                </p>
+
+                {/* Overall progress */}
+                <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                        <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', textTransform: "uppercase" as const, letterSpacing: "0.1em", fontWeight: 600 }}>
+                            Overall Progress
+                        </span>
+                        <span style={{ fontSize: 10, color: 'var(--color-text-primary)', fontFamily: "monospace" }}>
+                            {Math.round(overallPct)}%
+                        </span>
+                    </div>
+                    <div style={{ height: 4, background: "rgba(32,30,36,0.1)", borderRadius: 999, overflow: "hidden" }}>
+                        <div style={{
+                            height: "100%",
+                            width: `${overallPct}%`,
+                            background: "linear-gradient(90deg, #2563eb, #3b82f6)",
+                            borderRadius: 999,
+                            transition: "width 0.4s ease",
+                        }} />
+                    </div>
+                </div>
+            </div>
         </div>
     );
 }
 
-// NR-UI-04: basic http/https URL check — scheme + host required, port/path optional.
-const HTTP_URL_PATTERN = /^https?:\/\/[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?(:\d{1,5})?(\/\S*)?$/;
-const isValidHttpUrl = (value: string) => HTTP_URL_PATTERN.test(value.trim());
+// ── Pip Progress Bar ────────────────
+function PipProgressBar({ pkg, pct, speed, eta }: {
+    pkg: string; pct: number; speed: string; eta?: string;
+}) {
+    if (!pkg) return null;
+    return (
+        <div style={{
+            padding: "8px 14px",
+            borderBottom: "1px solid rgba(32,30,36,0.05)",
+            background: "rgba(32,30,36,0.02)",
+        }}>
+            {/* Package name line */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5, fontFamily: "monospace", fontSize: 11.5 }}>
+                <span style={{ color: 'var(--color-primary)' }}>Downloading</span>
+                <span style={{ color: 'var(--color-text-primary)', fontWeight: 700 }}>{pkg}</span>
+                {speed && <span style={{ color: 'var(--color-text-tertiary)', marginLeft: "auto" }}>{speed}</span>}
+                {eta && <span style={{ color: "#a1a1aa" }}>eta {eta}</span>}
+            </div>
+            {/* Progress bar row */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {/* pip-style bar with block chars feel */}
+                <div style={{
+                    flex: 1, height: 6,
+                    background: "rgba(32,30,36,0.1)",
+                    borderRadius: 3, overflow: "hidden",
+                }}>
+                    <div style={{
+                        height: "100%",
+                        width: `${pct}%`,
+                        background: 'var(--color-primary)',
+                        borderRadius: 3,
+                        transition: "width 0.2s linear",
+                    }} />
+                </div>
+                <span style={{
+                    fontSize: 10, fontFamily: "monospace",
+                    color: pct === 100 ? "#16a34a" : 'var(--color-text-tertiary)',
+                    minWidth: 32, textAlign: "right" as const,
+                }}>
+                    {pct}%
+                </span>
+            </div>
+        </div>
+    );
+}
+
+// ── Step Pills ────────────────
+function StepPills({ installStep }: { installStep: number }) {
+    const steps = [
+        { icon: "📦", title: "Conda Env", desc: "Python 3.11" },
+        { icon: "🌐", title: "Clone Repo", desc: "Latest ShowUI" },
+        { icon: "🧱", title: "Dependencies", desc: "Torch & Vision" },
+    ];
+    return (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
+            {steps.map((s, i) => {
+                const isDone = i < installStep - 1;
+                const isActive = i === installStep - 1;
+                return (
+                    <div key={i} style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        gap: 5,
+                        padding: "12px 10px",
+                        borderRadius: 12,
+                        background: isDone
+                            ? "rgba(34,197,94,0.08)"
+                            : isActive
+                                ? "rgba(59,130,246,0.08)"
+                                : "rgba(32,30,36,0.03)",
+                        border: isDone
+                            ? "1px solid rgba(34,197,94,0.25)"
+                            : isActive
+                                ? "1px solid rgba(59,130,246,0.3)"
+                                : "1px solid rgba(32,30,36,0.08)",
+                        opacity: (!isDone && !isActive) ? 0.6 : 1,
+                        transition: "all 0.3s ease",
+                    }}>
+                        <span style={{ fontSize: 18 }}>{s.icon}</span>
+                        <div style={{
+                            fontSize: 10, fontWeight: 700,
+                            color: isDone ? "#16a34a" : isActive ? 'var(--color-primary)' : 'var(--color-text-tertiary)',
+                            textTransform: "uppercase" as const, letterSpacing: "0.1em",
+                        }}>{s.title}</div>
+                        <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>{s.desc}</div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
 
 export default function SetupPage() {
     const router = useRouter();
@@ -301,14 +485,13 @@ export default function SetupPage() {
     const [vlmCloudKey, setVlmCloudKey] = useState("");
     const [showuiUrl, setShowuiUrl] = useState("http://127.0.0.1:7860");
     const [useShowUI, setUseShowUI] = useState<boolean | null>(null);
+    const [isInstalling, setIsInstalling] = useState(false);
+    const [installLogs, setInstallLogs] = useState<LogLine[]>([]);
+    const [installStep, setInstallStep] = useState(0);
+    const [installError, setInstallError] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [showMoreModal, setShowMoreModal] = useState(false);
     const [showCloudLoginModal, setShowCloudLoginModal] = useState(false);
-
-    // NR-UI-04: per-step engine validation errors — cleared onChange when the
-    // user edits the offending field; never blocks Back/skip paths.
-    const [engineValidationError, setEngineValidationError] = useState<string | null>(null);
-    const [vlmValidationError, setVlmValidationError] = useState<string | null>(null);
 
     const handleEverFernCloudSelect = (nextStep: number = 4) => {
         const cloudSession = localStorage.getItem("everfern_cloud_session") || localStorage.getItem("everfern_auth_token");
@@ -319,6 +502,12 @@ export default function SetupPage() {
         setProvider("everfern");
         setStep(nextStep);
     };
+
+    const [pipPkg, setPipPkg] = useState("");
+    const [pipPct, setPipPct] = useState(0);
+    const [pipSpeed, setPipSpeed] = useState("");
+    const [pipEta, setPipEta] = useState("");
+    const [overallPct, setOverallPct] = useState(0);
 
     const [mockStep, setMockStep] = useState(0);
 
@@ -340,32 +529,6 @@ export default function SetupPage() {
     const [isPullingModel, setIsPullingModel] = useState(false);
     const [ollamaLogs, setOllamaLogs] = useState<string[]>([]);
     const [pullPct, setPullPct] = useState(0);
-
-    // NR-LEAK-03/04: ollama listener bookkeeping — clear-before-register on
-    // every Install/Pull click (last handler wins) and unsubscribe all on
-    // unmount.
-    const ollamaUnsubscribesRef = useRef<Array<() => void>>([]);
-    const registerOllamaLineListener = (handler: (data: { line: string }) => void) => {
-        const api = (window as any).electronAPI?.system;
-        api?.removeOllamaListeners?.();
-        ollamaUnsubscribesRef.current.forEach((unsub) => unsub?.());
-        ollamaUnsubscribesRef.current = [];
-        const unsubInstall = api?.onOllamaInstallLine?.(handler);
-        if (typeof unsubInstall === "function") ollamaUnsubscribesRef.current.push(unsubInstall);
-        const unsubPull = api?.onOllamaPullLine?.(handler);
-        if (typeof unsubPull === "function") ollamaUnsubscribesRef.current.push(unsubPull);
-    };
-
-    // NR-LEAK-07: tracked timers cleared on unmount.
-    const timersRef = useRef<number[]>([]);
-    const trackTimeout = (fn: () => void, ms: number) => {
-        const id = window.setTimeout(fn, ms);
-        timersRef.current.push(id);
-        return id;
-    };
-
-    // NR-PERF-05: pause infinite framer-motion loops when the window is hidden.
-    const [motionPaused, setMotionPaused] = useState(false);
 
     const stripAnsi = (str: string) => {
         return str.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
@@ -477,13 +640,15 @@ export default function SetupPage() {
         setLocalPullPct(0);
         setLocalPullLogs([]);
         try {
-            registerOllamaLineListener(({ line }: { line: string }) => {
-                const pctMatch = line.match(/(\d+\.?\d*)%/);
-                if (pctMatch) {
-                    setLocalPullPct(parseFloat(pctMatch[1]));
-                }
-                setLocalPullLogs(prev => [...prev.slice(-30), line]);
-            });
+            if (api.onOllamaPullLine) {
+                api.onOllamaPullLine(({ line }: { line: string }) => {
+                    const pctMatch = line.match(/(\d+\.?\d*)%/);
+                    if (pctMatch) {
+                        setLocalPullPct(parseFloat(pctMatch[1]));
+                    }
+                    setLocalPullLogs(prev => [...prev.slice(-30), line]);
+                });
+            }
             const res = await api.ollamaPull(modelTag);
             if (res?.success) {
                 setSelectedLocalModel(modelTag);
@@ -505,24 +670,78 @@ export default function SetupPage() {
         }
     };
 
-    // NR-LEAK-07/NR-LEAK-03/04: single unmount cleanup for tracked timers and
-    // any ollama line listeners still registered.
-    useEffect(() => {
-        return () => {
-            timersRef.current.forEach((id) => window.clearTimeout(id));
-            timersRef.current = [];
-            (window as any).electronAPI?.system?.removeOllamaListeners?.();
-            ollamaUnsubscribesRef.current.forEach((unsub) => unsub?.());
-            ollamaUnsubscribesRef.current = [];
-        };
-    }, []);
+    const logEndRef = useRef<HTMLDivElement>(null);
 
-    // NR-PERF-05: stop infinite framer-motion loops while the window is hidden.
+    // Auto-scroll terminal
     useEffect(() => {
-        const handleVisibility = () => setMotionPaused(document.hidden);
-        document.addEventListener("visibilitychange", handleVisibility);
-        return () => document.removeEventListener("visibilitychange", handleVisibility);
-    }, []);
+        logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, [installLogs, pipPct]);
+
+    useEffect(() => {
+        if ((window as any).electronAPI?.showui?.onInstallLine) {
+            (window as any).electronAPI.showui.onInstallLine((data: any) => {
+                // Handle progress overrides from script
+                if (data.pct !== undefined) {
+                    setOverallPct(data.pct);
+                    // Infer step if pct is high enough
+                    if (data.pct > 85) setInstallStep(3);
+                    else if (data.pct > 40) setInstallStep(2);
+                    else if (data.pct > 5) setInstallStep(1);
+                }
+
+                // Handle pip progress lines
+                if (data.kind === "pip") {
+                    if (data.pkg) setPipPkg(data.pkg);
+                    if (data.pct !== undefined) {
+                        setPipPct(data.pct);
+                        // Micro-advance overall progress during pip for better UX
+                        setOverallPct(prev => Math.min(prev + 0.1, 99));
+                    }
+                    if (data.speed) setPipSpeed(data.speed);
+                    if (data.eta) setPipEta(data.eta);
+                    return;
+                }
+
+                setInstallLogs(prev => [...prev, data]);
+
+                if (data.step > 0 && data.pct === undefined) {
+                    setInstallStep(prev => Math.max(prev, data.step));
+                }
+
+                if (data.kind === "fail") setInstallError(data.line);
+                if (data.kind === "done") {
+                    setIsInstalling(false);
+                    setOverallPct(100);
+                    setPipPkg("");
+                }
+            });
+        }
+        return () => {
+            (window as any).electronAPI?.showui?.removeInstallListeners?.();
+        };
+    }, [installStep]);
+
+    const startInstall = async () => {
+        setIsInstalling(true);
+        setInstallError(null);
+        setInstallStep(1);
+        setOverallPct(0);
+        setPipPkg("");
+        setPipPct(0);
+        setInstallLogs([{
+            line: "Initializing ShowUI installation pipeline...",
+            step: 0,
+            kind: "info",
+        }]);
+        try {
+            const res = await (window as any).electronAPI.showui.install();
+            if (!res.success) setInstallError(res.error || "Installation failed.");
+        } catch (err) {
+            setInstallError(String(err));
+        } finally {
+            setIsInstalling(false);
+        }
+    };
 
     const handleSave = async () => {
         setIsSaving(true);
@@ -627,7 +846,7 @@ export default function SetupPage() {
             // Not signed in as cloud user — skip silently
         }
 
-        trackTimeout(() => router.push("/chat"), 800);
+        setTimeout(() => router.push("/chat"), 800);
     };
 
     const handleInstallOllama = async () => {
@@ -636,17 +855,19 @@ export default function SetupPage() {
         setOllamaInstallPct(0);
         setOllamaInstallPhase("downloading");
         setOllamaLogs([]);
-        registerOllamaLineListener((data: { line: string }) => {
-            const line = data.line;
-            // Parse percentage like "###### 78.5%" or "98.1%"
-            const pctMatch = line.match(/(\d+\.?\d*)%/);
-            if (pctMatch) {
-                const pct = parseFloat(pctMatch[1]);
-                setOllamaInstallPct(pct);
-                setOllamaInstallPhase(pct >= 100 ? "finalizing" : "downloading");
-            }
-            setOllamaLogs(prev => [...prev.slice(-40), line]);
-        });
+        if ((window as any).electronAPI?.system?.onOllamaInstallLine) {
+            (window as any).electronAPI.system.onOllamaInstallLine((data: { line: string }) => {
+                const line = data.line;
+                // Parse percentage like "###### 78.5%" or "98.1%"
+                const pctMatch = line.match(/(\d+\.?\d*)%/);
+                if (pctMatch) {
+                    const pct = parseFloat(pctMatch[1]);
+                    setOllamaInstallPct(pct);
+                    setOllamaInstallPhase(pct >= 100 ? "finalizing" : "downloading");
+                }
+                setOllamaLogs(prev => [...prev.slice(-40), line]);
+            });
+        }
         if ((window as any).electronAPI?.system?.ollamaInstall) {
             const res = await (window as any).electronAPI.system.ollamaInstall();
             if (res.success) {
@@ -666,38 +887,40 @@ export default function SetupPage() {
         setIsPullingModel(true);
         setPullPct(0);
         setOllamaLogs([]);
-        registerOllamaLineListener((data: { line: string }) => {
-            const rawLine = data.line;
-            const cleanLine = stripAnsi(rawLine);
+        if ((window as any).electronAPI?.system?.onOllamaInstallLine) {
+            (window as any).electronAPI.system.onOllamaInstallLine((data: { line: string }) => {
+                const rawLine = data.line;
+                const cleanLine = stripAnsi(rawLine);
 
-            // Parse percentage like "###### 78.5%" or " 2%"
-            const pctMatch = cleanLine.match(/(\d+\.?\d*)%/);
-            if (pctMatch) {
-                const pct = parseFloat(pctMatch[1]);
-                // Only update if it's a progress update for a layer being pulled
-                if (cleanLine.includes("pulling") || cleanLine.includes("verifying")) {
-                    setPullPct(pct);
+                // Parse percentage like "###### 78.5%" or " 2%"
+                const pctMatch = cleanLine.match(/(\d+\.?\d*)%/);
+                if (pctMatch) {
+                    const pct = parseFloat(pctMatch[1]);
+                    // Only update if it's a progress update for a layer being pulled
+                    if (cleanLine.includes("pulling") || cleanLine.includes("verifying")) {
+                        setPullPct(pct);
+                    }
                 }
-            }
 
-            setOllamaLogs(prev => {
-                const last = prev[prev.length - 1] || "";
-                // Update current line if it's a progress line
-                if (cleanLine.includes("pulling") && last.includes("pulling")) {
-                    const newLogs = [...prev];
-                    newLogs[newLogs.length - 1] = cleanLine;
-                    return newLogs;
-                }
-                return [...prev.slice(-30), cleanLine];
+                setOllamaLogs(prev => {
+                    const last = prev[prev.length - 1] || "";
+                    // Update current line if it's a progress line
+                    if (cleanLine.includes("pulling") && last.includes("pulling")) {
+                        const newLogs = [...prev];
+                        newLogs[newLogs.length - 1] = cleanLine;
+                        return newLogs;
+                    }
+                    return [...prev.slice(-30), cleanLine];
+                });
             });
-        });
+        }
         try {
             const res = await (window as any).electronAPI.system.ollamaPull("qwen3-vl:2b");
             if (res.success) {
                 setPullPct(100);
                 setModelInstalled(true);
                 // Go to final step (save) directly since we use an Omni model
-                trackTimeout(() => setStep(11), 1500);
+                setTimeout(() => setStep(11), 1500);
             } else {
                 setOllamaLogs(prev => [...prev, `✗ Model pull failed with code ${res.code}`]);
             }
@@ -727,18 +950,27 @@ export default function SetupPage() {
             </header>
             <div style={{ display: "flex", justifyContent: "center", paddingTop: 20, gap: 6 }}>
                 {(() => {
-                    // Wizard visit order (step 11 renders between 6 and 7)
-                    const ORDERED_STEPS = [1, 2, 3, 4, 5, 6, 11, 7, 8, 9, 10, 12];
-                    const idx = ORDERED_STEPS.findIndex(s => s === step);
-                    const activeIndex = idx === -1 ? ORDERED_STEPS.length - 1 : idx;
-                    return ORDERED_STEPS.map((s, i) => (
+                    const getActiveDotIndex = () => {
+                        if (step <= 4) return step;
+                        if (step === 5) return 5;
+                        if (step === 6) return 6;
+                        if (step === 11) return 7;
+                        if (step === 7) return 8;
+                        if (step === 8) return 9;
+                        if (step === 9) return 10;
+                        if (step === 10) return 11;
+                        if (step === 12) return 12;
+                        return 12;
+                    };
+                    const activeIndex = getActiveDotIndex();
+                    return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(s => (
                         <div
                             key={s}
                             style={{
-                                width: i === activeIndex ? 20 : 6,
+                                width: s === activeIndex ? 20 : 6,
                                 height: 4,
                                 borderRadius: 999,
-                                background: i === activeIndex ? 'var(--color-text-primary)' : i < activeIndex ? 'var(--color-text-secondary)' : 'var(--color-border)',
+                                background: s === activeIndex ? 'var(--color-text-primary)' : s < activeIndex ? 'var(--color-text-secondary)' : 'var(--color-border)',
                                 transition: "all 0.3s ease",
                             }}
                         />
@@ -983,11 +1215,11 @@ export default function SetupPage() {
                                     type="password"
                                     placeholder={engine === "local" ? "Server URL (optional)" : "sk-••••••••••••"}
                                     value={apiKey}
-                                    onChange={(e) => { setApiKey(e.target.value); setEngineValidationError(null); }}
+                                    onChange={(e) => setApiKey(e.target.value)}
                                     style={{
                                         width: "100%", height: 52,
                                         background: "rgba(32,30,36,0.04)",
-                                            border: `1px solid ${engineValidationError ? 'var(--color-error)' : "rgba(32,30,36,0.1)"}`,
+                                            border: "1px solid rgba(32,30,36,0.1)",
                                         borderRadius: 12,
                                         padding: "0 16px",
                                         color: 'var(--color-text-primary)', fontSize: 14,
@@ -995,33 +1227,11 @@ export default function SetupPage() {
                                         transition: "border-color 0.15s",
                                         boxSizing: "border-box",
                                     }}
-                                    onFocus={e => (e.currentTarget.style.borderColor = engineValidationError ? 'var(--color-error)' : "rgba(32,30,36,0.2)")}
-                                    onBlur={e => (e.currentTarget.style.borderColor = engineValidationError ? 'var(--color-error)' : "rgba(32,30,36,0.1)")}
+                                    onFocus={e => (e.currentTarget.style.borderColor = "rgba(32,30,36,0.2)")}
+                                    onBlur={e => (e.currentTarget.style.borderColor = "rgba(32,30,36,0.1)")}
                                 />
-                                {engineValidationError && (
-                                    <div style={{ color: 'var(--color-error)', fontSize: 12, textAlign: "left", lineHeight: 1.4 }}>
-                                        {engineValidationError}
-                                    </div>
-                                )}
                                 <button
                                     onClick={async () => {
-                                        // NR-UI-04: required-field validation before advancing.
-                                        // Local/custom: empty URL is allowed (falls back to the
-                                        // provider default), but a non-empty URL must be a valid
-                                        // http/https URL. Online: a non-empty trimmed key is
-                                        // always required (no stored/echoed key exists for this
-                                        // step — apiKey is only ever set via this input).
-                                        if (engine === "local") {
-                                            if (apiKey.trim() && !isValidHttpUrl(apiKey)) {
-                                                setEngineValidationError("Enter a valid server URL starting with http:// or https://, or leave blank for the default.");
-                                                return;
-                                            }
-                                        } else {
-                                            if (!apiKey.trim()) {
-                                                setEngineValidationError(`An API key for ${provider} is required to continue. You can go back and choose a local engine instead.`);
-                                                return;
-                                            }
-                                        }
                                         if (engine === "local") {
                                             await loadLocalModels(provider || "ollama", apiKey);
                                         } else {
@@ -1035,10 +1245,10 @@ export default function SetupPage() {
                                         borderRadius: 12, fontWeight: 600, fontSize: 14,
                                         display: "flex", alignItems: "center", justifyContent: "center",
                                         gap: 8, cursor: "pointer", border: "none",
-                                        transition: "opacity 0.15s", letterSpacing: "0.01em",
+                                        transition: "background 0.15s", letterSpacing: "0.01em",
                                     }}
-                                    onMouseEnter={e => (e.currentTarget.style.opacity = "0.9")}
-                                    onMouseLeave={e => (e.currentTarget.style.opacity = "1")}
+                                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--color-text-primary)')}
+                                    onMouseLeave={e => (e.currentTarget.style.background = 'var(--color-text-primary)')}
                                 >
                                     Continue <ArrowRight size={16} strokeWidth={2.5} />
                                 </button>
@@ -1076,7 +1286,7 @@ export default function SetupPage() {
                                             background: "rgba(32,30,36,0.04)",
                                             border: "1px solid rgba(32,30,36,0.1)",
                                             display: "flex", alignItems: "center", justifyContent: "center",
-                                            color: "var(--color-info-light)", margin: "16px auto 16px auto",
+                                            color: "#60a5fa", margin: "16px auto 16px auto",
                                         }}>
                                             <Cpu size={26} strokeWidth={1.5} />
                                         </div>
@@ -1130,8 +1340,8 @@ export default function SetupPage() {
                                             </div>
                                             <div style={{ minWidth: 0, overflow: "hidden" }}>
                                                 <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: "uppercase" }}>Provider Status</div>
-                                                <div style={{ fontSize: 12, fontWeight: 600, color: localProviderRunning ? '#22c55e' : 'var(--color-warning)', display: "flex", alignItems: "center", gap: 4 }}>
-                                                    <span style={{ width: 6, height: 6, borderRadius: 999, backgroundColor: localProviderRunning ? '#22c55e' : 'var(--color-warning)' }} />
+                                                <div style={{ fontSize: 12, fontWeight: 600, color: localProviderRunning ? '#22c55e' : '#f59e0b', display: "flex", alignItems: "center", gap: 4 }}>
+                                                    <span style={{ width: 6, height: 6, borderRadius: 999, backgroundColor: localProviderRunning ? '#22c55e' : '#f59e0b' }} />
                                                     {localProviderRunning ? "Connected" : "Offline"}
                                                 </div>
                                                 <div style={{ fontSize: 10.5, color: "var(--color-text-tertiary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -1244,7 +1454,7 @@ export default function SetupPage() {
                                                                     </span>
                                                                     <span style={{
                                                                         fontSize: 10.5, fontWeight: 600, padding: "1px 6px", borderRadius: 4,
-                                                                        backgroundColor: m.status === 'full_gpu' ? "rgba(34, 197, 94, 0.15)" : m.status === 'cpu_offload' ? "var(--color-warning-dim)" : "var(--color-error-dim)",
+                                                                        backgroundColor: m.status === 'full_gpu' ? "rgba(34, 197, 94, 0.15)" : m.status === 'cpu_offload' ? "rgba(245, 158, 11, 0.15)" : "rgba(239, 68, 68, 0.15)",
                                                                         color: m.status === 'full_gpu' ? "#16a34a" : m.status === 'cpu_offload' ? "#d97706" : "#dc2626"
                                                                     }}>
                                                                         {m.badge}
@@ -1329,13 +1539,13 @@ export default function SetupPage() {
                                                                     {m.params_b}B
                                                                 </span>
                                                                 {isTopMatch && (
-                                                                    <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 4, backgroundColor: "var(--color-info-dim)", color: "var(--color-info)" }}>
+                                                                    <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 4, backgroundColor: "rgba(59, 130, 246, 0.15)", color: "#3b82f6" }}>
                                                                         ★ Top Match
                                                                     </span>
                                                                 )}
                                                                 <span style={{
                                                                     fontSize: 10, fontWeight: 600, padding: "1px 5px", borderRadius: 4,
-                                                                    backgroundColor: m.status === 'full_gpu' ? "rgba(34, 197, 94, 0.15)" : "var(--color-warning-dim)",
+                                                                    backgroundColor: m.status === 'full_gpu' ? "rgba(34, 197, 94, 0.15)" : "rgba(245, 158, 11, 0.15)",
                                                                     color: m.status === 'full_gpu' ? "#16a34a" : "#d97706"
                                                                 }}>
                                                                     {m.badge}
@@ -1410,7 +1620,7 @@ export default function SetupPage() {
                                                 <span style={{ fontSize: 12, fontFamily: "monospace", color: 'var(--color-text-tertiary)' }}>{localPullPct.toFixed(1)}%</span>
                                             </div>
                                             <div style={{ width: "100%", height: 5, borderRadius: 999, background: "rgba(32,30,36,0.1)", overflow: "hidden" }}>
-                                                <motion.div animate={{ scaleX: localPullPct / 100 }} transition={{ ease: "linear", duration: 0.3 }} style={{ width: "100%", height: "100%", borderRadius: 999, background: "linear-gradient(90deg, var(--color-info), var(--color-info-light))", transformOrigin: "left center" }} />
+                                                <motion.div animate={{ width: `${localPullPct}%` }} transition={{ ease: "linear", duration: 0.3 }} style={{ height: "100%", borderRadius: 999, background: "linear-gradient(90deg, #3b82f6, #60a5fa)" }} />
                                             </div>
                                         </div>
                                     )}
@@ -1445,7 +1655,7 @@ export default function SetupPage() {
                                             background: "rgba(32,30,36,0.04)",
                                             border: "1px solid rgba(32,30,36,0.1)",
                                             display: "flex", alignItems: "center", justifyContent: "center",
-                                            color: "var(--color-info-light)", margin: "40px auto 32px auto",
+                                            color: "#60a5fa", margin: "40px auto 32px auto",
                                         }}>
                                             <Cpu size={24} strokeWidth={1.5} />
                                         </div>
@@ -1474,7 +1684,6 @@ export default function SetupPage() {
                                                         }
                                                     }
                                                     setVlmMode(opt.id as any);
-                                                    setVlmValidationError(null);
                                                 }}
                                                 style={{
                                                     background: vlmMode === opt.id ? "rgba(32,30,36,0.06)" : "rgba(255,255,255,0.02)",
@@ -1538,7 +1747,6 @@ export default function SetupPage() {
                                                         setVlmCloudProvider(provider);
                                                         setVlmCloudModel(getVisionDefaultModel(provider));
                                                         setVlmCloudUrl(getVisionDefaultBaseUrl(provider));
-                                                        setVlmValidationError(null);
                                                     }}
                                                         style={{ width: "100%", padding: "14px 18px", backgroundColor: "rgba(32, 30, 36,0.04)", border: "1px solid rgba(32, 30, 36,0.1)", borderRadius: 14, color: 'var(--color-text-primary)', fontSize: 14, outline: "none", cursor: "pointer", transition: "all 0.2s" }}>
                                                         <option value="ollama" style={{ background: 'var(--color-bg-base)' }}>Ollama Compatible Endpoint</option>
@@ -1554,20 +1762,20 @@ export default function SetupPage() {
                                                     <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: "uppercase", letterSpacing: "0.05em" }}>Model Name</label>
                                                     <div style={{ position: "relative" }}>
                                                         {vlmCloudProvider === 'ollama' ? (
-                                                            <select value={vlmCloudModel} onChange={(e) => { setVlmCloudModel(e.target.value); setVlmValidationError(null); }}
+                                                            <select value={vlmCloudModel} onChange={(e) => setVlmCloudModel(e.target.value)}
                                                                 style={{ width: "100%", padding: "14px 18px", backgroundColor: "rgba(32, 30, 36,0.04)", border: "1px solid rgba(32, 30, 36,0.1)", borderRadius: 14, color: 'var(--color-text-primary)', fontSize: 14, outline: "none", cursor: "pointer", transition: "all 0.2s" }}>
                                                                 <option value="qwen3-vl:235b-cloud">Qwen3 VL 235B (Default)</option>
                                                                 <option value="kimi-k2.6:cloud">Kimi K2.6 Cloud</option>
                                                                 <option value="glm-5.1:cloud">GLM 5.1 Cloud</option>
                                                             </select>
                                                         ) : vlmCloudProvider === 'everfern' ? (
-                                                            <select value={vlmCloudModel} onChange={(e) => { setVlmCloudModel(e.target.value); setVlmValidationError(null); }}
+                                                            <select value={vlmCloudModel} onChange={(e) => setVlmCloudModel(e.target.value)}
                                                                 style={{ width: "100%", padding: "14px 18px", backgroundColor: "rgba(32, 30, 36,0.04)", border: "1px solid rgba(32, 30, 36,0.1)", borderRadius: 14, color: 'var(--color-text-primary)', fontSize: 14, outline: "none", cursor: "pointer", transition: "all 0.2s" }}>
                                                                 <option value="everfern-vision-v1">EverFern Vision v1 (Default)</option>
                                                             </select>
                                                         ) : (
                                                             <>
-                                                                <input type="text" placeholder={getVisionDefaultModel(vlmCloudProvider)} value={vlmCloudModel} onChange={(e) => { setVlmCloudModel(e.target.value); setVlmValidationError(null); }}
+                                                                <input type="text" placeholder={getVisionDefaultModel(vlmCloudProvider)} value={vlmCloudModel} onChange={(e) => setVlmCloudModel(e.target.value)}
                                                                     style={{ width: "100%", padding: "14px 18px 14px 46px", backgroundColor: "rgba(32, 30, 36,0.04)", border: "1px solid rgba(32, 30, 36,0.1)", borderRadius: 14, color: 'var(--color-text-primary)', fontSize: 14, fontFamily: "monospace", outline: "none", transition: "all 0.2s", boxSizing: "border-box" }}
                                                                     onFocus={e => { e.target.style.borderColor = "rgba(32, 30, 36,0.2)"; e.target.style.backgroundColor = "rgba(32,30,36,0.06)"; }}
                                                                     onBlur={e => { e.target.style.borderColor = "rgba(32, 30, 36,0.1)"; e.target.style.backgroundColor = "rgba(32,30,36,0.04)"; }} />
@@ -1580,7 +1788,7 @@ export default function SetupPage() {
                                                     <div style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
                                                         <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: "uppercase", letterSpacing: "0.05em" }}>Host URL (Optional)</label>
                                                         <div style={{ position: "relative" }}>
-                                                            <input type="text" placeholder="Optional custom base URL" value={vlmCloudUrl} onChange={(e) => { setVlmCloudUrl(e.target.value); setVlmValidationError(null); }}
+                                                            <input type="text" placeholder="Optional custom base URL" value={vlmCloudUrl} onChange={(e) => setVlmCloudUrl(e.target.value)}
                                                                 style={{ width: "100%", padding: "14px 18px 14px 46px", backgroundColor: "rgba(32, 30, 36,0.04)", border: "1px solid rgba(32, 30, 36,0.1)", borderRadius: 14, color: 'var(--color-text-primary)', fontSize: 14, fontFamily: "monospace", outline: "none", transition: "all 0.2s", boxSizing: "border-box" }}
                                                                 onFocus={e => { e.target.style.borderColor = "rgba(32, 30, 36,0.2)"; e.target.style.backgroundColor = "rgba(32,30,36,0.06)"; }}
                                                                 onBlur={e => { e.target.style.borderColor = "rgba(32, 30, 36,0.1)"; e.target.style.backgroundColor = "rgba(32,30,36,0.04)"; }} />
@@ -1592,38 +1800,15 @@ export default function SetupPage() {
                                                     <div style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
                                                         <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: "uppercase", letterSpacing: "0.05em" }}>API Key</label>
                                                         <div style={{ position: "relative" }}>
-                                                            <input type="password" placeholder="sk-..." value={vlmCloudKey} onChange={(e) => { setVlmCloudKey(e.target.value); setVlmValidationError(null); }}
-                                                                style={{ width: "100%", padding: "14px 18px 14px 46px", backgroundColor: "rgba(32, 30, 36,0.04)", border: `1px solid ${vlmValidationError ? 'var(--color-error)' : "rgba(32, 30, 36,0.1)"}`, borderRadius: 14, color: 'var(--color-text-primary)', fontSize: 14, fontFamily: "monospace", outline: "none", transition: "all 0.2s", boxSizing: "border-box" }}
-                                                                onFocus={e => { e.target.style.borderColor = vlmValidationError ? 'var(--color-error)' : "rgba(32, 30, 36,0.2)"; e.target.style.backgroundColor = "rgba(32,30,36,0.06)"; }}
-                                                                onBlur={e => { e.target.style.borderColor = vlmValidationError ? 'var(--color-error)' : "rgba(32, 30, 36,0.1)"; e.target.style.backgroundColor = "rgba(32,30,36,0.04)"; }} />
+                                                            <input type="password" placeholder="sk-..." value={vlmCloudKey} onChange={(e) => setVlmCloudKey(e.target.value)}
+                                                                style={{ width: "100%", padding: "14px 18px 14px 46px", backgroundColor: "rgba(32, 30, 36,0.04)", border: "1px solid rgba(32, 30, 36,0.1)", borderRadius: 14, color: 'var(--color-text-primary)', fontSize: 14, fontFamily: "monospace", outline: "none", transition: "all 0.2s", boxSizing: "border-box" }}
+                                                                onFocus={e => { e.target.style.borderColor = "rgba(32, 30, 36,0.2)"; e.target.style.backgroundColor = "rgba(32,30,36,0.06)"; }}
+                                                                onBlur={e => { e.target.style.borderColor = "rgba(32, 30, 36,0.1)"; e.target.style.backgroundColor = "rgba(32,30,36,0.04)"; }} />
                                                             <Key size={16} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: 'var(--color-text-tertiary)' }} />
                                                         </div>
                                                     </div>
                                                 )}
-                                                {vlmValidationError && (
-                                                    <div style={{ color: 'var(--color-error)', fontSize: 12, textAlign: "left", lineHeight: 1.4 }}>
-                                                        {vlmValidationError}
-                                                    </div>
-                                                )}
-                                                <button onClick={() => {
-                                                    // NR-UI-04: cloud VLM requires BOTH a model name and an
-                                                    // API key. EverFern provider is exempt — handleSave
-                                                    // sources its key from the stored cloud session, and
-                                                    // no key input is rendered for it.
-                                                    if (!vlmCloudModel.trim()) {
-                                                        setVlmValidationError("A model name is required to continue.");
-                                                        return;
-                                                    }
-                                                    if (vlmCloudProvider !== 'ollama' && vlmCloudProvider !== 'everfern' && vlmCloudUrl.trim() && !isValidHttpUrl(vlmCloudUrl)) {
-                                                        setVlmValidationError("Host URL must be a valid http:// or https:// address.");
-                                                        return;
-                                                    }
-                                                    if (vlmCloudProvider !== 'everfern' && !vlmCloudKey.trim()) {
-                                                        setVlmValidationError(`An API key for ${vlmCloudProvider === 'ollama' ? 'this endpoint' : vlmCloudProvider} is required to continue, or use "Skip local AI setup" below.`);
-                                                        return;
-                                                    }
-                                                    setStep(5);
-                                                }} disabled={isSaving || !vlmCloudModel.trim()} style={{ marginTop: 12, width: "100%", padding: "16px", backgroundColor: vlmCloudModel.trim() ? 'var(--color-text-primary)' : "rgba(32,30,36,0.1)", color: vlmCloudModel.trim() ? 'var(--color-bg-base)' : 'var(--color-text-tertiary)', borderRadius: 14, fontWeight: 600, fontSize: 14, border: "none", cursor: vlmCloudModel.trim() ? "pointer" : "not-allowed", transition: "all 0.2s" }}>
+                                                <button onClick={() => setStep(5)} disabled={isSaving || !vlmCloudModel.trim()} style={{ marginTop: 12, width: "100%", padding: "16px", backgroundColor: vlmCloudModel.trim() ? 'var(--color-text-primary)' : "rgba(32,30,36,0.1)", color: vlmCloudModel.trim() ? 'var(--color-bg-base)' : 'var(--color-text-tertiary)', borderRadius: 14, fontWeight: 600, fontSize: 14, border: "none", cursor: vlmCloudModel.trim() ? "pointer" : "not-allowed", transition: "all 0.2s" }}>
                                                     {isSaving ? "Saving..." : "Save & Continue"}
                                                 </button>
                                             </div>
@@ -2038,7 +2223,7 @@ export default function SetupPage() {
                                                             }}
                                                             initial={{ scale: 0.3, opacity: 0.8 }}
                                                             animate={{ scale: 1.5, opacity: 0 }}
-                                                            transition={{ duration: 0.6, repeat: motionPaused ? 0 : Infinity }}
+                                                            transition={{ duration: 0.6, repeat: Infinity }}
                                                         />
                                                     )}
                                                 </div>
@@ -2074,7 +2259,7 @@ export default function SetupPage() {
                                                             }}
                                                             initial={{ scale: 0.3, opacity: 0.8 }}
                                                             animate={{ scale: 1.5, opacity: 0 }}
-                                                            transition={{ duration: 0.6, repeat: motionPaused ? 0 : Infinity }}
+                                                            transition={{ duration: 0.6, repeat: Infinity }}
                                                         />
                                                     )}
                                                 </div>
@@ -2181,8 +2366,8 @@ export default function SetupPage() {
                                                                 width: 6, height: 6, borderRadius: "50%",
                                                                 background: 'var(--color-text-primary)',
                                                             }}
-                                                            animate={{ x: [0, 31.5] }}
-                                                            transition={{ repeat: motionPaused ? 0 : Infinity, duration: 2.5, ease: "easeInOut" }}
+                                                            animate={{ left: ["0%", "90%"] }}
+                                                            transition={{ repeat: Infinity, duration: 2.5, ease: "easeInOut" }}
                                                         />
                                                     </div>
                                                     <div style={{ fontSize: 7, color: "#16a34a", fontWeight: 500 }}>Non-stop</div>
@@ -2272,24 +2457,14 @@ export default function SetupPage() {
                                             <motion.div
                                                 style={{
                                                     position: "absolute",
-                                                    top: 0,
-                                                    left: 0,
-                                                    right: 0,
-                                                    bottom: 0,
-                                                    pointerEvents: "none",
-                                                }}
-                                                animate={{ y: ["0%", "100%"] }}
-                                                transition={{ repeat: motionPaused ? 0 : Infinity, duration: 1.5, ease: "linear" }}
-                                            >
-                                                <div style={{
-                                                    position: "absolute",
-                                                    top: 0,
                                                     left: 0,
                                                     right: 0,
                                                     height: 3,
                                                     background: "linear-gradient(90deg, rgba(32,30,36,0) 0%, rgba(32,30,36,0.3) 50%, rgba(32,30,36,0) 100%)",
-                                                }} />
-                                            </motion.div>
+                                                }}
+                                                animate={{ top: ["0%", "100%"] }}
+                                                transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }}
+                                            />
                                         )}
 
                                         {/* Mouse Cursor */}
@@ -2330,7 +2505,7 @@ export default function SetupPage() {
                                             <span style={{
                                                 width: 6, height: 6, borderRadius: "50%",
                                                 background: mockStep === 5 ? 'var(--color-success)' : "#a78bfa",
-                                                boxShadow: mockStep === 5 ? "0 0 6px var(--color-success)" : "0 0 6px #a78bfa",
+                                                boxShadow: mockStep === 5 ? "0 0 6px #10b981" : "0 0 6px #a78bfa",
                                                 animation: "pulseDot 1.5s infinite"
                                             }} />
                                             <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.08em", color: "#a1a1aa", textTransform: "uppercase" }}>
@@ -2536,11 +2711,11 @@ export default function SetupPage() {
                                     gap: 8,
                                     cursor: "pointer",
                                     border: "none",
-                                    transition: "opacity 0.15s",
+                                    transition: "background 0.15s",
                                     letterSpacing: "0.01em",
                                 }}
-                                onMouseEnter={e => (e.currentTarget.style.opacity = "0.9")}
-                                onMouseLeave={e => (e.currentTarget.style.opacity = "1")}
+                                onMouseEnter={e => (e.currentTarget.style.background = 'var(--color-text-primary)')}
+                                onMouseLeave={e => (e.currentTarget.style.background = 'var(--color-text-primary)')}
                             >
                                 Continue <ArrowRight size={16} strokeWidth={2.5} />
                             </button>
@@ -2581,20 +2756,20 @@ export default function SetupPage() {
                                     }}
                                     style={{
                                         background: selectedTheme === 'light' ? "var(--color-bg-surface)" : "var(--color-bg-subtle)",
-                                        border: selectedTheme === 'light' ? "2px solid var(--color-success)" : "2px solid var(--color-border)",
+                                        border: selectedTheme === 'light' ? "2px solid #10b981" : "2px solid var(--color-border)",
                                         borderRadius: 20,
                                         padding: 0,
                                         cursor: "pointer",
                                         transition: "all 0.2s ease",
                                         overflow: "hidden",
-                                        boxShadow: selectedTheme === 'light' ? "0 0 0 4px var(--color-success-dim)" : "none",
+                                        boxShadow: selectedTheme === 'light' ? "0 0 0 4px rgba(16,185,129,0.15)" : "none",
                                     }}
                                 >
                                     {/* Light mode preview */}
                                     <div style={{ background: "#f5f4f1", padding: "14px 14px 10px", borderBottom: '1px solid var(--color-border)' }}>
                                         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-                                            <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--color-error-light)" }} />
-                                            <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--color-warning-light)" }} />
+                                            <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#f87171" }} />
+                                            <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#fbbf24" }} />
                                             <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ade80" }} />
                                         </div>
                                         <div style={{ display: "flex", gap: 6, height: 70 }}>
@@ -2634,20 +2809,20 @@ export default function SetupPage() {
                                     }}
                                     style={{
                                         background: selectedTheme === 'dark' ? "var(--color-bg-surface)" : "var(--color-bg-subtle)",
-                                        border: selectedTheme === 'dark' ? "2px solid var(--color-success)" : "2px solid var(--color-border)",
+                                        border: selectedTheme === 'dark' ? "2px solid #10b981" : "2px solid var(--color-border)",
                                         borderRadius: 20,
                                         padding: 0,
                                         cursor: "pointer",
                                         transition: "all 0.2s ease",
                                         overflow: "hidden",
-                                        boxShadow: selectedTheme === 'dark' ? "0 0 0 4px var(--color-success-dim)" : "none",
+                                        boxShadow: selectedTheme === 'dark' ? "0 0 0 4px rgba(16,185,129,0.15)" : "none",
                                     }}
                                 >
                                     {/* Dark mode preview */}
                                     <div style={{ background: "#1a1917", padding: "14px 14px 10px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
                                         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-                                            <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--color-error-light)" }} />
-                                            <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--color-warning-light)" }} />
+                                            <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#f87171" }} />
+                                            <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#fbbf24" }} />
                                             <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ade80" }} />
                                         </div>
                                         <div style={{ display: "flex", gap: 6, height: 70 }}>
@@ -2697,11 +2872,11 @@ export default function SetupPage() {
                                     gap: 8,
                                     cursor: "pointer",
                                     border: "none",
-                                    transition: "opacity 0.15s",
+                                    transition: "background 0.15s",
                                     letterSpacing: "0.01em",
                                 }}
-                                onMouseEnter={e => (e.currentTarget.style.opacity = "0.9")}
-                                onMouseLeave={e => (e.currentTarget.style.opacity = "1")}
+                                onMouseEnter={e => (e.currentTarget.style.background = 'var(--color-text-primary)')}
+                                onMouseLeave={e => (e.currentTarget.style.background = 'var(--color-text-primary)')}
                             >
                                 Continue <ArrowRight size={16} strokeWidth={2.5} />
                             </button>
@@ -2822,8 +2997,19 @@ export default function SetupPage() {
                                 <BackButton onClick={() => setStep(8)} />
                             </div>
 
-                            {/* Pixel Heart Animation (lazily fetched, cached at module scope) */}
-                            <HeartPixelLottie />
+                            {/* Pixel Heart Animation */}
+                            <div
+                                style={{
+                                    width: 76,
+                                    height: 76,
+                                    margin: "0 auto 16px",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                }}
+                            >
+                                <Lottie src={heartPixelAnimation} autoplay loop style={{ width: 76, height: 76 }} />
+                            </div>
 
                             <h1 style={{ fontSize: 30, fontWeight: 600, letterSpacing: "-0.03em", color: "var(--color-text-primary)", marginBottom: 12, lineHeight: 1.15 }}>
                                 Star EverFern on GitHub
@@ -2860,7 +3046,7 @@ export default function SetupPage() {
                                             localStorage.setItem('everfern_github_starred', 'true');
                                             localStorage.setItem('everfern_star_dismissed', 'true');
                                         } catch (err) {}
-                                        trackTimeout(() => setStep(10), 1200);
+                                        setTimeout(() => setStep(10), 1200);
                                     }}
                                     style={{
                                         width: "100%",
@@ -3070,12 +3256,12 @@ export default function SetupPage() {
                                     gap: 8,
                                     cursor: isSaving ? "wait" : "pointer",
                                     border: "none",
-                                    transition: isSaving ? "none" : "opacity 0.15s",
+                                    transition: "background 0.15s",
                                     letterSpacing: "0.01em",
                                     opacity: isSaving ? 0.7 : 1,
                                 }}
-                                onMouseEnter={e => { if (!isSaving) e.currentTarget.style.opacity = "0.9"; }}
-                                onMouseLeave={e => { e.currentTarget.style.opacity = isSaving ? "0.7" : "1"; }}
+                                onMouseEnter={e => !isSaving && (e.currentTarget.style.background = 'var(--color-text-primary)')}
+                                onMouseLeave={e => (e.currentTarget.style.background = 'var(--color-text-primary)')}
                             >
                                 {isSaving ? "Finishing setup..." : (<>Get Started <ArrowRight size={16} strokeWidth={2.5} /></>)}
                             </motion.button>
@@ -3144,7 +3330,7 @@ export default function SetupPage() {
                                 flexDirection: "column"
                             }}
                         >
-                            <div style={{ height: 3, width: '100%', background: 'var(--color-success)' }} />
+                            <div style={{ height: 3, width: '100%', background: '#10b981' }} />
                             <div style={{ padding: "24px 24px 20px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
                                 <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
                                     <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
@@ -3202,7 +3388,7 @@ export default function SetupPage() {
                                             width: "100%",
                                             height: 44,
                                             borderRadius: 12,
-                                            background: "var(--color-success)",
+                                            background: "#10b981",
                                             border: "none",
                                             color: "#ffffff",
                                             fontSize: 14,
@@ -3220,7 +3406,7 @@ export default function SetupPage() {
                                             e.currentTarget.style.transform = "translateY(-1px)";
                                         }}
                                         onMouseLeave={e => {
-                                            e.currentTarget.style.background = "var(--color-success)";
+                                            e.currentTarget.style.background = "#10b981";
                                             e.currentTarget.style.transform = "none";
                                         }}
                                     >

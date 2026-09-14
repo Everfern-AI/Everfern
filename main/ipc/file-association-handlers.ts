@@ -34,18 +34,6 @@ export function registerFileAssociationHandlers(): void {
     }
   });
 
-  // f13.A census: reveal the file's parent folder in the OS file manager
-  // (Finder/Explorer); previously the preload bridge/handler were missing so
-  // FileArtifact's "Show in Finder" silently no-opped.
-  ipcMain.handle('system:show-item-in-folder', async (_e, filePath: string) => {
-    try {
-      const { shell } = require('electron') as typeof import('electron');
-      shell.showItemInFolder(expandTilde(filePath));
-    } catch (err: any) {
-      console.error('[FileAssociations] show-item-in-folder error:', err);
-    }
-  });
-
   ipcMain.handle('system:get-file-app-cache-status', async () => {
     return getFileAppCacheStatus();
   });

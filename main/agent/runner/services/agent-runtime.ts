@@ -10,7 +10,7 @@ import { parseTextToToolCalls } from '../../parsers/text-to-tool';
 import { AgentRunner } from '../runner';
 import { normalizeMessages } from './message-utils';
 import { captureScreen } from '../../tools/computer-use';
-import { getConversationAbortManager } from '../abort-manager';
+import { globalAbortManager } from '../abort-manager';
 import { SERIALIZATION_VERSION } from '../../persistence/state-serializer';
 import {
   getSessionPersistenceManager,
@@ -27,7 +27,7 @@ import { StreamingThoughtFilter, scrubReasoningTags } from '../../helpers/thinki
  * Requirement 1.3: Restore most recent LangGraph_State for active tasks
  * Requirement 1.6: Resume from exact state before shutdown
  */
-interface AgentResumptionOptions {
+export interface AgentResumptionOptions {
   /**
    * Task ID to resume from — the most recent checkpoint for this task will be loaded.
    * When provided, the agent initializes from the persisted state rather than a fresh slate.
@@ -46,7 +46,7 @@ interface AgentResumptionOptions {
  *
  * Requirement 1.3, 1.4, 1.5, 1.6, 11.4, 11.5
  */
-interface AgentRestorationResult {
+export interface AgentRestorationResult {
   /** The restored LangGraph state ready for graph injection */
   restoredState: GraphStateType;
   /** The checkpoint ID that was restored */
@@ -59,98 +59,13 @@ interface AgentRestorationResult {
   warnings: string[];
 }
 
-interface AgentStepOptions {
+export interface AgentStepOptions {
   runner: AgentRunner;
   toolDefs: ToolDefinition[];
   eventQueue?: StreamEvent[];
   maxVerifyRetries?: number;
   systemPromptOverride?: string;
-  /**
-   * Volatile (session-scoped) context — findings tail + DWSP git-status.
-   * HP-04 static-first/volatile-last: emitted as a trailing system message
-   * AFTER the conversation history ([system(stable), ...history, system(volatile)]),
-   * never baked into the stable head system prompt and never persisted into
-   * state. When omitted, a default volatile block is built from
-   * findings.md + the workspace projection.
-   */
-  volatileSystemPrompt?: string;
   nodeName: string;
-}
-
-// ── Volatile context (HP-04) ──────────────────────────────────────────
-
-const VOLATILE_CONTEXT_HEADER = '# VOLATILE CONTEXT';
-const FINDINGS_TAIL_MAX_CHARS = 2000;
-const DWSP_GIT_STATUS_MAX_LINES = 40;
-
-/**
- * Cap text to `maxLines` lines, replacing overflow with a trailing
- * `... and N more` summary line.
- */
-function capGitStatusLines(text: string, maxLines: number): string {
-  const lines = (text || '').split('\n');
-  if (lines.length <= maxLines) return text;
-  const shown = lines.slice(0, Math.max(0, maxLines - 1));
-  return `${shown.join('\n')}\n... and ${lines.length - shown.length} more`;
-}
-
-/**
- * Build the default volatile block (findings tail + DWSP) for callers that
- * do not supply `volatileSystemPrompt`. Mirrors the content previously baked
- * into the head system prompt, but assembles it under `# VOLATILE CONTEXT`
- * so it can ride LAST in the message array instead of polluting the stable
- * prompt prefix. Never throws; returns '' when nothing volatile is available.
- *
- * `messages` is inspected (not mutated): its head system message is checked
- * for existing findings/DWSP markers so callers that DID bake these
- * sections into the head prompt aren't handed a duplicate in the tail.
- *
- * @param runner - Provides the workspace dir for the projection.
- * @param state - Supplies tool-call history for the active-file graph.
- * @param messages - Normalized conversation (read-only marker dedup check).
- * @returns The `# VOLATILE CONTEXT` block, or '' when nothing to contribute.
- */
-async function buildLegacyVolatileContext(
-  runner: AgentRunner,
-  state: GraphStateType,
-  messages: ChatMessage[]
-): Promise<string> {
-  const sections: string[] = [];
-  const headSystemMsg = messages.find(m => m.role === 'system' && typeof m.content === 'string');
-  const headSystem = typeof headSystemMsg?.content === 'string' ? headSystemMsg.content : '';
-
-  try {
-    if (!headSystem.includes('RECENT RESEARCH FINDINGS')) {
-      const findingsPath = path.join(os.homedir(), '.everfern', 'findings.md');
-      if (fs.existsSync(findingsPath)) {
-        const findingsContent = fs.readFileSync(findingsPath, 'utf-8').trim();
-        if (findingsContent) {
-          sections.push(
-            `## RECENT RESEARCH FINDINGS\nBelow are findings from tools (navis, web_search) already executed during this session. Do NOT repeat the same URLs or searches unless new information is needed:\n${findingsContent.slice(-FINDINGS_TAIL_MAX_CHARS)}\n`
-          );
-        }
-      }
-    }
-  } catch { /* findings are best-effort */ }
-
-  try {
-    if (!headSystem.includes('DYNAMIC WORKSPACE PROJECTION')) {
-      const workspaceRoot = runner.workspaceDir;
-      if (workspaceRoot && fs.existsSync(workspaceRoot)) {
-        const activeFiles = getActiveFilesFromHistory(state.toolCallRecords || state.toolCallHistory || []);
-        const projection = await getWorkspaceProjection(workspaceRoot, activeFiles);
-        sections.push(
-          `## DYNAMIC WORKSPACE PROJECTION (DWSP)\nBelow is the real-time state of your active workspace. Use this to maintain situational awareness.\n\n` +
-          `### Workspace Environment\n${projection.environmentInfo}\n\n` +
-          `### Active Git Modifications\n${capGitStatusLines(projection.gitStatus, DWSP_GIT_STATUS_MAX_LINES)}\n\n` +
-          `### Active File Dependency Graph\n${projection.activeDependencies}\n`
-        );
-      }
-    }
-  } catch { /* projection is best-effort */ }
-
-  if (!sections.length) return '';
-  return `${VOLATILE_CONTEXT_HEADER}\nVolatile, session-scoped context for the current step only. Refreshed every step — never treat as durable instructions.\n\n${sections.join('\n')}`;
 }
 
 // ── State compatibility validation ───────────────────────────────────
@@ -291,6 +206,121 @@ function applyRestorationDefaults(state: Partial<GraphStateType>): GraphStateTyp
   } as GraphStateType;
 }
 
+// ── State restoration entry point ─────────────────────────────────────
+
+/**
+ * Initialize the agent state from a persisted checkpoint.
+ *
+ * This is the primary entry point for restoring a previously interrupted task.
+ * It loads the latest (or specified) checkpoint for the given task ID,
+ * validates compatibility with the current code version, and returns
+ * the restored state ready for LangGraph injection.
+ *
+ * On any failure, logs the error and returns null so the caller can fall
+ * back to a fresh agent initialization — agent execution is never blocked
+ * by a restoration failure.
+ *
+ * Requirement 1.3: Restore most recent LangGraph_State for active tasks
+ * Requirement 1.4: Maintain conversation history across restarts
+ * Requirement 1.5: Preserve tool call history and results across restarts
+ * Requirement 1.6: Resume from exact state before shutdown
+ * Requirement 11.4: Validate state structure against a schema
+ * Requirement 11.5: Report deserialization errors with specific field information
+ *
+ * @param options - Resumption options including task ID and optional checkpoint ID
+ * @returns Restoration result with restored state, or null on failure
+ */
+export async function initializeRestoredAgentState(
+  options: AgentResumptionOptions
+): Promise<AgentRestorationResult | null> {
+  const { resumeFromTaskId, checkpointId } = options;
+
+  try {
+    console.log(
+      `[AgentRuntime] Restoring agent state for task ${resumeFromTaskId}` +
+      (checkpointId ? ` from checkpoint ${checkpointId}` : ' from latest checkpoint')
+    );
+
+    // Ensure session persistence manager is initialized
+    // Requirement 1.3: Session_Persistence_Manager SHALL restore the most recent LangGraph_State
+    const manager = getSessionPersistenceManager();
+    await initializeSessionPersistenceManager();
+
+    // Retrieve the restored state
+    let rawState: GraphStateType | null;
+
+    if (checkpointId) {
+      // Restore from specific checkpoint
+      rawState = await manager.restoreState(checkpointId);
+    } else {
+      // Restore from latest checkpoint for the task
+      rawState = await manager.restoreLatestCheckpoint(resumeFromTaskId);
+    }
+
+    if (!rawState) {
+      console.warn(
+        `[AgentRuntime] No checkpoint found for task ${resumeFromTaskId} — will start fresh`
+      );
+      return null;
+    }
+
+    // Find the actual checkpoint metadata for reporting
+    const checkpoints = await manager.listCheckpointsForTask(resumeFromTaskId, 1);
+    const latestCheckpoint = checkpoints[0];
+    const resolvedCheckpointId = checkpointId ?? latestCheckpoint?.id ?? `restored-${Date.now()}`;
+    const stepNumber = latestCheckpoint?.stepNumber ?? (rawState.iterations ?? 0);
+
+    // Validate compatibility with current code version
+    // Requirement 11.4: Validate state structure
+    const { compatible, warnings } = validateRestoredStateCompatibility(
+      rawState as GraphStateType & { serializationVersion?: string; timestamp?: number }
+    );
+
+    // Log warnings for operators to review
+    for (const warning of warnings) {
+      console.warn(`[AgentRuntime] State restoration warning: ${warning}`);
+    }
+
+    if (!compatible) {
+      console.error(
+        `[AgentRuntime] Restored state for task ${resumeFromTaskId} is not compatible with current code version. ` +
+        `Warnings: ${warnings.join('; ')}`
+      );
+      // Requirement 11.5: Report deserialization errors
+      // Even on incompatibility, we attempt restoration with defaults to maximize continuity
+      console.warn(
+        '[AgentRuntime] Attempting partial restoration with defaults for incompatible fields...'
+      );
+    }
+
+    // Apply defaults to fill missing fields from the restored state
+    // Requirement 1.6: Resume from exact state, filling gaps with safe defaults
+    const restoredState = applyRestorationDefaults(rawState);
+
+    console.log(
+      `[AgentRuntime] State restored successfully for task ${resumeFromTaskId}: ` +
+      `${restoredState.messages?.length ?? 0} messages, step ${stepNumber}, ` +
+      `compatible=${compatible}, warnings=${warnings.length}`
+    );
+
+    return {
+      restoredState,
+      checkpointId: resolvedCheckpointId,
+      stepNumber,
+      compatible,
+      warnings,
+    };
+  } catch (error) {
+    // Never block agent execution due to restoration failure
+    // Requirement 2.5 pattern: Log error and continue
+    console.error(
+      `[AgentRuntime] Failed to restore agent state for task ${resumeFromTaskId}:`,
+      error
+    );
+    return null;
+  }
+}
+
 /**
  * Reusable agent execution logic for calling the model and processing its response.
  * Uses pooled AI clients for better performance and connection reuse.
@@ -393,9 +423,6 @@ export async function runAgentStep(
 
     // 3. Inject system prompt override or ensure one exists
     if (systemPromptOverride) {
-      // Replace-in-place (rather than append) keeps exactly ONE head system
-      // message; merging a second one would both duplicate content and
-      // change which bytes sit at the start of the provider prefix cache.
       if (normalizedMessages.length > 0 && normalizedMessages[0].role === 'system') {
         normalizedMessages[0].content = systemPromptOverride;
       } else {
@@ -425,35 +452,64 @@ export async function runAgentStep(
       console.warn('[AgentRuntime] Failed to inject SOUL.md:', soulErr);
     }
 
-    // 3b. Volatile context (HP-04 static-first / volatile-last): findings tail
-    // + DWSP git-status are time-sensitive, so they ride LAST in the message
-    // array as a trailing system message — [system(stable), ...history,
-    // system(volatile)] — instead of being baked into the stable head prompt.
-    // They are request-only and never persisted back into conversation state.
-    let volatileContent = (options.volatileSystemPrompt || '').trim();
-    if (!volatileContent) {
-      volatileContent = await buildLegacyVolatileContext(runner, state, normalizedMessages);
-    }
-    if (volatileContent) {
-      const lastMsg = normalizedMessages[normalizedMessages.length - 1];
-      if (
-        lastMsg &&
-        lastMsg.role === 'system' &&
-        typeof lastMsg.content === 'string' &&
-        lastMsg.content.includes(VOLATILE_CONTEXT_HEADER)
-      ) {
-        // The last message is already a volatile tail (re-entry into this
-        // function on a later step): refresh it in place with fresh content
-        // rather than pushing a second copy.
-        lastMsg.content = volatileContent;
-      } else {
-        // Trailing placement is load-bearing: most providers cache the
-        // longest-common prefix, so appending the ever-changing volatile
-        // block AFTER history leaves the stable head + history prefix
-        // cache-hot. It is never merged into the head system message —
-        // that would invalidate the prefix cache every step.
-        normalizedMessages.push({ role: 'system', content: volatileContent });
+    // Inject recent findings from findings.md for agent consumption across all specialized agent steps
+    try {
+      const findingsPath = path.join(os.homedir(), '.everfern', 'findings.md');
+      if (fs.existsSync(findingsPath)) {
+        const findingsContent = fs.readFileSync(findingsPath, 'utf-8').trim();
+        if (findingsContent && findingsContent.length > 0) {
+          let systemMsg = normalizedMessages.find(m => m.role === 'system');
+          if (!systemMsg) {
+            systemMsg = { role: 'system', content: '' };
+            normalizedMessages.unshift(systemMsg);
+          }
+          if (typeof systemMsg.content === 'string') {
+            if (!systemMsg.content.includes('RECENT RESEARCH FINDINGS')) {
+              systemMsg.content += `\n\n# RECENT RESEARCH FINDINGS\nBelow are findings from tools (navis, web_search) already executed during this session. Do NOT repeat the same URLs or searches unless new information is needed:\n${findingsContent}\n`;
+              console.log(`[AgentRuntime] 📄 Injected findings.md context into ${nodeName} system prompt`);
+            }
+          }
+        }
       }
+    } catch (findingsErr) {
+      console.warn('[AgentRuntime] Failed to inject findings:', findingsErr);
+    }
+
+    // Inject Dynamic Workspace State Projection (DWSP) context
+    try {
+      const workspaceRoot = runner.workspaceDir;
+      if (workspaceRoot && fs.existsSync(workspaceRoot)) {
+        const activeFiles = getActiveFilesFromHistory(state.toolCallRecords || state.toolCallHistory || []);
+        const projection = await getWorkspaceProjection(workspaceRoot, activeFiles);
+        
+        let systemMsg = normalizedMessages.find(m => m.role === 'system');
+        if (!systemMsg) {
+          systemMsg = { role: 'system', content: '' };
+          normalizedMessages.unshift(systemMsg);
+        }
+        
+        if (typeof systemMsg.content === 'string') {
+          if (!systemMsg.content.includes('DYNAMIC WORKSPACE PROJECTION')) {
+            const projectionContext = `
+\n## DYNAMIC WORKSPACE PROJECTION (DWSP)
+Below is the real-time state of your active workspace. Use this to maintain situational awareness.
+
+### Workspace Environment
+${projection.environmentInfo}
+
+### Active Git Modifications
+${projection.gitStatus}
+
+### Active File Dependency Graph
+${projection.activeDependencies}
+\n`;
+            systemMsg.content += projectionContext;
+            console.log(`[AgentRuntime] 🧠 Injected DWSP context projection into ${nodeName} system prompt`);
+          }
+        }
+      }
+    } catch (projectionErr) {
+      console.warn('[AgentRuntime] Failed to inject workspace projection:', projectionErr);
     }
 
     let thoughtBuffer = '';
@@ -487,29 +543,17 @@ export async function runAgentStep(
 
     let limitedMessages: typeof prunedMessages;
     if (estimateTokens(prunedMessages) > COMPACT_THRESHOLD) {
-      // Keep stable head system message + trailing volatile system message + first user message + last 20 messages.
-      // Head and volatile-tail system messages are pinned by position: the head
-      // anchors the provider prefix cache and the tail carries this step's
-      // volatile context. Compaction only drops MIDDLE history, preserving the
-      // [system(stable), ...history, system(volatile)] ordering guarantee.
-      const headSystemMsg = prunedMessages[0]?.role === 'system' ? [prunedMessages[0]] : [];
-      const volatileTailMsg = prunedMessages.length > 1 && prunedMessages[prunedMessages.length - 1].role === 'system'
-        ? [prunedMessages[prunedMessages.length - 1]]
-        : [];
-      const middleEnd = volatileTailMsg.length > 0 ? prunedMessages.length - 1 : prunedMessages.length;
-      const rest = prunedMessages.slice(1, middleEnd).filter(m => m.role !== 'system');
+      // Keep system message + first user message + last 20 messages
+      const systemMsg = prunedMessages[0]?.role === 'system' ? [prunedMessages[0]] : [];
+      const rest = prunedMessages.filter(m => m.role !== 'system');
       const firstUserMsg = rest[0];
       const recentMsgs = rest.slice(-20);
-      // Re-include the first user message when the recent-20 window clipped it:
-      // it anchors the original request so the model still knows what it is
-      // working toward after middle-history compaction.
       const hasFirstMessage = firstUserMsg && recentMsgs.includes(firstUserMsg);
 
       limitedMessages = [
-        ...headSystemMsg,
+        ...systemMsg,
         ...(firstUserMsg && !hasFirstMessage ? [firstUserMsg] : []),
-        ...recentMsgs,
-        ...volatileTailMsg
+        ...recentMsgs
       ];
     } else {
       limitedMessages = prunedMessages;
@@ -583,12 +627,7 @@ export async function runAgentStep(
           }
         );
       },
-      // MP-CORR-13: combine the per-conversation abort signal (scoped stop)
-      // with the global one so a scoped `acp:stop` cancels in-flight LLM
-      // requests for this conversation only, while a legacy global stop
-      // still cancels everything. Falls back to the global manager when
-      // state has no conversationId (older/unscoped call paths).
-      abortSignal: getConversationAbortManager((state as any).conversationId).abortController.signal,
+      abortSignal: globalAbortManager.abortController.signal,
     };
 
     let response = await client.chat(request);

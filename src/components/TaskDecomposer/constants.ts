@@ -25,25 +25,25 @@ export const STYLING = {
   // Status colors
   STATUS_COLORS: {
     pending: 'var(--color-bg-subtle)', // light gray
-    'in-progress': 'var(--color-info-dim)', // light blue
-    completed: 'var(--color-success-dim)', // light green
-    failed: 'var(--color-error-dim)', // light red
+    'in-progress': '#dbeafe', // light blue
+    completed: '#dcfce7', // light green
+    failed: '#fee2e2', // light red
   },
 
   // Status text colors
   STATUS_TEXT_COLORS: {
     pending: 'var(--color-text-tertiary)', // gray
-    'in-progress': 'var(--color-info)', // blue
-    completed: 'var(--color-success)', // green
-    failed: 'var(--color-error)', // red
+    'in-progress': '#0284c7', // blue
+    completed: '#16a34a', // green
+    failed: '#dc2626', // red
   },
 
   // Status border colors
   STATUS_BORDER_COLORS: {
     pending: 'var(--color-border)', // gray
-    'in-progress': 'var(--color-info)', // blue
-    completed: 'var(--color-success)', // green
-    failed: 'var(--color-error)', // red
+    'in-progress': '#0284c7', // blue
+    completed: '#16a34a', // green
+    failed: '#dc2626', // red
   },
 };
 

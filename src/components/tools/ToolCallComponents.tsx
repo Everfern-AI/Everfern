@@ -13,6 +13,7 @@ import {
     Cog6ToothIcon,
     Cog8ToothIcon,
     FolderOpenIcon,
+    PresentationChartBarIcon,
 } from "@heroicons/react/24/outline";
 import type { ToolCallDisplay, LiveToolCall } from '@/app/chat/types/index';
 import { MarkdownRenderer } from '../common/MarkdownComponents';
@@ -21,8 +22,8 @@ import { DiffViewer } from '../files/diff-viewer';
 import { SyntaxHighlighter } from '../files/ArtifactsPanel';
 import { Loader } from '@/components/ui/animated-loading-svg-text-shimmer';
 import { SimpleFileNotification } from '../files/SimpleFileNotification';
-import { GradientBorderSystem } from '@/app/chat/components/GradientBorderSystem';
-import { CursorOverlaySystem } from '@/app/chat/components/CursorOverlaySystem';
+import { GradientBorderSystem } from '../visuals/GradientBorderSystem';
+import { CursorOverlaySystem } from '../visuals/CursorOverlaySystem';
 
 // ── Utility Functions ────────────────────────────────────────────────────────
 /**
@@ -119,13 +120,13 @@ const ToolCallTag = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay;
                     {running ? (
                         <Loader size={8} strokeWidth={2} className="text-zinc-500" />
                     ) : errored ? (
-                        <XMarkIcon width={10} height={10} color="var(--color-error)" strokeWidth={3} />
+                        <XMarkIcon width={10} height={10} color="#ef4444" strokeWidth={3} />
                     ) : looksLikeTerminal ? (
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-primary)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#201e24" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                             <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
                         </svg>
                     ) : (
-                        <CheckIcon width={10} height={10} color="var(--color-success)" strokeWidth={3} />
+                        <CheckIcon width={10} height={10} color="#22c55e" strokeWidth={3} />
                     )}
                 </div>
                 {!isLast && <div style={{ width: 1, flex: 1, minHeight: 12, background: 'rgba(0,0,0,0.06)', marginTop: 4 }} />}
@@ -161,7 +162,7 @@ const ToolCallTag = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay;
                         display: 'flex', alignItems: 'center', gap: 8,
                         padding: '7px 12px', borderRadius: 10,
                         background: isSelected ? 'rgba(99,102,241,0.1)' : looksLikeTerminal ? 'rgba(15,23,42,0.04)' : 'var(--color-bg-surface)',
-                        border: isSelected ? '1px solid rgba(99,102,241,0.3)' : looksLikeTerminal ? '1px solid rgba(0,0,0,0.06)' : '1px solid var(--color-border)',
+                        border: isSelected ? '1px solid rgba(99,102,241,0.3)' : looksLikeTerminal ? '1px solid rgba(0,0,0,0.06)' : '1px solid #eceae4',
                         cursor: (!running && tc.output) ? 'pointer' : 'default',
                         transition: 'all 0.15s',
                         outline: 'none',
@@ -223,9 +224,9 @@ const ToolCallTag = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay;
                                         const isCmd = line.match(/^[\$›#] /) || line.match(/^.+@.+\$ /);
                                         const promptMatch = line.match(/^([\$›#]) /);
                                         return (
-                                            <div key={idx} style={{ color: isCmd ? 'var(--color-navis-active-text)' : 'var(--color-border)' }}>
-                                                {promptMatch && <span style={{ color: 'var(--color-navis-icon-color)', marginRight: 8 }}>{promptMatch[1]}</span>}
-                                                {!promptMatch && isCmd && <span style={{ color: 'var(--color-navis-icon-color)', marginRight: 8 }}>{'>'}</span>}
+                                            <div key={idx} style={{ color: isCmd ? '#a5b4fc' : 'var(--color-border)' }}>
+                                                {promptMatch && <span style={{ color: '#6366f1', marginRight: 8 }}>{promptMatch[1]}</span>}
+                                                {!promptMatch && isCmd && <span style={{ color: '#6366f1', marginRight: 8 }}>{'>'}</span>}
                                                 {line}
                                             </div>
                                         );
@@ -296,6 +297,7 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
     const isPermission = tc.toolName === 'local_permission' || tc.toolName?.includes('permission');
     const isFileSystem = tc.toolName === 'system_files';
     const isSkill = tc.toolName === 'skill' || tc.toolName === 'consult_skill' || tc.toolName === 'view_skill';
+    const isPresentation = tc.toolName === 'pptx_generator';
     const skillName = tc.args?.name as string | undefined;
  
      let iconToDisplay = tc.icon;
@@ -324,6 +326,8 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                     <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
                 </svg>
             );
+        } else if (isPresentation) {
+            iconToDisplay = <PresentationChartBarIcon width={16} height={16} className="opacity-75" />;
         } else {
             iconToDisplay = <img src="/assets/tool-generic.svg" className="w-4 h-4 opacity-75" alt="Generic" />;
         }
@@ -354,13 +358,13 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
     const statusIcon = isRunning ? (
         <Loader size={14} strokeWidth={2} className="text-emerald-500" />
     ) : isError ? (
-        <div className="w-4 h-4 rounded-full bg-[var(--color-error)] flex items-center justify-center z-1">
+        <div className="w-4 h-4 rounded-full bg-[#ef4444] flex items-center justify-center z-1">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke='var(--color-bg-surface)' strokeWidth="3">
                 <path d="M18 6L6 18M6 6l12 12" />
             </svg>
         </div>
     ) : (
-        <div className="w-4 h-4 rounded-full bg-[var(--color-success)] flex items-center justify-center z-1">
+        <div className="w-4 h-4 rounded-full bg-[#10b981] flex items-center justify-center z-1">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke='var(--color-bg-surface)' strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M20 6L9 17l-5-5" />
             </svg>
@@ -424,7 +428,7 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                 <div className="flex items-center gap-2 flex-1 overflow-hidden">
                     {!isSearchTool && <span className="flex items-center text-[var(--color-text-tertiary)]">{iconToDisplay}</span>}
                     <div className="flex-1 flex items-center justify-between overflow-hidden">
-                        <span className={`text-[15px] overflow-hidden text-ellipsis whitespace-nowrap font-normal tracking-[-0.01em] ${isSearchTool ? 'text-[var(--color-text-tertiary)]' : isError ? 'text-[var(--color-error)]' : 'text-[var(--color-text-primary)]'}`}
+                        <span className={`text-[15px] overflow-hidden text-ellipsis whitespace-nowrap font-normal tracking-[-0.01em] ${isSearchTool ? 'text-[var(--color-text-tertiary)]' : isError ? 'text-[#ef4444]' : 'text-[var(--color-text-primary)]'}`}
                             style={{ fontFamily: "'Matter', sans-serif" }}>
                             {isSkill ? `Skill - ${skillName || tc.label || tc.toolName}` : (tc.displayName || tc.label || tc.toolName)}
                         </span>
@@ -452,11 +456,11 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                 {isTerminal && hasOutput && !expanded && (
                     <div className="flex items-center gap-1.5">
                         {isError ? (
-                            <div className="text-[11px] text-[var(--color-error)] bg-[var(--color-error-dim)] px-1.5 py-0.5 rounded font-medium animate-pulse">
+                            <div className="text-[11px] text-red-600 bg-red-100 px-1.5 py-0.5 rounded font-medium animate-pulse">
                                 Failed
                             </div>
                         ) : (
-                            <div className="text-[11px] text-[var(--color-success)] bg-[var(--color-success-dim)] px-1.5 py-0.5 rounded font-medium">
+                            <div className="text-[11px] text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded font-medium">
                                 output
                             </div>
                         )}
@@ -502,7 +506,7 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                                                 </div>
                                             ))}
                                             {docs.length > 2 && (
-                                                <div className="px-[22px] py-2.5 rounded-[10px] border-none bg-[var(--color-text-primary)] text-white text-[13px] font-semibold cursor-pointer" style={{ fontFamily: "'Matter', sans-serif" }}>
+                                                <div className="px-[22px] py-2.5 rounded-[10px] border-none bg-[#201e24] text-white text-[13px] font-semibold cursor-pointer" style={{ fontFamily: "'Matter', sans-serif" }}>
                                                     + {docs.length - 2} more
                                                 </div>
                                             )}
@@ -529,7 +533,7 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                                     <div className="whitespace-pre-wrap">
                                         {cmdStr && (
                                             <div className="mb-3 pb-2 border-b border-[var(--color-border)] flex items-center gap-3 text-[var(--color-text-tertiary)] text-xs">
-                                                <span className="text-[var(--color-navis-icon-color)] font-semibold">$</span>
+                                                <span className="text-[#6366f1] font-semibold">$</span>
                                                 <span className="text-[var(--color-text-primary)]">{cmdStr}</span>
                                                 <span className="ml-auto text-[var(--color-text-tertiary)]">
                                                     {tc.durationMs ? `${(tc.durationMs / 1000).toFixed(1)}s` : ''}
@@ -556,8 +560,8 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
 const scrollbarStyles = `
   .custom-scrollbar::-webkit-scrollbar { width: 6px; }
   .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-  .custom-scrollbar::-webkit-scrollbar-thumb { background: var(--color-border-strong); border-radius: 10px; }
-  .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: var(--color-text-tertiary); }
+  .custom-scrollbar::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 10px; }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #d1d5db; }
 `;
 
 
@@ -714,8 +718,8 @@ const ComputerUseResultCard = ({ tc }: { tc: ToolCallDisplay }) => {
                     animate={{ opacity: 1, y: 0 }}
                     className="flex flex-col gap-3 mt-3 mb-3 max-w-[600px]"
                 >
-                    <div className="bg-[var(--color-success-dim)] border border-[var(--color-success)] rounded-xl px-4 py-[14px] flex items-start gap-2.5">
-                        <div className="mt-0.5 bg-[var(--color-success)] rounded w-4 h-4 flex items-center justify-center shrink-0">
+                    <div className="bg-[rgba(34,197,94,0.06)] border border-[rgba(34,197,94,0.2)] rounded-xl px-4 py-[14px] flex items-start gap-2.5">
+                        <div className="mt-0.5 bg-[#22c55e] rounded w-4 h-4 flex items-center justify-center shrink-0">
                             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke='var(--color-bg-surface)' strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                                 <polyline points="20 6 9 17 4 12" />
                             </svg>
@@ -728,7 +732,7 @@ const ComputerUseResultCard = ({ tc }: { tc: ToolCallDisplay }) => {
                     <div className="flex items-center flex-wrap gap-3 text-xs">
                         <div className="flex items-center gap-1.5 text-[var(--color-text-secondary)] bg-[var(--color-bg-subtle)] border border-[var(--color-border)] px-3 py-1.5 rounded-[20px]">
                             <span className="font-medium">Tool used</span>
-                            <div className={`flex items-center gap-1 text-white px-2 py-0.5 rounded-xl text-[11px] font-semibold ${finalStatus === 'executing' ? 'bg-[var(--color-info)]' : finalStatus === 'error' ? 'bg-[var(--color-error)]' : 'bg-[var(--color-success)]'}`}>
+                            <div className={`flex items-center gap-1 text-white px-2 py-0.5 rounded-xl text-[11px] font-semibold ${finalStatus === 'executing' ? 'bg-[#3b82f6]' : finalStatus === 'error' ? 'bg-[#ef4444]' : 'bg-[#22c55e]'}`}>
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                     <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
                                     <line x1="3" y1="9" x2="21" y2="9"></line>
@@ -745,7 +749,7 @@ const ComputerUseResultCard = ({ tc }: { tc: ToolCallDisplay }) => {
                         )}
                         <div className="flex items-center gap-1.5 text-[var(--color-text-secondary)] bg-[var(--color-bg-subtle)] border border-[var(--color-border)] px-3 py-1.5 rounded-[20px]">
                             <span>Status</span>
-                            <span className={`font-semibold ${finalStatus === 'executing' ? 'text-[var(--color-info)]' : finalStatus === 'error' ? 'text-[var(--color-error)]' : 'text-[var(--color-success)]'}`}>
+                            <span className={`font-semibold ${finalStatus === 'executing' ? 'text-[#3b82f6]' : finalStatus === 'error' ? 'text-[#ef4444]' : 'text-[#22c55e]'}`}>
                                 {finalStatus === 'executing' ? 'Executing...' : finalStatus === 'error' ? 'Error' : 'Success'}
                             </span>
                         </div>

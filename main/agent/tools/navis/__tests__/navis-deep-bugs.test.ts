@@ -19,9 +19,9 @@ describe('Fix 1: ariaSnapshot used for element capture', () => {
     expect(src).toContain("mode: 'ai'");
   });
 
-  it('element-capture.ts contains parseRefsOptimized ref-parsing helper', () => {
+  it('element-capture.ts exports parseRefs helper', () => {
     const src = read('element-capture.ts');
-    expect(src).toContain('function parseRefsOptimized');
+    expect(src).toContain('export function parseRefs');
   });
 });
 
@@ -121,16 +121,13 @@ describe('Fix 9: callAI checks error type before retrying', () => {
 
 describe('Fix 10: JSON schema uses ref instead of index', () => {
   it('click_element schema uses ref property', () => {
-    const src = read('orchestrator.ts').includes("ref: { type: 'string' }")
-      ? read('orchestrator.ts')
-      : read('core/types.ts');
+    const src = read('orchestrator.ts');
     expect(src).toContain("ref: { type: 'string' }");
   });
 
   it('input_text schema uses ref property', () => {
     const src = read('orchestrator.ts');
-    const core = read('core/types.ts');
-    const inputTextMatch = (src + core).match(/input_text[\s\S]*?ref[\s\S]*?text/);
+    const inputTextMatch = src.match(/input_text[\s\S]*?ref[\s\S]*?text/);
     expect(inputTextMatch).toBeDefined();
   });
 });

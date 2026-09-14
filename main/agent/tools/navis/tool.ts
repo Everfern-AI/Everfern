@@ -9,10 +9,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import type { AgentTool, ToolResult } from '../../runner/types';
-import { NavisOrchestrator } from './orchestrator';
+import { NavisOrchestrator } from './agent/orchestrator';
+import { NavisExtensionOrchestrator } from './agent/extension-orchestrator';
 import { NavisEvent } from './logger';
 import { toolSettingsStore } from '../../../store/tool-settings';
-import { broadcastNavisCompanionProgress } from './companion-extension';
+import { broadcastNavisCompanionProgress, getNavisCompanionStatus, prepareNavisMainProfileExtension } from './companion-extension';
 import { bridgeServer } from '../../../lib/extension-server';
 
 import { checkToolPermission } from '../permission-checker';
@@ -139,21 +140,6 @@ class NavisMutex {
 
 const navisMutex = new NavisMutex();
 
-/** Max screenshot entries retained in a navis tool result (AG-MEM-05). */
-export const MAX_RESULT_SCREENSHOTS = 3;
-
-/**
- * Push a screenshot entry into a bounded array, evicting the oldest entry
- * once the cap is reached. Exported for testing.
- */
-export function pushBoundedScreenshot<T>(arr: T[], entry: T, cap: number = MAX_RESULT_SCREENSHOTS): T[] {
-  arr.push(entry);
-  while (arr.length > cap) {
-    arr.shift();
-  }
-  return arr;
-}
-
 export function createNavisTool(orchestrator: NavisOrchestrator, runner?: any): AgentTool {
   const workspaceDir = runner?.workspaceDir;
   return {
@@ -241,35 +227,13 @@ export function createNavisTool(orchestrator: NavisOrchestrator, runner?: any): 
           if (err) console.error('[Navis Tool] Error writing initial report:', err);
         });
 
-        let reportFlushedLen = navisReportMd.length;
-        let reportNeedsFullWrite = false;
-        let reportFlushTimer: NodeJS.Timeout | null = null;
-
-        const flushReportFile = () => {
-          if (reportFlushTimer) { clearTimeout(reportFlushTimer); reportFlushTimer = null; }
-          if (reportNeedsFullWrite || reportFlushedLen > navisReportMd.length) {
-            fs.writeFile(reportFilePath, navisReportMd, 'utf8', (err) => { if (err) console.error('[Navis Tool] Error writing report update:', err); });
-            reportFlushedLen = navisReportMd.length;
-            reportNeedsFullWrite = false;
-          } else if (navisReportMd.length > reportFlushedLen) {
-            fs.appendFile(reportFilePath, navisReportMd.slice(reportFlushedLen), 'utf8', (err) => { if (err) console.error('[Navis Tool] Error appending report update:', err); });
-            reportFlushedLen = navisReportMd.length;
-          }
-        };
-        const scheduleReportFlush = () => {
-          if (reportFlushTimer) return;
-          reportFlushTimer = setTimeout(flushReportFile, 750);
-        };
-
         let currentStepNumber = -1;
 
         const unsubscribe = logger.on((event: NavisEvent) => {
           if (event.type === 'screenshot' && event.screenshotKey !== undefined) {
             const b64 = logger.getScreenshot(event.screenshotKey);
             if (b64) {
-              // AG-MEM-05: keep only the LAST few screenshots in the tool result,
-              // not one full base64 blob per step.
-              pushBoundedScreenshot(screenshots, {
+              screenshots.push({
                 base64: b64,
                 timestamp: event.timestamp,
                 sequenceNumber: event.step
@@ -341,16 +305,16 @@ export function createNavisTool(orchestrator: NavisOrchestrator, runner?: any): 
             case 'task_complete':
               navisReportMd += `\n## 🏁 Task Complete\n${event.detail || ''}\n`;
               navisReportMd = navisReportMd.replace('**Status:** ⏳ Running', '**Status:** ✅ Completed');
-              reportNeedsFullWrite = true;
               break;
             case 'error':
               navisReportMd += `\n## ❌ Error\n${event.detail || ''}\n`;
               navisReportMd = navisReportMd.replace('**Status:** ⏳ Running', '**Status:** ❌ Failed');
-              reportNeedsFullWrite = true;
               break;
           }
 
-          scheduleReportFlush();
+          fs.writeFile(reportFilePath, navisReportMd, 'utf8', (err) => {
+            if (err) console.error('[Navis Tool] Error writing report update:', err);
+          });
 
           let progressType = mapNavisToProgressType(event.type);
           if (progressType === 'reasoning') {
@@ -390,21 +354,14 @@ export function createNavisTool(orchestrator: NavisOrchestrator, runner?: any): 
           broadcastNavisCompanionProgress(compactProgressData);
 
           if (emitEvent) {
-            const screenshotKey = event.type === 'screenshot' ? event.screenshotKey : undefined;
-            const isScreenshotEvent = screenshotKey !== undefined;
             emitEvent({
               type: 'subagent-progress',
               toolCallId: toolCallId || '',
               timestamp: new Date(event.timestamp).toISOString(),
               data: {
                 ...compactProgressData,
-                // AG-MEM-05: do not duplicate the full base64 image in `content`
-                // for screenshot events — the renderer reads screenshot.base64
-                // (falling back to content only when screenshot is absent).
-                content: isScreenshotEvent
-                  ? undefined
-                  : (event.detail || (progressType === 'reasoning' ? event.action : undefined)),
-                screenshot: isScreenshotEvent ? { base64: logger.getScreenshot(screenshotKey), width: 1280, height: 720 } : undefined,
+                content: event.type === 'screenshot' && event.screenshotKey !== undefined ? logger.getScreenshot(event.screenshotKey) : (event.detail || (progressType === 'reasoning' ? event.action : undefined)),
+                screenshot: event.type === 'screenshot' && event.screenshotKey !== undefined ? { base64: logger.getScreenshot(event.screenshotKey), width: 1280, height: 720 } : undefined,
                 navisReport: navisReportMd,
               }
             });
@@ -413,13 +370,105 @@ export function createNavisTool(orchestrator: NavisOrchestrator, runner?: any): 
 
         // Read Navis settings from the persistent store
         const navisSettings = toolSettingsStore.get().navis;
+        
+        // Lock down launcher mode to respect user settings:
+        // If extension-first is selected in settings, always force extension-first.
+        // Do not allow model/safeArgs override to switch to playwright.
+        const automationMode: 'extension-first' | 'playwright' =
+          navisSettings.automationMode === 'extension-first'
+            ? 'extension-first'
+            : (safeArgs.automationMode === 'extension-first' || safeArgs.automationMode === 'playwright'
+                ? safeArgs.automationMode
+                : navisSettings.automationMode);
 
         try {
           // Set the active session in the bridge server so the companion extension knows a task is running
           bridgeServer.setSession(toolCallId || 'navis', safeArgs.startUrl || '', 'Navis Active');
 
-          // Extension-first orchestration (NavisExtensionOrchestrator) was removed.
-          // Navis always runs via the NavisOrchestrator playwright-isolated path below.
+          const shouldUseExtensionFirst =
+            automationMode === 'extension-first';
+
+          if (shouldUseExtensionFirst) {
+            const status = getNavisCompanionStatus();
+            if (!status.connected) {
+              onUpdate?.('Preparing Navis extension install folder for fast main-profile control...');
+              const extensionResult = await prepareNavisMainProfileExtension(navisSettings.selectedBrowserId || 'chrome', safeArgs.startUrl);
+              onUpdate?.(extensionResult.message);
+              if (!extensionResult.connected) {
+                const executionTime = Date.now() - toolStartTime;
+                console.log(`[Navis Tool] Extension not connected after ${executionTime}ms; stopping instead of profile-browser fallback.`);
+                return {
+                  success: false,
+                  output: extensionResult.message,
+                  data: {
+                    steps: 0,
+                    screenshots,
+                    automationMode: 'extension-first',
+                    extensionPath: extensionResult.extensionPath,
+                    browserEngine: extensionResult.browserEngine,
+                    installInstructions: extensionResult.installInstructions,
+                  },
+                };
+              }
+            } else {
+              onUpdate?.('Navis extension is connected. Using extension-first browser control.');
+            }
+
+            if (getNavisCompanionStatus().connected) {
+              const extensionOrchestrator = new NavisExtensionOrchestrator(
+                orchestrator.getAIClient(),
+                logger,
+                orchestrator.getVisionClient() || undefined
+              );
+              console.log('[Navis Tool] 🔌 Calling extension-first orchestrator.run()...');
+              const extensionResult = await extensionOrchestrator.run({
+                task,
+                maxSteps: safeArgs.maxSteps ?? navisSettings.maxSteps,
+                headless: safeArgs.headless ?? navisSettings.headless,
+                startUrl: safeArgs.startUrl,
+                useVision: Boolean(navisSettings.useVision),
+                onlyVision: Boolean(navisSettings.onlyVision),
+                forceVision: Boolean(safeArgs.forceVision),
+                useChromeProfile: true,
+                selectedBrowserId: navisSettings.selectedBrowserId,
+                useIsolatedBrowser: false,
+                maxActionsPerStep: safeArgs.maxActionsPerStep,
+              });
+
+              if (extensionResult.success || !extensionResult.output.includes('[EXTENSION_FALLBACK_REQUIRED]')) {
+                const executionTime = Date.now() - toolStartTime;
+                console.log(`[Navis Tool] ✅ extension-first run completed in ${executionTime}ms`);
+                writeFindingsFile(task, extensionResult.output, workspaceDir, toolCallId);
+                return {
+                  success: extensionResult.success,
+                  output: extensionResult.output,
+                  data: { steps: extensionResult.steps, screenshots, automationMode: 'extension-first' },
+                };
+              }
+
+              onUpdate?.('Extension-first path could not complete this action. Install/update the Navis extension or switch Navis to isolated browser mode.');
+              writeFindingsFile(task, extensionResult.output.replace('[EXTENSION_FALLBACK_REQUIRED]', 'Navis extension-first stopped:'), workspaceDir, toolCallId);
+              return {
+                success: false,
+                output: extensionResult.output.replace('[EXTENSION_FALLBACK_REQUIRED]', 'Navis extension-first stopped:'),
+                data: { steps: extensionResult.steps, screenshots, automationMode: 'extension-first' },
+              };
+            } else {
+              const extensionResult = await prepareNavisMainProfileExtension(navisSettings.selectedBrowserId || 'chrome', safeArgs.startUrl);
+              return {
+                success: false,
+                output: extensionResult.message,
+                data: {
+                  steps: 0,
+                  screenshots,
+                  automationMode: 'extension-first',
+                  extensionPath: extensionResult.extensionPath,
+                  browserEngine: extensionResult.browserEngine,
+                  installInstructions: extensionResult.installInstructions,
+                },
+              };
+            }
+          }
 
           console.log('[Navis Tool] 🔄 Calling orchestrator.run()...');
 
@@ -457,17 +506,8 @@ export function createNavisTool(orchestrator: NavisOrchestrator, runner?: any): 
 
           throw toolErr;
         } finally {
-          // AG-PERF-02: guaranteed final flush — the 750ms debounce timer may
-          // still be pending when the run ends; flush synchronously so the
-          // last report delta is never lost.
-          try { flushReportFile(); } catch (flushErr) {
-            console.error('[Navis Tool] Final report flush failed:', flushErr);
-          }
           bridgeServer.setSession(null);
           unsubscribe();
-          // AG-MEM-10: drop buffered base64 screenshots at end of run so the
-          // app-lifetime logger does not retain them between runs.
-          try { logger.clear(); } catch {}
         }
       } finally {
         release();

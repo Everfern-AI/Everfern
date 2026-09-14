@@ -61,27 +61,6 @@ vi.mock('../../nodes/execute_tools', () => ({
   })
 }));
 
-// Routing decisions now flow through CognitiveRouter (dynamic import in
-// brain.ts). Mock it with the deterministic intent→specialist map this suite
-// was written against, so the preserved routing contract stays testable.
-vi.mock('../../cognitive-router', () => ({
-  CognitiveRouter: class MockCognitiveRouter {
-    async route(state: any): Promise<any> {
-      const intent = state.currentIntent;
-      const routingMap: Record<string, string> = {
-        coding: 'route_coding',
-        fix: 'route_coding',
-        build: 'route_coding',
-        question: 'route_web_explorer',
-        research: 'route_web_explorer',
-        analyze: 'route_data_analyst',
-      };
-      const decision = routingMap[intent] || 'continue_brain';
-      return { decision, confidence: 1, explanation: `Mock routing for ${intent}` };
-    }
-  },
-}));
-
 // Mock the specialized agents
 vi.mock('../../nodes/specialized_agents', () => ({
   createCodingSpecialistNode: vi.fn(() => async (state: any) => {
@@ -90,11 +69,7 @@ vi.mock('../../nodes/specialized_agents', () => ({
     return {
       messages: [...(state.messages || []), { role: 'assistant', content: 'Coding task completed' }],
       finalResponse: 'Coding task completed',
-      pendingToolCalls: [],
-      // Match real specialist behavior: mark completion + return-to-brain so
-      // the graph terminates instead of looping specialist → brain → specialist.
-      codingComplete: true,
-      returningFromSpecialist: 'coding_specialist'
+      pendingToolCalls: [] // No tools for simple responses
     };
   }),
   createDataAnalystNode: vi.fn(() => async (state: any) => {
@@ -103,9 +78,7 @@ vi.mock('../../nodes/specialized_agents', () => ({
     return {
       messages: [...(state.messages || []), { role: 'assistant', content: 'Data analysis completed' }],
       finalResponse: 'Data analysis completed',
-      pendingToolCalls: [],
-      dataAnalysisComplete: true,
-      returningFromSpecialist: 'data_analyst'
+      pendingToolCalls: []
     };
   }),
   createComputerUseNode: vi.fn(() => async (state: any) => {
@@ -114,9 +87,7 @@ vi.mock('../../nodes/specialized_agents', () => ({
     return {
       messages: [...(state.messages || []), { role: 'assistant', content: 'Computer automation completed' }],
       finalResponse: 'Computer automation completed',
-      pendingToolCalls: [],
-      computerUseComplete: true,
-      returningFromSpecialist: 'computer_use'
+      pendingToolCalls: []
     };
   }),
   createWebExplorerNode: vi.fn(() => async (state: any) => {
@@ -125,20 +96,7 @@ vi.mock('../../nodes/specialized_agents', () => ({
     return {
       messages: [...(state.messages || []), { role: 'assistant', content: 'Research completed' }],
       finalResponse: 'Research completed',
-      pendingToolCalls: [],
-      webExplorerComplete: true,
-      returningFromSpecialist: 'web_explorer'
-    };
-  }),
-  createDeepResearchNode: vi.fn(() => async (state: any) => {
-    executedNodes.push('deep_research');
-    modelCallCount++;
-    return {
-      messages: [...(state.messages || []), { role: 'assistant', content: 'Deep research completed' }],
-      finalResponse: 'Deep research completed',
-      pendingToolCalls: [],
-      deepResearchComplete: true,
-      returningFromSpecialist: 'deep_research'
+      pendingToolCalls: []
     };
   })
 }));
@@ -154,29 +112,13 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
 
     mockRunner = {
       config: { maxIterations: 50 },
-      // wave f11: graph.ts buildGraph cache key now reads runner.client.provider/model;
-      // the real brain node also calls client.chat for completion signals.
-      client: {
-        provider: 'test-provider',
-        model: 'test-model',
-        chat: vi.fn(async () => ({
-          content: JSON.stringify({
-            reason: 'task_complete',
-            explanation: 'Task completed successfully',
-            decision: 'complete_task',
-          }),
-          tool_calls: []
-        })),
-      },
       telemetry: {
         warn: vi.fn(),
         info: vi.fn(),
         action: vi.fn(),
         transition: vi.fn(),
-        metrics: vi.fn(),
       },
-      _buildToolDefinitions: vi.fn(() => []),
-      shouldCaptureScreenshot: vi.fn(() => false)
+      _buildToolDefinitions: vi.fn(() => [])
     };
   });
 
@@ -204,12 +146,14 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
       };
 
       const result = await graph.invoke(initialState, {
-        configurable: { thread_id: 'test-coding-1', executionContext: { runner: mockRunner, eventQueue: [], conversationId: 'test-conv' } }
+        configurable: { thread_id: 'test-coding-1' }
       });
 
-      // Verify routing path (current graph: coding → coding_specialist directly)
+      // Verify routing path
       expect(executedNodes).toContain('triage');
+      expect(executedNodes).toContain('planner');
       expect(executedNodes).toContain('coding_specialist');
+      expect(executedNodes).toContain('validation');
 
       // Verify model was called
       expect(modelCallCount).toBeGreaterThan(0);
@@ -231,7 +175,7 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
       };
 
       const result = await graph.invoke(initialState, {
-        configurable: { thread_id: 'test-coding-2', executionContext: { runner: mockRunner, eventQueue: [], conversationId: 'test-conv' } }
+        configurable: { thread_id: 'test-coding-2' }
       });
 
       // Verify routing path includes coding_specialist
@@ -252,7 +196,7 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
       };
 
       const result = await graph.invoke(initialState, {
-        configurable: { thread_id: 'test-coding-3', executionContext: { runner: mockRunner, eventQueue: [], conversationId: 'test-conv' } }
+        configurable: { thread_id: 'test-coding-3' }
       });
 
       // Verify routing path includes coding_specialist
@@ -267,7 +211,10 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
    * Requirement 3.2: WHEN a user sends a question requiring research THEN the
    * system SHALL CONTINUE TO route through web_explorer to find answers
    *
-   * Routing map (mocked CognitiveRouter): question → web_explorer
+   * Observed behavior on UNFIXED code:
+   * - "what is X?" → triage → planner → web_explorer → validation → END
+   * - Model is called in web_explorer
+   * - Research response is generated
    */
   describe('Question Intent Routing', () => {
     it('should route "what is TypeScript?" through web_explorer', async () => {
@@ -282,12 +229,14 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
       };
 
       const result = await graph.invoke(initialState, {
-        configurable: { thread_id: 'test-question-1', executionContext: { runner: mockRunner, eventQueue: [], conversationId: 'test-conv' } }
+        configurable: { thread_id: 'test-question-1' }
       });
 
       // Verify routing path
       expect(executedNodes).toContain('triage');
+      expect(executedNodes).toContain('planner');
       expect(executedNodes).toContain('web_explorer');
+      expect(executedNodes).toContain('validation');
 
       // Verify model was called
       expect(modelCallCount).toBeGreaterThan(0);
@@ -309,7 +258,7 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
       };
 
       const result = await graph.invoke(initialState, {
-        configurable: { thread_id: 'test-question-2', executionContext: { runner: mockRunner, eventQueue: [], conversationId: 'test-conv' } }
+        configurable: { thread_id: 'test-question-2' }
       });
 
       // Verify routing path includes web_explorer
@@ -324,7 +273,8 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
    * Requirement 3.2: WHEN a user sends a research request THEN the system
    * SHALL CONTINUE TO route through web_explorer
    *
-   * Routing map (mocked CognitiveRouter): research → web_explorer
+   * Observed behavior on UNFIXED code:
+   * - "search for X" → triage → planner → web_explorer → validation → END
    */
   describe('Research Intent Routing', () => {
     it('should route "search for React documentation" through web_explorer', async () => {
@@ -339,7 +289,7 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
       };
 
       const result = await graph.invoke(initialState, {
-        configurable: { thread_id: 'test-research-1', executionContext: { runner: mockRunner, eventQueue: [], conversationId: 'test-conv' } }
+        configurable: { thread_id: 'test-research-1' }
       });
 
       // Verify routing path includes web_explorer
@@ -360,7 +310,7 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
       };
 
       const result = await graph.invoke(initialState, {
-        configurable: { thread_id: 'test-research-2', executionContext: { runner: mockRunner, eventQueue: [], conversationId: 'test-conv' } }
+        configurable: { thread_id: 'test-research-2' }
       });
 
       // Verify routing path includes web_explorer
@@ -391,7 +341,7 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
       };
 
       const result = await graph.invoke(initialState, {
-        configurable: { thread_id: 'test-analyze-1', executionContext: { runner: mockRunner, eventQueue: [], conversationId: 'test-conv' } }
+        configurable: { thread_id: 'test-analyze-1' }
       });
 
       // Verify routing path includes data_analyst
@@ -404,23 +354,27 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
   /**
    * Preservation Test 5: High-Risk Tool Calls Trigger hitl_approval
    *
-   * Requirement 3.4: WHEN human approval is required THEN the system SHALL
-   * CONTINUE TO route through hitl_approval for review
+   * Requirement 3.4: WHEN high-risk tool calls are detected THEN the system
+   * SHALL CONTINUE TO route through hitl_approval for human review
    *
-   * Current topology: brain emits a needs_hitl completion signal → hitl_approval
+   * Observed behavior on UNFIXED code:
+   * - High-risk tools (fsWrite, strReplace, deleteFile) → validation detects → hitl_approval
    */
   describe('HITL Approval Routing', () => {
     it('should route high-risk file operations through hitl_approval', async () => {
-      mockIntentResponse = { intent: 'question', confidence: 0.9 };
+      mockIntentResponse = { intent: 'coding', confidence: 0.9 };
 
-      // Brain is real; make its completion signal request HITL so the graph
-      // routes to hitl_approval (which interrupts waiting for human input).
-      mockRunner.client.chat.mockResolvedValueOnce({
-        content: JSON.stringify({
-          reason: 'needs_hitl',
-          explanation: 'File write requires human approval',
-        }),
-        tool_calls: []
+      // Override coding_specialist to return high-risk tool calls
+      const { createCodingSpecialistNode } = await import('../../nodes/specialized_agents');
+      vi.mocked(createCodingSpecialistNode).mockReturnValueOnce(async (state: any) => {
+        executedNodes.push('coding_specialist');
+        modelCallCount++;
+        return {
+          messages: [...(state.messages || []), { role: 'assistant', content: 'Writing file' }],
+          pendingToolCalls: [
+            { name: 'fsWrite', arguments: { path: 'test.ts', text: 'content' } }
+          ]
+        };
       });
 
       const graph = buildGraph(mockRunner, [], []);
@@ -436,7 +390,7 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
       try {
         await Promise.race([
           graph.invoke(initialState, {
-            configurable: { thread_id: 'test-hitl-1', executionContext: { runner: mockRunner, eventQueue: [], conversationId: 'test-conv' } }
+            configurable: { thread_id: 'test-hitl-1' }
           }),
           new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 100))
         ]);
@@ -444,8 +398,9 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
         // Expected to timeout at hitl_approval
       }
 
-      // Verify the run reached the brain (which emitted the HITL signal)
-      expect(executedNodes).toContain('triage');
+      // Verify routing path includes validation (which detects high-risk)
+      expect(executedNodes).toContain('coding_specialist');
+      expect(executedNodes).toContain('validation');
 
       // Note: hitl_approval node won't be in executedNodes because it's not mocked
       // and will hang waiting for human input
@@ -481,7 +436,7 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
             };
 
             const result = await graph.invoke(initialState, {
-              configurable: { thread_id: `test-property-${intent}`, executionContext: { runner: mockRunner, eventQueue: [], conversationId: 'test-conv' } }
+              configurable: { thread_id: `test-property-${intent}` }
             });
 
             // All non-conversation intents should route through a specialist node
@@ -521,7 +476,7 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
             };
 
             await graph.invoke(initialState, {
-              configurable: { thread_id: `test-coding-property-${intent}`, executionContext: { runner: mockRunner, eventQueue: [], conversationId: 'test-conv' } }
+              configurable: { thread_id: `test-coding-property-${intent}` }
             });
 
             // Should route through coding_specialist
@@ -553,7 +508,7 @@ describe('Preservation Properties - Non-Conversation Intent Routing', () => {
             };
 
             await graph.invoke(initialState, {
-              configurable: { thread_id: `test-web-property-${intent}`, executionContext: { runner: mockRunner, eventQueue: [], conversationId: 'test-conv' } }
+              configurable: { thread_id: `test-web-property-${intent}` }
             });
 
             // Should route through web_explorer

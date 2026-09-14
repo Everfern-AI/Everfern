@@ -81,7 +81,7 @@ npm run build:linux
 
 ### Rebuilding Native Modules
 
-If you're having issues with native modules (sqlite3, sharp, etc.):
+If you're having issues with native modules (better-sqlite3, sharp, etc.):
 
 ```bash
 npm run rebuild:electron
@@ -155,7 +155,7 @@ Email everfernsupport@gmail.com directly — do not open public issues.
 
 - **Electron IPC**: Communication between main and renderer goes through `preload/` scripts. Use the typed IPC channels defined in `main/ipc/`.
 - **Agent System**: The AI agent runtime lives in `main/agent/`. Tools are in `main/agent/tools/`.
-- **SQLite**: Local data is stored via sqlite3. Migrations live in `main/lib/migrations/`.
+- **SQLite**: Local data is stored via better-sqlite3. Migrations live in `main/lib/migrations/`.
 - **Skills**: Reusable task modules in `main/skills/`.
 
 ## Community

@@ -3,10 +3,15 @@ name: Build Linux
 permissions:
   contents: write
 
-# BK-CI-01: dispatch-only escape hatch. release.yml owns the single build
-# matrix (its Linux-x64 entry builds AppImage+deb+rpm on tags); triggering
-# here on tags would duplicate that heavy job on every release.
 on:
+  push:
+    branches:
+      - main
+      - 'codenrust/**'
+      - 'fix/**'
+      - 'feat/**'
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       upload_release:
@@ -14,10 +19,6 @@ on:
         required: false
         default: 'false'
         type: boolean
-
-concurrency:
-  group: build-linux-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   build-linux:
@@ -35,25 +36,6 @@ jobs:
         with:
           node-version: 20
           cache: 'npm'
-
-      # ── 2b. Resolve Electron version for cache key ─────────────────────────
-      - name: Resolve Electron version
-        id: electron_version
-        run: |
-          echo "version=$(node -p "require('./package.json').devDependencies.electron")" >> "$GITHUB_OUTPUT"
-          echo "Electron version: $(node -p "require('./package.json').devDependencies.electron")"
-
-      # ── 2c. Cache Electron & builder downloads ─────────────────────────────
-      - name: Cache Electron & builder downloads
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/electron
-            ~/.cache/electron-builder
-          key: electron-binaries-${{ runner.os }}-${{ steps.electron_version.outputs.version }}
-          restore-keys: |
-            electron-binaries-${{ runner.os }}-${{ steps.electron_version.outputs.version }}-
-            electron-binaries-${{ runner.os }}-
 
       # ── 3. System dependencies ─────────────────────────────────────────────
       - name: Install Linux system dependencies
@@ -87,7 +69,7 @@ jobs:
 
       # ── 4. Install npm dependencies ────────────────────────────────────────
       - name: Install Node modules
-        run: npm ci
+        run: npm install
 
       # ── 5. Rebuild native modules for Electron ─────────────────────────────
       - name: Rebuild native modules for Electron
@@ -137,10 +119,10 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      # ── 10. Attach to GitHub Release (manual upload opt-in) ─────────────────
+      # ── 10. Attach to GitHub Release (tag pushes or manual trigger) ─────────
       - name: Upload to GitHub Release
-        if: github.event.inputs.upload_release == 'true'
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.upload_release == 'true'
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             release/*.AppImage

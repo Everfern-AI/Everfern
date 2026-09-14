@@ -44,9 +44,7 @@ export function registerAnalyticsHandlers() {
   // Uses OpenRouter public data with fuzzy matching
   ipcMain.handle('analytics:get-model-info', async (_event, modelId: string) => {
     try {
-      // User-initiated read: may block once on a cold cache (bounded by the
-      // 10s https timeout) so model lookups don't silently return zeros.
-      await ensurePricingFresh({ blocking: true });
+      await ensurePricingFresh();
       const pricing = getModelPricing(modelId);
       return {
         success: true,

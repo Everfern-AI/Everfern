@@ -5,7 +5,6 @@ import { registerOllamaAudioHandlers, getOllamaBinary, launchNativeTerminalComma
 import { registerDispatchHandlers } from './dispatch-handlers';
 import { registerUpdateHandlers } from './update-handlers';
 import { registerWindowFsHandlers } from './window-fs-handlers';
-import { registerShowuiHandlers } from './showui-handlers';
 
 export {
   KNOWN_MODELS,
@@ -26,5 +25,4 @@ export function registerSystemHandlers(): void {
   registerDispatchHandlers();
   registerUpdateHandlers();
   registerWindowFsHandlers();
-  registerShowuiHandlers();
 }

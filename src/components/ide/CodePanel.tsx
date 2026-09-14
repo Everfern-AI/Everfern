@@ -80,7 +80,7 @@ export default function App() {
 // ── Styles ────────────────────────────────────────
 const styles: Record<string, React.CSSProperties> = {
   container: {
-    border: '1px solid var(--color-border)',
+    border: '1px solid #e5e7eb',
     borderRadius: '12px',
     overflow: 'hidden',
     backgroundColor: '#1e1e1e',

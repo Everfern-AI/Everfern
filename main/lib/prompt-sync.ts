@@ -23,7 +23,7 @@ function getAppPathSafe(): string | null {
 /**
  * Dynamically resolves the prompts source directory across dev and production packaged apps.
  */
-function getPromptsSourceDir(): string {
+export function getPromptsSourceDir(): string {
   const appPath = getAppPathSafe();
   const candidates = [
     // 1. Electron app.getAppPath() candidates (most reliable for packaged app)
@@ -153,7 +153,7 @@ function syncPromptFile(filename: string): boolean {
 /**
  * Synchronize all prompt files
  */
-function syncAllPrompts(forceSync: boolean = false): PromptSyncInfo[] {
+export function syncAllPrompts(forceSync: boolean = false): PromptSyncInfo[] {
   console.log('[PromptSync] 🔄 Starting prompt synchronization...');
 
   ensureTargetDirectory();
@@ -240,6 +240,21 @@ export function loadPrompt(filename: string): string | null {
 }
 
 /**
+ * Get the path to a synchronized prompt file
+ */
+export function getPromptPath(filename: string): string {
+  return path.join(PROMPTS_TARGET_DIR, filename);
+}
+
+/**
+ * Check if prompts need synchronization (without syncing)
+ */
+export function checkPromptStatus(): PromptSyncInfo[] {
+  const promptFiles = getPromptFiles();
+  return promptFiles.map(filename => checkPromptSync(filename));
+}
+
+/**
  * Initialize prompt synchronization on startup
  * Always syncs prompts to ensure the latest version is loaded
  */
@@ -263,22 +278,16 @@ export function initializePromptSync(forceSync: boolean = false): void {
 /**
  * Watch for changes and auto-sync (for development)
  */
-/**
- * MP-LEAK-07: tracked dev watcher handle so the quit path can close it.
- */
-let promptsWatcher: ReturnType<typeof fs.watch> | null = null;
-
 export function watchPrompts(): void {
   const sourceDir = getPromptsSourceDir();
   if (!fs.existsSync(sourceDir)) {
     console.warn('[PromptSync] Cannot watch prompts - source directory not found');
     return;
   }
-  if (promptsWatcher) return; // already watching
 
   console.log('[PromptSync] 👀 Watching for prompt changes...');
 
-  promptsWatcher = fs.watch(sourceDir, { recursive: false }, (eventType, filename) => {
+  fs.watch(sourceDir, { recursive: false }, (eventType, filename) => {
     if (filename && filename.endsWith('.md')) {
       console.log(`[PromptSync] 📝 Detected change in ${filename}, syncing...`);
 
@@ -290,18 +299,5 @@ export function watchPrompts(): void {
       }, 100); // Small delay to ensure file write is complete
     }
   });
-}
-
-/**
- * Close the dev prompt watcher (dev-only; called on app quit — MP-LEAK-07).
- */
-export function stopWatchingPrompts(): void {
-  if (promptsWatcher) {
-    try {
-      promptsWatcher.close();
-    } catch { /* already closed */ }
-    promptsWatcher = null;
-    console.log('[PromptSync] Prompt watcher closed.');
-  }
 }
 

@@ -1,12 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { execFile } from 'child_process';
 import { app } from 'electron';
 
 // ── winreg is Windows-only. Lazy-require so Linux/macOS don't crash at import time. ──
-// The try/catch also tolerates a missing winreg install on Windows itself —
-// registry detection just returns empty and the common-paths fallback takes over.
 let Registry: any = null;
 if (process.platform === 'win32') {
   try {
@@ -16,10 +13,6 @@ if (process.platform === 'win32') {
   }
 }
 
-/**
- * Resolved browser entry. `supportsExtension` is currently true for every
- * detected browser (reserved for filtering extension-compatible targets).
- */
 export interface BrowserInfo {
   id: string;          // e.g. "chrome", "msedge", "firefox", "brave"
   name: string;        // "Google Chrome"
@@ -29,7 +22,6 @@ export interface BrowserInfo {
   supportsExtension: boolean; 
 }
 
-/** List subkeys of a registry key; resolves [] on any failure (winreg absent, key missing). */
 function getSubKeys(hive: string, key: string): Promise<any[]> {
   return new Promise((resolve) => {
     if (!Registry) return resolve([]);
@@ -44,10 +36,6 @@ function getSubKeys(hive: string, key: string): Promise<any[]> {
   });
 }
 
-/**
- * Read a registry value (default value when `name` is omitted); resolves null
- * on any failure. Never rejects — registry errors must not break detection.
- */
 function getRegistryValue(hive: string, key: string, name: string = ''): Promise<string | null> {
   return new Promise((resolve) => {
     if (!Registry) return resolve(null);
@@ -68,11 +56,6 @@ function expandEnvVars(pathStr: string): string {
 }
 
 // Windows browser detection using registry + fallbacks
-// Detection ORDER: (1) HKLM + HKCU StartMenuInternet registry entries, then
-// (2) common install-path probing. Results are deduped by lowercase exe path,
-// so a browser already found via registry is never re-added by the fallback.
-// No result caching — the full scan re-runs on every call (browsers can be
-// installed/removed between calls, and callers invoke this rarely).
 async function getWindowsBrowsers(): Promise<BrowserInfo[]> {
   const browsersMap = new Map<string, BrowserInfo>();
   if (!Registry) return [];
@@ -82,7 +65,6 @@ async function getWindowsBrowsers(): Promise<BrowserInfo[]> {
   ];
 
   for (const { hive, key } of registryPaths) {
-    // Machine-wide (HKLM) first, then per-user (HKCU) registrations.
     const keys = await getSubKeys(hive, key);
     for (const subKey of keys) {
       try {
@@ -99,8 +81,6 @@ async function getWindowsBrowsers(): Promise<BrowserInfo[]> {
           }
           exePath = expandEnvVars(exePath);
           if (fs.existsSync(exePath)) {
-            // Registry default value is the display name; keyName (registry
-            // subkey name) is the fallback when it is missing.
             let name = await getRegistryValue(hive, subKey.key) || keyName.replace(/\.exe/i, '');
             // Clean up weird hexadecimal suffixes like Firefox-F0DC299D809B9700
             if (/-[A-F0-9]{8,}/i.test(name) || name === keyName) {
@@ -113,14 +93,10 @@ async function getWindowsBrowsers(): Promise<BrowserInfo[]> {
             }
 
             const id = name.toLowerCase().replace(/[^a-z0-9]/g, '-');
-            // Zen is Firefox-based; everything else found this way defaults
-            // to the chromium engine (Edge, Brave, Arc, Shift, Opera, ...).
             const isFirefoxBased = id.includes('firefox') || exePath.toLowerCase().includes('firefox') || id.includes('zen') || exePath.toLowerCase().includes('zen');
             const engine = isFirefoxBased ? 'firefox' : 'chromium';
             
             // Generate icon
-            // Icon fetch is best-effort: a failure yields an empty logo and
-            // the browser entry is still returned.
             let logo = '';
             try {
               const iconImage = await app.getFileIcon(exePath, { size: 'normal' });
@@ -146,9 +122,6 @@ async function getWindowsBrowsers(): Promise<BrowserInfo[]> {
   }
 
   // Windows Common Path Fallbacks
-  // Registry entries only cover browsers that registered themselves — this
-  // probe catches per-user installs (LocalAppData) and unregistered browsers.
-  // The `!browsersMap.has(...)` guard dedupes against registry results.
   const commonPaths = [
     { id: 'chrome', name: 'Google Chrome', engine: 'chromium' as const, paths: [
       'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
@@ -211,9 +184,6 @@ async function getWindowsBrowsers(): Promise<BrowserInfo[]> {
 }
 
 // macOS browser detection using standard paths
-// /Applications is the near-universal install location on macOS, so a direct
-// existence probe of well-known bundles suffices (no LaunchServices query
-// needed). Like Windows, there is no caching — each call re-scans.
 async function getMacBrowsers(): Promise<BrowserInfo[]> {
   const browsersMap = new Map<string, BrowserInfo>();
   const appPaths = [
@@ -248,46 +218,9 @@ async function getMacBrowsers(): Promise<BrowserInfo[]> {
   return Array.from(browsersMap.values());
 }
 
-// Standard directories probed directly via fs (no shell / no `which` dependency —
-// MP-XPLAT-02: `which` may be absent on minimal Linux systems, and shelling out
-// with string interpolation is unsafe).
-const LINUX_BIN_DIRS = [
-  '/usr/bin',
-  '/usr/local/bin',
-  path.join(os.homedir(), '.local', 'bin'),
-  '/opt/google/chrome',
-  '/snap/bin'
-];
-
-// Probe standard bin dirs via fs.existsSync (fast, no subprocess).
-function probeLinuxBinDirs(bin: string): string | null {
-  for (const dir of LINUX_BIN_DIRS) {
-    const candidate = path.join(dir, bin);
-    try {
-      if (fs.existsSync(candidate)) return candidate;
-    } catch { /* skip unreadable dir */ }
-  }
-  return null;
-}
-
-// Fallback: `which` via execFile with an args array (no shell, no interpolation).
-// Fails silently if `which` itself is missing.
-function whichFallback(bin: string): Promise<string | null> {
-  return new Promise((resolve) => {
-    try {
-      execFile('which', [bin], { encoding: 'utf8' }, (err: any, stdout: string) => {
-        if (err || !stdout) return resolve(null);
-        const p = String(stdout).trim().split('\n')[0].trim();
-        resolve(p || null);
-      });
-    } catch {
-      resolve(null);
-    }
-  });
-}
-
-// Linux browser detection: fs probe of standard locations, `which` fallback
+// Linux browser detection using which / standard locations
 async function getLinuxBrowsers(): Promise<BrowserInfo[]> {
+  const { execSync } = require('child_process');
   const browsersMap = new Map<string, BrowserInfo>();
   const candidates = [
     { id: 'chrome', name: 'Google Chrome', engine: 'chromium' as const, bin: 'google-chrome' },
@@ -302,10 +235,7 @@ async function getLinuxBrowsers(): Promise<BrowserInfo[]> {
 
   for (const item of candidates) {
     try {
-      // Two-stage resolution: fs probe of standard dirs first (no subprocess,
-      // no shell — MP-XPLAT-02), `which` only as a last resort for binaries
-      // in non-standard locations (e.g. /opt/custom/firefox).
-      const exePath = probeLinuxBinDirs(item.bin) || (await whichFallback(item.bin));
+      const exePath = execSync(`which ${item.bin}`, { encoding: 'utf8' }).trim();
       if (exePath && fs.existsSync(exePath)) {
         let logo = '';
         try {
@@ -331,26 +261,8 @@ async function getLinuxBrowsers(): Promise<BrowserInfo[]> {
   return Array.from(browsersMap.values());
 }
 
-/**
- * Detect installed browsers for the current platform.
- *
- * Detection strategy ORDER (why the chain exists: users install browsers in
- * non-default locations, so one source is never enough):
- *  - win32:  StartMenuInternet registry keys (HKLM then HKCU) first, then a
- *            common-install-paths probe as fallback for unregistered browsers.
- *  - darwin: existence probe of well-known /Applications bundles.
- *  - linux:  fs probe of standard bin dirs (no shell dependency), then a
- *            shell-free `which` fallback for custom install locations.
- *
- * Results are NOT cached — the scan re-runs per call. Failures anywhere in a
- * platform strategy resolve to an empty list (never throws to the caller).
- *
- * @returns Promise of detected browsers, each with exe path, engine, and icon.
- */
 export async function getAvailableBrowsers(): Promise<BrowserInfo[]> {
-  // process.platform (live) rather than os.platform() (build-time constant)
-  // so runtime checks and tests see the same dispatch source.
-  const platform = process.platform;
+  const platform = os.platform();
   try {
     if (platform === 'win32') {
       return await getWindowsBrowsers();

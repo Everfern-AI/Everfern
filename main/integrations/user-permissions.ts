@@ -14,7 +14,7 @@ import { UserAuthenticationService, UserAccount, SecurityEvent } from './user-au
 /**
  * Rate limiting configuration
  */
-interface RateLimitConfig {
+export interface RateLimitConfig {
   /** Time window in milliseconds */
   windowMs: number;
   /** Maximum requests per window */
@@ -28,7 +28,7 @@ interface RateLimitConfig {
 /**
  * Rate limit entry
  */
-interface RateLimitEntry {
+export interface RateLimitEntry {
   /** Request timestamps within current window */
   requests: Date[];
   /** Whether user is currently penalized */
@@ -42,7 +42,7 @@ interface RateLimitEntry {
 /**
  * Access control list entry
  */
-interface ACLEntry {
+export interface ACLEntry {
   /** Entry ID */
   id: string;
   /** Entry type */
@@ -70,7 +70,7 @@ interface ACLEntry {
 /**
  * Permission check context
  */
-interface PermissionContext {
+export interface PermissionContext {
   /** User ID */
   userId: string;
   /** Platform name */
@@ -91,7 +91,7 @@ interface PermissionContext {
 /**
  * Permission decision result
  */
-interface PermissionDecision {
+export interface PermissionDecision {
   /** Whether access is granted */
   granted: boolean;
   /** Decision reason */
@@ -111,7 +111,7 @@ interface PermissionDecision {
 /**
  * Permission management configuration
  */
-interface PermissionManagerConfig {
+export interface PermissionManagerConfig {
   /** Base directory for permission data */
   baseDir: string;
   /** Default rate limits per platform */
@@ -138,7 +138,6 @@ export class UserPermissionManager extends EventEmitter {
   private rateLimits = new Map<string, RateLimitEntry>(); // userId:platform -> RateLimitEntry
   private globalRateLimits = new Map<string, RateLimitEntry>(); // ip -> RateLimitEntry
   private aclCache = new Map<string, { result: boolean; expires: Date }>();
-  private cleanupTimers: NodeJS.Timeout[] = [];
   private isInitialized = false;
 
   constructor(authService: UserAuthenticationService, config: Partial<PermissionManagerConfig> = {}) {
@@ -196,10 +195,6 @@ export class UserPermissionManager extends EventEmitter {
     }
 
     try {
-      // Clear cleanup timers (MP-LEAK-01)
-      for (const t of this.cleanupTimers) clearInterval(t);
-      this.cleanupTimers = [];
-
       // Save ACL entries
       await this.saveAclEntries();
 
@@ -645,16 +640,15 @@ export class UserPermissionManager extends EventEmitter {
    * Start cleanup timers
    */
   private startCleanupTimers(): void {
-    // MP-LEAK-01: store handles so shutdown() can clear them.
     // Clean up rate limit entries every 10 minutes
-    this.cleanupTimers.push(setInterval(() => {
+    setInterval(() => {
       this.cleanupRateLimits();
-    }, 10 * 60 * 1000));
+    }, 10 * 60 * 1000);
 
     // Clean up ACL cache every 5 minutes
-    this.cleanupTimers.push(setInterval(() => {
+    setInterval(() => {
       this.cleanupAclCache();
-    }, 5 * 60 * 1000));
+    }, 5 * 60 * 1000);
   }
 
   /**

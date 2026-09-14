@@ -13,9 +13,6 @@ import { NavisLogger } from './logger';
 import { findChromiumExecutable } from '../../../lib/playwright-setup';
 import { getAvailableBrowsers, type BrowserInfo } from '../../../lib/browser-detector';
 
-// Resolve playwright at runtime, preferring the full package and falling
-// back to playwright-core (some installs only ship the core package).
-// Both expose the same chromium/firefox factories used below.
 let pwChromium: any = null;
 let pwFirefox: any = null;
 try {
@@ -32,79 +29,7 @@ try {
 
 const chromium = pwChromium;
 
-/**
- * Default filename used when a download has no usable suggested filename
- * (AG-SAF-04: hostile or empty Content-Disposition filenames).
- */
-export const DEFAULT_DOWNLOAD_FILENAME = 'downloaded_file';
-
-/**
- * Sanitize a (possibly hostile) download filename into a safe basename
- * (AG-SAF-04: download filename traversal).
- *
- * Rule: collapse to the last path segment (both / and \ are separators),
- * strip control characters (0x00-0x1F, 0x7F) and colons, then strip
- * leading/trailing dots and whitespace. Unicode content and ordinary
- * punctuation are preserved. Empty or dot-only results fall back to
- * DEFAULT_DOWNLOAD_FILENAME.
- */
-export function sanitizeDownloadFilename(raw: string): string {
-  let name = typeof raw === 'string' ? raw : '';
-  // Collapse to the final path segment (forward AND back slashes).
-  const lastSlash = Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\'));
-  if (lastSlash >= 0) name = name.slice(lastSlash + 1);
-  // Strip control characters and colons.
-  name = name.replace(/[\x00-\x1f\x7f:]/g, '');
-  // Strip leading/trailing dots and whitespace.
-  name = name.replace(/^[.\s]+|[.\s]+$/g, '');
-  if (!name || name === '.' || name === '..') return DEFAULT_DOWNLOAD_FILENAME;
-  return name;
-}
-
-/**
- * Resolve a sanitized download path that is guaranteed to sit inside
- * `dir` (AG-SAF-04). Collision suffixes -1..-100 are inserted before the
- * extension; exhaustion falls back to a timestamped name. `exists` is
- * injectable for tests and defaults to a synchronous fs existence check.
- */
-export function resolveContainedDownloadPath(
-  dir: string,
-  rawName: string,
-  exists: (p: string) => boolean = (p) => {
-    try {
-      return fs.existsSync(p);
-    } catch {
-      return false;
-    }
-  }
-): string {
-  const safeName = sanitizeDownloadFilename(rawName);
-  const contained = (candidate: string) => {
-    const resolved = path.resolve(candidate);
-    const root = path.resolve(dir) + path.sep;
-    return resolved === path.resolve(dir) || resolved.startsWith(root);
-  };
-
-  let candidate = path.join(dir, safeName);
-  if (!contained(candidate)) {
-    // Belt and braces: never save outside the downloads dir.
-    candidate = path.join(dir, DEFAULT_DOWNLOAD_FILENAME);
-  }
-
-  if (!exists(candidate)) return candidate;
-
-  const dot = safeName.lastIndexOf('.');
-  const stem = dot > 0 ? safeName.slice(0, dot) : safeName;
-  const ext = dot > 0 ? safeName.slice(dot) : '';
-
-  for (let i = 1; i <= 100; i++) {
-    const suffixed = path.join(dir, `${stem}-${i}${ext}`);
-    if (contained(suffixed) && !exists(suffixed)) return suffixed;
-  }
-  return path.join(dir, `${stem}-${Date.now()}${ext}`);
-}
-
-interface SessionConfig {
+export interface SessionConfig {
   headless?: boolean;
   startUrl?: string;
   logger?: NavisLogger;
@@ -120,7 +45,7 @@ export interface TabInfo {
   isActive: boolean;
 }
 
-interface NavisDebugBrowserLaunchResult {
+export interface NavisDebugBrowserLaunchResult {
   success: boolean;
   message: string;
   endpoint?: string;
@@ -131,13 +56,6 @@ interface NavisDebugBrowserLaunchResult {
   usingReusableProfile?: boolean;
 }
 
-/**
- * Resolve a user-selected browser id (e.g. "chrome", "firefox", or a
- * vendor-specific id) to a concrete BrowserInfo by scanning installed
- * browsers. Matching is deliberately lenient (prefix/fuzzy name matching)
- * so stale or shortened ids still resolve. Returns undefined on no match
- * or detector failure — callers then fall back to isolated Playwright.
- */
 async function resolveSelectedBrowserInfo(selectedBrowserId?: string): Promise<BrowserInfo | undefined> {
   if (!selectedBrowserId) return undefined;
   try {
@@ -164,16 +82,13 @@ async function resolveSelectedBrowserInfo(selectedBrowserId?: string): Promise<B
   }
 }
 
-/**
- * Materialize the "Navis Tab Group" browser extensions on disk under
- * ~/.everfern/extensions/ (a Chrome MV3 service-worker variant and a
- * Firefox MV3 background-script variant). Playwright launches load these
- * via --load-extension; the extensions group navis=true tabs and bridge
- * progress events over a WebSocket to ws://127.0.0.1:4001.
- *
- * Idempotent: rewrites the files each call, returns the Chrome extension
- * dir (the path Chromium needs for --load-extension).
- */
+export async function openNavisDebugBrowser(_selectedBrowserId: string = 'chrome'): Promise<NavisDebugBrowserLaunchResult> {
+  return {
+    success: false,
+    message: 'Navis profile automation now requires the companion extension. Install it for logged-in Chrome/Firefox control, or switch Navis to isolated browser mode.',
+  };
+}
+
 function ensureNavisTabGroupExtension(): string {
   const baseExtensionDir = path.join(os.homedir(), '.everfern', 'extensions');
   const chromeDir = path.join(baseExtensionDir, 'chrome-tab-group');
@@ -223,9 +138,6 @@ let bridgeState = {
 };
 
 function persistPanelState() {
-  // Persisted so the panel/overlay state survives MV3 service-worker restarts;
-  // connected is intentionally forced false because a fresh SW starts
-  // disconnected until connect() re-establishes the bridge.
   if (!chrome.storage || !chrome.storage.local) return;
   try {
     chrome.storage.local.set({
@@ -242,8 +154,6 @@ function persistPanelState() {
 }
 
 function restorePanelState(callback) {
-  // Run-once guard: storage.get is async, and the keepalive alarm fires
-  // every 30s — without this flag each wake would re-splice saved events.
   if (restoredPanelState) {
     if (callback) callback();
     return;
@@ -346,8 +256,6 @@ function rememberNavisEvent(event) {
 
 function connect() {
   restorePanelState();
-  // Skip if a bridge socket is already open or mid-handshake; failed
-  // attempts funnel through scheduleReconnect instead of reconnecting here.
   if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
   try {
     socket = new WebSocket(BRIDGE_URL);
@@ -395,8 +303,6 @@ function connect() {
 }
 
 function scheduleReconnect() {
-  // Single-timer guard: the first close/error schedules the retry; more
-  // failures within the 2s window must not stack additional timers.
   if (reconnectTimer) return;
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
@@ -621,8 +527,6 @@ chrome.action.onClicked.addListener(async tab => {
 });
 
 chrome.alarms.onAlarm.addListener(alarm => {
-  // MV3 service workers are killed after ~30s idle, severing the bridge
-  // WebSocket. This 30s alarm wakes the SW so connect() can re-establish it.
   if (alarm.name === 'navis-keepalive') connect();
 });
 chrome.alarms.create('navis-keepalive', { periodInMinutes: 0.5 });
@@ -714,31 +618,6 @@ export class BrowserSession {
   /** Registry of all active BrowserSession instances for forced cleanup */
   private static activeSessions = new Set<BrowserSession>();
 
-  /**
-   * AG-CORR-11: refcount for the statically-shared Chromium. `new BrowserSession()
-   * + close(true)` from runner cleanup previously force-closed the ONE shared
-   * browser used by every active conversation. Now close() only tears down the
-   * shared browser when the last registered session releases it.
-   *
-   * Lifecycle: launch() acquires (sharedRefcount += 1, hasSharedRef = true);
-   * close() / launch-failure releases (sharedRefcount = max(0, n - 1)).
-   * hasSharedRef is a per-instance guard so a session that calls launch()
-   * twice, or close() after a failed launch, can never double-increment or
-   * double-decrement the global count. Refcounting exists because launching
-   * Chromium per action is expensive (300ms-2s) and a second launch with the
-   * same profile/port would conflict — so every session shares one instance
-   * and only the LAST releaser performs actual teardown. There is no idle
-   * timeout; teardown is purely last-release (or app shutdown via
-   * closeAll).
-   */
-  private static sharedRefcount = 0;
-  private hasSharedRef = false;
-
-  // All browser state below is STATIC on purpose: every BrowserSession
-  // instance in the process shares one Chromium/context/page set, and the
-  // instance getters/setters below silently redirect this.* access to the
-  // shared statics. This is what makes "multiple sessions, one browser"
-  // work — and also why the refcount above must gate teardown.
   private static sharedBrowser: any | null = null;
   private static sharedContext: any | null = null;
   private static sharedActivePage: any | null = null;
@@ -746,14 +625,11 @@ export class BrowserSession {
   private static sharedRecentDownloads: string[] = [];
   private static sharedAttachedToExternalBrowser = false;
   private static sharedAttachedProfileLabel = 'browser profile';
-  /** Pages opened by Navis (used to close only Navis-owned tabs when
-   *  attached to a user's browser, leaving their personal tabs alone). */
   private static sharedNavisPages = new Set<Page>();
 
   private logger: NavisLogger | null = null;
 
   // Getters/setters to map instance properties to static shared properties
-  // (writing `this.browser = x` anywhere actually mutates the STATIC sharedBrowser)
   private get browser(): any | null { return BrowserSession.sharedBrowser; }
   private set browser(val: any | null) { BrowserSession.sharedBrowser = val; }
 
@@ -777,42 +653,10 @@ export class BrowserSession {
 
   private get navisPages(): Set<Page> { return BrowserSession.sharedNavisPages; }
 
-  /**
-   * AG-CORR-06: mouse buttons currently held down on this session's shared
-   * active page (e.g. hold_element with holdTimeMs=0 leaves the Playwright
-   * mouse button DOWN indefinitely). Populated by actions.ts after
-   * page.mouse.down() when no matching up() is guaranteed; cleared by
-   * releaseHeldMouse(). Shared-static like the rest of the browser state so
-   * every session instance sees the same held-button truth.
-   */
-  private static sharedHeldMouseButtons = new Set<string>();
-
-  /** AG-CORR-06: instance view of the shared held-button set. */
-  public get heldMouseButtons(): Set<string> { return BrowserSession.sharedHeldMouseButtons; }
-
-  /**
-   * AG-CORR-06: release any mouse button left down by hold_element
-   * (holdTimeMs=0). Best-effort: the up() is guarded, and the held set is
-   * cleared even when the page is gone/closing.
-   */
-  async releaseHeldMouse(): Promise<void> {
-    if (BrowserSession.sharedHeldMouseButtons.size > 0 && this.activePage) {
-      try {
-        await this.activePage.mouse.up();
-      } catch { /* page closed/gone — nothing to release */ }
-    }
-    BrowserSession.sharedHeldMouseButtons.clear();
-  }
-
-  /** Sets the shared active tab (all sessions see the same active page). */
   setActivePage(page: Page) {
     this.activePage = page;
   }
 
-  /**
-   * Returns the shared BrowserContext. Throws if launch() has not run —
-   * callers use this to access pages/downloads without private access.
-   */
   getContext(): BrowserContext {
     if (!this.context) throw new Error('Browser not initialized. Call launch() first.');
     return this.context;
@@ -828,11 +672,6 @@ export class BrowserSession {
     return this.context.pages();
   }
 
-  /**
-   * Idempotently inject the Navis overlay script into a page if the
-   * `__navis_controls` marker is absent. Safe to call repeatedly (navigations
-   * wipe it); all failures are swallowed and only warned.
-   */
   async ensureOverlay(page: Page): Promise<void> {
     try {
       const hasOverlay = await page.evaluate(() => !!(window as any).__navis_controls).catch(() => false);
@@ -844,20 +683,6 @@ export class BrowserSession {
     }
   }
 
-  /**
-   * Ensure the shared browser is running and register this session as a
-   * holder of it (increments sharedRefcount exactly once per session).
-   *
-   * If the shared browser already exists, just opens a new tab in it —
-   * the expensive Chromium launch only happens for the first session.
-   * Profile mode (useChromeProfile / !useIsolatedBrowser) is no longer
-   * supported here and is coerced to isolated Playwright mode.
-   *
-   * Side effects: registers in activeSessions, acquires a shared ref,
-   * writes extension files to disk, may launch Chromium/Firefox.
-   * On failure, fully rolls back (browser closed, ref + registration
-   * released) and rethrows so no half-initialized session lingers.
-   */
   async launch(config: SessionConfig = {}): Promise<void> {
     const {
       headless = false,
@@ -873,13 +698,6 @@ export class BrowserSession {
 
     // Register this session for global cleanup tracking
     BrowserSession.activeSessions.add(this);
-    // AG-CORR-11: acquire a ref on the shared browser for this session.
-    // hasSharedRef makes the acquire idempotent — a second launch() call
-    // on the same session must never bump the count twice.
-    if (!this.hasSharedRef) {
-      BrowserSession.sharedRefcount += 1;
-      this.hasSharedRef = true;
-    }
 
     if (useChromeProfile || !useIsolatedBrowser) {
       console.warn('[Navis] Browser profile automation now requires the Navis extension. BrowserSession is falling back to isolated Playwright mode.');
@@ -902,9 +720,6 @@ export class BrowserSession {
     const realUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
     if (this.browser) {
-      // Fast path: the shared Chromium is already up (another session
-      // launched it), so reuse it and just open a tab — avoids a 300ms-2s
-      // relaunch AND profile/port conflicts between concurrent sessions.
       this.logger?.browserLaunch('already launched, opening new tab');
       await this.openTab(startUrl || 'about:blank');
       return;
@@ -1020,7 +835,11 @@ export class BrowserSession {
         const opener = await newPage.opener().catch(() => null);
         if (opener && this.navisPages.has(opener)) {
           this.navisPages.add(newPage);
-          this.ensureNavListener(newPage);
+          newPage.on('framenavigated', async (frame: any) => {
+            if (frame === newPage.mainFrame()) {
+              await this.ensureOverlay(newPage).catch(() => {});
+            }
+          });
           await this.ensureOverlay(newPage).catch(() => {});
         }
       });
@@ -1036,7 +855,11 @@ export class BrowserSession {
       // Register 'page' listener on context to handle tabs opened dynamically (e.g. click with target="_blank")
       this.context.on('page', async (newPage: Page) => {
         this.navisPages.add(newPage);
-        this.ensureNavListener(newPage);
+        newPage.on('framenavigated', async (frame: any) => {
+          if (frame === newPage.mainFrame()) {
+            await this.ensureOverlay(newPage).catch(() => {});
+          }
+        });
         await this.ensureOverlay(newPage).catch(() => {});
       });
 
@@ -1045,7 +868,11 @@ export class BrowserSession {
       for (const page of existingPages) {
         this.navisPages.add(page);
         await this.ensureOverlay(page);
-        this.ensureNavListener(page);
+        page.on('framenavigated', async (frame: any) => {
+          if (frame === page.mainFrame()) {
+            await this.ensureOverlay(page).catch(() => {});
+          }
+        });
       }
 
       // Trigger tab grouping via extension service worker if available
@@ -1080,13 +907,6 @@ export class BrowserSession {
       this.attachedToExternalBrowser = false;
       this.attachedProfileLabel = 'browser profile';
       this.navisPages.clear();
-      // AG-CORR-12: launch failed — deregister so closeAll() doesn't track a
-      // dead session forever (leaked Set entry + stale shared-browser refcount).
-      if (this.hasSharedRef) {
-        this.hasSharedRef = false;
-        BrowserSession.sharedRefcount = Math.max(0, BrowserSession.sharedRefcount - 1);
-      }
-      BrowserSession.activeSessions.delete(this);
       throw err;
     }
 
@@ -1103,14 +923,6 @@ export class BrowserSession {
     }
   }
 
-  /**
-   * Open a new tab in the shared context, flag it as Navis-owned, and wire
-   * overlay + download handling. Sets it as the shared activePage and
-   * returns the new Page.
-   *
-   * The about:blank?navis=true stop lets the persistent tab-group extension
-   * recognize the tab as Navis-owned before real navigation begins.
-   */
   async openTab(url?: string): Promise<Page> {
     if (!this.context) throw new Error('Browser not initialized.');
 
@@ -1132,22 +944,34 @@ export class BrowserSession {
     // This handles cases where addInitScript didn't work or the page loaded too fast
     await this.ensureOverlay(targetPage);
 
-    // AG-MEM-09: single guarded owner of the framenavigated re-injection
-    // (context-level 'page' listener also wires new pages; the tag guard on
-    // the page object makes double registration impossible).
-    this.ensureNavListener(targetPage);
+    // Set up navigation listener to re-inject overlay on every page navigation
+    targetPage.on('framenavigated', async (frame: any) => {
+      if (frame === targetPage.mainFrame()) {
+        console.log('[Navis] Page navigated, re-injecting overlay...');
+        try {
+          await targetPage.evaluate((overlayScript: string) => {
+            // Check if overlay is already initialized
+            if (!(window as any).__navis_controls) {
+              // Inject the overlay script directly
+              const script = document.createElement('script');
+              script.textContent = overlayScript;
+              document.documentElement.appendChild(script);
+            }
+          }, OVERLAY_SCRIPT).catch(() => {});
+        } catch (err) {
+          console.warn('[Navis] Failed to re-inject overlay after navigation:', err);
+        }
+      }
+    });
 
     // Track downloads
     targetPage.on('download', async (download: any) => {
       try {
-        // AG-SAF-04: sanitize the (server-controlled) suggested filename and
-        // verify containment before saving — hostile Content-Disposition
-        // values must never escape the downloads dir.
-        const savePath = resolveContainedDownloadPath(
-          path.join(os.homedir(), '.everfern', 'downloads'),
-          download.suggestedFilename() || ''
-        );
-        fs.mkdirSync(path.dirname(savePath), { recursive: true });
+        const fileName = download.suggestedFilename() || 'downloaded_file';
+        const downloadsDir = path.join(os.homedir(), '.everfern', 'downloads');
+        fs.mkdirSync(downloadsDir, { recursive: true });
+
+        const savePath = path.join(downloadsDir, fileName);
         console.log(`[Navis] ⬇️ Download started: saving to ${savePath}`);
 
         await download.saveAs(savePath);
@@ -1163,10 +987,6 @@ export class BrowserSession {
     return targetPage;
   }
 
-  /**
-   * Close one tab and fall back to the most recent remaining tab as the
-   * shared activePage. No-op if the context is already gone.
-   */
   async closeTab(page: Page): Promise<void> {
     if (!this.context) return;
 
@@ -1178,7 +998,6 @@ export class BrowserSession {
     }
   }
 
-  /** Snapshot of open tabs with best-effort titles (title failures render as "Loading..."). */
   async getTabs(): Promise<TabInfo[]> {
     if (!this.context) return [];
 
@@ -1204,11 +1023,6 @@ export class BrowserSession {
     return tabs;
   }
 
-  /**
-   * Switch the shared activePage by numeric index or by case-insensitive
-   * substring match on tab title, then focus it and re-ensure the overlay.
-   * Throws if the index is out of range or no title matches.
-   */
   async switchToTab(indexOrTitle: number | string): Promise<void> {
     const pages = this.allPages;
 
@@ -1218,15 +1032,13 @@ export class BrowserSession {
       }
       this.activePage = pages[indexOrTitle];
     } else {
-      // AG-CORR-05: `pages.find(p => p.title().then(...))` returned a Promise
-      // (always truthy) so the first tab was selected regardless of title.
-      // Pre-resolve titles, then match on the resolved strings.
-      const needle = indexOrTitle.toLowerCase();
-      const titled: Array<{ page: Page; title: string }> = [];
-      for (const p of pages) {
-        try { titled.push({ page: p, title: ((await p.title()) || '') }); } catch { /* title unavailable */ }
-      }
-      const page = titled.find(t => t.title.toLowerCase().includes(needle))?.page;
+      const page = pages.find(p => {
+        try {
+          return p.title().then(t => t.toLowerCase().includes(indexOrTitle.toLowerCase()));
+        } catch {
+          return false;
+        }
+      });
       if (!page) {
         throw new Error(`No tab found matching "${indexOrTitle}". Available: ${pages.map((p, i) => `#${i}: ${p.url()}`).join(', ')}`);
       }
@@ -1237,44 +1049,7 @@ export class BrowserSession {
     await this.ensureOverlay(this.activePage);
   }
 
-  /**
-   * Release this session's claim on the shared browser.
-   *
-   * Refcount semantics (AG-CORR-11): if other sessions still hold refs,
-   * this only detaches (drops activePage + registration) and the shared
-   * Chromium stays alive — runner cleanup of ONE conversation must not
-   * kill the browser another conversation is mid-task in. Only when this
-   * is the last holder does actual teardown run: Navis-owned tabs, all
-   * pages, context, browser,
-   * and the temp profile dir, each with a 5s timeout so a hung browser
-   * can't block shutdown forever.
-   *
-   * In-flight actions during teardown: the Promise.race timeouts mean
-   * other sessions' pending page operations may fail mid-close, but the
-   * refcount check above ensures that can only happen when they've
-   * already released (i.e. no live sessions remain).
-   *
-   * The finally block always releases the ref and unregisters, even when
-   * teardown errors, so a failed close can't pin the shared browser.
-   */
   async close(force = true): Promise<void> {
-    // AG-CORR-11: release our ref on the shared browser. If other sessions are
-    // still registered, keep the shared Chromium alive — only the last session
-    // out actually tears it down (or the app-shutdown closeAll path).
-    const releaseRef = (): void => {
-      if (this.hasSharedRef) {
-        this.hasSharedRef = false;
-        BrowserSession.sharedRefcount = Math.max(0, BrowserSession.sharedRefcount - 1);
-      }
-    };
-    if (BrowserSession.sharedRefcount > 1 && this.hasSharedRef) {
-      // Another conversation still holds the shared browser — detach only.
-      releaseRef();
-      this.activePage = null;
-      console.log(`[Navis] Shared browser still in use (${BrowserSession.sharedRefcount} session(s)) — keeping Chromium alive`);
-      BrowserSession.activeSessions.delete(this);
-      return;
-    }
     if (!force) {
       console.log('[Navis] Keeping browser session open for persistence.');
       return;
@@ -1284,8 +1059,6 @@ export class BrowserSession {
 
     try {
       if (this.attachedToExternalBrowser) {
-        // External-profile mode: never close the user's whole browser —
-        // only the tabs Navis itself opened, then detach cleanly.
         console.log('[Navis] 🔴 Attached browser cleanup: closing Navis-owned tabs only');
         const pagesToClose = new Set<Page>(this.navisPages);
         if (this.activePage) pagesToClose.add(this.activePage);
@@ -1396,7 +1169,6 @@ export class BrowserSession {
       this.activePage = null;
     } finally {
       // Always unregister from the global session registry
-      releaseRef();
       BrowserSession.activeSessions.delete(this);
     }
   }
@@ -1407,8 +1179,6 @@ export class BrowserSession {
    * no Playwright browsers are left running after the main agent stops.
    */
   public static async closeAll(force: boolean = false): Promise<void> {
-    // Snapshot the registry first: close() unregisters each session from
-    // activeSessions, and mutating a Set while iterating it skips entries.
     const sessions = Array.from(BrowserSession.activeSessions);
     if (sessions.length === 0) {
       console.log('[Navis] closeAll: No active sessions to close');
@@ -1419,10 +1189,6 @@ export class BrowserSession {
     console.log('[Navis] closeAll: All sessions closed');
   }
 
-  /**
-   * Update the status line in the page overlay, if the active page and
-   * overlay controls exist. Failures are ignored (overlay is cosmetic).
-   */
   async setOverlayStatus(text: string): Promise<void> {
     if (!this.activePage) return;
     await this.activePage.evaluate((t: string) => {
@@ -1431,26 +1197,6 @@ export class BrowserSession {
     }, text).catch(() => {});
   }
 
-  /**
-   * AG-MEM-09: single owner of per-page 'framenavigated' → ensureOverlay wiring.
-   * Tagging the page object makes double-registration (e.g. context-level
-   * 'page' listener + openTab both wiring the same page) impossible.
-   */
-  private ensureNavListener(page: Page): void {
-    const tagged = page as any;
-    if (tagged.__navisFramenavWired) return;
-    tagged.__navisFramenavWired = true;
-    page.on('framenavigated', async (frame: any) => {
-      if (frame === page.mainFrame()) {
-        await this.ensureOverlay(page).catch(() => {});
-      }
-    });
-  }
-
-  /**
-   * Draw a transient highlight rectangle via the overlay controls on the
-   * active page. No-op (never throws) when there's no page or overlay.
-   */
   async highlightElement(rect: { x: number; y: number; width: number; height: number }): Promise<void> {
     if (!this.activePage) return;
     await this.activePage.evaluate((r: { x: number; y: number; width: number; height: number }) => {
@@ -1459,10 +1205,6 @@ export class BrowserSession {
     }, rect).catch(() => {});
   }
 
-  /**
-   * Move the visual cursor in the overlay (optionally showing a click) via
-   * overlay controls on the active page. No-op when overlay is absent.
-   */
   async moveCursor(x: number, y: number, click = false): Promise<void> {
     if (!this.activePage) return;
     await this.activePage.evaluate(({ x, y, click }: { x: number; y: number; click: boolean }) => {

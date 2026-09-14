@@ -405,7 +405,7 @@ export default function IntegrationSettings({ isOpen, onClose }: IntegrationSett
     }, [isOpen]);
 
     const colors = {
-        overlay: "var(--scrim)",
+        overlay: "rgba(0, 0, 0, 0.4)",
         background: "var(--color-bg-surface)",
         sidebarBg: "var(--color-bg-subtle)",
         border: "var(--color-border)",

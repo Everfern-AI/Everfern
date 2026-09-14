@@ -220,7 +220,7 @@ const WebSearchConfigPanel = ({ config, onChange }: WebSearchConfigPanelProps) =
                                         width: 18, height: 18, borderRadius: '50%',
                                         backgroundColor: 'var(--color-bg-surface)',
                                         transition: 'left 0.2s',
-                                        boxShadow: 'var(--shadow-sm)',
+                                        boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
                                     }} />
                                 </div>
                             </div>
@@ -261,7 +261,7 @@ const WebSearchConfigPanel = ({ config, onChange }: WebSearchConfigPanelProps) =
                                     onMouseEnter={e => { if (currentProvider !== 'exa') e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; }}
                                     onMouseLeave={e => { if (currentProvider !== 'exa') e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; }}
                                 >
-                                    <div style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--color-border)', flexShrink: 0, overflow: 'hidden', padding: 4 }}>
+                                    <div style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(0,0,0,0.08)', flexShrink: 0, overflow: 'hidden', padding: 4 }}>
                                         <img src="/images/etc/tools/exa-color.png" alt="Exa" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
                                     </div>
                                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -293,7 +293,7 @@ const WebSearchConfigPanel = ({ config, onChange }: WebSearchConfigPanelProps) =
                                     onMouseEnter={e => { if (currentProvider !== 'firecrawl') e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; }}
                                     onMouseLeave={e => { if (currentProvider !== 'firecrawl') e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; }}
                                 >
-                                    <div style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--color-border)', flexShrink: 0, overflow: 'hidden', padding: 4 }}>
+                                    <div style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(0,0,0,0.08)', flexShrink: 0, overflow: 'hidden', padding: 4 }}>
                                         <img src="/images/etc/tools/firecrawl-logo.png" alt="Firecrawl" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
                                     </div>
                                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -435,7 +435,7 @@ const ToolConfigPanel = ({ title, icon, apiLabel, config, onChange }: ToolConfig
                                         width: 18, height: 18, borderRadius: '50%',
                                         backgroundColor: 'var(--color-bg-surface)',
                                         transition: 'left 0.2s',
-                                        boxShadow: 'var(--shadow-sm)',
+                                        boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
                                     }} />
                                 </div>
                             </div>
@@ -615,7 +615,7 @@ export function ToolSettingsSection() {
                         width: 38, height: 38, borderRadius: 10,
                         backgroundColor: 'var(--color-bg-surface)',
                         border: '1px solid var(--color-border)',
-                        boxShadow: 'var(--shadow-xs)',
+                        boxShadow: '0 2px 5px rgba(0,0,0,0.04)',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         overflow: 'hidden', padding: 4,
                     }}>
@@ -670,7 +670,7 @@ export function ToolSettingsSection() {
                                 fontWeight: 600,
                                 fontSize: 13,
                                 color: 'var(--color-text-primary)',
-                                boxShadow: 'var(--shadow-xs)',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
                                 transition: 'all 0.15s ease',
                             }}
                             onMouseEnter={e => {
@@ -712,7 +712,7 @@ export function ToolSettingsSection() {
                                 fontWeight: 600,
                                 fontSize: 13,
                                 color: 'var(--color-text-primary)',
-                                boxShadow: 'var(--shadow-xs)',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
                                 transition: 'all 0.15s ease',
                             }}
                             onMouseEnter={e => {
@@ -800,7 +800,7 @@ export function ToolSettingsSection() {
                                 width: 18, height: 18, borderRadius: '50%',
                                 backgroundColor: 'var(--color-bg-surface)',
                                 transition: 'left 0.2s',
-                                boxShadow: 'var(--shadow-sm)',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
                             }} />
                         </div>
                     </div>
@@ -844,7 +844,7 @@ export function ToolSettingsSection() {
                                 width: 18, height: 18, borderRadius: '50%',
                                 backgroundColor: 'var(--color-bg-surface)',
                                 transition: 'left 0.2s',
-                                boxShadow: 'var(--shadow-sm)',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
                             }} />
                         </div>
                     </div>

@@ -1,12 +1,5 @@
 import { dbOps } from '../../lib/db';
-// MP-CORR-28: explicit import — the bare `crypto.randomUUID()` resolved to the
-// ambient global, which breaks under bundlers/older Node targets.
-import { randomUUID } from 'node:crypto';
 
-/**
- * A user project: a named workspace folder with optional agent instructions.
- * Pinned projects are surfaced first and always read as bookmarked.
- */
 export interface Project {
   id: string;
   name: string;
@@ -18,11 +11,7 @@ export interface Project {
   updatedAt: string;
 }
 
-/**
- * SQLite-backed persistence for projects. Every method catches its own
- * errors and returns a {success, error} shape instead of throwing to IPC.
- */
-class ProjectsStore {
+export class ProjectsStore {
   /**
    * List all projects, with pinned / bookmarked projects first.
    */
@@ -34,8 +23,6 @@ class ProjectsStore {
         ORDER BY (is_pinned = 1 OR is_bookmarked = 1) DESC, updated_at DESC
       `);
 
-      // Pinned implies bookmarked on read: any pinned project is surfaced as
-      // bookmarked even when its stored is_bookmarked flag is unset.
       return rows.map(row => ({
         id: row.id,
         name: row.name,
@@ -60,7 +47,6 @@ class ProjectsStore {
       const row = await dbOps.get('SELECT * FROM projects WHERE id = ?', [id]);
       if (!row) return null;
 
-      // Mirrors list(): a pinned project always reads as bookmarked.
       return {
         id: row.id,
         name: row.name,
@@ -79,12 +65,10 @@ class ProjectsStore {
 
   /**
    * Create a new project.
-   * Side effects: creates the project directory on disk (if missing) and
-   * copies any provided files into it.
    */
   async create(project: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>): Promise<{ success: boolean; project?: Project; error?: string }> {
     try {
-      const id = randomUUID();
+      const id = crypto.randomUUID();
       const now = new Date().toISOString();
       const newProject: Project = {
         ...project,
@@ -121,8 +105,6 @@ class ProjectsStore {
       if ((project as any).files && Array.isArray((project as any).files)) {
         for (const file of (project as any).files) {
           try {
-            // basename() flattens the source path so copies always land at
-            // the project root — never outside the new project directory.
             const fileName = pathModule.basename(file);
             const targetPath = pathModule.join(newProject.path, fileName);
             await fs.copyFile(file, targetPath);
@@ -173,8 +155,6 @@ class ProjectsStore {
 
   /**
    * Toggle bookmark status for a project.
-   * Pinned state is cleared alongside the bookmark (pinned implies
-   * bookmarked on every read path).
    */
   async toggleBookmark(id: string): Promise<{ success: boolean; isBookmarked: boolean; error?: string }> {
     try {
@@ -183,9 +163,6 @@ class ProjectsStore {
 
       const newStatus = !project.isBookmarked;
       const val = newStatus ? 1 : 0;
-      // is_pinned is written in lockstep: a stale pin would resurrect the
-      // bookmark on the next read (pinned implies bookmarked), making the
-      // un-bookmark appear to do nothing.
       await dbOps.run(
         `UPDATE projects SET is_bookmarked = ?, is_pinned = ?, updated_at = ? WHERE id = ?`,
         [val, val, new Date().toISOString(), id]

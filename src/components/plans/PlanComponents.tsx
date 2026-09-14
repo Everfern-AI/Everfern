@@ -131,7 +131,7 @@ const AgentWorkspaceCards = ({ plan, contextItems, setTooltip, currentNode, isLo
                     className="w-full bg-purple-50 border border-purple-200 rounded-xl p-3.5 flex items-center gap-3"
                 >
                     <div className="w-8 h-8 rounded-lg bg-purple-100 border border-purple-200 flex items-center justify-center flex-shrink-0">
-                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="var(--color-navis-icon-color)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
+                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="#9333ea" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
                     </div>
                     <div className="flex-1 min-w-0">
                         <div className="text-[13px] font-semibold text-purple-800 mb-0.5">Data Analyst</div>
@@ -225,11 +225,11 @@ const AgentWorkspaceCards = ({ plan, contextItems, setTooltip, currentNode, isLo
                                                 {item.type !== 'app' && (
                                                     <div className="w-6 h-6 rounded-full bg-stone-100 border border-stone-200 flex items-center justify-center flex-shrink-0 mt-0.5">
                                                         {isFolder || item.type === 'file' ? (
-                                                            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-secondary)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                                                            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="#717171" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
                                                         ) : item.type === 'web' ? (
-                                                            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-secondary)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1-4-10z"></path></svg>
+                                                            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="#717171" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1-4-10z"></path></svg>
                                                         ) : (
-                                                            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-secondary)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>
+                                                            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="#717171" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>
                                                         )}
                                                     </div>
                                                 )}
@@ -239,7 +239,7 @@ const AgentWorkspaceCards = ({ plan, contextItems, setTooltip, currentNode, isLo
                                                             <span className="text-[11px] font-bold text-stone-700 uppercase tracking-wider">CURRENT CONTEXT</span>
                                                             <div className='flex items-center gap-1.5 bg-green-100 px-2 py-1 rounded-md'>
                                                                 <span className='text-[11px] font-semibold text-green-600'>Active</span>
-                                                                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                                                                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
                                                             </div>
                                                         </div>
                                                         <div className="flex items-center gap-2">
@@ -247,7 +247,7 @@ const AgentWorkspaceCards = ({ plan, contextItems, setTooltip, currentNode, isLo
                                                                 <img src={item.appLogo} alt="App Logo" className="w-5.5 h-5.5 rounded-md object-contain" />
                                                             ) : (
                                                                 <div className="w-5.5 h-5.5 rounded-md bg-blue-50 flex items-center justify-center">
-                                                                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="var(--color-info)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                                                                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
                                                                 </div>
                                                             )}
                                                             <span className='text-stone-600 text-sm font-medium'>{item.label}</span>
@@ -267,7 +267,7 @@ const AgentWorkspaceCards = ({ plan, contextItems, setTooltip, currentNode, isLo
                                                                             <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>Type
                                                                         </div>
                                                                         <div className='text-stone-900 text-[13px] font-medium flex items-center gap-1.5'>
-                                                                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>Computer Use
+                                                                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>Computer Use
                                                                         </div>
                                                                     </div>
                                                                     <div className='flex items-center'>
@@ -307,7 +307,7 @@ const AgentWorkspaceCards = ({ plan, contextItems, setTooltip, currentNode, isLo
                                                                             <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>Permissions
                                                                         </div>
                                                                         <div className='text-stone-900 text-[13px] font-medium flex items-center gap-1.5'>
-                                                                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>2 Granted
+                                                                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>2 Granted
                                                                         </div>
                                                                     </div>
                                                                 </div>
@@ -323,7 +323,7 @@ const AgentWorkspaceCards = ({ plan, contextItems, setTooltip, currentNode, isLo
                                                                     <div className='flex justify-between items-center'>
                                                                         <div className='flex items-center gap-2'>
                                                                             <div className='w-6 h-6 rounded-full bg-green-50 flex items-center justify-center'>
-                                                                                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" strokeWidth="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                                                                                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
                                                                             </div>
                                                                             <div className='flex flex-col'>
                                                                                 <span className='text-[13px] text-stone-900 font-medium'>System Control</span>
@@ -335,7 +335,7 @@ const AgentWorkspaceCards = ({ plan, contextItems, setTooltip, currentNode, isLo
                                                                     <div className='flex justify-between items-center'>
                                                                         <div className='flex items-center gap-2'>
                                                                             <div className='w-6 h-6 rounded-full bg-green-50 flex items-center justify-center'>
-                                                                                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" strokeWidth="2.5"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                                                                                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
                                                                             </div>
                                                                             <div className='flex flex-col'>
                                                                                 <span className='text-[13px] text-stone-900 font-medium'>Window Management</span>
@@ -357,7 +357,7 @@ const AgentWorkspaceCards = ({ plan, contextItems, setTooltip, currentNode, isLo
                                                                     <div className='flex justify-between items-center'>
                                                                         <div className='flex items-center gap-2'>
                                                                             <div className='w-6 h-6 rounded-full bg-green-50 flex items-center justify-center'>
-                                                                                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                                                                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                                                                             </div>
                                                                             <span className='text-[13px] text-stone-900 font-medium'>{item.label.includes('Wait') ? 'Waited 1s' : item.label.includes('Type') ? `Typed text` : `Launched Application`}</span>
                                                                         </div>

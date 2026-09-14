@@ -47,7 +47,7 @@ export function ProjectDashboard() {
             style={{
               padding: '16px',
               borderRadius: '8px',
-              border: '1px solid var(--color-border)',
+              border: '1px solid #e5e7eb',
               backgroundColor: 'white',
               display: 'flex',
               justifyContent: 'space-between',
@@ -69,7 +69,7 @@ export function ProjectDashboard() {
                 style={{
                   padding: '6px 12px',
                   borderRadius: '6px',
-                  border: '1px solid var(--color-border)',
+                  border: '1px solid #e5e7eb',
                   backgroundColor: 'white',
                   cursor: 'pointer',
                   fontSize: '13px',
@@ -83,7 +83,7 @@ export function ProjectDashboard() {
                   style={{
                     padding: '6px 12px',
                     borderRadius: '6px',
-                    backgroundColor: 'var(--color-info)',
+                    backgroundColor: '#3b82f6',
                     color: 'white',
                     border: 'none',
                     cursor: 'pointer',
@@ -103,7 +103,7 @@ export function ProjectDashboard() {
           marginTop: '16px',
           padding: '10px 20px',
           borderRadius: '8px',
-          backgroundColor: 'var(--color-success)',
+          backgroundColor: '#10b981',
           color: 'white',
           border: 'none',
           cursor: 'pointer',

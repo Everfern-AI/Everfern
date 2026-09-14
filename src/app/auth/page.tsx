@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { motion, AnimatePresence, Variants } from "framer-motion";
-import { ChevronLeft, Loader2, ArrowRight } from "lucide-react";
+import { ChevronLeft, Loader2, CheckCircle, ArrowRight, Cloud } from "lucide-react";
 import WindowControls from "../components/WindowControls";
 
 const containerVariants: Variants = {
@@ -47,62 +47,6 @@ interface StoredSession {
     user: CloudUser;
 }
 
-function getInitials(name: string): string {
-    const parts = name.trim().split(/[\s@._-]+/).filter(Boolean);
-    if (parts.length === 0) return "?";
-    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-    return (parts[0][0] + parts[1][0]).toUpperCase();
-}
-
-const AVATAR_FALLBACK_COLORS = ["#14b8a6", "#6366f1", "#0ea5e9", "#f59e0b", "#ec4899", "#10b981"];
-
-function UserAvatar({ user, displayName }: { user: CloudUser; displayName: string }) {
-    const [imgFailed, setImgFailed] = useState(false);
-    const showImg = !!user.avatarUrl && !imgFailed;
-    const initials = getInitials(displayName || user.email);
-    const color = AVATAR_FALLBACK_COLORS[[...(user.id || displayName)].reduce((a, c) => a + c.charCodeAt(0), 0) % AVATAR_FALLBACK_COLORS.length];
-
-    if (!showImg) {
-        return (
-            <div
-                aria-label={displayName}
-                style={{
-                    width: 64,
-                    height: 64,
-                    borderRadius: "50%",
-                    marginBottom: 16,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    backgroundColor: color,
-                    color: "#ffffff",
-                    fontSize: 22,
-                    fontWeight: 600,
-                    letterSpacing: "0.02em",
-                    userSelect: "none",
-                }}
-            >
-                {initials}
-            </div>
-        );
-    }
-    return (
-        <img
-            src={user.avatarUrl!}
-            alt={displayName}
-            referrerPolicy="no-referrer"
-            onError={() => setImgFailed(true)}
-            style={{
-                width: 64,
-                height: 64,
-                borderRadius: "50%",
-                marginBottom: 16,
-                objectFit: "cover",
-            }}
-        />
-    );
-}
-
 export default function AuthPage() {
     const router = useRouter();
     const [isGuestLoading, setIsGuestLoading] = useState(false);
@@ -110,7 +54,6 @@ export default function AuthPage() {
     const [googleWaiting, setGoogleWaiting] = useState(false);
     const [signedInUser, setSignedInUser] = useState<CloudUser | null>(null);
     const pollRef = useRef<NodeJS.Timeout | null>(null);
-    const guestTimerRef = useRef<NodeJS.Timeout | null>(null);
     const desktopCodeRef = useRef<string | null>(null);
 
     // ── On mount: restore session from storage ─────────────────
@@ -124,9 +67,6 @@ export default function AuthPage() {
         } catch {
             // ignore parse errors
         }
-        return () => {
-            if (guestTimerRef.current) { clearTimeout(guestTimerRef.current); guestTimerRef.current = null; }
-        };
     }, []);
 
     // ── Poll the landing API while waiting for Google auth ─────
@@ -180,7 +120,7 @@ export default function AuthPage() {
 
     const handleGuestLogin = () => {
         setIsGuestLoading(true);
-        guestTimerRef.current = setTimeout(() => router.push("/setup"), 600);
+        setTimeout(() => router.push("/setup"), 600);
     };
 
     const handleGoogleLogin = async () => {
@@ -206,7 +146,6 @@ export default function AuthPage() {
     };
 
     const handleSignOut = () => {
-        if (guestTimerRef.current) { clearTimeout(guestTimerRef.current); guestTimerRef.current = null; }
         localStorage.removeItem(STORAGE_KEY);
         setSignedInUser(null);
         if ((window as any).electronAPI?.saveConfig) {
@@ -249,22 +188,19 @@ export default function AuthPage() {
     const displayName = signedInUser?.displayName ?? signedInUser?.fullName ?? signedInUser?.email ?? "";
 
     return (
-        <div className="flex min-h-screen" style={{ fontFamily: "var(--font-sans)", background: "var(--color-bg-base, #f5f4f0)" }}>
+        <div className="flex min-h-screen bg-[#f5f4f0]" style={{ fontFamily: "var(--font-sans)" }}>
             {/* Window Controls */}
             <div style={{ position: "fixed", top: 16, right: 20, zIndex: 100 }}>
                 <WindowControls />
             </div>
 
-            <div className="flex-1 flex flex-col items-center justify-center relative px-8" style={{ background: "var(--color-bg-base, #f5f4f0)" }}>
+            <div className="flex-1 flex flex-col items-center justify-center relative px-8 bg-[#f5f4f0]">
 
                 {/* Back Button */}
                 {!signedInUser && (
                     <button
                         onClick={() => router.push("/")}
-                        className="absolute top-12 left-8 flex items-center gap-2 transition-colors text-sm font-medium z-50 focus:outline-none"
-                        style={{ color: "var(--color-text-tertiary, #8a8886)" }}
-                        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "var(--color-text-secondary, #4a4846)"; }}
-                        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "var(--color-text-tertiary, #8a8886)"; }}
+                        className="absolute top-12 left-8 flex items-center gap-2 text-[#8a8886] hover:text-[#4a4846] transition-colors text-sm font-medium z-50 focus:outline-none"
                     >
                         <ChevronLeft size={16} /> Back
                     </button>
@@ -285,7 +221,7 @@ export default function AuthPage() {
                         className="opacity-95"
                         priority
                     />
-                    <span className="text-[32px] font-normal tracking-[-0.04em]" style={{ fontFamily: "var(--font-branding)", color: "var(--color-text-primary, #201e24)" }}>
+                    <span className="text-[32px] font-normal text-[#201e24] tracking-[-0.04em]" style={{ fontFamily: "var(--font-branding)" }}>
                         everfern
                     </span>
                 </motion.div>
@@ -308,19 +244,45 @@ export default function AuthPage() {
                                 flexDirection: "column",
                                 alignItems: "center",
                                 textAlign: "center",
-                                background: 'var(--color-bg-surface, #fff)',
+                                background: 'var(--color-bg-surface)',
                                 borderRadius: 24,
                                 padding: 40,
                             }}
                         >
-                            {/* Avatar or initials fallback */}
-                            <UserAvatar user={signedInUser} displayName={displayName} />
+                            {/* Avatar or check icon */}
+                            {signedInUser.avatarUrl ? (
+                                <img
+                                    src={signedInUser.avatarUrl}
+                                    alt={displayName}
+                                    referrerPolicy="no-referrer"
+                                    onError={(e) => {
+                                        (e.target as HTMLImageElement).src = `https://tapback.co/api/avatar/johndoe`;
+                                    }}
+                                    style={{
+                                        width: 64,
+                                        height: 64,
+                                        borderRadius: "50%",
+                                        marginBottom: 16,
+                                    }}
+                                />
+                            ) : (
+                                <img
+                                    src="https://tapback.co/api/avatar/johndoe"
+                                    alt={displayName}
+                                    style={{
+                                        width: 64,
+                                        height: 64,
+                                        borderRadius: "50%",
+                                        marginBottom: 16,
+                                    }}
+                                />
+                            )}
 
                             <h2 style={{
                                 fontSize: 28,
                                 fontWeight: 500,
                                 letterSpacing: "-0.03em",
-                                color: "var(--color-text-primary, #201e24)",
+                                color: "#201e24",
                                 marginBottom: 6,
                                 lineHeight: 1.2,
                             }}>
@@ -332,22 +294,22 @@ export default function AuthPage() {
                                 display: "inline-flex",
                                 alignItems: "center",
                                 gap: 6,
-                                background: "var(--color-bg-hover, rgba(0,0,0,0.04))",
-                                border: `1px solid var(--color-border-subtle, rgba(0,0,0,0.1))`,
+                                background: "rgba(0,0,0,0.04)",
+                                border: "1px solid rgba(0,0,0,0.1)",
                                 borderRadius: 999,
                                 padding: "5px 14px",
                                 marginBottom: 28,
                             }}>
-                                <span style={{ fontSize: 12, color: "var(--color-text-primary, #111111)", fontWeight: 500 }}>
+                                <span style={{ fontSize: 12, color: "#111111", fontWeight: 500 }}>
                                     {signedInUser.email}
                                 </span>
-                                <span style={{ fontSize: 10, color: "var(--color-text-tertiary, #8a8886)" }}>·</span>
+                                <span style={{ fontSize: 10, color: "#8a8886" }}>·</span>
                                 <span style={{
                                     fontSize: 10,
                                     fontWeight: 700,
                                     textTransform: "uppercase",
                                     letterSpacing: "0.06em",
-                                    color: signedInUser.plan === "free" ? "var(--color-text-tertiary, #8a8886)" : "var(--color-text-primary, #111111)",
+                                    color: signedInUser.plan === "free" ? "#8a8886" : "#111111",
                                 }}>
                                     {signedInUser.plan}
                                 </span>
@@ -360,8 +322,8 @@ export default function AuthPage() {
                                 style={{
                                     width: "100%",
                                     padding: "15px 24px",
-                                    backgroundColor: "var(--color-text-primary, #111111)",
-                                    color: "var(--color-text-inverse, #ffffff)",
+                                    backgroundColor: "#111111",
+                                    color: "#ffffff",
                                     borderRadius: "12px",
                                     fontWeight: 600,
                                     fontSize: "15px",
@@ -386,7 +348,7 @@ export default function AuthPage() {
                                     border: "none",
                                     cursor: "pointer",
                                     fontSize: 12,
-                                    color: "var(--color-text-tertiary, #8a8886)",
+                                    color: "#8a8886",
                                     textDecoration: "underline",
                                     fontFamily: "var(--font-sans)",
                                 }}
@@ -405,7 +367,7 @@ export default function AuthPage() {
                             animate="visible"
                             exit={{ opacity: 0 }}
                             className="w-full max-w-[420px] flex flex-col items-center text-center glossy"
-                            style={{ background: 'var(--color-bg-surface, #fff)', borderRadius: 24, padding: 40 }}
+                            style={{ background: 'var(--color-bg-surface)', borderRadius: 24, padding: 40 }}
                         >
                             <motion.h2
                                 variants={itemVariants}
@@ -413,7 +375,7 @@ export default function AuthPage() {
                                     fontSize: 32,
                                     fontWeight: 500,
                                     letterSpacing: "-0.03em",
-                                    color: "var(--color-text-primary, #201e24)",
+                                    color: "#201e24",
                                     lineHeight: 1.2,
                                     margin: "0 0 12px 0",
                                 }}
@@ -425,7 +387,7 @@ export default function AuthPage() {
                                 variants={itemVariants}
                                 style={{
                                     fontSize: 14,
-                                    color: "var(--color-text-tertiary, #8a8886)",
+                                    color: "#8a8886",
                                     fontWeight: 400,
                                     lineHeight: 1.6,
                                     margin: "0 0 36px 0",
@@ -452,7 +414,7 @@ export default function AuthPage() {
                                             fontFamily: "var(--font-sans)",
                                         }}>
                                             <Loader2 size={16} className="animate-spin" style={{ color: "#00685f", flexShrink: 0 }} />
-                                            <span style={{ fontSize: 14, color: "var(--color-text-secondary, #4a4846)", fontWeight: 500 }}>
+                                            <span style={{ fontSize: 14, color: "#4a4846", fontWeight: 500 }}>
                                                 Waiting for Everfern Cloud sign-in…
                                             </span>
                                             <button
@@ -460,7 +422,7 @@ export default function AuthPage() {
                                                 style={{
                                                     marginLeft: "auto",
                                                     fontSize: 11,
-                                                    color: "var(--color-text-tertiary, #8a8886)",
+                                                    color: "#8a8886",
                                                     background: "none",
                                                     border: "none",
                                                     cursor: "pointer",
@@ -480,9 +442,9 @@ export default function AuthPage() {
                                             style={{
                                                 width: "100%",
                                                 padding: "15px 24px",
-                                                backgroundColor: "var(--color-bg-elevated, #ffffff)",
-                                                border: `1px solid var(--color-border, #e8e6d9)`,
-                                                color: "var(--color-text-primary, #201e24)",
+                                                backgroundColor: "#ffffff",
+                                                border: "1px solid #e8e6d9",
+                                                color: "#201e24",
                                                 borderRadius: "12px",
                                                 fontWeight: 500,
                                                 fontSize: "15px",
@@ -496,11 +458,11 @@ export default function AuthPage() {
                                                 transition: "border-color 0.15s, box-shadow 0.15s",
                                             }}
                                             onMouseEnter={(e) => {
-                                                (e.currentTarget as HTMLElement).style.borderColor = "var(--color-border-strong, #8a8886)";
+                                                (e.currentTarget as HTMLElement).style.borderColor = "#8a8886";
                                                 (e.currentTarget as HTMLElement).style.boxShadow = "0 2px 8px rgba(0,0,0,0.08)";
                                             }}
                                             onMouseLeave={(e) => {
-                                                (e.currentTarget as HTMLElement).style.borderColor = "var(--color-border, #e8e6d9)";
+                                                (e.currentTarget as HTMLElement).style.borderColor = "#e8e6d9";
                                                 (e.currentTarget as HTMLElement).style.boxShadow = "0 1px 3px rgba(0,0,0,0.06)";
                                             }}
                                         >
@@ -522,8 +484,8 @@ export default function AuthPage() {
                                         style={{
                                             width: "100%",
                                             padding: "15px 24px",
-                                            backgroundColor: "var(--color-text-primary, #111111)",
-                                            color: "var(--color-text-inverse, #ffffff)",
+                                            backgroundColor: "#111111",
+                                            color: "#ffffff",
                                             borderRadius: "12px",
                                             fontWeight: 600,
                                             fontSize: "15px",
@@ -543,7 +505,7 @@ export default function AuthPage() {
                                                 {[0, 1, 2].map((i) => (
                                                     <motion.span
                                                         key={i}
-                                                        className="w-1.5 h-1.5 rounded-full"
+                                                        className="w-1.5 h-1.5 bg-[#ffffff] rounded-full"
                                                         animate={{ opacity: [0.3, 1, 0.3], scale: [0.8, 1, 0.8] }}
                                                         transition={{ duration: 0.9, repeat: Infinity, delay: i * 0.18 }}
                                                     />

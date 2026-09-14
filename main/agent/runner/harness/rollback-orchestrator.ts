@@ -84,13 +84,6 @@ export class RollbackOrchestrator {
         const { getRollbackManager } = require('../../persistence/rollback-manager');
         const rollbackManager = getRollbackManager();
 
-        // AG-CORR-10: skip steps with nothing restorable (no snapshots, only
-        // irreversible commands) — rolling them back is a no-op at best.
-        if (!(await rollbackManager.canRollback(plan.taskId, step.stepNumber))) {
-          errors.push(`Step ${step.stepNumber} (${step.phase}): skipped — nothing restorable`);
-          continue;
-        }
-
         const result = await rollbackManager.rollbackStep(plan.taskId, step.stepNumber);
         if (result) {
           stepsRolledBack++;

@@ -125,7 +125,7 @@ export default function SearchPopup({
     return createPortal(
         <AnimatePresence>
             {isOpen && (
-                <div style={{ position: 'fixed', inset: 0, zIndex: 'var(--z-modal)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '10vh' }}>
+                <div style={{ position: 'fixed', inset: 0, zIndex: 99999, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '10vh' }}>
                     {/* Backdrop */}
                     <motion.div
                         initial={{ opacity: 0 }}
@@ -138,7 +138,7 @@ export default function SearchPopup({
                             backgroundColor: 'rgba(0, 0, 0, 0.45)',
                             backdropFilter: 'blur(8px)',
                             WebkitBackdropFilter: 'blur(8px)',
-                            zIndex: 'calc(var(--z-modal) - 1)',
+                            zIndex: 99998,
                         }}
                     />
 
@@ -155,7 +155,7 @@ export default function SearchPopup({
                             backgroundColor: 'var(--color-bg-surface, #ffffff)',
                             borderRadius: 16,
                             border: '1px solid var(--color-border)',
-                            zIndex: 'var(--z-modal)',
+                            zIndex: 99999,
                             width: '90%',
                             maxWidth: 540,
                             maxHeight: '68vh',

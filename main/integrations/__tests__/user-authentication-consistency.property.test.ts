@@ -124,12 +124,6 @@ describe('Property Test: User Authentication Consistency', () => {
         permissions: fc.array(fc.constantFrom('basic', 'admin', 'moderator'), { minLength: 1, maxLength: 3 })
       }),
       (userData) => {
-        // wave f11: fc runs this predicate numRuns times against the SAME
-        // authService instance (afterEach only runs per it()) — leftover
-        // users from earlier runs collided with fresh generated ids. Reset
-        // the mock per property run.
-        authService.clear();
-
         // Create user with linked platform identities
         authService.createUser(userData.userId, 'telegram', userData.telegramId);
         authService.linkPlatformIdentity(userData.userId, 'discord', userData.discordId);
@@ -161,12 +155,6 @@ describe('Property Test: User Authentication Consistency', () => {
         authStates: fc.array(fc.boolean(), { minLength: 1, maxLength: 5 })
       }),
       (userData) => {
-        // wave f11: fc runs this predicate numRuns times against the SAME
-        // authService instance (afterEach only runs per it()) — leftover
-        // users from earlier runs collided with fresh generated ids. Reset
-        // the mock per property run.
-        authService.clear();
-
         // Create user with linked platform identities
         authService.createUser(userData.userId, 'telegram', userData.telegramId);
         authService.linkPlatformIdentity(userData.userId, 'discord', userData.discordId);
@@ -207,12 +195,6 @@ describe('Property Test: User Authentication Consistency', () => {
         permissions: fc.array(fc.constantFrom('basic', 'admin', 'moderator'), { minLength: 1, maxLength: 3 })
       }),
       (userData) => {
-        // wave f11: fc runs this predicate numRuns times against the SAME
-        // authService instance (afterEach only runs per it()) — leftover
-        // users from earlier runs collided with fresh generated ids. Reset
-        // the mock per property run.
-        authService.clear();
-
         // Create user with linked platform identities
         authService.createUser(userData.userId, 'telegram', userData.telegramId);
         authService.linkPlatformIdentity(userData.userId, 'discord', userData.discordId);
@@ -246,9 +228,6 @@ describe('Property Test: User Authentication Consistency', () => {
         discordId: fc.string({ minLength: 1, maxLength: 20 })
       }), { minLength: 2, maxLength: 10 }),
       (users) => {
-        // wave f11: reset mock per property run (see Property 1 note)
-        authService.clear();
-
         // Create all users
         for (const user of users) {
           authService.createUser(user.userId, 'telegram', user.telegramId);
@@ -303,12 +282,6 @@ describe('Property Test: User Authentication Consistency', () => {
         attempts: fc.integer({ min: 2, max: 10 })
       }),
       (userData) => {
-        // wave f11: fc runs this predicate numRuns times against the SAME
-        // authService instance (afterEach only runs per it()) — leftover
-        // users from earlier runs collided with fresh generated ids. Reset
-        // the mock per property run.
-        authService.clear();
-
         // Create user with linked platform identities
         authService.createUser(userData.userId, 'telegram', userData.telegramId);
         authService.linkPlatformIdentity(userData.userId, 'discord', userData.discordId);
@@ -356,12 +329,6 @@ describe('Property Test: User Authentication Consistency', () => {
         messageContent: fc.string({ minLength: 1, maxLength: 100 })
       }),
       (userData) => {
-        // wave f11: fc runs this predicate numRuns times against the SAME
-        // authService instance (afterEach only runs per it()) — leftover
-        // users from earlier runs collided with fresh generated ids. Reset
-        // the mock per property run.
-        authService.clear();
-
         // Create user with linked platform identities
         authService.createUser(userData.userId, 'telegram', userData.telegramId);
         authService.linkPlatformIdentity(userData.userId, 'discord', userData.discordId);

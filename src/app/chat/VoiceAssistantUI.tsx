@@ -4,7 +4,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { Loader } from '@/components/ui/animated-loading-svg-text-shimmer';
-import { secretConfigured, type SecretView } from '@/lib/secret-view';
 
 interface VoiceAssistantUIProps {
     isOpen: boolean;
@@ -17,9 +16,8 @@ interface VoiceAssistantUIProps {
     onOutputToggle: () => void;
     voiceOutputEnabled: boolean;
     voiceProvider: 'deepgram' | 'elevenlabs' | null | string;
-    // MP-SEC-11: SecretView redaction or a typed string.
-    voiceDeepgramKey: SecretView | string;
-    voiceElevenlabsKey: SecretView | string;
+    voiceDeepgramKey: string;
+    voiceElevenlabsKey: string;
     audioLevels?: number[];
 }
 
@@ -38,7 +36,7 @@ export default function VoiceAssistantUI({
     voiceElevenlabsKey,
     audioLevels,
 }: VoiceAssistantUIProps) {
-    const isConfigured = voiceProvider && (voiceProvider === 'everfern' || voiceProvider === 'local' || voiceProvider === 'deepgram' || secretConfigured(voiceDeepgramKey) || secretConfigured(voiceElevenlabsKey));
+    const isConfigured = voiceProvider && (voiceProvider === 'everfern' || voiceProvider === 'local' || voiceProvider === 'deepgram' || voiceDeepgramKey || voiceElevenlabsKey);
 
     return (
         <AnimatePresence>

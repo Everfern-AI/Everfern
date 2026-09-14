@@ -3,10 +3,15 @@ name: Build macOS
 permissions:
   contents: write
 
-# BK-CI-01: dispatch-only escape hatch. release.yml owns the single build
-# matrix (its macOS arm64+x64 entries publish on tags); triggering here on
-# tags would duplicate both heavy jobs on every release.
 on:
+  push:
+    branches:
+      - main
+      - 'codenrust/**'
+      - 'fix/**'
+      - 'feat/**'
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       upload_release:
@@ -14,10 +19,6 @@ on:
         required: false
         default: 'false'
         type: boolean
-
-concurrency:
-  group: build-macos-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   build-macos:
@@ -50,25 +51,20 @@ jobs:
           cache: 'npm'
 
       # ── 3. Cache Electron & builder downloads ──────────────────────────────
-      - name: Resolve Electron version
-        id: electron_version
-        run: echo "version=$(node -p "require('./package.json').devDependencies.electron")" >> "$GITHUB_OUTPUT"
-
       - name: Cache Electron binaries
         uses: actions/cache@v4
         with:
           path: |
             ~/Library/Caches/electron
             ~/Library/Caches/electron-builder
-          key: electron-cache-macos-${{ matrix.arch }}-${{ steps.electron_version.outputs.version }}
+          key: electron-cache-macos-${{ matrix.arch }}-${{ hashFiles('package.json') }}
           restore-keys: |
-            electron-cache-macos-${{ matrix.arch }}-${{ steps.electron_version.outputs.version }}-
             electron-cache-macos-${{ matrix.arch }}-
             electron-cache-macos-
 
       # ── 4. Install npm dependencies ────────────────────────────────────────
       - name: Install Node modules
-        run: npm ci
+        run: npm install
 
       # ── 5. Rebuild native modules for target architecture ──────────────────
       - name: Rebuild native modules for Electron (${{ matrix.arch }})
@@ -114,10 +110,10 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      # ── 10. Attach to GitHub Release (manual upload opt-in) ─────────────────
+      # ── 10. Attach to GitHub Release (tag pushes or manual trigger) ─────────
       - name: Upload to GitHub Release
-        if: github.event.inputs.upload_release == 'true'
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.upload_release == 'true'
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             release/*.dmg

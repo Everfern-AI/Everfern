@@ -23,10 +23,6 @@ import parseHtmlDom, { type DOMNode, type Element as HtmlDomElement } from 'html
 import { FullScreenCaptureModule } from './full-screen-capture';
 import { runExclusiveScreenshotCapture } from './screenshot-queue';
 
-/**
- * Result of an element capture: the raw snapshot text (JSON array or aria yaml),
- * the ref → metadata map, and capture stats used for perf logging.
- */
 export interface AriaSnapshotResult {
   raw: string;
   refs: Map<string, RefMetadata>;
@@ -34,8 +30,6 @@ export interface AriaSnapshotResult {
   captureTimeMs: number;
 }
 
-/** Per-element metadata captured alongside each ref; used by findElement's
- * fallback strategies and by the orchestrator's dedupe keys. */
 export interface RefMetadata {
   ref?: string;
   role?: string;
@@ -57,10 +51,6 @@ export interface RefMetadata {
   disabled?: boolean;
 }
 
-/**
- * One node's compact summary from the html-dom-parser pass — the per-bucket
- * unit (headings/nav/forms/…) fed into grounding prompts.
- */
 export interface HtmlDomParserNodeSummary {
   tag: string;
   text?: string;
@@ -78,11 +68,6 @@ export interface HtmlDomParserNodeSummary {
   title?: string;
 }
 
-/**
- * Structured DOM summary built from raw page HTML via html-dom-parser:
- * buckets elements (headings/navigation/forms/controls/links/media/content)
- * with per-bucket caps and truncation stats, for when live refs are thin.
- */
 export interface HtmlDomParserContext {
   parser: 'html-dom-parser';
   stats: {
@@ -112,31 +97,10 @@ const CACHE_TTL_MS = 500;
 const elementSnapshotCache = new Map<string, CacheEntry>();
 const refMetadataCache = new Map<string, { timestamp: number; url: string; refs: Map<string, RefMetadata> }>();
 
-// AG-CORR-14: stable per-Page identity fallback for Playwright <1.42.
-const pageIdentity = new WeakMap<Page, string>();
-let pageIdentityCounter = 0;
-
-/**
- * Stable identity for a Playwright Page used to key the snapshot caches.
- * Private helper — exported indirectly via the cache functions below.
- */
 function getCacheKey(page: Page): string {
-  // AG-CORR-14: include page identity — two tabs with the same URL previously
-  // shared one cache entry, so clicks resolved against the WRONG page's ref-map.
-  // Playwright >=1.42 exposes a stable uniqueId; fall back to a per-Page WeakMap
-  // counter when unavailable.
-  const pageId = (page as any).uniqueId ?? pageIdentity.get(page) ?? (() => {
-    const id = `page-${++pageIdentityCounter}`;
-    pageIdentity.set(page, id);
-    return id;
-  })();
-  // `??` chain order matters: prefer the engine-provided id, then the memoized
-  // fallback — the counter must only increment once per Page instance.
-  return `${pageId}:${page.url()}:${page.context().browser()?.version() || 'unknown'}`;
+  return `${page.url()}:${page.context().browser()?.version() || 'unknown'}`;
 }
 
-// Cache hit requires both a fresh TTL entry AND an unchanged URL — either
-// expiring or navigating invalidates the entry immediately.
 function getCachedSnapshot(page: Page): AriaSnapshotResult | null {
   const key = getCacheKey(page);
   const cached = elementSnapshotCache.get(key);
@@ -160,8 +124,6 @@ function getCachedSnapshot(page: Page): AriaSnapshotResult | null {
   return cached.snapshot;
 }
 
-// Writes both caches atomically: the snapshot plus its parsed ref map, so
-// getRefMetadata can serve refs without re-parsing the raw snapshot.
 function setCachedSnapshot(page: Page, snapshot: AriaSnapshotResult): void {
   const key = getCacheKey(page);
   elementSnapshotCache.set(key, {
@@ -179,10 +141,6 @@ function setCachedSnapshot(page: Page, snapshot: AriaSnapshotResult): void {
   }
 }
 
-/**
- * Invalidate the element snapshot/ref caches. With no argument, clears both
- * caches globally; with a page, evicts only that page's entries.
- */
 export function invalidateElementSnapshotCache(page?: Page): void {
   if (!page) {
     elementSnapshotCache.clear();
@@ -194,11 +152,6 @@ export function invalidateElementSnapshotCache(page?: Page): void {
   refMetadataCache.delete(key);
 }
 
-/**
- * Look up a ref's metadata for a page from the ref-metadata cache.
- * Serves stale-but-bounded data (up to 10× the snapshot TTL) so refs stay
- * resolvable across SPA re-renders; returns null on expiry or URL change.
- */
 export function getRefMetadata(page: Page, ref: string): RefMetadata | null {
   const key = getCacheKey(page);
   const cached = refMetadataCache.get(key);
@@ -212,8 +165,6 @@ export function getRefMetadata(page: Page, ref: string): RefMetadata | null {
   return cached.refs.get(ref) || null;
 }
 
-// Byte/truncation caps per bucket. Single shared table so prompt-size limits
-// stay tunable in one place instead of being scattered as magic numbers.
 const HTML_DOM_CONTEXT_LIMITS = {
   htmlBytes: 900_000,
   headings: 45,
@@ -267,14 +218,11 @@ function htmlDomText(node: DOMNode, max = 260): string | undefined {
   if (HTML_DOM_SKIP_TAGS.has(tag)) return undefined;
 
   const parts: string[] = [];
-  // O(n) length budget: recomputing parts.join(' ') per node was O(n²) on large
-  // DOMs — track the accumulated length instead (+1 for the implicit join space).
-  let accLen = 0;
   const visit = (current: DOMNode) => {
-    if (accLen >= max) return;
+    if (parts.join(' ').length >= max) return;
     if ((current as any)?.type === 'text') {
       const text = cleanHtmlDomText((current as any).data, max);
-      if (text) { parts.push(text); accLen += text.length + 1; }
+      if (text) parts.push(text);
       return;
     }
     if (isHtmlDomElement(current) && HTML_DOM_SKIP_TAGS.has(current.name.toLowerCase())) return;
@@ -290,9 +238,6 @@ function htmlDomAttr(node: HtmlDomElement, name: string, max = 220): string | un
 }
 
 function htmlDomSelector(node: HtmlDomElement, ancestors: HtmlDomElement[]): string {
-  // Cheapest stable selector wins: id → testid → name → positional nth-of-type,
-  // mirroring findElement's fallback ordering so parser-derived selectors
-  // resolve through the same strategies the click path uses.
   const tag = node.name.toLowerCase();
   const id = htmlDomAttr(node, 'id', 120);
   if (id && !/\s/.test(id)) return `${tag}#${id}`;
@@ -357,8 +302,6 @@ function pushUniqueHtmlDomNode(
   summary: HtmlDomParserNodeSummary,
   limit: number,
 ): void {
-  // Early exit on a full bucket: don't build a compact summary or a dedup
-  // key at all — on DOM-heavy pages this skips most of the work.
   if (bucket.length >= limit) return;
   const compact = compactHtmlDomSummary(summary);
   const key = [
@@ -374,17 +317,10 @@ function pushUniqueHtmlDomNode(
   bucket.push(compact);
 }
 
-/**
- * Parse raw HTML into a structured, bucketed summary (headings/nav/forms/controls/
- * links/media/content) suitable for grounding prompts. Truncates oversized HTML
- * via `maxHtmlBytes` and reports truncation stats in the returned context.
- */
-function parseHtmlDomParserContext(
+export function parseHtmlDomParserContext(
   html: string,
   options: { maxHtmlBytes?: number } = {},
 ): HtmlDomParserContext {
-  // Byte-cap BEFORE parsing so pathological pages can't blow up parse time or
-  // memory; stats.htmlBytes still reports the original size for diagnostics.
   const maxHtmlBytes = options.maxHtmlBytes ?? HTML_DOM_CONTEXT_LIMITS.htmlBytes;
   const source = html.length > maxHtmlBytes ? html.slice(0, maxHtmlBytes) : html;
   const roots = parseHtmlDom(source, {
@@ -494,11 +430,6 @@ function parseHtmlDomParserContext(
   return context;
 }
 
-/**
- * Capture the current page HTML and parse it into a structured context.
- * Returns null (never throws) when page.content() fails so callers can
- * fall back to other grounding sources.
- */
 export async function captureHtmlDomParserContext(page: Page): Promise<HtmlDomParserContext | null> {
   try {
     const html = await page.content();
@@ -509,11 +440,7 @@ export async function captureHtmlDomParserContext(page: Page): Promise<HtmlDomPa
   }
 }
 
-/**
- * Parse ref metadata from an aria snapshot. Tries the JSON-array format first;
- * on parse failure falls back to `parseRefsOptimized` for the yaml-ish text format.
- */
-function parseRefMetadata(snapshot: string): Map<string, RefMetadata> {
+export function parseRefMetadata(snapshot: string): Map<string, RefMetadata> {
   const refs = new Map<string, RefMetadata>();
   try {
     const parsed = JSON.parse(snapshot);
@@ -543,7 +470,6 @@ function parseRefMetadata(snapshot: string): Map<string, RefMetadata> {
       }
     }
   } catch {
-    // Not JSON — assume the yaml/text snapshot format and delegate.
     return parseRefsOptimized(snapshot);
   }
   return refs;
@@ -563,13 +489,10 @@ function parseRefMetadata(snapshot: string): Map<string, RefMetadata> {
  * - Skip expensive ariaSnapshot for small element counts
  * - Cache computed values to avoid redundant calculations
  */
-async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResult | null> {
+export async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResult | null> {
   const startTime = Date.now();
 
   try {
-    // Everything below runs in ONE page.evaluate so all the DOM querying,
-    // visibility checks, and enrichment happen in the browser context —
-    // crossing the CDP boundary per-element would dominate capture time.
     const snapshot = await page.evaluate(() => {
       const vWidth = window.innerWidth;
       const vHeight = window.innerHeight;
@@ -739,8 +662,6 @@ async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResult | nul
         'svg',
       ].join(',');
 
-      // Recurse into every open shadow root so elements inside web components
-      // (common in modern SPAs) are captured alongside light-DOM elements.
       const queryShadowAll = (root: Document | ShadowRoot, selectorString: string, results: Element[] = []): Element[] => {
         try {
           const matched = root.querySelectorAll(selectorString);
@@ -761,8 +682,6 @@ async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResult | nul
       const elements = queryShadowAll(document, selector);
 
       let ref = 0;
-      // Accumulate JSON lines into an array and join once at the end:
-      // per-line string concatenation is quadratic on large pages.
       const lines: string[] = [];
 
       // Optimization: Use array for string building (faster than concatenation)
@@ -800,8 +719,6 @@ async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResult | nul
       const interactiveRoles = new Set(['button', 'link', 'textbox', 'searchbox', 'combobox', 'checkbox', 'radio', 'switch', 'tab', 'menuitem', 'option']);
 
       for (let i = 0; i < elements.length; i++) {
-        // Early exit at the hard element cap: stop querying entirely rather
-        // than filtering afterwards, so pathological pages stay bounded.
         if (ref >= MAX_ELEMENTS) break;
 
         const el = elements[i];
@@ -850,9 +767,6 @@ async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResult | nul
         const role = el.getAttribute('role') || tagName.toLowerCase();
         const isContentEditable = (el as HTMLElement).isContentEditable;
         
-        // A pointer cursor is only evidence of clickability when the PARENT
-        // doesn't also have one — otherwise every child of a clickable container
-        // (i.e. most of the page) looks interactive.
         let hasPointerCursor = style.cursor === 'pointer';
         if (hasPointerCursor) {
           const parent = el.parentElement;
@@ -865,8 +779,6 @@ async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResult | nul
         const isInteractive = interactiveTags.has(tagName) || interactiveRoles.has(role) || hasClickHandler || isContentEditable || (el as HTMLElement).tabIndex >= 0;
 
         // Skip non-interactive generic elements (div, span, li, p, img, svg) to avoid bloating the prompt
-        // Early-exit: non-interactive generics are skipped before any expensive
-        // enrichment (labels, selectors, nearby text) is computed.
         if (!isInteractive && ['DIV', 'SPAN', 'LI', 'P', 'IMG', 'SVG'].includes(tagName)) {
           continue;
         }
@@ -959,8 +871,6 @@ async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResult | nul
         const cy = Math.floor(((rect.y + rect.height / 2) / vHeight) * 1000);
 
         const href = tagName === 'A' ? (el as HTMLAnchorElement).href : '';
-        // Prefer the DOM property over the attribute: .href is absolutized by
-        // the browser, while a scraped attr may be a relative fragment.
         const type = String((inputLike as any).type || el.getAttribute('type') || '');
         const placeholder = el.getAttribute('placeholder') || '';
         const value = ['INPUT', 'TEXTAREA', 'SELECT'].includes(tagName)
@@ -988,9 +898,6 @@ async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResult | nul
           h: Math.max(0, Math.floor((rect.height / vHeight) * 1000)),
         };
 
-        // Priority ranks elements for the semantic DOM context: interactive
-        // and in-viewport first, named controls boosted, disabled penalised
-        // so prompts surface the most actionable elements.
         const actions = elementActions(tag, role, type, isContentEditable);
         const priority =
           (isInteractive ? 50 : 0) +
@@ -1000,8 +907,6 @@ async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResult | nul
           (disabled ? -50 : 0);
 
         const enrich = (item: any) => {
-          // Cheap field assignments first; expensive lookups (nearestText,
-          // sectionHeading, formContext) only run when needsContext is true.
           item.tag = tag;
           if (!inViewport) item.inViewport = false;
           if (viewport !== 'full') item.viewport = viewport;
@@ -1012,8 +917,6 @@ async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResult | nul
           const id = el.getAttribute('id');
           const testId = el.getAttribute('data-testid') || el.getAttribute('data-test') || el.getAttribute('data-cy');
           const nameAttr = el.getAttribute('name');
-          // Multi-pass checkbox with early exit: expensive context lookups
-          // (nearbyText/section/form) only run for inputs that need them.
           const needsContext = !name || tag === 'input' || tag === 'textarea' || tag === 'select' || /textbox|combobox|searchbox/.test(role);
           const textAround = needsContext ? nearestText(el) : '';
           const section = needsContext ? sectionHeading(el) : '';
@@ -1089,11 +992,6 @@ async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResult | nul
   }
 }
 
-/**
- * Capture the interactive elements of a page with a URL-stability retry loop
- * (up to 3 attempts) and cache the result. Never throws: returns an empty
- * result if all capture paths fail so the orchestration loop can continue.
- */
 export async function captureInteractiveElements(page: Page): Promise<AriaSnapshotResult> {
   // Check cache first (Req 1.4: 500ms TTL caching)
   const cached = getCachedSnapshot(page);
@@ -1166,8 +1064,6 @@ export async function captureInteractiveElements(page: Page): Promise<AriaSnapsh
       raw: `- ${await page.title().catch(() => 'page')} "no interactive elements found" [ref=e1]`,
       refs: new Map([['e1', { role: 'heading', name: 'no interactive elements found' }]]),
       elementCount: 0,
-      // captureTimeMs 0 by subtraction (not Date.now()-startTime) — this is a
-      // synthesized empty result, not a real capture, so it must not skew perf logs.
       captureTimeMs: Date.now() - Date.now(),
     };
     setCachedSnapshot(page, fallback);
@@ -1182,11 +1078,54 @@ export async function captureInteractiveElements(page: Page): Promise<AriaSnapsh
   };
 }
 
+export function parseRefs(snapshot: string): Map<string, RefMetadata> {
+  const refs = new Map<string, RefMetadata>();
+
+  // Attempt JSON parse first
+  const firstJsonChar = firstNonWhitespaceChar(snapshot);
+  if (firstJsonChar === '[') {
+    try {
+      const parsed = JSON.parse(snapshot);
+      if (Array.isArray(parsed)) {
+        for (const item of parsed) {
+          if (item.ref) {
+            refs.set(item.ref, { role: item.role || 'unknown', name: item.name || '' });
+          }
+        }
+        return refs;
+      }
+    } catch (e) {
+      // Fall back to regex
+    }
+  }
+
+  const refRegex = /\[ref=([^\]]+)\]/g;
+  const lines = snapshot.split('\n');
+
+  for (const line of lines) {
+    const match = line.match(refRegex);
+    if (!match) continue;
+
+    for (const refMatch of match) {
+      const ref = refMatch.slice(5, -1);
+      const roleMatch = line.match(/^\s*-\s*(\w+)/);
+      const nameMatch = line.match(/"([^"]*)"/);
+
+      refs.set(ref, {
+        role: roleMatch ? roleMatch[1] : 'unknown',
+        name: nameMatch ? nameMatch[1] : '',
+      });
+    }
+  }
+
+  return refs;
+}
+
 /**
  * Optimized ref parsing using single-pass algorithm
  * Avoids multiple regex matches per line
  */
-function parseRefsOptimized(snapshot: string): Map<string, RefMetadata> {
+export function parseRefsOptimized(snapshot: string): Map<string, RefMetadata> {
   const refs = new Map<string, RefMetadata>();
 
   // Attempt JSON parse first
@@ -1246,9 +1185,6 @@ function parseRefsOptimized(snapshot: string): Map<string, RefMetadata> {
 }
 
 function firstNonWhitespaceChar(value: string): string {
-  // Manual scan instead of .trim()[0]: trim() allocates a full copy of even a
-  // multi-MB snapshot just to test its first char — this runs that test per
-  // parse call, so allocation-free matters.
   for (let i = 0; i < value.length; i++) {
     const code = value.charCodeAt(i);
     if (code !== 32 && code !== 9 && code !== 10 && code !== 13) return value[i];
@@ -1256,17 +1192,10 @@ function firstNonWhitespaceChar(value: string): string {
   return '';
 }
 
-/**
- * Render the ref/element snapshot into compact one-line-per-element prompt
- * text; caps output at 160 elements / 8000 chars. Non-JSON snapshots are
- * returned as-is since they're already compact.
- */
 export function formatElementsForPrompt(snapshot: string): string {
   try {
     const parsed = JSON.parse(snapshot);
     if (Array.isArray(parsed)) {
-      // Early exit + hard caps (160 lines / 8000 chars) keep the element list
-      // from exploding the prompt on element-heavy pages.
       const lines = parsed
         .filter(item => item?.ref)
         .slice(0, 160)
@@ -1290,6 +1219,14 @@ export function formatElementsForPrompt(snapshot: string): string {
     // Non-JSON aria snapshots are already compact and readable.
   }
   return snapshot;
+}
+
+/**
+ * Clear the element snapshot cache (useful for testing or manual cache invalidation)
+ */
+export function clearElementCache(): void {
+  elementSnapshotCache.clear();
+  refMetadataCache.clear();
 }
 
 /**

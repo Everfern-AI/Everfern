@@ -88,12 +88,8 @@ describe('Bug Condition Exploration — Bug 1: Duplicate Plan Creation', () => {
    * **Validates: Requirements 1.1, 2.1**
    */
   it('should demonstrate that createDataAnalystNode does not import getActivePlans (unfixed code)', () => {
-    // Read the source code of createDataAnalystNode
-    // Contract updated (wave F11) for commit 2482e73 ("Arch docs"), which landed
-    // the Bug 1 fix and moved createDataAnalystNode from the monolithic
-    // nodes/specialized_agents.ts (now a 7-line re-export barrel) to
-    // agents/data-analyst.ts. The implementation now lives there.
-    const sourceFile = path.join(process.cwd(), 'main/agent/runner/agents/data-analyst.ts');
+    // Read the source code of specialized_agents.ts
+    const sourceFile = path.join(process.cwd(), 'main/agent/runner/nodes/specialized_agents.ts');
     const sourceCode = fs.readFileSync(sourceFile, 'utf-8');
 
     // On UNFIXED code: source does NOT contain import of getActivePlans
@@ -117,11 +113,8 @@ describe('Bug Condition Exploration — Bug 1: Duplicate Plan Creation', () => {
     loadPlans([MOCK_PLAN]);
     expect(getActivePlans()).toHaveLength(1);
 
-    // Check if getActivePlans is imported in the createDataAnalystNode implementation
-    // Contract updated (wave F11) for commit 2482e73 ("Arch docs"): implementation
-    // moved from nodes/specialized_agents.ts (now a re-export barrel) to
-    // agents/data-analyst.ts.
-    const sourceFile = path.join(process.cwd(), 'main/agent/runner/agents/data-analyst.ts');
+    // Check if getActivePlans is imported in the specialized_agents module
+    const sourceFile = path.join(process.cwd(), 'main/agent/runner/nodes/specialized_agents.ts');
     const sourceCode = fs.readFileSync(sourceFile, 'utf-8');
 
     // On UNFIXED code: getActivePlans is not imported
@@ -141,26 +134,20 @@ describe('Bug Condition Exploration — Bug 1: Duplicate Plan Creation', () => {
    * **Validates: Requirements 1.1, 2.1**
    */
   it('should demonstrate that system prompt template has plan state injection logic', () => {
-    // Contract updated (wave F11) for commit 2482e73 ("Arch docs"): implementation
-    // moved from nodes/specialized_agents.ts (now a re-export barrel) to
-    // agents/data-analyst.ts, where the system prompt is now built from the
-    // data-analyst.md prompt (plus fallback template) concatenated with the
-    // conditionally-built planStateContext, so the override expression itself
-    // must inject plan state.
-    const sourceFile = path.join(process.cwd(), 'main/agent/runner/agents/data-analyst.ts');
+    const sourceFile = path.join(process.cwd(), 'main/agent/runner/nodes/specialized_agents.ts');
     const sourceCode = fs.readFileSync(sourceFile, 'utf-8');
 
-    // Look for the systemPromptOverride construction in createDataAnalystNode
-    const overrideMatch = sourceCode.match(/systemPromptOverride:[^\n]*/);
+    // Look for the system prompt template in createDataAnalystNode
+    const dataAnalystNodeMatch = sourceCode.match(/createDataAnalystNode[\s\S]*?systemPromptOverride:\s*`([\s\S]*?)`/);
 
-    expect(overrideMatch).toBeTruthy();
+    expect(dataAnalystNodeMatch).toBeTruthy();
 
-    if (overrideMatch) {
-      const overrideExpression = overrideMatch[0];
+    if (dataAnalystNodeMatch) {
+      const systemPromptTemplate = dataAnalystNodeMatch[1];
 
-      // On UNFIXED code: override does NOT contain planStateContext injection
-      // After fix: override DOES contain planStateContext injection
-      const hasPlanStateInjection = overrideExpression.includes('planStateContext');
+      // On UNFIXED code: template does NOT contain planStateContext injection
+      // After fix: template DOES contain planStateContext injection
+      const hasPlanStateInjection = systemPromptTemplate.includes('planStateContext');
 
       // This assertion FAILS on unfixed code (confirming the bug exists)
       expect(hasPlanStateInjection).toBe(true);

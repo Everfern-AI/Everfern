@@ -40,9 +40,6 @@ export class OllamaProvider implements ACPProvider {
         model: request.model || this.model,
         messages: request.messages,
         stream: false,
-        // LP-11: keep the model resident — without this Ollama unloads after
-        // 5 min idle and the next turn pays a 10–60s cold reload.
-        keep_alive: '30m',
         options: {
           temperature: request.temperature ?? 0.7,
           num_predict: request.maxTokens ?? 2048,
@@ -76,9 +73,6 @@ export class OllamaProvider implements ACPProvider {
         model: request.model || this.model,
         messages: request.messages,
         stream: true,
-        // LP-11: keep the model resident across streamed turns (same rationale
-        // as the non-streaming body above).
-        keep_alive: '30m',
         options: {
           temperature: request.temperature ?? 0.7,
           num_predict: request.maxTokens ?? 2048,

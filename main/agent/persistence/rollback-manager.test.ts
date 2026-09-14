@@ -77,8 +77,7 @@ describe('RollbackManager', () => {
     it('should exclude .env files', () => {
       expect(manager.isFileExcluded('.env')).toBe(true);
       expect(manager.isFileExcluded('.env.local')).toBe(true);
-      // AG-SAF-05: .env.* variants are now excluded too
-      expect(manager.isFileExcluded('config/.env.production')).toBe(true);
+      expect(manager.isFileExcluded('config/.env.production')).toBe(false); // Different pattern
     });
 
     it('should exclude private key files', () => {
@@ -911,8 +910,6 @@ describe('RollbackManager', () => {
         output: 'npm notice added 1 packages',
         exitCode: 0,
         rollbackCommand: 'npm uninstall lodash',
-        rollbackPayload: { program: 'npm', args: ['uninstall', 'lodash'] },
-        cwd: tempDir,
         reversible: true,
         timestamp: Date.now(),
       };
@@ -920,34 +917,11 @@ describe('RollbackManager', () => {
       // Mock getCommandRecord
       manager['getCommandRecord'] = vi.fn().mockResolvedValue(commandRecord);
 
-      // AG-SAF-01: inject auto-approve handler (structured payload required)
-      manager.setRollbackConfirmationHandler(() => true);
-
-      // Mock spawn to avoid real npm execution
-      const spawnCalls: any[] = [];
-      vi.spyOn(require('child_process'), 'spawn').mockImplementation((...args: any[]) => {
-        spawnCalls.push(args);
-        const [program, cmdArgs, opts]: any[] = args;
-        return {
-          stdout: { on: vi.fn() },
-          stderr: { on: vi.fn() },
-          on: (event: string, cb: (code: number | null) => void) => {
-            if (event === 'close') setTimeout(() => cb(0), 5);
-            return this;
-          },
-        };
-      });
-
       const result = await manager.rollbackCommand(commandRecord.id);
 
-      // Should succeed via mocked structured spawn
+      // Should succeed — npm uninstall lodash runs and succeeds
+      // (lodash may or may not be installed, but npm uninstall is idempotent)
       expect(result.success).toBe(true);
-      expect(spawnCalls.length).toBe(1);
-      expect(spawnCalls[0][0]).toBe('npm');
-      expect(spawnCalls[0][1]).toEqual(['uninstall', 'lodash']);
-      expect(spawnCalls[0][2].shell).toBe(false);
-
-      vi.restoreAllMocks();
     });
 
     it('should not rollback an irreversible command', async () => {
@@ -1000,9 +974,7 @@ describe('RollbackManager', () => {
       const result = await manager.rollbackCommand(commandRecord.id);
 
       expect(result.success).toBe(false);
-      // AG-SAF-01: legacy free-text-only records are refused fail-closed
-      expect(result.error).toContain('no structured rollback payload');
-      expect((result as any).skipped).toBe(true);
+      expect(result.error).toContain('No rollback command');
     });
 
     it('should collect errors during partial rollback', async () => {

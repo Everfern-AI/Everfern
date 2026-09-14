@@ -2,11 +2,7 @@
  * EverFern Desktop — LM Studio Provider
  * 
  * Connects to a locally-running LM Studio server.
- * Uses OpenAI-compatible API at http://127.0.0.1:1234/v1
- * 
- * LP-07: 'local-model' is a sentinel — AIClient resolves it to a real model
- * id via listModels() at first send; never send it verbatim on the wire and
- * never persist resolved ids back into provider metadata.
+ * Uses OpenAI-compatible API at http://localhost:1234/v1
  */
 
 import type {
@@ -18,27 +14,8 @@ import type {
   StreamChunk,
 } from '../types';
 
-// LP-10: normalize loopback — bare 'localhost' may dial ::1 while LM Studio
-// binds IPv4 only, producing bare "fetch failed" (see ai-client
-// normalizeLocalUrl for the same fix on the AIClient side).
-function normalizeLmStudioBaseUrl(url: string): string {
-  return url
-    .replace(/^http:\/\/\[?::1\]?(:\d+)?/i, 'http://127.0.0.1$1')
-    .replace(/^http:\/\/localhost(:\d+)?/i, 'http://127.0.0.1$1');
-}
-
-// LP-07: strip renderer-scoped prefixes ('lmstudio:<id>') so a prefixed id
-// can never leak to the wire. Mirrors normalizeRequestedModel in
-// ipc/agent/stream-handlers.ts (the live path); this class is currently
-// unimported but kept safe for any future wiring.
-function stripLmStudioPrefix(model: string): string {
-  return model.startsWith('lmstudio:') ? model.slice('lmstudio:'.length) : model;
-}
-
 export class LMStudioProvider implements ACPProvider {
-  // LP-10: 127.0.0.1 (not 'localhost') per the un-normalized-localhost note.
-  private baseUrl = 'http://127.0.0.1:1234/v1';
-  // LP-07: sentinel — resolved client-side at first send, never a real id.
+  private baseUrl = 'http://localhost:1234/v1';
   private model = 'local-model';
 
   readonly info: ProviderInfo = {
@@ -46,15 +23,13 @@ export class LMStudioProvider implements ACPProvider {
     name: 'LM Studio',
     description: 'Run models locally via LM Studio (OpenAI-compatible)',
     requiresApiKey: false,
-    // LP-07: sentinel — AIClient resolves it via listModels() at first send.
     defaultModel: 'local-model',
     isLocal: true,
   };
 
   initialize(config: ProviderConfig): void {
-    if (config.baseUrl) this.baseUrl = normalizeLmStudioBaseUrl(config.baseUrl);
-    // LP-07: strip any renderer 'lmstudio:' prefix before storing.
-    if (config.model) this.model = stripLmStudioPrefix(config.model);
+    if (config.baseUrl) this.baseUrl = config.baseUrl;
+    if (config.model) this.model = config.model;
   }
 
   async chat(request: ChatCompletionRequest): Promise<ChatCompletionResponse> {
@@ -62,8 +37,7 @@ export class LMStudioProvider implements ACPProvider {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        // LP-07: strip renderer 'lmstudio:' prefix at the wire boundary.
-        model: request.model ? stripLmStudioPrefix(request.model) : this.model,
+        model: request.model || this.model,
         messages: request.messages,
         temperature: request.temperature ?? 0.7,
         max_tokens: request.maxTokens ?? 2048,
@@ -95,8 +69,7 @@ export class LMStudioProvider implements ACPProvider {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        // LP-07: strip renderer 'lmstudio:' prefix at the wire boundary.
-        model: request.model ? stripLmStudioPrefix(request.model) : this.model,
+        model: request.model || this.model,
         messages: request.messages,
         temperature: request.temperature ?? 0.7,
         max_tokens: request.maxTokens ?? 2048,

@@ -28,8 +28,7 @@ import {
     FolderMinusIcon
 } from "@heroicons/react/24/outline";
 import SearchPopup from "./SearchPopup";
-import { useTheme } from "@/components/common/ThemeProvider";
-import { isEditableTarget } from "@/lib/keyboard";
+import { useTheme } from "@/components/ThemeProvider";
 
 interface SidebarProps {
     isOpen: boolean;
@@ -63,9 +62,7 @@ interface ConversationSummary {
     isUnread?: boolean;
 }
 
-// CU-REND-10: memoized so chat-page streaming re-renders (20/sec) don't
-// re-render the sidebar; its own 4s history poll updates only its internal state.
-function Sidebar({
+export default function Sidebar({ 
     isOpen, 
     onToggle, 
     activeConversationId, 
@@ -254,7 +251,6 @@ function Sidebar({
             if (menuConvId) {
                 const activeItem = history.find(h => h.id === menuConvId);
                 if (!activeItem) return;
-                if (isEditableTarget(e.target)) return;
 
                 if (e.key === "p" || e.key === "P") {
                     e.preventDefault();
@@ -375,7 +371,6 @@ function Sidebar({
     const handleDelete = async (id: string) => {
         setMenuConvId(null);
         setShowChangeProjectSubmenu(false);
-        if (!window.confirm('Delete this conversation? This cannot be undone.')) return;
         try {
             if ((window as any).electronAPI?.history?.delete) {
                 await (window as any).electronAPI.history.delete(id);
@@ -877,7 +872,7 @@ function Sidebar({
                             position: "fixed",
                             top: menuPosition.top,
                             left: menuPosition.left,
-                            zIndex: 'var(--z-dropdown)',
+                            zIndex: 9999,
                             backgroundColor: "var(--color-bg-surface, #ffffff)",
                             border: "1px solid var(--color-border, #e5e5e5)",
                             borderRadius: 14,
@@ -1145,5 +1140,3 @@ function Sidebar({
         </>
     );
 }
-
-export default React.memo(Sidebar);

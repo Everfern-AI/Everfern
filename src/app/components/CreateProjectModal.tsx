@@ -11,7 +11,6 @@ import {
     XMarkIcon
 } from '@heroicons/react/24/outline';
 import { SparklesIcon } from '@heroicons/react/24/solid';
-import { useFocusTrap } from '@/hooks/useFocusTrap';
 
 interface CreateProjectModalProps {
     isOpen: boolean;
@@ -29,7 +28,6 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
     const [isCreating, setIsCreating] = useState(false);
     const [isDragging, setIsDragging] = useState(false);
     const pathEditedRef = useRef(false);
-    const trapRef = useFocusTrap<HTMLDivElement>({ active: isOpen, onEscape: onClose });
 
     useEffect(() => {
         if (isOpen) {
@@ -192,7 +190,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
     return (
         <AnimatePresence>
             {isOpen && (
-                <div style={{ position: 'fixed', inset: 0, zIndex: 'var(--z-modal)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ position: 'fixed', inset: 0, zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
@@ -202,10 +200,6 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
                         style={{ position: 'absolute', inset: 0, backgroundColor: 'var(--color-bg-overlay, rgba(0,0,0,0.4))', backdropFilter: 'blur(8px)' }}
                     />
                     <motion.div
-                        ref={trapRef}
-                        role="dialog"
-                        aria-modal="true"
-                        aria-label="Start a new project"
                         initial={{ opacity: 0, scale: 0.9, filter: 'blur(10px)' }}
                         animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
                         exit={{ opacity: 0, scale: 0.9, filter: 'blur(10px)' }}

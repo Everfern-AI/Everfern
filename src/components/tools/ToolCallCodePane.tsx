@@ -12,7 +12,7 @@ import {
   FileCode,
 } from 'lucide-react';
 
-import { useTheme } from '@/components/common/ThemeProvider';
+import { useTheme } from '@/components/ThemeProvider';
 
 /* ============================================================
    TYPES & PROPS
@@ -439,10 +439,10 @@ export function ToolCallCodePane({
   const gutterColorDefault = isDark ? '#52525b' : '#a1a1aa';
   const gutterIndicatorColor = isDark ? '#52525b' : '#cbd5e1';
 
-  const addedBg = isDark ? 'rgba(34, 197, 94, 0.06)' : 'var(--diff-add-bg)';
-  const removedBg = isDark ? 'rgba(239, 68, 68, 0.06)' : 'var(--diff-del-bg)';
-  const addedColor = isDark ? '#4ade80' : 'var(--diff-add-text)';
-  const removedColor = isDark ? '#f87171' : 'var(--diff-del-text)';
+  const addedBg = isDark ? 'rgba(34, 197, 94, 0.06)' : 'rgba(34, 197, 94, 0.10)';
+  const removedBg = isDark ? 'rgba(239, 68, 68, 0.06)' : 'rgba(239, 68, 68, 0.10)';
+  const addedColor = isDark ? '#4ade80' : '#15803d';
+  const removedColor = isDark ? '#f87171' : '#dc2626';
 
   const handleCopyPath = async () => {
     if (!rawPath) return;

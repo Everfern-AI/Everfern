@@ -120,7 +120,7 @@ const ToolCard = ({ tool }: { tool: ParsedTool }) => {
     })();
 
     const galliumSurface = {
-        background: "var(--color-bg-subtle)",
+        background: "#ececea",
         boxShadow: [
             "inset 0 1px 0 rgba(255,255,255,0.72)",
             "inset 0 -1px 0 rgba(0,0,0,0.06)",
@@ -128,7 +128,7 @@ const ToolCard = ({ tool }: { tool: ParsedTool }) => {
             "inset -1px 0 rgba(0,0,0,0.04)",
             "0 1px 3px rgba(0,0,0,0.07)",
         ].join(", "),
-        border: "0.5px solid var(--color-border)",
+        border: "0.5px solid rgba(0,0,0,0.10)",
     };
 
     const hasDetails = !!tool.jsonValue || !!tool.rawValue;
@@ -150,7 +150,7 @@ const ToolCard = ({ tool }: { tool: ParsedTool }) => {
                     padding: "7px 14px 7px 8px",
                     cursor: hasDetails ? "pointer" : "default",
                     fontSize: 12.5,
-                    color: 'var(--color-text-primary)',
+                    color: "#333",
                     lineHeight: 1.4,
                     userSelect: "none",
                 }}
@@ -160,7 +160,7 @@ const ToolCard = ({ tool }: { tool: ParsedTool }) => {
                     height: 24,
                     flexShrink: 0,
                     borderRadius: 7,
-                    background: "var(--color-bg-active)",
+                    background: "#d3d3d0",
                     boxShadow: [
                         "inset 0 1px 0 rgba(255,255,255,0.70)",
                         "inset 0 -1px 0 rgba(0,0,0,0.08)",
@@ -170,7 +170,7 @@ const ToolCard = ({ tool }: { tool: ParsedTool }) => {
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    color: "var(--color-text-secondary)",
+                    color: "#555",
                 }}>
                     {icon}
                 </div>
@@ -186,7 +186,7 @@ const ToolCard = ({ tool }: { tool: ParsedTool }) => {
                 </span>
 
                 {hasDetails && (
-                    <span style={{ color: 'var(--color-text-tertiary)', display: "flex", alignItems: "center" }}>
+                    <span style={{ color: "#888", display: "flex", alignItems: "center" }}>
                         {isOpen ? (
                             <ChevronUpIcon style={{ width: 14, height: 14 }} />
                         ) : (
@@ -201,7 +201,7 @@ const ToolCard = ({ tool }: { tool: ParsedTool }) => {
                 <div style={{ 
                     padding: '12px 14px', 
                     backgroundColor: 'var(--color-bg-surface)',
-                    borderTop: '1px solid var(--color-border-subtle)'
+                    borderTop: '1px solid rgba(0,0,0,0.06)'
                 }}>
                     {tool.jsonValue ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -231,8 +231,8 @@ const ToolCard = ({ tool }: { tool: ParsedTool }) => {
                                             maxHeight: isLong ? 150 : 'none',
                                             overflowY: isLong ? 'auto' : 'visible',
                                             ...(isCommand
-                                                ? { backgroundColor: 'var(--color-code-chip-bg)', color: 'var(--color-success-light)', border: '1px solid var(--color-code-chip-border)' }
-                                                : { backgroundColor: 'var(--color-bg-elevated)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-subtle)' }
+                                                ? { backgroundColor: '#1a1a1a', color: '#4ade80', border: '1px solid #333' }
+                                                : { backgroundColor: '#fcfcfb', color: 'var(--color-text-primary)', border: '1px solid rgba(0,0,0,0.06)' }
                                             ),
                                         }}>
                                             {isCommand ? `$ ${strVal}` : strVal}
@@ -243,9 +243,9 @@ const ToolCard = ({ tool }: { tool: ParsedTool }) => {
                         </div>
                     ) : (
                         <div style={{
-                            backgroundColor: 'var(--color-code-chip-bg)',
-                            color: 'var(--color-success-light)',
-                            border: '1px solid var(--color-code-chip-border)',
+                            backgroundColor: '#1a1a1a',
+                            color: '#4ade80',
+                            border: '1px solid #333',
                             borderRadius: 5,
                             padding: '6px 10px',
                             fontSize: 12,
@@ -325,7 +325,7 @@ const HitlApprovalForm = ({
         });
 
         if (filteredTools.length === 0) return (
-            <div style={{ backgroundColor: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)', borderRadius: 6, padding: 12, fontSize: 13, color: 'var(--color-text-secondary)' }}>
+            <div style={{ backgroundColor: '#f0f4f8', border: '1px solid #d1d5db', borderRadius: 6, padding: 12, fontSize: 13, color: '#495057' }}>
                 <div style={{ marginBottom: 4 }}><strong>Summary:</strong> Background operations (context gathering)</div>
                 <div>These actions are safe and do not modify your files.</div>
             </div>
@@ -343,7 +343,7 @@ const HitlApprovalForm = ({
 
     return (
         <div style={{
-            background: "var(--color-bg-subtle)",
+            background: "#ececea",
             boxShadow: [
                 "inset 0 1px 0 rgba(255,255,255,0.72)",
                 "inset 0 -1px 0 rgba(0,0,0,0.06)",
@@ -351,7 +351,7 @@ const HitlApprovalForm = ({
                 "inset -1px 0 rgba(0,0,0,0.04)",
                 "0 1px 3px rgba(0,0,0,0.07)",
             ].join(", "),
-            border: "0.5px solid var(--color-border)",
+            border: "0.5px solid rgba(0,0,0,0.10)",
             borderRadius: 16,
             padding: 24,
             margin: '24px 0',
@@ -364,7 +364,7 @@ const HitlApprovalForm = ({
                     width: 24,
                     height: 24,
                     borderRadius: 7,
-                    background: "var(--color-bg-active)",
+                    background: "#d3d3d0",
                     boxShadow: [
                         "inset 0 1px 0 rgba(255,255,255,0.70)",
                         "inset 0 -1px 0 rgba(0,0,0,0.08)",
@@ -374,7 +374,7 @@ const HitlApprovalForm = ({
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    color: "var(--color-text-secondary)",
+                    color: "#555",
                 }}>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                         <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
@@ -383,7 +383,7 @@ const HitlApprovalForm = ({
                 <span>High-risk action requires your approval</span>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, color: 'var(--color-error)', fontSize: 13, fontWeight: 600 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, color: '#dc2626', fontSize: 13, fontWeight: 600 }}>
                 <span>🚨</span>
                 <span>Dangerous tool detected</span>
             </div>
@@ -392,7 +392,7 @@ const HitlApprovalForm = ({
                 {request.question}
             </h3>
 
-            <div style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+            <div style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 12, padding: 16, marginBottom: 16 }}>
                 <div style={{ fontWeight: 600, marginBottom: 12, color: 'var(--color-text-primary)', fontSize: 14 }}>
                     Actions to execute:
                 </div>
@@ -401,7 +401,7 @@ const HitlApprovalForm = ({
                     {request.details.tools && request.details.tools.length > 0 ? (
                         renderToolDetails(request.details.tools)
                     ) : (
-                        <div style={{ backgroundColor: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-subtle)', borderRadius: 8, padding: 12, fontSize: 13, color: 'var(--color-text-primary)' }}>
+                        <div style={{ backgroundColor: '#fcfcfb', border: '1px solid rgba(0,0,0,0.06)', borderRadius: 8, padding: 12, fontSize: 13, color: 'var(--color-text-primary)' }}>
                             <div style={{ marginBottom: 4 }}><strong>Summary:</strong> {request.details.summary}</div>
                             <div><strong>Reason:</strong> {request.details.reasoning}</div>
                         </div>
@@ -410,16 +410,16 @@ const HitlApprovalForm = ({
             </div>
 
             {showFollowUpInput && (
-                <div style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+                <div style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 12, padding: 16, marginBottom: 16 }}>
                     <textarea
                         value={followUpQuestion}
                         onChange={(e) => setFollowUpQuestion(e.target.value)}
                         placeholder="Ask a follow-up question..."
-                        style={{ width: '100%', minHeight: 60, padding: 8, borderRadius: 6, border: '1px solid var(--color-border)', fontSize: 13, fontFamily: 'inherit', resize: 'vertical', outline: 'none' }}
+                        style={{ width: '100%', minHeight: 60, padding: 8, borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13, fontFamily: 'inherit', resize: 'vertical', outline: 'none' }}
                     />
                     <div style={{ display: 'flex', gap: 8, marginTop: 8, justifyContent: 'flex-end' }}>
                         <button onClick={() => { setShowFollowUpInput(false); setFollowUpQuestion(''); }}
-                            style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-text-primary)', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
+                            style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid #d1d5db', backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-text-primary)', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
                             Cancel
                         </button>
                         <button onClick={handleAskQuestion} disabled={!followUpQuestion.trim()}
@@ -431,21 +431,21 @@ const HitlApprovalForm = ({
             )}
 
             {userDecision && (
-                <div style={{ backgroundColor: userDecision === 'approved' ? 'var(--color-success-dim)' : 'var(--color-error-dim)', border: `1px solid ${userDecision === 'approved' ? 'var(--color-success)' : 'var(--color-error)'}`, borderRadius: 8, padding: 12, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ backgroundColor: userDecision === 'approved' ? '#e8f5e9' : '#ffebee', border: `1px solid ${userDecision === 'approved' ? '#a5d6a7' : '#ef9a9a'}`, borderRadius: 8, padding: 12, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontSize: 16 }}>{userDecision === 'approved' ? '✅' : '❌'}</span>
-                    <span style={{ color: userDecision === 'approved' ? 'var(--color-success)' : 'var(--color-error)', fontWeight: 600, fontSize: 14 }}>
+                    <span style={{ color: userDecision === 'approved' ? '#1b5e20' : '#b71c1c', fontWeight: 600, fontSize: 14 }}>
                         {userDecision === 'approved'
                             ? `Operation ${sendAsMessage ? 'approved (message sent)' : 'approved (silent)'}`
                             : `Operation ${sendAsMessage ? 'rejected (message sent)' : 'rejected (silent)'}`}
                     </span>
                     {isProcessing && (
-                        <div style={{ marginLeft: 'auto', width: 16, height: 16, border: '2px solid transparent', borderTop: `2px solid ${userDecision === 'approved' ? 'var(--color-success)' : 'var(--color-error)'}`, borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                        <div style={{ marginLeft: 'auto', width: 16, height: 16, border: '2px solid transparent', borderTop: `2px solid ${userDecision === 'approved' ? '#2e7d32' : '#c62828'}`, borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
                     )}
                 </div>
             )}
 
             {!userDecision && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, padding: '8px 12px', backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, padding: '8px 12px', backgroundColor: 'var(--color-bg-surface)', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 8 }}>
                     <input type="checkbox" id="sendAsMessage" checked={sendAsMessage} onChange={(e) => setSendAsMessage(e.target.checked)} style={{ margin: 0 }} />
                     <label htmlFor="sendAsMessage" style={{ fontSize: 13, color: 'var(--color-text-primary)', cursor: 'pointer', userSelect: 'none' }}>
                         Send approval/rejection as a chat message (visible in conversation)
@@ -456,21 +456,21 @@ const HitlApprovalForm = ({
             {!userDecision && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
                     <button onClick={() => setShowFollowUpInput(!showFollowUpInput)}
-                        style={{ padding: '10px 16px', borderRadius: 8, border: '1px solid var(--color-border-focus)', backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-text-primary)', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
-                        onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; }}
+                        style={{ padding: '10px 16px', borderRadius: 8, border: '1px solid #111111', backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-text-primary)', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
+                        onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#f4f4f3'; }}
                         onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; }}>
                         {showFollowUpInput ? 'Cancel' : 'Ask Question'}
                     </button>
                     <div style={{ display: 'flex', gap: 12 }}>
                         <button onClick={handleReject} disabled={isProcessing}
-                            style={{ padding: '10px 20px', borderRadius: 8, border: '1px solid var(--color-error)', backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-error)', fontSize: 14, fontWeight: 600, cursor: isProcessing ? 'not-allowed' : 'pointer', opacity: isProcessing ? 0.6 : 1 }}
-                            onMouseEnter={e => { if (!isProcessing) { e.currentTarget.style.backgroundColor = 'var(--color-error)'; e.currentTarget.style.color = 'var(--color-text-inverse)'; } }}
-                            onMouseLeave={e => { if (!isProcessing) { e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; e.currentTarget.style.color = 'var(--color-error)'; } }}>
+                            style={{ padding: '10px 20px', borderRadius: 8, border: '1px solid #dc3545', backgroundColor: 'var(--color-bg-surface)', color: '#dc3545', fontSize: 14, fontWeight: 600, cursor: isProcessing ? 'not-allowed' : 'pointer', opacity: isProcessing ? 0.6 : 1 }}
+                            onMouseEnter={e => { if (!isProcessing) { e.currentTarget.style.backgroundColor = '#dc3545'; e.currentTarget.style.color = 'var(--color-bg-surface)'; } }}
+                            onMouseLeave={e => { if (!isProcessing) { e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; e.currentTarget.style.color = '#dc3545'; } }}>
                             Reject
                         </button>
                         <button onClick={handleApprove} disabled={isProcessing}
                             style={{ padding: '10px 20px', borderRadius: 8, border: 'none', backgroundColor: 'var(--color-text-primary)', color: 'var(--color-bg-surface)', fontSize: 14, fontWeight: 600, cursor: isProcessing ? 'not-allowed' : 'pointer', opacity: isProcessing ? 0.6 : 1 }}
-                            onMouseEnter={e => { if (!isProcessing) e.currentTarget.style.backgroundColor = 'var(--color-bg-active)'; }}
+                            onMouseEnter={e => { if (!isProcessing) e.currentTarget.style.backgroundColor = '#222222'; }}
                             onMouseLeave={e => { if (!isProcessing) e.currentTarget.style.backgroundColor = 'var(--color-text-primary)'; }}>
                             Approve
                         </button>
@@ -571,11 +571,11 @@ const UserQuestionForm = ({
             <div style={{ margin: '0 0 20px 0' }}>
                 {/* Warning header */}
                 <div style={{
-                    backgroundColor: 'var(--color-warning-dim)',
-                    border: '1px solid var(--color-warning-light)',
+                    backgroundColor: '#fff3cd',
+                    border: '1px solid #ffeaa7',
                     borderRadius: '12px 12px 0 0',
                     padding: '12px 16px',
-                    color: 'var(--color-warning)',
+                    color: '#856404',
                     fontSize: 14,
                     fontWeight: 600,
                     display: 'flex',
@@ -591,8 +591,8 @@ const UserQuestionForm = ({
 
                 {/* Body */}
                 <div style={{
-                    backgroundColor: 'var(--color-bg-surface)',
-                    border: '1px solid var(--color-warning-light)',
+                    backgroundColor: '#fefefe',
+                    border: '1px solid #ffeaa7',
                     borderTop: 'none',
                     borderRadius: '0 0 12px 12px',
                     padding: 16,
@@ -629,7 +629,7 @@ const UserQuestionForm = ({
                                 <span>⚙️</span> Actions to execute
                                 {toolEntries.length > 0 && (
                                     <span style={{
-                                        backgroundColor: 'var(--color-navis-icon-color)',
+                                        backgroundColor: '#6366f1',
                                         color: 'var(--color-bg-surface)',
                                         borderRadius: 20,
                                         padding: '1px 7px',
@@ -667,8 +667,8 @@ const UserQuestionForm = ({
                                 ) : (
                                     // Fallback: raw markdown
                                     <div style={{
-                                        backgroundColor: 'var(--color-bg-subtle)',
-                                        border: '1px solid var(--color-border)',
+                                        backgroundColor: '#f8f9fa',
+                                        border: '1px solid #e5e7eb',
                                         borderRadius: 8,
                                         padding: '10px 14px',
                                         fontSize: 13,
@@ -688,7 +688,7 @@ const UserQuestionForm = ({
 
     return (
         <div style={{
-            background: "var(--color-bg-subtle)",
+            background: "#ececea",
             boxShadow: [
                 "inset 0 1px 0 rgba(255,255,255,0.72)",
                 "inset 0 -1px 0 rgba(0,0,0,0.06)",
@@ -696,7 +696,7 @@ const UserQuestionForm = ({
                 "inset -1px 0 rgba(0,0,0,0.04)",
                 "0 1px 3px rgba(0,0,0,0.07)",
             ].join(", "),
-            border: "0.5px solid var(--color-border)",
+            border: "0.5px solid rgba(0,0,0,0.10)",
             borderRadius: 16,
             padding: 24,
             margin: '24px 0',
@@ -712,7 +712,7 @@ const UserQuestionForm = ({
                         width: 24,
                         height: 24,
                         borderRadius: 7,
-                        background: "var(--color-bg-active)",
+                        background: "#d3d3d0",
                         boxShadow: [
                             "inset 0 1px 0 rgba(255,255,255,0.70)",
                             "inset 0 -1px 0 rgba(0,0,0,0.08)",
@@ -722,7 +722,7 @@ const UserQuestionForm = ({
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
-                        color: "var(--color-text-secondary)",
+                        color: "#555",
                     }}>
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                             <circle cx="12" cy="12" r="10" />
@@ -732,7 +732,7 @@ const UserQuestionForm = ({
                     <span>Waiting for your input</span>
                 </div>
                 {total > 1 && (
-                    <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', fontWeight: 600 }}>
+                    <span style={{ fontSize: 12, color: '#717171', fontWeight: 600 }}>
                         {currentIndex + 1} / {total}
                     </span>
                 )}
@@ -740,7 +740,7 @@ const UserQuestionForm = ({
 
             {/* Progress bar */}
             {total > 1 && (
-                <div style={{ height: 3, backgroundColor: 'var(--color-bg-active)', borderRadius: 2, marginBottom: 16 }}>
+                <div style={{ height: 3, backgroundColor: 'rgba(0,0,0,0.06)', borderRadius: 2, marginBottom: 16 }}>
                     <div style={{
                         height: '100%',
                         backgroundColor: 'var(--color-text-primary)',
@@ -756,7 +756,7 @@ const UserQuestionForm = ({
                 <div 
                     style={{ 
                         marginBottom: 20,
-                        background: "var(--color-bg-subtle)",
+                        background: "#ececea",
                         boxShadow: [
                             "inset 0 1px 0 rgba(255,255,255,0.72)",
                             "inset 0 -1px 0 rgba(0,0,0,0.06)",
@@ -764,7 +764,7 @@ const UserQuestionForm = ({
                             "inset -1px 0 rgba(0,0,0,0.04)",
                             "0 1px 3px rgba(0,0,0,0.07)",
                         ].join(", "),
-                        border: "0.5px solid var(--color-border)",
+                        border: "0.5px solid rgba(0,0,0,0.10)",
                         borderRadius: 12,
                         overflow: 'hidden'
                     }}
@@ -773,7 +773,7 @@ const UserQuestionForm = ({
                         style={{ 
                             padding: '10px 16px',
                             background: "linear-gradient(to right, rgba(255,255,255,0.6), rgba(255,255,255,0.2))",
-                            borderBottom: '1px solid var(--color-border)',
+                            borderBottom: '1px solid rgba(0,0,0,0.08)',
                             display: 'flex',
                             alignItems: 'center',
                             gap: 8
@@ -783,7 +783,7 @@ const UserQuestionForm = ({
                             width: 24,
                             height: 24,
                             borderRadius: 7,
-                            background: "var(--color-bg-active)",
+                            background: "#d3d3d0",
                             boxShadow: [
                                 "inset 0 1px 0 rgba(255,255,255,0.70)",
                                 "inset 0 -1px 0 rgba(0,0,0,0.08)",
@@ -793,7 +793,7 @@ const UserQuestionForm = ({
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
-                            color: "var(--color-text-secondary)",
+                            color: "#555",
                         }}>
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                 <polyline points="16 18 22 12 16 6" />
@@ -842,24 +842,24 @@ const UserQuestionForm = ({
                             style={{
                                 padding: '14px 16px',
                                 borderRadius: 10,
-                                border: selected ? '1px solid var(--color-border-focus)' : '1px solid var(--color-border-subtle)',
-                                backgroundColor: selected ? 'var(--color-bg-surface)' : 'var(--color-bg-elevated)',
+                                border: selected ? '1px solid #111111' : '1px solid rgba(0,0,0,0.06)',
+                                backgroundColor: selected ? 'var(--color-bg-surface)' : '#fcfcfb',
                                 color: 'var(--color-text-primary)',
                                 cursor: 'pointer',
                                 textAlign: 'left',
                                 fontSize: 14,
                                 fontWeight: option.isRecommended ? 600 : 500,
                                 transition: 'all 0.2s ease',
-                                boxShadow: selected ? '0 1px 3px rgba(0,0,0,0.06), inset 0 0 0 1px var(--color-border-focus)' : 'inset 0 1px 0 rgba(255,255,255,0.8), 0 1px 2px rgba(0,0,0,0.03)',
+                                boxShadow: selected ? '0 1px 3px rgba(0,0,0,0.06), inset 0 0 0 1px #111111' : 'inset 0 1px 0 rgba(255,255,255,0.8), 0 1px 2px rgba(0,0,0,0.03)',
                             }}
                             onMouseEnter={e => { if (!selected) e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; }}
-                            onMouseLeave={e => { if (!selected) e.currentTarget.style.backgroundColor = 'var(--color-bg-elevated)'; }}
+                            onMouseLeave={e => { if (!selected) e.currentTarget.style.backgroundColor = '#fcfcfb'; }}
                         >
                             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                                 <div style={{
-                                     width: 18, height: 18,
-                                     borderRadius: current.multiSelect ? 4 : '50%',
-                                     border: selected ? 'none' : '1px solid var(--color-text-placeholder)',
+                                    width: 18, height: 18,
+                                    borderRadius: current.multiSelect ? 4 : '50%',
+                                    border: selected ? 'none' : '1px solid #cbd5e1',
                                     backgroundColor: selected ? 'var(--color-text-primary)' : 'var(--color-bg-surface)',
                                     display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                                     boxShadow: selected ? 'none' : 'inset 0 1px 2px rgba(0,0,0,0.05)',
@@ -877,7 +877,7 @@ const UserQuestionForm = ({
                                     </span>
                                 )}
                                 {option.isRecommended && (
-                                    <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--color-success)', backgroundColor: 'var(--color-success-dim)', border: '1px solid var(--color-success-light)', padding: '2px 8px', borderRadius: 20, marginLeft: 'auto', letterSpacing: '0.04em' }}>
+                                    <span style={{ fontSize: 10, fontWeight: 700, color: '#166534', backgroundColor: '#dcfce7', border: '1px solid #bbf7d0', padding: '2px 8px', borderRadius: 20, marginLeft: 'auto', letterSpacing: '0.04em' }}>
                                         RECOMMENDED
                                     </span>
                                 )}
@@ -889,13 +889,13 @@ const UserQuestionForm = ({
 
             {/* Attached files summary */}
             {attachedFiles.length > 0 && (
-                <div style={{ marginBottom: 12, padding: '8px 12px', backgroundColor: 'var(--color-success-dim)', border: '1px solid var(--color-success-light)', borderRadius: 8 }}>
+                <div style={{ marginBottom: 12, padding: '8px 12px', backgroundColor: '#e8f5e9', border: '1px solid #c8e6c9', borderRadius: 8 }}>
                     {attachedFiles.map((f, i) => (
-                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--color-success)' }}>
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#1b5e20' }}>
                             <span>📎</span>
                             <span style={{ fontWeight: 500 }}>{f.name}</span>
                             <button onClick={() => setAttachedFiles(prev => prev.filter((_, j) => j !== i))}
-                                style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-error)', fontSize: 12 }}>
+                                style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: '#c62828', fontSize: 12 }}>
                                 ✕
                             </button>
                         </div>
@@ -907,18 +907,18 @@ const UserQuestionForm = ({
             <div style={{ display: 'flex', justifyContent: total > 1 ? 'space-between' : 'flex-end', gap: 8 }}>
                 {total > 1 && (
                     <button onClick={handleBack} disabled={currentIndex === 0}
-                        style={{ padding: '10px 16px', borderRadius: 8, border: currentIndex === 0 ? '1px solid var(--color-border-subtle)' : '1px solid var(--color-border)', backgroundColor: currentIndex === 0 ? 'transparent' : 'var(--color-bg-surface)', color: currentIndex === 0 ? 'var(--color-text-placeholder)' : 'var(--color-text-primary)', fontSize: 14, fontWeight: currentIndex === 0 ? 500 : 600, cursor: currentIndex === 0 ? 'not-allowed' : 'pointer', boxShadow: currentIndex === 0 ? 'none' : '0 1px 2px rgba(0,0,0,0.04)' }}>
+                        style={{ padding: '10px 16px', borderRadius: 8, border: currentIndex === 0 ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(0,0,0,0.12)', backgroundColor: currentIndex === 0 ? 'transparent' : 'var(--color-bg-surface)', color: currentIndex === 0 ? '#b5b2aa' : 'var(--color-text-primary)', fontSize: 14, fontWeight: currentIndex === 0 ? 500 : 600, cursor: currentIndex === 0 ? 'not-allowed' : 'pointer', boxShadow: currentIndex === 0 ? 'none' : '0 1px 2px rgba(0,0,0,0.04)' }}>
                         Back
                     </button>
                 )}
                 {currentIndex < total - 1 ? (
                     <button onClick={handleNext} disabled={!isAnswered}
-                        style={{ padding: '10px 20px', borderRadius: 8, border: 'none', backgroundColor: isAnswered ? 'var(--color-text-primary)' : 'var(--color-bg-active)', color: isAnswered ? 'var(--color-bg-surface)' : 'var(--color-bg-subtle)', fontSize: 14, fontWeight: 600, cursor: isAnswered ? 'pointer' : 'not-allowed' }}>
+                        style={{ padding: '10px 20px', borderRadius: 8, border: 'none', backgroundColor: isAnswered ? 'var(--color-text-primary)' : '#c5c5c2', color: isAnswered ? 'var(--color-bg-surface)' : 'var(--color-bg-subtle)', fontSize: 14, fontWeight: 600, cursor: isAnswered ? 'pointer' : 'not-allowed' }}>
                         Next
                     </button>
                 ) : (
                     <button onClick={handleSubmit} disabled={!allAnswered}
-                        style={{ padding: '10px 20px', borderRadius: 8, border: 'none', backgroundColor: allAnswered ? 'var(--color-text-primary)' : 'var(--color-bg-active)', color: allAnswered ? 'var(--color-bg-surface)' : 'var(--color-bg-subtle)', fontSize: 14, fontWeight: 600, cursor: allAnswered ? 'pointer' : 'not-allowed' }}>
+                        style={{ padding: '10px 20px', borderRadius: 8, border: 'none', backgroundColor: allAnswered ? 'var(--color-text-primary)' : '#c5c5c2', color: allAnswered ? 'var(--color-bg-surface)' : 'var(--color-bg-subtle)', fontSize: 14, fontWeight: 600, cursor: allAnswered ? 'pointer' : 'not-allowed' }}>
                         Submit {current.multiSelect && currentAnswers.length > 1 ? `(${currentAnswers.length} selected)` : ''}
                     </button>
                 )}

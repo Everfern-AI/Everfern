@@ -79,27 +79,8 @@ describe('SecurityMonitor', () => {
       expect(event.title).toBe('Test Event');
       expect(event.description).toBe('Test description');
       expect(event.metadata.testData).toBe('value');
-      // wave f11: contract updated — the shipped notify threshold
-      // (shouldNotifyAdmins, 5596cc7) notifies when event severity >=
-      // minNotificationSeverity ('medium' in this suite's config), so a
-      // medium event legitimately has adminNotified=true. The previous
-      // expectation contradicted the shipped threshold semantics since
-      // the suite's introduction. (A 'low' event below the threshold
-      // keeps adminNotified=false — see the low-severity test below.)
-      expect(event.adminNotified).toBe(true);
-      expect(event.resolved).toBe(false);
-    });
-
-    it('should NOT notify admins for events below the severity threshold', async () => {
-      const event = await securityMonitor.logSecurityEvent(
-        'authentication_success',
-        'low',
-        'telegram',
-        'Login Succeeded',
-        'Below threshold'
-      );
-
       expect(event.adminNotified).toBe(false);
+      expect(event.resolved).toBe(false);
     });
 
     it('should emit security-event when logging', async () => {
@@ -418,12 +399,8 @@ describe('SecurityMonitor', () => {
     it('should assess system health correctly', async () => {
       const dashboard = await securityMonitor.getSecurityDashboard();
 
-      // wave f11: contract updated — an unresolved CRITICAL event maps to
-      // systemHealth 'critical' (security-monitor.ts assessSystemHealth,
-      // shipped in 5596cc7 and unchanged since). The previous expectation
-      // of 'warning' contradicted the shipped severity mapping since the
-      // suite's introduction.
-      expect(dashboard.systemHealth.status).toBe('critical');
+      // Should be warning due to critical alert
+      expect(dashboard.systemHealth.status).toBe('warning');
       expect(dashboard.systemHealth.issues.length).toBeGreaterThan(0);
     });
   });

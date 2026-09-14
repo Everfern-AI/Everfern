@@ -15,8 +15,6 @@ import { registerVectorHandlers } from './vector-handlers';
 import { registerSkillsHandlers } from './skills-handlers';
 import { registerToolApprovalHandlers } from './tool-approval-handlers';
 import { registerIntegrationHandlers } from './integration-handlers';
-import { registerArtifactWatchHandlers } from './artifacts-watch';
-import { registerFeedbackHandlers } from './feedback-handlers';
 import { ChatHistoryStore } from '../store/history';
 
 export function setupIPC(historyStore: ChatHistoryStore) {
@@ -31,7 +29,6 @@ export function setupIPC(historyStore: ChatHistoryStore) {
   // 3. Workspace, History, Projects & Vectors
   registerHistoryHandlers(historyStore);
   registerStoreHandlers();
-  registerArtifactWatchHandlers();
   registerProjectsHandlers();
   registerVectorHandlers();
   registerChatTitleHandler();
@@ -51,9 +48,6 @@ export function setupIPC(historyStore: ChatHistoryStore) {
   // 7. DevTools & Analytics
   registerDebugHandlers();
   registerAnalyticsHandlers();
-
-  // 8. Feedback
-  registerFeedbackHandlers();
 }
 
 export * from './config-handlers';

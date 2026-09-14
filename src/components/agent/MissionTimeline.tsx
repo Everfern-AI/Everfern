@@ -227,11 +227,11 @@ export const MissionTimelineComponent: React.FC<MissionTimelineProps> = ({
                       {/* Status Glyph */}
                       <div style={{ width: 15, display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
                         {isDone ? (
-                          <Check size={14} strokeWidth={2} style={{ color: 'var(--color-success)' }} />
+                          <Check size={14} strokeWidth={2} style={{ color: '#10b981' }} />
                         ) : isRunningStep ? (
                           <Loader2 size={14} strokeWidth={1.75} className="animate-spin" style={{ color: 'rgba(255, 255, 255, 0.8)' }} />
                         ) : isFailed ? (
-                          <AlertCircle size={14} strokeWidth={1.75} style={{ color: 'var(--color-error)' }} />
+                          <AlertCircle size={14} strokeWidth={1.75} style={{ color: '#ef4444' }} />
                         ) : (
                           <div style={{ width: 5, height: 5, borderRadius: '50%', background: 'rgba(255, 255, 255, 0.25)' }} />
                         )}
@@ -318,7 +318,7 @@ export const MissionTimelineComponent: React.FC<MissionTimelineProps> = ({
                             </div>
                           )}
                           {step.error && (
-                            <div style={{ marginTop: 4, color: 'var(--color-error)', fontSize: 11.5 }}>
+                            <div style={{ marginTop: 4, color: '#ef4444', fontSize: 11.5 }}>
                               {step.error}
                             </div>
                           )}

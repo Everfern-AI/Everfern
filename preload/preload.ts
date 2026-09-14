@@ -9,102 +9,17 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { SubAgentProgressEvent } from '../src/app/chat/types';
 
-// Headroom for named subscriptions across simultaneously mounted pages; the
-// single-slot replaces below keep the steady-state listener count far lower.
 ipcRenderer.setMaxListeners(200);
 
-// Dedup guard for local-execution approvals — see sendLocalExecutionResponse
-// for why responses are suppressed and how entries expire.
 const sentLocalExecutionResponses = new Set<string>();
-// Generic on/off wrapper registry: maps each caller's callback to the exact
-// ipcRenderer wrapper registered for it so off() detaches that one listener.
 const listenersMap = new Map<any, any>();
-
-// NR-LEAK-01/02/03: per-callback listener registries. The named on*
-// subscriptions below used to be plain ipcRenderer.on wrappers with no
-// matching off method, so component cleanups were silent no-ops and
-// listeners accumulated on every mount. Each registry maps the caller's
-// callback to the exact ipcRenderer wrapper registered for it, so one
-// specific listener can be removed without touching other components'.
-const updateListenerWrappers = new Map<string, Map<any, (...args: any[]) => void>>();
-const dispatchActiveWrappers = new Map<any, () => void>();
-const ollamaPullLineWrappers = new Map<any, (...args: any[]) => void>();
-
-/**
- * Track an update-channel subscription: registers the wrapper for the
- * (channel, cb) pair and returns an unsubscribe closure that removes exactly
- * that wrapper. Keyed per channel so different update events never collide.
- */
-const registerUpdateListener = (channel: string, cb: any, wrapper: (...args: any[]) => void) => {
-  let wrappers = updateListenerWrappers.get(channel);
-  if (!wrappers) {
-    wrappers = new Map();
-    updateListenerWrappers.set(channel, wrappers);
-  }
-  wrappers.set(cb, wrapper);
-  ipcRenderer.on(channel, wrapper);
-  return () => removeUpdateListener(channel, cb);
-};
-
-/**
- * Remove the exact wrapper stored for (channel, cb) — other components'
- * subscriptions on the same channel are left untouched.
- */
-const removeUpdateListener = (channel: string, cb: any) => {
-  const wrappers = updateListenerWrappers.get(channel);
-  if (!wrappers) return;
-  const wrapper = wrappers.get(cb);
-  if (wrapper) {
-    ipcRenderer.removeListener(channel, wrapper);
-    wrappers.delete(cb);
-  }
-};
-
-/**
- * Remove the wrapper stored for a dispatch-active callback. The wrappers map
- * is keyed by cb, so an unsubscribe after a page re-subscribed with the same
- * cb naturally removes the newer handler (the stale entry was overwritten).
- */
-const removeDispatchActiveListener = (cb: any) => {
-  // NR-LEAK-02 contract: variable named `handler` to match the locked
-  // preload-listener-lifecycle test regex.
-  const handler = dispatchActiveWrappers.get(cb);
-  if (handler) {
-    ipcRenderer.removeListener('system:dispatch-active', handler);
-    dispatchActiveWrappers.delete(cb);
-  }
-};
-
-// MP-SEC-21: channels exposed through the generic on/off subscription API.
-// Renderer pages subscribe to these (Sidebar, chat page, auth page,
-// computer overlay); anything else must go through a named preload API.
-/**
- * The only IPC channels the generic electronAPI.on/off pair will accept.
- * Enforced on both subscribe and unsubscribe so a compromised renderer can
- * neither listen to privileged channels nor probe for their existence.
- * Keep in sync with senders in main/main.ts and main/computer-overlay.ts.
- */
-export const GENERIC_EVENT_CHANNEL_ALLOWLIST: readonly string[] = [
-  'chat:title-updated',
-  'shortcut:resume-chat',
-  'shortcut:show-history',
-  'acp:protocol-link',
-  'computer-use:cursor-move',
-  'computer-use:cursor-click',
-  'computer-use:overlay-state',
-];
 
 // ── Type Definitions for Providers ────────────────────────────────
 
-/** Union of provider identifiers used across provider config, model listing, and chat APIs. */
 export type ProviderType = 'openai' | 'anthropic' | 'deepseek' | 'minimax' | 'ollama' | 'ollama-cloud' | 'lmstudio' | 'everfern' | 'gemini' | 'nvidia' | 'openrouter';
 
 // ── Type Definitions for Local Execution ──────────────────────────
 
-/**
- * A local shell-command approval request pushed from main to the renderer
- * (rendered as a permission card); the decision goes back via sendLocalExecutionResponse.
- */
 export interface LocalExecutionRequest {
   type: 'local_execution_request';
   requestId: string;
@@ -114,17 +29,12 @@ export interface LocalExecutionRequest {
   conversationId: string;
 }
 
-/**
- * The renderer's decision for a LocalExecutionRequest, keyed by requestId;
- * alwaysAllow asks main to remember the decision for similar future commands.
- */
 export interface LocalExecutionResponse {
   requestId: string;
   approved: boolean;
   alwaysAllow: boolean;
 }
 
-/** Display metadata for one provider row in the settings/provider list UI. */
 export interface ProviderMeta {
   type: ProviderType;
   name: string;
@@ -138,7 +48,6 @@ export interface ProviderMeta {
   enabled?: boolean;  // Whether the provider is configured and available
 }
 
-/** One row in the merged all-providers model list used by model pickers. */
 export interface FlatModelEntry {
   id: string;           // model ID passed to API calls
   name: string;         // human-readable display name
@@ -184,39 +93,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     ollamaStatus:  () => ipcRenderer.invoke('system:ollama-status'),
     ollamaInstall: () => ipcRenderer.invoke('system:ollama-install'),
-    // MP-SEC-20: consent data — the exact pinned URL + SHA256 the installer
-    // will verify, so the UI can show it before running.
-    ollamaInstallPlan: () => ipcRenderer.invoke('system:ollama-install-plan'),
     ollamaPull:    (modelName: string) => ipcRenderer.invoke('system:ollama-pull', modelName),
     pullLocalModelTerminal: (params: { provider?: 'ollama' | 'lmstudio'; modelTag: string }) => ipcRenderer.invoke('system:pull-local-model-terminal', params),
     transcribeLocal: (audioBuffer: ArrayBuffer) => ipcRenderer.invoke('system:transcribe-local', audioBuffer),
     transcribeAudio: (audioBuffer: ArrayBuffer, userApiKey?: string) => ipcRenderer.invoke('system:transcribe-audio', audioBuffer, userApiKey),
     openTerminalInstaller: (action: 'install-all' | 'pull-model') => ipcRenderer.invoke('system:open-terminal-installer', action),
-    // Install and pull feed one shared terminal-style log stream in the
-    // settings UI, so both channels multiplex into this callback; teardown
-    // is the shared removeOllamaListeners (clears both channels).
     onOllamaInstallLine: (cb: (data: { line: string, type: 'stdout'|'stderr' }) => void) => {
       ipcRenderer.on('system:ollama-install-line', (_e, data) => cb(data));
       ipcRenderer.on('system:ollama-pull-line', (_e, data) => cb(data));
     },
-    // NR-LEAK-03: pull progress arrives on 'system:ollama-pull-line' (main's
-    // system:ollama-pull handler streams there); expose it under the name the
-    // settings/setup pages call. Tracked so removeOllamaListeners clears it.
-    onOllamaPullLine: (cb: (data: { line: string, type: 'stdout'|'stderr' }) => void) => {
-      const handler = (_e: any, data: any) => cb(data);
-      ollamaPullLineWrappers.set(cb, handler);
-      ipcRenderer.on('system:ollama-pull-line', handler);
-      return () => {
-        if (ollamaPullLineWrappers.get(cb) === handler) {
-          ollamaPullLineWrappers.delete(cb);
-        }
-        ipcRenderer.removeListener('system:ollama-pull-line', handler);
-      };
-    },
     removeOllamaListeners: () => {
       ipcRenderer.removeAllListeners('system:ollama-install-line');
       ipcRenderer.removeAllListeners('system:ollama-pull-line');
-      ollamaPullLineWrappers.clear();
     },
     openExternal: (url: string) => ipcRenderer.invoke('system:open-external', url),
     fetchMetadata: (url: string) => ipcRenderer.invoke('system:fetch-metadata', url),
@@ -239,52 +127,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getModelRequirements: (params?: { vramGB?: number; ramGB?: number; isAppleSilicon?: boolean; gpuName?: string; search?: string; modelId?: string }) => ipcRenderer.invoke('system:get-model-requirements', params),
     getLocalModels: (params?: { provider?: string; baseUrl?: string }) => ipcRenderer.invoke('system:get-local-models', params),
     checkForUpdates: () => ipcRenderer.invoke('system:check-for-updates'),
-    // NR-LEAK-01: update subscriptions return an unsubscribe function (the
-    // acp:* pattern) and _offUpdate* remove the exact wrapper stored for the
-    // callback, so component cleanups actually detach their listeners.
-    onUpdateAvailable: (cb: (info: any) => void) => registerUpdateListener('update-available', cb, (_e: any, info: any) => cb(info)),
-    onUpdateDownloaded: (cb: (info: any) => void) => registerUpdateListener('update-downloaded', cb, (_e: any, info: any) => cb(info)),
-    onUpdateProgress: (cb: (progress: any) => void) => registerUpdateListener('download-progress', cb, (_e: any, progress: any) => cb(progress)),
-    onUpdateError: (cb: (error: string) => void) => registerUpdateListener('update-error', cb, (_e: any, error: any) => cb(error)),
-    _offUpdateAvailable: (cb: (info: any) => void) => removeUpdateListener('update-available', cb),
-    _offUpdateDownloaded: (cb: (info: any) => void) => removeUpdateListener('update-downloaded', cb),
-    _offUpdateProgress: (cb: (progress: any) => void) => removeUpdateListener('download-progress', cb),
-    _offUpdateError: (cb: (error: string) => void) => removeUpdateListener('update-error', cb),
+    onUpdateAvailable: (cb: (info: any) => void) => ipcRenderer.on('update-available', (_e, info) => cb(info)),
+    onUpdateDownloaded: (cb: (info: any) => void) => ipcRenderer.on('update-downloaded', (_e, info) => cb(info)),
+    onUpdateProgress: (cb: (progress: any) => void) => ipcRenderer.on('download-progress', (_e, progress) => cb(progress)),
+    onUpdateError: (cb: (error: string) => void) => ipcRenderer.on('update-error', (_e, error) => cb(error)),
     restartAndUpdate: () => ipcRenderer.invoke('restart-and-update'),
     getUpdateStatus: () => ipcRenderer.invoke('system:get-update-status'),
     startDispatch:  (config: { sessionId: string, pinCode: string, url: string, apiUrl: string, key: string, token: string, userId: string, isForever?: boolean }) => ipcRenderer.invoke('system:start-dispatch', config),
     restoreDispatch: (config: { url: string, apiUrl: string, key: string, token: string, userId: string }) => ipcRenderer.invoke('system:restore-dispatch', config),
     stopDispatch:   () => ipcRenderer.invoke('system:stop-dispatch'),
-    // NR-LEAK-02: dispatch-active subscriptions are tracked so the exact
-    // wrapper registered for a callback can be removed on component unmount.
     onDispatchActive: (cb: () => void) => {
-      const handler = () => cb();
-      dispatchActiveWrappers.set(cb, handler);
-      // CU-LEAK-05 single-slot: clear BEFORE .on so resubscribing with the
-      // same cb replaces rather than stacks handlers; the map entry above
-      // tracks which wrapper explicit off() must detach.
-      ipcRenderer.removeAllListeners('system:dispatch-active');
-      ipcRenderer.on('system:dispatch-active', handler);
-      return () => removeDispatchActiveListener(cb);
-    },
-    offDispatchActive: (cb: () => void) => {
-      removeDispatchActiveListener(cb);
+      ipcRenderer.on('system:dispatch-active', () => cb());
     },
     onDispatchCommand: (cb: (command: string, model?: string) => void) => {
-      ipcRenderer.removeAllListeners('system:dispatch-command');
       ipcRenderer.on('system:dispatch-command', (_evt, data: { command: string; model?: string }) => cb(data.command, data.model));
     },
     broadcastDispatch: (event: string, data: any) => ipcRenderer.invoke('system:broadcast-dispatch', { event, data }),
     ensureAttachmentInVm: (filePath: string) => ipcRenderer.invoke('system:ensure-attachment-in-vm', filePath),
     openFile: (filePath: string, appPath?: string) => ipcRenderer.invoke('system:open-file', filePath, appPath),
-    // f13.A census: FileArtifact invoked system.showItemInFolder with no
-    // bridge/handler — reveal the artifact's parent folder in the OS file
-    // manager (Finder/Explorer).
-    showItemInFolder: (filePath: string) => ipcRenderer.invoke('system:show-item-in-folder', filePath),
     getFileApps: (filePath: string) => ipcRenderer.invoke('system:get-file-apps', filePath),
     readImageDataUrl: (filePath: string) => ipcRenderer.invoke('system:read-image-data-url', filePath),
-    // NR-PERF-03: binary sibling — structured-clone bytes instead of base64.
-    readFileBytes: (filePath: string) => ipcRenderer.invoke('system:read-file-bytes', filePath),
     parsePptx: (filePath: string) => ipcRenderer.invoke('system:parse-pptx', filePath),
     parseDocx: (filePath: string) => ipcRenderer.invoke('system:parse-docx', filePath),
     parseXlsx: (filePath: string) => ipcRenderer.invoke('system:parse-xlsx', filePath),
@@ -316,12 +178,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ── Config Store ───────────────────────────────────────────────
   saveConfig: (config: any) => ipcRenderer.invoke('save-config', config),
   loadConfig: ()            => ipcRenderer.invoke('load-config'),
-  // MP-SEC-11 narrow key channels: raw secrets cross the bridge only through
-  // these write/test paths; load-config returns redacted last4 views.
-  setKey: (slot: string, secret: string) => ipcRenderer.invoke('config:set-key', slot, secret),
-  testProvider: (provider: string, model?: string) => ipcRenderer.invoke('config:test-provider', provider, model),
-  submitFeedback: (feedbackType: string, reason: string, customReason: string, contextData: unknown) =>
-    ipcRenderer.invoke('feedback:submit', feedbackType, reason, customReason, contextData),
 
   // ── Voice Overlay ────────────────────────────────────────────────
   voiceOverlay: {
@@ -359,38 +215,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
     listTools:     ()            => ipcRenderer.invoke('acp:list-tools'),
     chat:          (req: any)   => ipcRenderer.invoke('acp:chat', req),
     stream:        (req: any)   => ipcRenderer.invoke('acp:stream', req),
-    stop:          (payload?: { conversationId?: string }) => ipcRenderer.invoke('acp:stop', payload),    rollbackTurn:  (conversationId: string, timestamp: number) => ipcRenderer.invoke('agent:rollback-turn', conversationId, timestamp),
+    stop:          ()            => ipcRenderer.invoke('acp:stop'),
+    rollbackTurn:  (conversationId: string, timestamp: number) => ipcRenderer.invoke('agent:rollback-turn', conversationId, timestamp),
     getRollbackChanges: (conversationId: string, timestamp: number) => ipcRenderer.invoke('agent:get-rollback-changes', conversationId, timestamp),
     getRollbackPreview: (conversationId: string, timestamp: number) => ipcRenderer.invoke('agent:get-rollback-preview', conversationId, timestamp),
     getSnapshotContent: (snapshotId: string) => ipcRenderer.invoke('agent:get-snapshot-content', snapshotId),
     getInterruptedState: (conversationId: string) => ipcRenderer.invoke('acp:get-interrupted-state', conversationId),
 
     onStreamChunk: (cb: (chunk: { delta: string; done: boolean }) => void) => {
-      // CU-LEAK-01 single-slot contract (also applies to the on* methods
-      // below): each channel has exactly ONE consumer, so removeAllListeners
-      // replaces instead of accumulating. If pages remount and re-subscribe
-      // without a matching cleanup, a stacking registry would grow one
-      // listener per mount and hold every old closure (plus its state)
-      // alive forever; replacement caps the leak surface at one handler.
-      // Ordering constraint: the removeAllListeners must run BEFORE .on —
-      // the reverse order would register the fresh handler and then delete
-      // it, leaving the channel silent.
       const handler = (_e: any, chunk: any) => cb(chunk);
-      ipcRenderer.removeAllListeners('acp:stream-chunk');
       ipcRenderer.on('acp:stream-chunk', handler);
-      // CU-LEAK-01: single-slot replace prevents stacking; unsubscribe kept for
-      // ad-hoc registrations like the renderer-refresh safety timer (page.tsx).
       return () => { ipcRenderer.removeListener('acp:stream-chunk', handler); };
     },
     onThought: (cb: (data: { content: string }) => void) => {
       const handler = (_e: any, data: any) => cb(data);
-      ipcRenderer.removeAllListeners('acp:thought');
       ipcRenderer.on('acp:thought', handler);
+      return () => { ipcRenderer.removeListener('acp:thought', handler); };
     },
     onModelCallInfo: (cb: (data: { model: string; toolsCount: number }) => void) => {
       const handler = (_e: any, data: any) => cb(data);
-      ipcRenderer.removeAllListeners('acp:model-call-info');
       ipcRenderer.on('acp:model-call-info', handler);
+      return () => { ipcRenderer.removeListener('acp:model-call-info', handler); };
     },
     onToolStart: (cb: (record: { toolName: string; toolArgs: Record<string, unknown>; toolCallId?: string }) => void) => {
       const handler = (_e: any, record: any) => {
@@ -399,8 +244,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         }
         cb(record);
       };
-      ipcRenderer.removeAllListeners('acp:tool-start');
       ipcRenderer.on('acp:tool-start', handler);
+      return () => { ipcRenderer.removeListener('acp:tool-start', handler); };
     },
     onToolCall: (cb: (record: any) => void) => {
       const handler = (_e: any, record: any) => {
@@ -409,57 +254,63 @@ contextBridge.exposeInMainWorld('electronAPI', {
         }
         cb(record);
       };
-      ipcRenderer.removeAllListeners('acp:tool-call');
       ipcRenderer.on('acp:tool-call', handler);
+      return () => { ipcRenderer.removeListener('acp:tool-call', handler); };
     },
     onToolUpdate: (cb: (data: { toolName: string; toolCallId?: string; update: string }) => void) => {
       const handler = (_e: any, data: any) => cb(data);
-      ipcRenderer.removeAllListeners('acp:tool-update');
       ipcRenderer.on('acp:tool-update', handler);
+      return () => { ipcRenderer.removeListener('acp:tool-update', handler); };
     },
     onOptima: (cb: (data: { event: string; details: string }) => void) => {
       const handler = (_e: any, data: any) => cb(data);
-      ipcRenderer.removeAllListeners('acp:optima');
       ipcRenderer.on('acp:optima', handler);
+      return () => { ipcRenderer.removeListener('acp:optima', handler); };
     },
     onShowArtifact: (cb: (data: { name: string }) => void) => {
       const handler = (_e: any, data: any) => cb(data);
-      ipcRenderer.removeAllListeners('acp:show-artifact');
       ipcRenderer.on('acp:show-artifact', handler);
+      return () => { ipcRenderer.removeListener('acp:show-artifact', handler); };
     },
     onShowPlan: (cb: (data: { chatId: string; content: string }) => void) => {
       const handler = (_e: any, data: any) => cb(data);
-      ipcRenderer.removeAllListeners('acp:show-plan');
       ipcRenderer.on('acp:show-plan', handler);
+      return () => { ipcRenderer.removeListener('acp:show-plan', handler); };
     },
     onViewSkill: (cb: (data: { name: string }) => void) => {
       const handler = (_e: any, data: any) => cb(data);
-      ipcRenderer.removeAllListeners('acp:view-skill');
       ipcRenderer.on('acp:view-skill', handler);
+      return () => { ipcRenderer.removeListener('acp:view-skill', handler); };
     },
     onSkillDetected: (cb: (data: { skillName: string; skillDescription: string; reason: string }) => void) => {
       const handler = (_e: any, data: any) => cb(data);
-      ipcRenderer.removeAllListeners('acp:skill-detected');
       ipcRenderer.on('acp:skill-detected', handler);
+      return () => { ipcRenderer.removeListener('acp:skill-detected', handler); };
     },
     onSurfaceAction: (cb: (data: any) => void) => {
       const handler = (_e: any, data: any) => cb(data);
-      ipcRenderer.removeAllListeners('acp:surface-action');
       ipcRenderer.on('acp:surface-action', handler);
+      return () => { ipcRenderer.removeListener('acp:surface-action', handler); };
+    },
+    onProtocolLink: (cb: (url: string) => void) => {
+      const handler = (_e: any, url: any) => cb(url);
+      ipcRenderer.on('acp:protocol-link', handler);
+      return () => { ipcRenderer.removeListener('acp:protocol-link', handler); };
     },
     onUsage: (cb: (data: { promptTokens: number; completionTokens: number; totalTokens: number; systemPromptTokens?: number }) => void) => {
       const handler = (_e: any, data: any) => cb(data);
-      ipcRenderer.removeAllListeners('acp:usage');
       ipcRenderer.on('acp:usage', handler);
+      return () => { ipcRenderer.removeListener('acp:usage', handler); };
     },
     onAgentPermissionRequest: (cb: () => void) => {
       const handler = () => cb();
-      ipcRenderer.removeAllListeners('agent:permission-request');
       ipcRenderer.on('agent:permission-request', handler);
+      return () => { ipcRenderer.removeListener('agent:permission-request', handler); };
     },
     agentPermissionResponse: (granted: boolean) => ipcRenderer.invoke('agent:permission-response', granted),
     getPermissionSoundUrl: () => '/sounds/permission.mp3',
     playSound: (soundPath: string) => ipcRenderer.invoke('audio:play-sound', soundPath),
+    validateNvidiaModel: (modelId: string, apiKey: string) => ipcRenderer.invoke('acp:validate-nvidia-model', modelId, apiKey),
 
     // Mission Timeline Events
     removeMissionListeners: () => {
@@ -480,7 +331,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('acp:mission-complete', (_e, data) => cb(data));
     },
     onPlanCreated: (cb: (data: { plan: any }) => void) => {
-      ipcRenderer.removeAllListeners('acp:plan-created');
       ipcRenderer.on('acp:plan-created', (_e, data) => cb(data));
     },
     onHitlRequest: (cb: (data: any) => void) => {
@@ -498,10 +348,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('acp:hitl-response-processed', (_e, data) => {
         cb(data);
       });
-    },
-    // CU-LEAK-04: dedicated teardown for the mount-once page.tsx listener.
-    removeHitlResponseProcessedListener: () => {
-      ipcRenderer.removeAllListeners('acp:hitl-response-processed');
     },
     /**
      * Register a callback for sub-agent progress events.
@@ -528,33 +374,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeAllListeners('acp:sub-agent-progress');
     },
     onToolCallStart: (cb: (data: { index: number; toolName: string }) => void) => {
-      ipcRenderer.removeAllListeners('acp:tool-call-start');
       ipcRenderer.on('acp:tool-call-start', (_e, data) => cb(data));
     },
     onToolCallChunk: (cb: (data: { index: number; argumentsDelta: string }) => void) => {
-      ipcRenderer.removeAllListeners('acp:tool-call-chunk');
       ipcRenderer.on('acp:tool-call-chunk', (_e, data) => cb(data));
     },
     onToolCallComplete: (cb: (data: { index: number; toolName: string; arguments: Record<string, unknown> }) => void) => {
-      ipcRenderer.removeAllListeners('acp:tool-call-complete');
       ipcRenderer.on('acp:tool-call-complete', (_e, data) => cb(data));
     },
 
     // Local Execution Events
     onLocalExecutionRequest: (cb: (data: LocalExecutionRequest) => void) => {
-      ipcRenderer.removeAllListeners('acp:local-execution-request');
       ipcRenderer.on('acp:local-execution-request', (_e, data) => cb(data));
     },
     onLocalExecutionResolved: (cb: (data: { requestId: string; approved: boolean; alwaysAllow: boolean }) => void) => {
-      // Deliberately NOT removeAllListeners-first: multiple cards may listen
-      // for the same resolution event, so this one stacks until the shared
-      // removeLocalExecutionListeners teardown clears the channel.
       ipcRenderer.on('acp:local-execution-resolved', (_e, data) => cb(data));
     },
     sendLocalExecutionResponse: (response: LocalExecutionResponse) => {
-      // Why dedup: a re-mounted permission card (or double-invoked effect) can
-      // submit the same requestId twice; main would count each send as another
-      // approval. The 10-min expiry bounds the Set so the guard can't leak.
       if (response?.requestId && sentLocalExecutionResponses.has(response.requestId)) {
         return;
       }
@@ -570,9 +406,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
 
     // Debate Stream Events
-    // NOTE: unlike the on* methods above, this registers WITHOUT first
-    // removing existing listeners AND returns no unsubscribe — lifecycle is
-    // owned exclusively by removeDebateStreamListener (useDebateStream).
     onDebateStream: (cb: (event: any) => void) => {
       ipcRenderer.on('debate:stream', (_e, event) => cb(event));
     },
@@ -599,10 +432,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeAllListeners('acp:plan-created');
       // NOTE: acp:hitl-request is intentionally NOT removed here — the chat page
       // registers it once at mount and relies on it persisting across sends/resets.
-      // NOTE (CU-LEAK-04): acp:hitl-response-processed is ALSO no longer removed
-      // here — page.tsx owns it in a persistent mount-once effect with explicit
-      // cleanup (removeHitlResponseProcessedListener). Removing it mid-send
-      // killed responses processed right after a stream teardown.
+      ipcRenderer.removeAllListeners('acp:hitl-response-processed');
       ipcRenderer.removeAllListeners('acp:sub-agent-progress');
       ipcRenderer.removeAllListeners('acp:subagent-event');
       ipcRenderer.removeAllListeners('acp:tool-call-start');
@@ -672,18 +502,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     read:   (chatId: string, filename: string)           => ipcRenderer.invoke('artifacts:read', chatId, filename),
     write:  (chatId: string, filename: string, content: string) => ipcRenderer.invoke('artifacts:write', chatId, filename, content),
     delete: (chatId: string, filename: string)           => ipcRenderer.invoke('artifacts:delete', chatId, filename),
-    // NR-PERF-07: main fs-watches the artifacts roots and pushes debounced
-    // 'artifacts:changed' broadcasts; the NR-LEAK-01 tracked-wrapper registry
-    // gives per-callback off + an unsubscribe return, so refetch listeners
-    // never leak across remounts.
-    onArtifactsChanged: (cb: (event: { source: 'global' | 'project'; projectPath?: string }) => void) =>
-      registerUpdateListener('artifacts:changed', cb, (_e: any, event: { source: 'global' | 'project'; projectPath?: string }) => cb(event)),
-    offArtifactsChanged: (cb: (event: { source: 'global' | 'project'; projectPath?: string }) => void) =>
-      removeUpdateListener('artifacts:changed', cb),
-    // NR-PERF-07: ask main to watch a project's artifacts dir so its writes
-    // also broadcast 'artifacts:changed' (non-blocking; success:false if the
-    // dir is missing).
-    watchProject: (projectPath: string) => ipcRenderer.invoke('artifacts:watch-project', projectPath),
   },
 
   // ── Plans ───────────────────────────────────────────────────────
@@ -714,8 +532,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ── Sites ─────────────────────────────────────────────────────────
   sites: {
     list:   (chatId?: string)                           => ipcRenderer.invoke('sites:list', chatId),
-    read:   (chatId: string, filename: string)          => ipcRenderer.invoke('sites:read-file', chatId, filename),
-    write:  (chatId: string, filename: string, content: string) => ipcRenderer.invoke('sites:write-file', chatId, filename, content),
+    read:   (chatId: string, filename: string)          => ipcRenderer.invoke('sites:read', chatId, filename),
+    write:  (chatId: string, filename: string, content: string) => ipcRenderer.invoke('sites:write', chatId, filename, content),
     delete: (chatId: string, filename?: string)         => ipcRenderer.invoke('sites:delete', chatId, filename),
     openFolder: (chatId: string)                         => ipcRenderer.invoke('sites:open-folder', chatId),
   },
@@ -765,9 +583,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getConfig: () => ipcRenderer.invoke('integration:get-config'),
     saveConfig: (config: any) => ipcRenderer.invoke('integration:save-config', config),
     testConnection: (platform: string) => ipcRenderer.invoke('integration:test-connection', platform),
-    // MP-SEC-11 narrow channel: update one bot token without round-tripping
-    // the full config (and previously stored raw tokens) through the renderer.
-    setToken: (platform: string, token: string) => ipcRenderer.invoke('integration:set-token', platform, token),
   },
 
   // ── Providers ──────────────────────────────────────────────────────
@@ -799,32 +614,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
   },
 
-  // ── Generic Event Listeners (MP-SEC-21) ────────────────────────────
-  // Explicit allowlist: a compromised renderer must not be able to subscribe
-  // to arbitrary IPC channels (which would defeat the bridge allowlist model).
-  // Keep in sync with senders in main/main.ts, main/computer-overlay.ts.
-  // Containment scope: without this fence, XSS in any renderer page could
-  // subscribe to privileged channels (auth responses, config writes, agent
-  // events), turning the bridge into a generic main-process tap. Restricting
-  // to renderer-facing UI events keeps that attack from even reaching
-  // ipcRenderer.on.
-  on: (channel: string, cb: (data: any, event?: any) => void) => {
-    // MP-SEC-21 enforcement point: reject before any ipcRenderer.on so an
-    // unapproved channel never gets a wrapper registered (or traced in an
-    // error message beyond its own name).
-    if (!GENERIC_EVENT_CHANNEL_ALLOWLIST.includes(channel)) {
-      throw new Error(`Channel not allowed for generic subscription: ${channel}`);
-    }
+  // ── Generic Event Listeners ────────────────────────────────────────
+  on: (channel: string, cb: (data: any) => void) => {
     const wrapper = (_e: any, data: any) => cb(data);
     listenersMap.set(cb, wrapper);
     ipcRenderer.on(channel, wrapper);
   },
   off: (channel: string, cb?: (data: any) => void) => {
-    // Symmetric enforcement: off() must not become a channel-name oracle that
-    // confirms/denies allowlisted channels any differently than on().
-    if (!GENERIC_EVENT_CHANNEL_ALLOWLIST.includes(channel)) {
-      throw new Error(`Channel not allowed for generic subscription: ${channel}`);
-    }
     if (cb) {
       const wrapper = listenersMap.get(cb);
       if (wrapper) {
@@ -832,9 +628,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
         listenersMap.delete(cb);
       }
     } else {
-      // No-cb off() nukes the whole channel — safe ONLY because the
-      // allowlist above guarantees this can never hit a privileged
-      // channel shared with another subsystem.
       ipcRenderer.removeAllListeners(channel);
     }
   },
@@ -879,14 +672,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
 // ── Tool Settings Types ────────────────────────────────────────────
 
-/** Per-tool execution settings: local binary vs hosted API, plus headless and API-key flags. */
 export interface ToolConfig {
   mode: 'local' | 'api';
   headless: boolean;
   apiKey: string;
 }
 
-/** A user-selectable browser for navis automation (id ↔ ToolSettingsConfig.navis.selectedBrowserId). */
 export interface BrowserInfo {
   id: string;
   name: string;
@@ -896,7 +687,6 @@ export interface BrowserInfo {
   supportsExtension: boolean;
 }
 
-/** Persisted tool-suite settings (search/crawl/browser automation); saved via toolSettings:set. */
 export interface ToolSettingsConfig {
   webSearch: ToolConfig;
   webCrawl: ToolConfig;
@@ -915,10 +705,6 @@ export interface ToolSettingsConfig {
 
 // ── Type Export (for renderer use) ────────────────────────────────
 
-/**
- * Typed mirror of the window.electronAPI object exposed by the
- * contextBridge above — import this in renderer code instead of `any`.
- */
 export type ElectronAPI = {
   window: {
     minimize:    () => Promise<void>;
@@ -937,14 +723,12 @@ export type ElectronAPI = {
     onPermissionRequest: (cb: () => void) => void;
     ollamaStatus:        () => Promise<{ installed: boolean; modelInstalled: boolean }>;
     ollamaInstall:       () => Promise<{ success: boolean; code: number }>;
-    ollamaInstallPlan:   () => Promise<{ url: string; sha256: string; command: string }>;
     ollamaPull:          (modelName: string) => Promise<{ success: boolean; code: number }>;
     pullLocalModelTerminal: (params: { provider?: 'ollama' | 'lmstudio'; modelTag: string }) => Promise<{ success: boolean; provider: string; modelTag: string }>;
     transcribeLocal:     (audioBuffer: ArrayBuffer) => Promise<{ success: boolean; transcription?: string; error?: string }>;
     transcribeAudio:     (audioBuffer: ArrayBuffer, userApiKey?: string) => Promise<{ success: boolean; transcript?: string; error?: string }>;
     openTerminalInstaller: (action: 'install-all' | 'pull-model') => Promise<{ success: boolean }>;
     onOllamaInstallLine: (cb: (data: { line: string, type: 'stdout'|'stderr' }) => void) => void;
-    onOllamaPullLine: (cb: (data: { line: string, type: 'stdout'|'stderr' }) => void) => () => void;
     removeOllamaListeners: () => void;
     openExternal: (url: string) => Promise<void>;
     fetchMetadata: (url: string) => Promise<{ title?: string; description?: string; favicon?: string } | null>;
@@ -959,29 +743,16 @@ export type ElectronAPI = {
     getModelRequirements: (params?: any) => Promise<any>;
     getLocalModels: (params?: { provider?: string; baseUrl?: string }) => Promise<{ success: boolean; running: boolean; provider: string; baseUrl: string; hardware: any; installedModels: any[]; recommendedModels: any[]; error?: string }>;
     checkForUpdates: () => Promise<{ hasUpdate: boolean; latestVersion?: string; url?: string; notes?: string; error?: string }>;
-    onUpdateAvailable: (cb: (info: any) => void) => () => void;
-    onUpdateDownloaded: (cb: (info: any) => void) => () => void;
-    onUpdateProgress: (cb: (progress: any) => void) => () => void;
-    onUpdateError: (cb: (error: string) => void) => () => void;
-    _offUpdateAvailable: (cb: (info: any) => void) => void;
-    _offUpdateDownloaded: (cb: (info: any) => void) => void;
-    _offUpdateProgress: (cb: (progress: any) => void) => void;
-    _offUpdateError: (cb: (error: string) => void) => void;
-    restartAndUpdate: () => Promise<void>;
-    getUpdateStatus: () => Promise<any>;
     startDispatch:  (config: { sessionId: string, pinCode: string, url: string, apiUrl: string, key: string, token: string, userId: string, isForever?: boolean }) => Promise<{ success: boolean; error?: string }>;
     restoreDispatch: (config: { url: string, apiUrl: string, key: string, token: string, userId: string }) => Promise<{ success: boolean; session?: any; error?: string }>;
     stopDispatch:   () => Promise<{ success: boolean; error?: string }>;
-    onDispatchActive: (cb: () => void) => () => void;
-    offDispatchActive: (cb: () => void) => void;
+    onDispatchActive: (cb: () => void) => void;
     onDispatchCommand: (cb: (command: string, model?: string) => void) => void;
     broadcastDispatch: (event: string, data: any) => Promise<void>;
     ensureAttachmentInVm: (filePath: string) => Promise<{ success: boolean; error?: string }>;
     openFile: (filePath: string, appPath?: string) => Promise<{ success: boolean; error?: string }>;
-    showItemInFolder: (filePath: string) => Promise<void>;
     getFileApps: (filePath: string) => Promise<Array<{ name: string; path: string; icon: string }>>;
     readImageDataUrl: (filePath: string) => Promise<{ success: boolean; dataUrl?: string; mimeType?: string; size?: number; path?: string; error?: string }>;
-    readFileBytes:    (filePath: string) => Promise<{ success: boolean; bytes?: Uint8Array; size?: number; path?: string; error?: string }>;
     parsePptx: (filePath: string) => Promise<{ success: boolean; slides?: Array<{ title: string; subtitle: string; points: string[] }>; error?: string }>;
     parseDocx: (filePath: string) => Promise<{ success: boolean; text?: string; error?: string }>;
     parseXlsx: (filePath: string) => Promise<{ success: boolean; csv?: string; error?: string }>;
@@ -1003,9 +774,6 @@ export type ElectronAPI = {
   };
   saveConfig: (config: any) => Promise<{ success: boolean; error?: string }>;
   loadConfig: ()            => Promise<{ success: boolean; config: any; error?: string }>;
-  setKey: (slot: string, secret: string) => Promise<{ success: boolean; error?: string }>;
-  testProvider: (provider: string, model?: string) => Promise<{ success: boolean; models?: string[]; error?: string }>;
-  submitFeedback: (feedbackType: string, reason: string, customReason: string, contextData: unknown) => Promise<{ success: boolean; error?: string }>;
   voiceOverlay: {
     onStateChange: (cb: (data: { state: 'idle' | 'listening' | 'executing' | 'completed' }) => void) => void;
     removeListeners: () => void;
@@ -1058,9 +826,11 @@ export type ElectronAPI = {
     onViewSkill:           (cb: (data: { name: string }) => void) => void;
     onSkillDetected:       (cb: (data: { skillName: string; skillDescription: string; reason: string }) => void) => void;
     onSurfaceAction:       (cb: (data: any) => void) => void;
+    onProtocolLink:        (cb: (url: string) => void) => void;
     onAgentPermissionRequest: (cb: () => void) => void;
     agentPermissionResponse: (granted: boolean) => Promise<{ success: boolean }>;
     playSound: (soundPath: string) => Promise<boolean>;
+    validateNvidiaModel: (modelId: string, apiKey: string) => Promise<{ valid: boolean; hasVision?: boolean; error?: string }>;
     onMissionStepUpdate: (cb: (data: { conversationId?: string; step: any; timeline: any }) => void) => void;
     onMissionPhaseChange: (cb: (data: { conversationId?: string; phase: string; timeline: any }) => void) => void;
     onMissionComplete: (cb: (data: { conversationId?: string; timeline: any; steps: any[]; thinkingDuration?: { startTime: number; endTime?: number; duration?: number } }) => void) => void;
@@ -1068,7 +838,6 @@ export type ElectronAPI = {
     onHitlRequest: (cb: (data: any) => void) => void;
     sendHitlResponse: (response: string) => void;
     onHitlResponseProcessed: (cb: (data: { message: string; shouldSendAsMessage: boolean }) => void) => void;
-    removeHitlResponseProcessedListener: () => void;
     /**
      * Register a callback for sub-agent progress events.
      * @param cb - Callback that receives SubAgentProgressEvent (see src/app/chat/types.ts)
@@ -1136,9 +905,6 @@ export type ElectronAPI = {
     read:   (chatId: string, filename: string) => Promise<string | null>;
     write:  (chatId: string, filename: string, content: string) => Promise<{ success: boolean; error?: string }>;
     delete: (chatId: string, filename: string) => Promise<{ success: boolean }>;
-    onArtifactsChanged: (cb: (event: { source: 'global' | 'project'; projectPath?: string }) => void) => () => void;
-    offArtifactsChanged: (cb: (event: { source: 'global' | 'project'; projectPath?: string }) => void) => void;
-    watchProject: (projectPath: string) => Promise<{ success: boolean; reason?: string; error?: string }>;
   };
   plans: {
     list:   (chatId: string) => Promise<string[]>;
@@ -1219,7 +985,6 @@ export type ElectronAPI = {
     }>;
     saveConfig: (config: any) => Promise<void>;
     testConnection: (platform: string) => Promise<boolean>;
-    setToken: (platform: string, token: string) => Promise<{ success: boolean }>;
   };
   providers: {
     getAll: () => Promise<ProviderMeta[]>;

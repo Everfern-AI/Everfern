@@ -137,43 +137,11 @@ export function launchOcrInstallTerminal(): boolean {
     const { exec } = require('child_process');
     const escaped = scriptPath.replace(/"/g, '\\"');
     if (process.platform === 'darwin') {
-      exec(`osascript -e 'tell app "Terminal" to do script "bash \\"${escaped}\\"" activate'`, (err: any) => {
-        if (err) console.error('[OCR] Failed to launch macOS Terminal for install:', err.message);
-      });
+      exec(`osascript -e 'tell app "Terminal" to do script "bash \\"${escaped}\\"" activate'`);
     } else {
-      // MP-CORR-29: probe the standard terminal candidates (existence-based,
-      // no `which` shell dependency) instead of blindly falling back to xterm,
-      // which silently fails on KDE/XFCE/MATE systems without it.
-      const { existsSync } = require('fs');
-      const TERM_BIN_DIRS = ['/usr/bin', '/usr/local/bin', '/snap/bin'];
-      const findTerminal = (): { bin: string; flag: string } | null => {
-        const candidates: Array<[string, string]> = [
-          ['gnome-terminal', '--'],
-          ['konsole', '-e'],
-          ['xfce4-terminal', '-x'],
-          ['mate-terminal', '-x'],
-          ['tilix', '-e'],
-          ['kitty', '-e'],
-          ['alacritty', '-e'],
-          ['x-terminal-emulator', '-e'],
-          ['xterm', '-e'],
-        ];
-        for (const [name, flag] of candidates) {
-          for (const dir of TERM_BIN_DIRS) {
-            if (existsSync(`${dir}/${name}`)) {
-              return { bin: `${dir}/${name}`, flag };
-            }
-          }
-        }
-        return null;
-      };
-      const term = findTerminal();
-      if (!term) {
-        console.error('[OCR] No Linux terminal emulator found (tried gnome-terminal, konsole, xfce4-terminal, mate-terminal, tilix, kitty, alacritty, x-terminal-emulator, xterm). Cannot launch OCR installer.');
-        return false;
-      }
-      exec(`${term.bin} ${term.flag} bash "${escaped}"`, (err: any) => {
-        if (err) console.error(`[OCR] Failed to launch ${term.bin} for install:`, err.message);
+      exec(`which gnome-terminal 2>/dev/null`, (err: any, stdout: string) => {
+        const openCmd = stdout.trim() ? `gnome-terminal -- bash "${escaped}"` : `xterm -e bash "${escaped}"`;
+        exec(openCmd);
       });
     }
     return true;
@@ -231,7 +199,7 @@ export function registerOcrDocHandlers(): void {
     }
   });
 
-  ipcMain.handle('system:pdf-pages', async (_event, params?: { pdfPath: string; maxPages?: number; maxPageDim?: number; installIfMissing?: boolean }) => {
+  ipcMain.handle('system:pdf-pages', async (_event, params?: { pdfPath: string; maxPages?: number; installIfMissing?: boolean }) => {
     try {
       if (!params?.pdfPath) {
         console.warn('[IPC] system:pdf-pages called with no pdfPath');
@@ -300,42 +268,14 @@ export function registerOcrDocHandlers(): void {
     }
   });
 
-  // NR-PERF-03: binary IPC path — returns the file as a structured-clone
-  // ArrayBuffer (Uint8Array view) instead of a base64 data URL, avoiding the
-  // ~1.33x base64 inflation plus the paired atob decode allocation on the
-  // renderer side. Opt-in sibling of system:read-image-data-url.
-  ipcMain.handle('system:read-file-bytes', async (_event, filePath: string) => {
-    try {
-      if (!filePath || typeof filePath !== 'string') {
-        return { success: false, error: 'No file path provided' };
-      }
-      const resolved = path.resolve(filePath);
-      if (!fs.existsSync(resolved)) {
-        return { success: false, error: 'File not found' };
-      }
-      const stat = fs.statSync(resolved);
-      if (!stat.isFile()) {
-        return { success: false, error: 'Path is not a file' };
-      }
-      if (stat.size > 64 * 1024 * 1024) {
-        return { success: false, error: 'File too large for binary preview', size: stat.size };
-      }
-      const bytes = new Uint8Array(fs.readFileSync(resolved)); // copy → transferable view
-      return { success: true, path: resolved, size: stat.size, bytes };
-    } catch (err: any) {
-      console.error('[IPC] system:read-file-bytes error:', err);
-      return { success: false, error: err.message || String(err) };
-    }
-  });
-
   ipcMain.handle('system:ensure-attachment-in-vm', async (_event, filePath: string) => {
     if (process.platform !== 'win32') return { success: true };
     if (!filePath || !fs.existsSync(filePath)) return { success: false, error: 'File not found' };
 
     try {
-      const { execFile } = require('child_process');
+      const { exec } = require('child_process');
       const { promisify } = require('util');
-      const execFileAsync = promisify(execFile) as (cmd: string, args: string[], opts?: any) => Promise<{ stdout: string; stderr: string }>;
+      const execAsync = promisify(exec);
       const wslAttachmentsDir = `/everfern`;
       const safeFileName = path.basename(filePath);
       const existingTarget = `\\\\wsl.localhost\\Ubuntu\\everfern\\${safeFileName}`;
@@ -354,10 +294,7 @@ export function registerOcrDocHandlers(): void {
       };
       const wslSourcePath = toWslPath(filePath);
 
-      // MP-SEC-14: argv-form invocation — no shell string interpolation, so
-      // hostile filenames (quotes, $(...), backticks) cannot inject commands.
-      await execFileAsync('wsl.exe', ['--exec', 'mkdir', '-p', wslAttachmentsDir], { timeout: 15000 });
-      await execFileAsync('wsl.exe', ['--exec', 'cp', wslSourcePath, `${wslAttachmentsDir}/`], { timeout: 30000 });
+      await execAsync(`wsl.exe --exec bash -c "mkdir -p ${wslAttachmentsDir} && cp '${wslSourcePath}' '${wslAttachmentsDir}/'"`, { timeout: 30000 });
       console.log('[IPC] Attachment cloned to Linux VM:', existingTarget);
       return { success: true };
     } catch (err: any) {

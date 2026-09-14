@@ -18,7 +18,6 @@
   "exclude": [
     "main/agent/openclaw-agents/**/*",
     "main/**/*.test.ts",
-    "preload/**/*.test.ts",
     "main/agent/runner/AGENT_RUNNER_INTEGRATION.ts"
   ]
 }

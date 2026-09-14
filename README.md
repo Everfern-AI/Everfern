@@ -113,6 +113,7 @@ For packaged builds:
 
 ```
 npm run build
+npm run make
 ```
 
 <br/>
@@ -193,11 +194,12 @@ EverFern breaks the request into steps, shows its reasoning live, and pauses for
 ```
 everfern/
 ├── src/          # Next.js frontend (chat interface, settings)
- ├── main/         # Electron backend
- │   ├── agent/    # LangGraph orchestration
- │   ├── tools/    # Built-in tools
- │   └── acp/      # AI provider clients
- └── public/       # Static assets
+├── main/         # Electron backend
+│   ├── agent/    # LangGraph orchestration
+│   ├── tools/    # Built-in tools
+│   └── acp/      # AI provider clients
+├── docs/         # Architecture documentation
+└── public/       # Static assets
 ```
 
 <br/>

@@ -202,13 +202,13 @@ export function SubagentPills({ phases = [], isActive }: SubagentPillsProps) {
                 transition: 'all 0.15s ease',
               }}
             >
-              <item.icon size={13} style={{ color: isRunning ? 'var(--color-info)' : isDone ? 'var(--color-success)' : 'rgba(255, 255, 255, 0.4)' }} />
+              <item.icon size={13} style={{ color: isRunning ? '#3b82f6' : isDone ? '#10b981' : 'rgba(255, 255, 255, 0.4)' }} />
               <span>{item.label}</span>
               {isRunning && (
-                <div style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--color-info)' }} />
+                <div style={{ width: 4, height: 4, borderRadius: '50%', background: '#3b82f6' }} />
               )}
               {isDone && (
-                <CheckCircle size={11} style={{ color: 'var(--color-success)' }} />
+                <CheckCircle size={11} style={{ color: '#10b981' }} />
               )}
             </motion.button>
           );

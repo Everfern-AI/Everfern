@@ -15,7 +15,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { TaskHeader } from '@/components/TaskDecomposer/TaskHeader';
+import { TaskHeader } from './TaskHeader';
 import { ToolCallGroup } from './ToolCallGroup';
 import type { TaskSectionProps } from './types';
 

@@ -5,7 +5,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { CloudAuthLoginButton } from '../UIHelpers';
 
 // Mock ThemeProvider
-vi.mock('@/components/common/ThemeProvider', () => ({
+vi.mock('@/components/ThemeProvider', () => ({
     useTheme: () => ({ theme: 'dark', setTheme: vi.fn() }),
 }));
 
