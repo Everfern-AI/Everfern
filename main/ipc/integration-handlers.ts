@@ -11,16 +11,11 @@ import { PROVIDER_REGISTRY, getModelsForProvider, formatModelName, FlatModelEntr
 import type { ProviderType } from '../acp/types';
 import { loadConfigSync } from './config-handlers';
 import { loadSoul, loadAgents, saveGlobalSoul, saveGlobalAgents } from '../agent/personality-manager';
-import { redactConfigSecrets } from '../lib/secret-redaction';
-import type { SecretView } from '../lib/secret-redaction';
-import { vaultEncryptString, vaultDecryptString } from '../lib/key-vault';
 
 export interface IntegrationConfig {
   telegram: {
     enabled: boolean;
     botToken: string;
-    /** Encrypted-at-rest payload (vaultEncryptString); disk-only, never kept in memory. */
-    botTokenEnc?: string;
     connected: boolean;
     model?: string;
     provider?: string;
@@ -32,8 +27,6 @@ export interface IntegrationConfig {
   discord: {
     enabled: boolean;
     botToken: string;
-    /** Encrypted-at-rest payload (vaultEncryptString); disk-only, never kept in memory. */
-    botTokenEnc?: string;
     applicationId: string;
     connected: boolean;
     model?: string;
@@ -69,29 +62,14 @@ export const loadIntegrationConfig = (): IntegrationConfig => {
       const data = fs.readFileSync(configPath, 'utf8');
       const loaded = JSON.parse(data);
 
-      // MP-SEC-11 A2: at-rest decryption. botTokenEnc (vaultEncryptString
-      // payload) wins; legacy plaintext botToken values pass through as-is.
-      // botTokenEnc never enters the in-memory config (it is disk-only), so
-      // it cannot leak back out through IPC.
-      const { botTokenEnc: telegramEnc, ...telegramLoaded } = loaded.telegram ?? {};
-      const { botTokenEnc: discordEnc, ...discordLoaded } = loaded.discord ?? {};
-      const telegramToken = typeof telegramEnc === 'string'
-        ? (vaultDecryptString(telegramEnc) ?? '')
-        : (typeof telegramLoaded.botToken === 'string' ? telegramLoaded.botToken : '');
-      const discordToken = typeof discordEnc === 'string'
-        ? (vaultDecryptString(discordEnc) ?? '')
-        : (typeof discordLoaded.botToken === 'string' ? discordLoaded.botToken : '');
-
       return {
         telegram: {
           ...integrationConfig.telegram,
-          ...telegramLoaded,
-          botToken: telegramToken,
+          ...loaded.telegram,
         },
         discord: {
           ...integrationConfig.discord,
-          ...discordLoaded,
-          botToken: discordToken,
+          ...loaded.discord,
         },
       };
     }
@@ -108,23 +86,7 @@ export const saveIntegrationConfig = (config: IntegrationConfig): void => {
       fs.mkdirSync(configDir, { recursive: true });
     }
     const configPath = path.join(configDir, 'integration-config.json');
-    // MP-SEC-11 A2: disk copy never holds plaintext tokens — botToken is
-    // written as '' and the secret lives in botTokenEnc (encrypted payload).
-    // The in-memory config (arg) keeps raw tokens for main-process consumers.
-    const diskConfig: IntegrationConfig = {
-      ...config,
-      telegram: {
-        ...config.telegram,
-        botToken: '',
-        botTokenEnc: vaultEncryptString(config.telegram?.botToken ?? ''),
-      },
-      discord: {
-        ...config.discord,
-        botToken: '',
-        botTokenEnc: vaultEncryptString(config.discord?.botToken ?? ''),
-      },
-    };
-    fs.writeFileSync(configPath, JSON.stringify(diskConfig, null, 2));
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
   } catch (error) {
     console.error('[Integration] Failed to save config:', error);
     throw error;
@@ -133,7 +95,7 @@ export const saveIntegrationConfig = (config: IntegrationConfig): void => {
 
 export const getIntegrationConfig = () => integrationConfig;
 
-const buildTelegramPlatformConfig = (telegramConfig: IntegrationConfig['telegram']) => ({
+export const buildTelegramPlatformConfig = (telegramConfig: IntegrationConfig['telegram']) => ({
   enabled: true,
   config: {
     botToken: telegramConfig.botToken,
@@ -310,75 +272,26 @@ const testDiscordConnection = async (botToken: string, applicationId: string): P
   }
 };
 
-// ── MP-SEC-11 A2: SecretView merge for bot tokens ─────────────────
-//
-// The renderer only ever receives redacted SecretView objects for
-// telegram.botToken / discord.botToken. When saving a config back:
-//  - a plain string  → the user typed a new value; SET it ('' = clear)
-//  - {configured:true}  → echo of what we sent; KEEP stored
-//  - {configured:false} → explicit clear
-//  - absent/undefined → field untouched; KEEP stored
-
-function isSecretView(v: unknown): v is SecretView {
-  return !!v && typeof v === 'object' && 'configured' in (v as Record<string, unknown>);
-}
-
-/** Resolve the merge outcome for one bot-token field into a raw string. */
-function mergeSecretField(incoming: unknown, stored: string): string {
-  if (isSecretView(incoming)) {
-    return incoming.configured ? stored : '';
-  }
-  if (typeof incoming === 'string') {
-    return incoming;
-  }
-  return stored;
-}
-
 export function registerIntegrationHandlers() {
   integrationConfig = loadIntegrationConfig();
 
   ipcMain.handle('integration:get-config', (): Promise<IntegrationConfig> => {
-    // MP-SEC-11 A2: the renderer only ever sees redacted SecretView objects,
-    // never raw bot tokens.
-    return Promise.resolve(redactConfigSecrets(integrationConfig));
+    return Promise.resolve(integrationConfig);
   });
 
   ipcMain.handle('integration:save-config', async (_event, config: IntegrationConfig): Promise<void> => {
     try {
-      // MP-SEC-11 A2: SecretView merge for bot tokens.
-      //  - plain string (incl. '')  → set / clear the stored raw token
-      //  - {configured:true} echo    → keep stored raw token
-      //  - {configured:false}        → explicit clear
-      //  - absent                    → keep stored raw token
-      // Strip disk-only botTokenEnc from the incoming payload: it is
-      // recomputed on save and must never enter the in-memory config.
-      const { botTokenEnc: _tgEnc, ...telegramIn } =
-        (config?.telegram ?? {}) as Partial<IntegrationConfig['telegram']>;
-      const { botTokenEnc: _dcEnc, ...discordIn } =
-        (config?.discord ?? {}) as Partial<IntegrationConfig['discord']>;
-
-      const telegramToken = mergeSecretField(
-        telegramIn.botToken,
-        integrationConfig.telegram.botToken
-      );
-      const discordToken = mergeSecretField(
-        discordIn.botToken,
-        integrationConfig.discord.botToken
-      );
-
       integrationConfig = {
         telegram: {
           ...integrationConfig.telegram,
-          ...telegramIn,
-          botToken: telegramToken,
-          requireApproval: telegramIn.requireApproval ?? integrationConfig.telegram.requireApproval ?? true,
-          approvalCode: telegramIn.approvalCode ?? integrationConfig.telegram.approvalCode ?? '',
-          approvedUsers: telegramIn.approvedUsers ?? integrationConfig.telegram.approvedUsers ?? [],
+          ...config.telegram,
+          requireApproval: config.telegram?.requireApproval ?? integrationConfig.telegram.requireApproval ?? true,
+          approvalCode: config.telegram?.approvalCode ?? integrationConfig.telegram.approvalCode ?? '',
+          approvedUsers: config.telegram?.approvedUsers ?? integrationConfig.telegram.approvedUsers ?? [],
         },
         discord: {
           ...integrationConfig.discord,
-          ...discordIn,
-          botToken: discordToken,
+          ...config.discord,
         },
       };
       saveIntegrationConfig(integrationConfig);
@@ -434,38 +347,6 @@ export function registerIntegrationHandlers() {
     } catch (error) {
       console.error('[Integration] Failed to save configuration:', error);
       throw error;
-    }
-  });
-
-  // MP-SEC-11 A2: narrow write-only channel for a single bot token. The
-  // renderer never round-trips the full raw config; it sends exactly one
-  // platform + one token (or '' to clear).
-  ipcMain.handle('integration:set-token', async (
-    _e,
-    platform: unknown,
-    token: unknown
-  ): Promise<{ success: boolean; error?: string }> => {
-    try {
-      if (platform !== 'telegram' && platform !== 'discord') {
-        return { success: false, error: 'Invalid platform' };
-      }
-      if (typeof token !== 'string') {
-        return { success: false, error: 'Invalid token' };
-      }
-      const trimmed = token.trim();
-      if (trimmed.length > 512) {
-        return { success: false, error: 'Invalid token' };
-      }
-      if (platform === 'telegram') {
-        integrationConfig.telegram.botToken = trimmed;
-      } else {
-        integrationConfig.discord.botToken = trimmed;
-      }
-      saveIntegrationConfig(integrationConfig);
-      return { success: true };
-    } catch (error) {
-      console.error('[Integration] Failed to set token:', error);
-      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
 

@@ -21,8 +21,8 @@ import { sendDiscordMessageTool, sendTelegramMessageTool } from '../tools/messag
 import { createScheduledTaskTool, listScheduledTasksTool, deleteScheduledTaskTool } from '../tools/scheduled-tasks';
 import { mcpRegistry } from '../tools/mcp';
 import { createNavisTool } from '../tools/navis/navis';
-import { NavisOrchestrator } from '../tools/navis/orchestrator';
-import { AIClient, AIClientConfig, getPooledAIClient } from '../../lib/ai-client';
+import { NavisOrchestrator } from '../tools/navis/agent/orchestrator';
+import { AIClient } from '../../lib/ai-client';
 import { hydrateVlmApiKey } from '../../lib/vlm-config';
 import { createAnalyzeImageTool } from '../tools/analyze-image';
 import { createVisualClassificationSheetTool } from '../tools/visual-classification-sheet';
@@ -46,19 +46,14 @@ export const getBaseTools = (runner: any): AgentTool[] => {
         const mappedProvider = (mainConfig.vlm.engine === 'cloud' && mainConfig.vlm.provider === 'ollama' ? 'ollama-cloud' :
                                 mainConfig.vlm.engine === 'cloud' && mainConfig.vlm.provider === 'everfern' ? 'everfern' :
                                 mainConfig.vlm.provider) as any;
-        // AI-PERF-01: acquire through the client pool instead of an unpooled one-off.
-        // The runner releases this lease in runStream()'s outer finally (the
-        // orchestrator holds the client for the runner's lifetime).
-        const visionConfig: AIClientConfig = {
+        visionClient = new AIClient({
           provider: mappedProvider,
           model: mainConfig.vlm.model,
           // For cloud-only providers (everfern, openrouter), don't pass baseUrl
           // Let AIClient use its defaults to avoid stale URLs from previous provider selections
           baseUrl: (mappedProvider === 'everfern' || mappedProvider === 'openrouter') ? undefined : mainConfig.vlm.baseUrl,
           apiKey: mainConfig.vlm.apiKey,
-        };
-        visionClient = getPooledAIClient(visionConfig);
-        runner.visionClientLease = { client: visionClient, config: visionConfig };
+        });
         console.log(`[ToolsManager] 🖼️ Navis vision fallback client: ${mainConfig.vlm.provider}/${mainConfig.vlm.model}`);
       } catch (err) {
         console.warn('[ToolsManager] Failed to create vision client for Navis:', err);
@@ -140,6 +135,7 @@ export const getBaseTools = (runner: any): AgentTool[] => {
     createArtifactTool(runner),
     editArtifactTool(runner),
     visualizeTool,
+    // pptx_generator removed — use WSL with pptxgenjs via terminal instead
     sendDiscordMessageTool,
     sendTelegramMessageTool,
     createScheduledTaskTool,
@@ -161,7 +157,7 @@ export const getBaseTools = (runner: any): AgentTool[] => {
     if (tool.parameters && tool.parameters.properties) {
       tool.parameters.properties['taskName'] = {
         type: 'string',
-        description: 'Short Title Case label for this step.'
+        description: 'MANDATORY: Human-friendly Title Case name for this logical step (e.g., "Drafting Report Script", "Generating PDF Document", "Presenting Final Artifacts"). Never use snake_case or technical names like "run_pdf_generation" or "write_script_in_vm". Related tool calls with the same taskName are grouped into a clean collapsible timeline batch in the UI.'
       };
       if (!tool.parameters.required) {
         tool.parameters.required = [];

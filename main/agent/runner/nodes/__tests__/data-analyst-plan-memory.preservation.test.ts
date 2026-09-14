@@ -95,34 +95,23 @@ describe('Preservation Property Tests — Data Analyst Plan & Memory Fix', () =>
         // Verify _plans is empty (first turn scenario)
         expect(getActivePlans()).toHaveLength(0);
 
-        // Read the source code to verify current behavior
-        // Contract updated (wave F11) for commit 2482e73 ("Arch docs"): the
-        // createDataAnalystNode implementation moved from
-        // nodes/specialized_agents.ts (now a re-export barrel) to
-        // agents/data-analyst.ts.
-        const sourceFile = path.join(process.cwd(), 'main/agent/runner/agents/data-analyst.ts');
+        // Read the source code of specialized_agents.ts to verify current behavior
+        const sourceFile = path.join(process.cwd(), 'main/agent/runner/nodes/specialized_agents.ts');
         const sourceCode = fs.readFileSync(sourceFile, 'utf-8');
 
         // Look for the createDataAnalystNode function
-        const dataAnalystNodeMatch = sourceCode.match(/export const createDataAnalystNode[\s\S]*?systemPromptOverride:[^\n]*/);
+        const dataAnalystNodeMatch = sourceCode.match(/export const createDataAnalystNode[\s\S]*?systemPromptOverride:\s*`([\s\S]*?)`/);
 
         if (dataAnalystNodeMatch) {
-          // The override expression is built from the base prompt template
-          // (loaded from data-analyst.md or the inline fallback below it)
-          // concatenated with conditionally-built sections.
-          const baseTemplateMatch = sourceCode.match(/systemPrompt = `([\s\S]*?)`/);
+          const systemPromptTemplate = dataAnalystNodeMatch[1];
 
-          if (baseTemplateMatch) {
-            // On UNFIXED code: when _plans is empty, system prompt should NOT contain ## Current Plan
-            // This behavior must be preserved after the fix (first turn unchanged)
-            // The base template never contains ## Current Plan; plan injection
-            // happens only conditionally via planStateContext (guarded by
-            // activePlans.length > 0), so first-turn output is unchanged.
-            expect(baseTemplateMatch[1]).not.toContain('## Current Plan');
-          }
+          // On UNFIXED code: when _plans is empty, system prompt should NOT contain ## Current Plan
+          // This behavior must be preserved after the fix (first turn unchanged)
+          const hasCurrentPlanSection = systemPromptTemplate.includes('## Current Plan');
 
-          // Plan injection is conditional — guarded by activePlans.length > 0
-          expect(sourceCode).toContain('activePlans.length > 0');
+          // This should be false on unfixed code (no plan injection logic exists yet)
+          // After fix: this will still be false for the base template, plan injection happens conditionally
+          expect(hasCurrentPlanSection).toBe(false);
         }
 
         return true;
@@ -141,13 +130,9 @@ describe('Preservation Property Tests — Data Analyst Plan & Memory Fix', () =>
    *
    * **Validates: Requirements 3.2, 3.3**
    */
-  it('should preserve turn-1 initialMessages construction when history is empty', async () => {
-    // Contract updated (wave F11) for commit cfe5aab ("feat: Added Projects"),
-    // which made buildSystemMessages async (system-prompt.ts:465). The result
-    // must now be awaited; the turn-1 shape [system, user] is otherwise
-    // unchanged and must stay preserved.
-    await fc.assert(
-      fc.asyncProperty(emptyHistoryArb, firstTurnUserInputArb, async (history, userInput) => {
+  it('should preserve turn-1 initialMessages construction when history is empty', () => {
+    fc.assert(
+      fc.property(emptyHistoryArb, firstTurnUserInputArb, (history, userInput) => {
         // Verify this is turn 1 (empty history)
         expect(history).toHaveLength(0);
 
@@ -156,7 +141,7 @@ describe('Preservation Property Tests — Data Analyst Plan & Memory Fix', () =>
         const conversationId = 'test-conv-id';
         const preloadedPrompt = 'Mock system prompt';
 
-        const { messages: initialMessages } = await buildSystemMessages(
+        const { messages: initialMessages } = buildSystemMessages(
           history,
           userInput,
           platform,
@@ -215,36 +200,22 @@ describe('Preservation Property Tests — Data Analyst Plan & Memory Fix', () =>
         }
 
         // Read the source code to verify coding specialist behavior
-        // Contract updated (wave F11) for commit 2482e73 ("Arch docs"):
-        // implementation moved from nodes/specialized_agents.ts (now a
-        // re-export barrel) to agents/coding-specialist.ts.
-        const sourceFile = path.join(process.cwd(), 'main/agent/runner/agents/coding-specialist.ts');
+        const sourceFile = path.join(process.cwd(), 'main/agent/runner/nodes/specialized_agents.ts');
         const sourceCode = fs.readFileSync(sourceFile, 'utf-8');
 
         // Look for the createCodingSpecialistNode function
-        const codingSpecialistMatch = sourceCode.match(/export const createCodingSpecialistNode[\s\S]*?systemPromptOverride:[^\n]*/);
+        const codingSpecialistMatch = sourceCode.match(/export const createCodingSpecialistNode[\s\S]*?systemPromptOverride:\s*`([\s\S]*?)`/);
 
         if (codingSpecialistMatch) {
-          // Examine the full module: the plan-context helper (buildCodingHandoff)
-          // is defined above createCodingSpecialistNode, and the node body calls it.
-          // Contract updated (wave F11) for commit 2482e73 ("Arch docs") and
-          // follow-up refactors: the monolithic systemPromptOverride template
-          // with inline ${planContext} was replaced by a coding-specialist.md
-          // prompt plus a decomposer handoff (buildCodingHandoff) built from
-          // state.decomposedTask — never from _plans.
-          const fullNodeCode = sourceCode.slice(codingSpecialistMatch.index);
+          const systemPromptTemplate = codingSpecialistMatch[1];
 
           // Coding specialist should NEVER contain ## Current Plan from _plans
           // It has its own plan context from decomposedTask
-          expect(fullNodeCode).not.toContain('## Current Plan');
-          expect(fullNodeCode).not.toContain('A plan is already in progress');
-          expect(sourceCode).not.toContain('getActivePlans');
+          expect(systemPromptTemplate).not.toContain('## Current Plan');
+          expect(systemPromptTemplate).not.toContain('A plan is already in progress');
 
-          // Should contain its own plan context logic from decomposedTask
-          // (helper defined above the node function, invoked within it)
-          expect(sourceCode).toContain('decomposedTask');
-          expect(sourceCode).toContain('buildCodingHandoff');
-          expect(fullNodeCode).toContain('buildCodingHandoff');
+          // Should contain its own plan context logic
+          expect(systemPromptTemplate).toContain('planContext');
         }
 
         return true;
@@ -280,28 +251,21 @@ describe('Preservation Property Tests — Data Analyst Plan & Memory Fix', () =>
         }
 
         // Read the source code to verify web explorer behavior
-        // Contract updated (wave F11) for commit 2482e73 ("Arch docs"):
-        // implementation moved from nodes/specialized_agents.ts (now a
-        // re-export barrel) to agents/web-explorer.ts.
-        const sourceFile = path.join(process.cwd(), 'main/agent/runner/agents/web-explorer.ts');
+        const sourceFile = path.join(process.cwd(), 'main/agent/runner/nodes/specialized_agents.ts');
         const sourceCode = fs.readFileSync(sourceFile, 'utf-8');
 
         // Look for the createWebExplorerNode function
-        const webExplorerMatch = sourceCode.match(/export const createWebExplorerNode[\s\S]*?systemPromptOverride:[^\n]*/);
+        const webExplorerMatch = sourceCode.match(/export const createWebExplorerNode[\s\S]*?systemPromptOverride:\s*`([\s\S]*?)`/);
 
         if (webExplorerMatch) {
-          // Check the full createWebExplorerNode code: the system prompt
-          // construction plus any context it builds must never inject _plans.
-          // Contract updated (wave F11) for commit 2482e73 ("Arch docs") and
-          // follow-up refactors: web explorer is now phase-driven, loading its
-          // prompt from web-explorer.md with per-phase instructions and no
-          // _plans-derived plan context at all.
-          const fullNodeCode = sourceCode.slice(webExplorerMatch.index);
+          const systemPromptTemplate = webExplorerMatch[1];
 
           // Web explorer should NEVER contain ## Current Plan from _plans
-          expect(fullNodeCode).not.toContain('## Current Plan');
-          expect(fullNodeCode).not.toContain('A plan is already in progress');
-          expect(fullNodeCode).not.toContain('getActivePlans');
+          expect(systemPromptTemplate).not.toContain('## Current Plan');
+          expect(systemPromptTemplate).not.toContain('A plan is already in progress');
+
+          // Should contain its own plan context logic
+          expect(systemPromptTemplate).toContain('planContext');
         }
 
         return true;
@@ -322,20 +286,14 @@ describe('Preservation Property Tests — Data Analyst Plan & Memory Fix', () =>
    */
   it('should preserve analysis session context in data analyst system prompt', () => {
     // Read the source code to verify session context is included
-    // Contract updated (wave F11) for commit 2482e73 ("Arch docs"): the
-    // createDataAnalystNode implementation moved from
-    // nodes/specialized_agents.ts (now a re-export barrel) to
-    // agents/data-analyst.ts.
-    const sourceFile = path.join(process.cwd(), 'main/agent/runner/agents/data-analyst.ts');
+    const sourceFile = path.join(process.cwd(), 'main/agent/runner/nodes/specialized_agents.ts');
     const sourceCode = fs.readFileSync(sourceFile, 'utf-8');
 
     // Look for analysis session context logic in createDataAnalystNode
-    const dataAnalystNodeMatch = sourceCode.match(/export const createDataAnalystNode[\s\S]*?integrator\.wrapNode/);
+    const dataAnalystNodeCode = sourceCode.match(/export const createDataAnalystNode[\s\S]*?return integrator\.wrapNode/);
 
-    expect(dataAnalystNodeMatch).toBeTruthy();
-
-    if (dataAnalystNodeMatch) {
-      const nodeCode = dataAnalystNodeMatch[0];
+    if (dataAnalystNodeCode) {
+      const nodeCode = dataAnalystNodeCode[0];
 
       // Should contain analysis session context logic
       expect(nodeCode).toContain('getAnalysisSessionManager');
@@ -358,17 +316,11 @@ describe('Preservation Property Tests — Data Analyst Plan & Memory Fix', () =>
    */
   it('should preserve session reset functionality', () => {
     // Read the source code to verify reset functionality exists
-    // Contract updated (wave F11) for commit 2482e73 ("Arch docs"): the
-    // createDataAnalystNode implementation moved from
-    // nodes/specialized_agents.ts (now a re-export barrel) to
-    // agents/data-analyst.ts.
-    const sourceFile = path.join(process.cwd(), 'main/agent/runner/agents/data-analyst.ts');
+    const sourceFile = path.join(process.cwd(), 'main/agent/runner/nodes/specialized_agents.ts');
     const sourceCode = fs.readFileSync(sourceFile, 'utf-8');
 
     // Look for session reset logic in createDataAnalystNode
-    const dataAnalystNodeCode = sourceCode.match(/export const createDataAnalystNode[\s\S]*?integrator\.wrapNode/);
-
-    expect(dataAnalystNodeCode).toBeTruthy();
+    const dataAnalystNodeCode = sourceCode.match(/export const createDataAnalystNode[\s\S]*?return integrator\.wrapNode/);
 
     if (dataAnalystNodeCode) {
       const nodeCode = dataAnalystNodeCode[0];
@@ -428,11 +380,8 @@ describe('Preservation Property Tests — Data Analyst Plan & Memory Fix', () =>
    * **Validates: Requirements 3.1, 3.4**
    */
   it('should confirm createDataAnalystNode now accesses _plans state but preserves first-turn behavior', () => {
-    // Read the source code of the createDataAnalystNode implementation.
-    // Contract updated (wave F11) for commit 2482e73 ("Arch docs"): the
-    // implementation moved from nodes/specialized_agents.ts (now a re-export
-    // barrel) to agents/data-analyst.ts.
-    const sourceFile = path.join(process.cwd(), 'main/agent/runner/agents/data-analyst.ts');
+    // Read the source code of specialized_agents.ts
+    const sourceFile = path.join(process.cwd(), 'main/agent/runner/nodes/specialized_agents.ts');
     const sourceCode = fs.readFileSync(sourceFile, 'utf-8');
 
     // Check imports at the top of the file
@@ -442,9 +391,7 @@ describe('Preservation Property Tests — Data Analyst Plan & Memory Fix', () =>
     expect(hasGetActivePlansImport).toBe(true);
 
     // Look for createDataAnalystNode function
-    const dataAnalystNodeMatch = sourceCode.match(/export const createDataAnalystNode[\s\S]*?integrator\.wrapNode/);
-
-    expect(dataAnalystNodeMatch).toBeTruthy();
+    const dataAnalystNodeMatch = sourceCode.match(/export const createDataAnalystNode[\s\S]*?return integrator\.wrapNode/);
 
     if (dataAnalystNodeMatch) {
       const nodeCode = dataAnalystNodeMatch[0];

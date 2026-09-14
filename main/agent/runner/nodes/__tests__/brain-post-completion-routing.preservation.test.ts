@@ -29,21 +29,7 @@ import fc from 'fast-check';
 
 // ── Mock dependencies ────────────────────────────────────────────────────────
 
-// Routing decisions now flow through CognitiveRouter (dynamic import in
-// brain.ts). Mock it so these tests keep controlling the routing outcome.
-const routerState = vi.hoisted(() => ({ decision: null as string | null }));
-
-vi.mock('../../cognitive-router', () => ({
-  CognitiveRouter: class {
-    route = vi.fn(async () => {
-      // null simulates a routing failure so brain's intent-based fallback
-      // kicks in (matching the pre-router mock-client JSON-parse behavior).
-      if (routerState.decision === null) throw new Error('routing failed');
-      return { decision: routerState.decision, confidence: 1, explanation: `Routing to ${routerState.decision}` };
-    });
-  },
-}));
-
+// Mock the agent runtime service
 vi.mock('../../services/agent-runtime', () => ({
   runAgentStep: vi.fn(async (state, options) => {
     // Simulate brain node producing a response without tool calls
@@ -69,7 +55,7 @@ vi.mock('../../mission-integrator', () => ({
 }));
 
 // Mock prompt loading
-vi.mock('../../../../lib/prompt-sync', () => ({
+vi.mock('../../../lib/prompt-sync', () => ({
   loadPrompt: vi.fn(() => 'Mock system prompt'),
 }));
 
@@ -80,11 +66,6 @@ vi.mock('../../abort-manager', () => ({
       signal: new AbortController().signal,
     },
   },
-  getConversationAbortManager: () => ({
-    abortController: {
-      signal: new AbortController().signal,
-    },
-  }),
 }));
 
 // Mock node utils
@@ -109,8 +90,7 @@ const makeStateWithCompletion = (
     dataAnalysisComplete?: boolean;
     computerUseComplete?: boolean;
   },
-  iterations: number = 1,
-  returningFromOverride: string | null | undefined = undefined
+  iterations: number = 1
 ): GraphStateType => ({
   messages: [
     { role: 'user', content: userMessage } as any,
@@ -119,22 +99,6 @@ const makeStateWithCompletion = (
   intentConfidence: 0.95,
   decomposedTask: undefined as any,
   agiHints: '',
-  // When a specialist completion flag is set, the graph marks the state as
-  // returning from that specialist — brain's completion override and the
-  // web-explorer early-exit both key off this field. An explicit override
-  // (null) models the graph having already consumed the flag when routing
-  // onward to a different specialist.
-  returningFromSpecialist: returningFromOverride !== undefined
-    ? returningFromOverride
-    : completionFlags.webExplorerComplete
-      ? 'web_explorer'
-      : completionFlags.dataAnalysisComplete
-        ? 'data_analyst'
-        : completionFlags.codingComplete
-          ? 'coding_specialist'
-          : completionFlags.computerUseComplete
-            ? 'computer_use'
-            : null,
   taskPhase: 'brain' as any,
   pendingToolCalls: [],
   toolCallRecords: [],
@@ -166,18 +130,14 @@ const makeStateWithCompletion = (
   completedSteps: [],
   decompositionAttempts: 0,
   brainToolsInFlight: false,
+  returningFromSpecialist: null,
   debateResult: undefined as any,
 });
 
 /**
  * Creates a mock AgentRunner with configurable routing LLM response
  */
-const makeMockRunner = (routingDecision: string | null) => {
-  // Route the mocked CognitiveRouter's answer through the same value the
-  // routing LLM would have returned (brain consumes the router, not the
-  // client, for routing decisions now).
-  routerState.decision = routingDecision;
-  return {
+const makeMockRunner = (routingDecision: string | null) => ({
   client: {
     chat: vi.fn().mockImplementation(async (options) => {
       // Check if this is a routing decision call or completion signal call
@@ -230,8 +190,7 @@ const makeMockRunner = (routingDecision: string | null) => {
     { name: 'web_search', description: 'Search the web' },
     { name: 'navis', description: 'Browser automation' },
   ]),
-  };
-};
+});
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
@@ -344,9 +303,7 @@ describe('Preservation Properties — Incomplete Specialist Routing', () => {
       const state = makeStateWithCompletion(
         'research React docs and create a component',
         'coding',
-        { webExplorerComplete: true }, // web_explorer completed, but routing to coding
-        1,
-        null // graph already consumed the return flag when routing onward
+        { webExplorerComplete: true } // web_explorer completed, but routing to coding
       );
 
       const result = await brainNode(state);
@@ -361,9 +318,7 @@ describe('Preservation Properties — Incomplete Specialist Routing', () => {
       const state = makeStateWithCompletion(
         'create a component and research best practices',
         'research',
-        { codingComplete: true }, // coding completed, but routing to web_explorer
-        1,
-        null // graph already consumed the return flag when routing onward
+        { codingComplete: true } // coding completed, but routing to web_explorer
       );
 
       const result = await brainNode(state);
@@ -378,9 +333,7 @@ describe('Preservation Properties — Incomplete Specialist Routing', () => {
       const state = makeStateWithCompletion(
         'create a dashboard and analyze the data',
         'analyze',
-        { codingComplete: true }, // coding completed, but routing to data_analyst
-        1,
-        null // graph already consumed the return flag when routing onward
+        { codingComplete: true } // coding completed, but routing to data_analyst
       );
 
       const result = await brainNode(state);
@@ -655,9 +608,7 @@ describe('Preservation Properties — Incomplete Specialist Routing', () => {
             const state = makeStateWithCompletion(
               `Test request for ${targetInfo.intent}`,
               targetInfo.intent as any,
-              completionFlags,
-              1,
-              null // graph already consumed the return flag when routing onward
+              completionFlags
             );
 
             const result = await brainNode(state);
@@ -752,9 +703,7 @@ describe('Preservation Properties — Incomplete Specialist Routing', () => {
     const state3 = makeStateWithCompletion(
       'create a component',
       'coding',
-      { webExplorerComplete: true }, // web_explorer completed, but routing to coding
-      1,
-      null // graph already consumed the return flag when routing onward
+      { webExplorerComplete: true } // web_explorer completed, but routing to coding
     );
     const result3 = await brainNode3(state3);
     expect(result3.routingDecision?.decision).toBe('route_coding');

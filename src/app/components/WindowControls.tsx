@@ -50,7 +50,7 @@ export default function WindowControls() {
                 gap: 8,
                 padding: "0 4px",
                 WebkitAppRegion: "no-drag",
-                zIndex: 'var(--z-chrome)',
+                zIndex: 9999,
             } as any}
         >
             {/* Close */}

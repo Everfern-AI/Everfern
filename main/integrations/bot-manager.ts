@@ -65,7 +65,7 @@ export interface MessageContext {
 /**
  * Response streaming interface
  */
-interface ResponseStream {
+export interface ResponseStream {
   /** Stream ID */
   id: string;
   /** Target platform */
@@ -85,7 +85,7 @@ interface ResponseStream {
 /**
  * Tool output formatting options
  */
-interface ToolOutputFormat {
+export interface ToolOutputFormat {
   /** Platform name */
   platform: string;
   /** Whether to use markdown formatting */
@@ -157,9 +157,6 @@ export class BotIntegrationManager extends EventEmitter {
         console.log(`Disconnecting platform: ${name}`);
         await platform.disconnect();
       }
-
-      // MP-LEAK-01: clear the input validator's rate-limit cleanup interval.
-      this.inputValidator.stop?.();
 
       // Clear active streams
       this.activeStreams.clear();
@@ -559,17 +556,13 @@ export class BotIntegrationManager extends EventEmitter {
    * Handle incoming messages from platforms
    */
   private async handleIncomingMessage(message: IncomingMessage): Promise<void> {
-    try {
-      // FIX (unhandled crash on malformed input): these logging lines used to
-      // run BEFORE the try/catch, so a message with null content threw a
-      // synchronous TypeError inside a floating promise (unhandled
-      // rejection) instead of reaching the validation error path.
-      console.log(`[BotManager] 📨 handleIncomingMessage called`);
-      console.log(`[BotManager] Platform: ${message.platform}`);
-      console.log(`[BotManager] User: ${message.user.name} (${message.user.id})`);
-      console.log(`[BotManager] Chat: ${message.chat.name} (${message.chat.id})`);
-      console.log(`[BotManager] Content: ${(message.content?.text ?? '').substring(0, 100)}`);
+    console.log(`[BotManager] 📨 handleIncomingMessage called`);
+    console.log(`[BotManager] Platform: ${message.platform}`);
+    console.log(`[BotManager] User: ${message.user.name} (${message.user.id})`);
+    console.log(`[BotManager] Chat: ${message.chat.name} (${message.chat.id})`);
+    console.log(`[BotManager] Content: ${message.content.text.substring(0, 100)}`);
 
+    try {
       // Validate input if validation is enabled
       if (this.config.validation?.enabled) {
         console.log(`[BotManager] Validation enabled, validating message...`);
@@ -735,3 +728,13 @@ export const defaultBotIntegrationConfig: BotIntegrationConfig = {
     }
   }
 };
+
+/**
+ * Create a bot integration manager with default configuration
+ */
+export function createBotIntegrationManager(
+  config: Partial<BotIntegrationConfig> = {}
+): BotIntegrationManager {
+  const fullConfig = { ...defaultBotIntegrationConfig, ...config };
+  return new BotIntegrationManager(fullConfig);
+}

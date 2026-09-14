@@ -239,8 +239,8 @@ describe('Property Test: Message Forwarding Reliability', () => {
    * When forwarding messages between platforms, the content should be
    * preserved exactly, including text, attachments, and metadata.
    */
-  it('should preserve message content during forwarding', async () => {
-    await fc.assert(fc.asyncProperty(
+  it('should preserve message content during forwarding', () => {
+    fc.assert(fc.property(
       fc.record({
         messageText: fc.string({ minLength: 1, maxLength: 1000 }),
         userId: fc.string({ minLength: 1, maxLength: 20 }),
@@ -484,20 +484,14 @@ describe('Property Test: Message Forwarding Reliability', () => {
    * Duplicate messages should be detected and not forwarded multiple times
    * to the same platform within a short time window.
    */
-  it('should prevent duplicate message forwarding', async () => {
-    await fc.assert(fc.asyncProperty(
+  it('should prevent duplicate message forwarding', () => {
+    fc.assert(fc.property(
       fc.record({
         messageText: fc.string({ minLength: 1, maxLength: 100 }),
         userId: fc.string({ minLength: 1, maxLength: 20 }),
         duplicateCount: fc.integer({ min: 2, max: 5 })
       }),
       (testData) => {
-        // wave f11: fc runs this predicate numRuns times against the SAME
-        // messageQueue (beforeEach only runs per it()) — queued items from
-        // earlier runs accumulated (2 duplicates × 7 runs = 14 total).
-        // Reset the queue per property run.
-        messageQueue.clear();
-
         const messageIds: string[] = [];
 
         // Create identical messages
@@ -534,10 +528,6 @@ describe('Property Test: Message Forwarding Reliability', () => {
    * and be marked as failed after a reasonable time limit.
    */
   it('should handle delivery timeouts appropriately', async () => {
-    // wave f11: this property measures REAL send delays (up to 1000ms per
-    // run × 20 runs) — a wall-clock timing assertion cannot use fake
-    // timers. Raise the test timeout so the suite isn't killed at the
-    // vitest default 5s.
     await fc.assert(fc.asyncProperty(
       fc.record({
         messageText: fc.string({ minLength: 1, maxLength: 100 }),
@@ -575,7 +565,7 @@ describe('Property Test: Message Forwarding Reliability', () => {
         targetPlatform1.setSendDelay(0);
       }
     ), { numRuns: 20 });
-  }, 30000);
+  });
 });
 
 /**

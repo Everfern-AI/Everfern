@@ -25,7 +25,7 @@ export enum NotificationPriority {
   CRITICAL = 'critical'
 }
 
-interface NotificationConfig {
+export interface NotificationConfig {
   enabled: boolean;
   channels: NotificationChannel[];
   emailConfig?: {
@@ -47,7 +47,7 @@ interface NotificationConfig {
   };
 }
 
-interface AdminNotification {
+export interface AdminNotification {
   id: string;
   timestamp: Date;
   type: string;
@@ -72,16 +72,6 @@ export class AdminNotificationManager extends EventEmitter {
   private pendingNotifications: AdminNotification[] = [];
   private notificationHistory: AdminNotification[] = [];
   private maxHistorySize = 1000;
-  // MP-LEAK-01: event-driven processor replaces the 5s bare setInterval poll.
-  // The queue drains immediately on enqueue; failed retries are re-scheduled
-  // with a delayed timeout instead of a permanent periodic wakeup.
-  private processing = false;
-  private drainScheduled = false;
-  private retryTimers = new Set<NodeJS.Timeout>();
-  // Tracked pending drain (a setImmediate) so stop() can cancel it too —
-  // otherwise an enqueue right before stop() fires a drain after stop.
-  private drainImmediate: NodeJS.Immediate | null = null;
-  private stopped = false;
 
   constructor() {
     super();
@@ -151,7 +141,6 @@ export class AdminNotificationManager extends EventEmitter {
 
     this.pendingNotifications.push(notification);
     this.emit('notificationQueued', notification);
-    this.scheduleDrain();
 
     console.log(`Admin notification queued: ${priority} - ${title}`);
   }
@@ -313,95 +302,48 @@ export class AdminNotificationManager extends EventEmitter {
   }
 
   /**
-   * Start the notification processor (event-driven; no periodic timers).
+   * Start the notification processor
    */
   private startNotificationProcessor(): void {
-    // Nothing to schedule — drainPendingNotifications() runs on enqueue.
-  }
-
-  /**
-   * Queue an immediate drain (coalesced via microtask-ish flag so a burst of
-   * notifications results in a single drain pass).
-   */
-  private scheduleDrain(): void {
-    if (this.stopped || this.drainScheduled) return;
-    this.drainScheduled = true;
-    this.drainImmediate = setImmediate(() => {
-      this.drainImmediate = null;
-      this.drainScheduled = false;
-      void this.drainPendingNotifications();
-    });
-  }
-
-  private scheduleRetry(notification: AdminNotification): void {
-    // Back off per retry count: 1s, 2s, 4s... capped at 30s. Timers are
-    // tracked so stop() can cancel them.
-    const delay = Math.min(1000 * Math.pow(2, notification.retryCount), 30000);
-    const t = setTimeout(() => {
-      this.retryTimers.delete(t);
-      this.pendingNotifications.push(notification);
-      this.scheduleDrain();
-    }, delay);
-    this.retryTimers.add(t);
-  }
-
-  /**
-   * Stop the notification manager: cancel all pending retries AND the
-   * coalesced drain. Called from integration-service stop / before-quit.
-   * After stop(), further enqueues are refused (no timer resurrection).
-   */
-  stop(): void {
-    this.stopped = true;
-    for (const t of this.retryTimers) clearTimeout(t);
-    this.retryTimers.clear();
-    if (this.drainImmediate) {
-      clearImmediate(this.drainImmediate);
-      this.drainImmediate = null;
-    }
-    this.drainScheduled = false;
+    setInterval(async () => {
+      await this.processPendingNotifications();
+    }, 5000); // Process every 5 seconds
   }
 
   /**
    * Process pending notifications
    */
-  private async drainPendingNotifications(): Promise<void> {
-    if (this.processing || this.stopped) return;
-    this.processing = true;
+  private async processPendingNotifications(): Promise<void> {
+    const notifications = [...this.pendingNotifications];
+    this.pendingNotifications = [];
 
-    try {
-      const notifications = [...this.pendingNotifications];
-      this.pendingNotifications = [];
+    for (const notification of notifications) {
+      try {
+        const success = await this.processNotification(notification);
 
-      for (const notification of notifications) {
-        try {
-          const success = await this.processNotification(notification);
-
-          if (success) {
-            notification.sent = true;
-            notification.sentAt = new Date();
-            this.addToHistory(notification);
-          } else {
-            notification.retryCount++;
-            if (notification.retryCount < notification.maxRetries) {
-              // Re-queue for retry via delayed timer (no periodic poll)
-              this.scheduleRetry(notification);
-            } else {
-              // Max retries reached, log failure
-              console.error(`Failed to send notification after ${notification.maxRetries} attempts:`, notification.title);
-              notification.sent = false;
-              this.addToHistory(notification);
-            }
-          }
-        } catch (error) {
-          console.error('Error processing notification:', error);
+        if (success) {
+          notification.sent = true;
+          notification.sentAt = new Date();
+          this.addToHistory(notification);
+        } else {
           notification.retryCount++;
           if (notification.retryCount < notification.maxRetries) {
-            this.scheduleRetry(notification);
+            // Re-queue for retry
+            this.pendingNotifications.push(notification);
+          } else {
+            // Max retries reached, log failure
+            console.error(`Failed to send notification after ${notification.maxRetries} attempts:`, notification.title);
+            notification.sent = false;
+            this.addToHistory(notification);
           }
         }
+      } catch (error) {
+        console.error('Error processing notification:', error);
+        notification.retryCount++;
+        if (notification.retryCount < notification.maxRetries) {
+          this.pendingNotifications.push(notification);
+        }
       }
-    } finally {
-      this.processing = false;
     }
   }
 

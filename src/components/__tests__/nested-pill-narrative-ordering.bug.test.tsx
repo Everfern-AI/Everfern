@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { ToolCallTag } from '../tools/ToolCallComponents';
+import { ToolCallTag } from '../ToolCallComponents';
 import type { ToolCallDisplay } from '../../types';
 
 /**
@@ -62,7 +62,7 @@ describe('Bug Condition Exploration: Narrative Visibility and Positioning', () =
     // Assert narrative styling: fontSize: 12, color: 'var(--color-text-tertiary)', marginBottom: 6, lineHeight: 1.5, fontStyle: 'italic'
     const computedStyle = window.getComputedStyle(narrativeElement!);
     expect(computedStyle.fontSize).toBe('12px');
-    expect(computedStyle.color).toBe('var(--color-text-tertiary)'); // design token (jsdom does not resolve CSS vars)
+    expect(computedStyle.color).toBe('rgb(156, 163, 175)'); // #9ca3af in RGB
     expect(computedStyle.marginBottom).toBe('6px');
     expect(computedStyle.lineHeight).toBe('1.5');
     expect(computedStyle.fontStyle).toBe('italic');

@@ -139,18 +139,12 @@ export class EncryptionService {
       let tag: Buffer | undefined;
 
       if (this.config.algorithm === 'aes-256-gcm') {
-        // f11 fix: crypto.createCipher was removed in Node 22 — use
-        // createCipheriv with the generated iv. The old code also never
-        // fed the iv to the cipher, so decryptData's iv parameter was
-        // unused and round-trips only worked by accident of the legacy
-        // MD5 key-derivation path. createCipheriv requires a 32-byte key
-        // for aes-256 (masterKey already is keyLength=32).
-        cipher = crypto.createCipheriv('aes-256-gcm', key, iv) as crypto.CipherGCM;
+        cipher = crypto.createCipher('aes-256-gcm', key) as crypto.CipherGCM;
         (cipher as crypto.CipherGCM).setAAD(salt); // Use salt as additional authenticated data
         encrypted = Buffer.concat([cipher.update(dataBuffer), cipher.final()]);
         tag = (cipher as crypto.CipherGCM).getAuthTag();
       } else {
-        cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
+        cipher = crypto.createCipher('aes-256-cbc', key);
         encrypted = Buffer.concat([cipher.update(dataBuffer), cipher.final()]);
       }
 
@@ -203,12 +197,12 @@ export class EncryptionService {
           throw new Error('Authentication tag missing for GCM mode');
         }
 
-        decipher = crypto.createDecipheriv('aes-256-gcm', key, iv) as crypto.DecipherGCM;
+        decipher = crypto.createDecipher('aes-256-gcm', key) as crypto.DecipherGCM;
         (decipher as crypto.DecipherGCM).setAAD(salt);
         (decipher as crypto.DecipherGCM).setAuthTag(Buffer.from(encryptedData.tag, 'base64'));
         decrypted = Buffer.concat([decipher.update(data), decipher.final()]);
       } else {
-        decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+        decipher = crypto.createDecipher('aes-256-cbc', key);
         decrypted = Buffer.concat([decipher.update(data), decipher.final()]);
       }
 

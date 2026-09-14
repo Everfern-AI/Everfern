@@ -81,7 +81,7 @@ export default function UpdateNotification() {
                         right: '24px',
                         width: '360px',
                         padding: '20px',
-                        zIndex: 'var(--z-toast)',
+                        zIndex: 99999,
                     }}
                 >
                     <div className="flex items-start gap-4" style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>

@@ -10,7 +10,7 @@ import {
   type ReasoningGroupComponent,
 } from "@assistant-ui/react";
 import { useAutoCollapse } from "@/hooks/use-auto-collapse";
-import { MarkdownText } from "@/components/common/markdown-text";
+import { MarkdownText } from "@/components/markdown-text";
 import {
   Collapsible,
   CollapsibleContent,

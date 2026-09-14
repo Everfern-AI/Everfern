@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import Image from "next/image";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight } from "lucide-react";
 import WindowControls from "./components/WindowControls";
-import { useTheme } from "@/components/common/ThemeProvider";
+import { useTheme } from "@/components/ThemeProvider";
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -63,7 +63,7 @@ export default function OnboardingPage() {
   }, [router]);
 
   // Show a solid background during the IPC check — prevents grey/transparent flash on Mac
-  if (isChecking) return <div style={{ minHeight: '100vh', background: 'var(--color-bg-base)' }} />;
+  if (isChecking) return <div style={{ minHeight: '100vh', background: '#111' }} />;
 
   return (
     <main

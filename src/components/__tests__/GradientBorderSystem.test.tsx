@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { GradientBorderSystem, useGradientBorderState } from '@/app/chat/components/GradientBorderSystem';
+import { GradientBorderSystem, useGradientBorderState } from '../GradientBorderSystem';
 
 describe('GradientBorderSystem', () => {
   beforeEach(() => {

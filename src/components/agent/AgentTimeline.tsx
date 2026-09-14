@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useTheme } from "@/components/common/ThemeProvider";
+import { useTheme } from "@/components/ThemeProvider";
 import type { SubAgentProgressEvent } from "../common/types";
 import type { MissionTimeline as MissionTimelineType } from "./MissionTimeline";
 import { InlineDebateProgress } from "./InlineDebateProgress";
@@ -475,8 +475,8 @@ function CollapsibleTerminalView({ toolCall, isDark }: { toolCall: ToolCallDispl
       gap: 6,
       padding: '10px 12px',
       borderRadius: 8,
-      background: isDark ? 'var(--color-bg-base)' : 'var(--color-bg-subtle)',
-      border: isDark ? '1px solid var(--color-border)' : '1px solid var(--color-border)'
+      background: isDark ? 'rgba(255,255,255,0.02)' : '#f8f8f8',
+      border: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)'
     }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontFamily: '"JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, monospace' }}>
         {/* bash label */}
@@ -485,7 +485,7 @@ function CollapsibleTerminalView({ toolCall, isDark }: { toolCall: ToolCallDispl
         </div>
         
         {/* Command block - colored like Image */}
-        <div style={{ background: isDark ? 'var(--color-code-block-bg)' : 'var(--color-bg-elevated)', borderRadius: 6, padding: '8px 12px', overflowX: 'auto' }}>
+        <div style={{ background: isDark ? '#141414' : '#f0f0f0', borderRadius: 6, padding: '8px 12px', overflowX: 'auto' }}>
           <span style={{ fontSize: 12, lineHeight: 1.5 }} dangerouslySetInnerHTML={{ __html: highlightBashCommand(command) }} />
         </div>
 
@@ -496,11 +496,11 @@ function CollapsibleTerminalView({ toolCall, isDark }: { toolCall: ToolCallDispl
               Output
             </div>
             <div style={{ 
-              background: isDark ? 'var(--color-code-block-bg)' : 'var(--color-bg-elevated)', 
+              background: isDark ? '#141414' : '#f0f0f0', 
               borderRadius: 6,
               padding: '8px 12px',
               fontSize: 12, 
-              color: isDark ? 'var(--color-text-secondary)' : 'var(--color-text-primary)',
+              color: isDark ? '#c9d1d9' : '#2a2a2a',
               fontFamily: '"JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, monospace',
               whiteSpace: 'pre-wrap', 
               wordBreak: 'break-word',
@@ -552,20 +552,20 @@ function CollapsibleCodeView({ toolCall, isDark }: { toolCall: ToolCallDisplay; 
       gap: 6,
       padding: '10px 12px',
       borderRadius: 8,
-      background: isDark ? 'var(--color-bg-base)' : 'var(--color-bg-subtle)',
-      border: isDark ? '1px solid var(--color-border)' : '1px solid var(--color-border)'
+      background: isDark ? 'rgba(255,255,255,0.02)' : '#f8f8f8',
+      border: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)'
     }}>
       <div style={{ fontSize: 10, color: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.4)', textTransform: 'lowercase', letterSpacing: '0.02em' }}>
         {ext}
       </div>
       <div style={{ 
-        background: isDark ? 'var(--color-code-block-bg)' : 'var(--color-bg-elevated)', 
+        background: isDark ? '#141414' : '#f0f0f0', 
         borderRadius: 6, 
         padding: '8px 12px',
         fontFamily: '"JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, monospace',
         fontSize: 12,
         lineHeight: 1.6,
-        color: isDark ? 'var(--color-text-secondary)' : 'var(--color-text-primary)',
+        color: isDark ? '#abb2bf' : '#2a2a2a',
         whiteSpace: 'pre-wrap',
         wordBreak: 'break-word',
         maxHeight: 400,
@@ -829,7 +829,7 @@ export const AgentTimeline = React.memo(({
             lineHeight: 1.4,
             fontWeight: 500,
             fontFamily: 'Georgia, Charter, "Newsreader", "Source Serif Pro", serif',
-            color: isDark ? "rgba(255, 255, 255, 0.95)" : "var(--color-text-primary)",
+            color: isDark ? "rgba(255, 255, 255, 0.95)" : "#18181b",
             letterSpacing: "-0.01em"
           }}
         >

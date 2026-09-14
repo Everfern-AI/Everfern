@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-    XMarkIcon,
+import { 
+    XMarkIcon, 
     ClipboardIcon, 
     ArrowTopRightOnSquareIcon, 
     DocumentDuplicateIcon, 
@@ -25,16 +25,8 @@ import {
     ArrowLeftIcon,
     ArrowRightIcon
 } from '@heroicons/react/24/outline';
-import { useTheme } from '@/components/common/ThemeProvider';
+import { useTheme } from '@/components/ThemeProvider';
 import FileIcon from '@/app/chat/FileIcon';
-import { useFocusTrap } from '@/hooks/useFocusTrap';
-import {
-    MAX_PDF_PREVIEW_BYTES,
-    capViewerContent,
-    chunkedBase64ToUint8Array,
-    parseDelimitedContent,
-    sliceRenderLines,
-} from './file-viewer-helpers';
 
 interface FileViewerModalProps {
     file: { name: string; path: string } | null;
@@ -53,20 +45,10 @@ export function PDFViewer({ file }: { file: { name: string; path: string } }) {
     const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
     const [loadingPdf, setLoadingPdf] = useState(true);
     const [loadError, setLoadError] = useState(false);
-    const [tooLarge, setTooLarge] = useState(false);
     const [copiedPath, setCopiedPath] = useState(false);
     const [apps, setApps] = useState<Array<{ name: string; path: string; icon: string }>>([]);
     const [showAppDropdown, setShowAppDropdown] = useState(false);
     const appDropdownRef = useRef<HTMLDivElement>(null);
-
-    // NR-LEAK-07: copy-feedback timers tracked in a ref and cleared on
-    // unmount so a late setTimeout never fires setState on a dead component.
-    const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    useEffect(() => {
-        return () => {
-            if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-        };
-    }, []);
 
     // NR-UI-09: mirror the URL in a ref so cleanup revokes the CURRENT blob
     // url, not the stale state value captured when this effect was created.
@@ -102,71 +84,29 @@ export function PDFViewer({ file }: { file: { name: string; path: string } }) {
         let isMounted = true;
         setLoadingPdf(true);
         setLoadError(false);
-        setTooLarge(false);
 
         const loadPdfBytes = async () => {
             try {
                 if (!file?.path) return;
 
-                // NR-PERF-03 (binary IPC): prefer the structured-clone bytes
-                // channel — no base64 inflation, no atob decode allocation.
-                const bytesRes = await (window as any).electronAPI?.system?.readFileBytes?.(file.path);
-                if (isMounted && bytesRes && bytesRes.success && bytesRes.bytes instanceof Uint8Array) {
-                    if (typeof bytesRes.size === 'number' && bytesRes.size > MAX_PDF_PREVIEW_BYTES) {
-                        if (isMounted) {
-                            setPdfDataUrl(null);
-                            updatePdfBlobUrl(null);
-                            setTooLarge(true);
-                            setLoadingPdf(false);
-                        }
-                        return;
-                    }
-                    const blob = new Blob([bytesRes.bytes as unknown as BlobPart], { type: 'application/pdf' });
-                    const bUrl = URL.createObjectURL(blob);
-                    if (isMounted) {
-                        updatePdfBlobUrl(bUrl);
-                    } else if (bUrl.startsWith('blob:')) {
-                        URL.revokeObjectURL(bUrl);
-                    }
-                    if (isMounted) setLoadingPdf(false);
-                    return;
-                }
-
-                // 1. Try reading via readImageDataUrl (legacy base64 path)
+                // 1. Try reading via readImageDataUrl
                 const imgRes = await (window as any).electronAPI?.system?.readImageDataUrl?.(file.path);
                 if (isMounted && imgRes && imgRes.success && imgRes.dataUrl) {
-                    // NR-PERF-03: size guard — refuse to inline-huge PDFs instead of
-                    // transiently allocating ~8x the file size in base64 conversions.
-                    if (typeof imgRes.size === 'number' && imgRes.size > MAX_PDF_PREVIEW_BYTES) {
-                        if (isMounted) {
-                            setPdfDataUrl(null);
-                            updatePdfBlobUrl(null);
-                            setTooLarge(true);
-                            setLoadingPdf(false);
-                        }
-                        return;
-                    }
                     setPdfDataUrl(imgRes.dataUrl);
 
                     // Convert base64 to Blob URL
                     try {
                         const base64Data = imgRes.dataUrl.split(',')[1];
                         if (base64Data) {
-                            // NR-PERF-03: chunked atob → Uint8Array. The old path built a
-                            // boxed JS number array over the whole file (~800MB transient
-                            // for a 100MB PDF); this keeps peak allocation near file size.
-                            const byteArray = chunkedBase64ToUint8Array(base64Data);
-                            const blob = new Blob([byteArray as unknown as BlobPart], { type: 'application/pdf' });
-                            const bUrl = URL.createObjectURL(blob);
-                            if (isMounted) {
-                                updatePdfBlobUrl(bUrl);
-                            } else if (bUrl.startsWith('blob:')) {
-                                // NR-PERF-03: component went away mid-load — release the
-                                // object URL immediately instead of leaking it.
-                                URL.revokeObjectURL(bUrl);
+                            const byteCharacters = atob(base64Data);
+                            const byteNumbers = new Array(byteCharacters.length);
+                            for (let i = 0; i < byteCharacters.length; i++) {
+                                byteNumbers[i] = byteCharacters.charCodeAt(i);
                             }
-                            // byteArray and the boxed base64 string go out of scope
-                            // here; no long-lived references are retained.
+                            const byteArray = new Uint8Array(byteNumbers);
+                            const blob = new Blob([byteArray], { type: 'application/pdf' });
+                            const bUrl = URL.createObjectURL(blob);
+                            if (isMounted) updatePdfBlobUrl(bUrl);
                         }
                     } catch (e) {
                         if (isMounted) updatePdfBlobUrl(imgRes.dataUrl);
@@ -222,8 +162,7 @@ export function PDFViewer({ file }: { file: { name: string; path: string } }) {
         try {
             await navigator.clipboard.writeText(file.path);
             setCopiedPath(true);
-            if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-            copyTimerRef.current = setTimeout(() => setCopiedPath(false), 2000);
+            setTimeout(() => setCopiedPath(false), 2000);
         } catch {}
     };
 
@@ -258,8 +197,8 @@ export function PDFViewer({ file }: { file: { name: string; path: string } }) {
                         gap: 6,
                         padding: '4px 8px',
                         borderRadius: 6,
-                        backgroundColor: 'var(--color-error-dim)',
-                        color: 'var(--color-error)',
+                        backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                        color: '#ef4444',
                         fontSize: 11,
                         fontWeight: 700,
                         textTransform: 'uppercase',
@@ -518,51 +457,6 @@ export function PDFViewer({ file }: { file: { name: string; path: string } }) {
                             }}
                         />
                     </div>
-                ) : tooLarge ? (
-                    <div style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        backgroundColor: 'var(--color-bg-base)',
-                        gap: 16,
-                        padding: 32,
-                        textAlign: 'center',
-                        borderRadius: 12
-                    }}>
-                        <DocumentTextIcon width={48} height={48} style={{ color: 'var(--color-warning)' }} />
-                        <div>
-                            <h3 style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 6px 0' }}>
-                                File too large to preview
-                            </h3>
-                            <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: 0, maxWidth: 400 }}>
-                                This PDF exceeds the inline preview limit (64&nbsp;MB). Open it in a system application to view all pages.
-                            </p>
-                        </div>
-                        <button
-                            onClick={() => handleOpenInApp(defaultApp?.path)}
-                            style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 8,
-                                padding: '10px 20px',
-                                borderRadius: 8,
-                                backgroundColor: isDark ? '#ffffff' : '#18181b',
-                                color: isDark ? '#18181b' : '#ffffff',
-                                border: 'none',
-                                fontWeight: 600,
-                                fontSize: 13,
-                                cursor: 'pointer'
-                            }}
-                        >
-                            {defaultApp?.icon ? (
-                                <img src={defaultApp.icon} alt="" width={16} height={16} style={{ borderRadius: 3 }} />
-                            ) : (
-                                <ArrowTopRightOnSquareIcon width={16} height={16} />
-                            )}
-                            Open in {defaultApp?.name || 'System PDF App'}
-                        </button>
-                    </div>
                 ) : (
                     <div style={{
                         display: 'flex',
@@ -575,7 +469,7 @@ export function PDFViewer({ file }: { file: { name: string; path: string } }) {
                         textAlign: 'center',
                         borderRadius: 12
                     }}>
-                        <DocumentTextIcon width={48} height={48} style={{ color: 'var(--color-error)' }} />
+                        <DocumentTextIcon width={48} height={48} style={{ color: '#ef4444' }} />
                         <div>
                             <h3 style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 6px 0' }}>
                                 PDF Document Ready
@@ -793,12 +687,29 @@ function ExcelViewer({ filename, content }: { filename: string; content: string 
     const isDark = theme === 'dark';
     const [filterQuery, setFilterQuery] = useState('');
 
-    // NR-PERF-08: parse once per (filename, content) instead of char-by-char
-    // on every render. Keys cover the filename (delimiter choice) and content.
-    const parsedData = React.useMemo(
-        () => parseDelimitedContent(filename, content),
-        [filename, content]
-    );
+    let parsedData: string[][] = [];
+    if (content && (filename.endsWith('.csv') || filename.endsWith('.tsv') || content.includes(',') || content.includes('\t'))) {
+        const delimiter = filename.endsWith('.tsv') ? '\t' : ',';
+        parsedData = content.split('\n')
+            .map(row => {
+                const cells: string[] = [];
+                let insideQuote = false;
+                let currentCell = '';
+                for (let i = 0; i < row.length; i++) {
+                    const char = row[i];
+                    if (char === '"') insideQuote = !insideQuote;
+                    else if (char === delimiter && !insideQuote) {
+                        cells.push(currentCell.replace(/^"|"$/g, '').trim());
+                        currentCell = '';
+                    } else {
+                        currentCell += char;
+                    }
+                }
+                cells.push(currentCell.replace(/^"|"$/g, '').trim());
+                return cells;
+            })
+            .filter(row => row.length > 1 || (row[0] && row[0] !== ''));
+    }
 
     const filteredRows = React.useMemo(() => {
         if (!filterQuery) return parsedData;
@@ -810,14 +721,6 @@ function ExcelViewer({ filename, content }: { filename: string; content: string 
     }, [parsedData, filterQuery]);
 
     const columns = Array.from({ length: Math.max(parsedData[0]?.length || 10, 10) }, (_, i) => excelColumnLabel(i));
-
-    // NR-PERF-08: render at most visibleLimit rows at a time; "load more"
-    // grows the window in bounded steps instead of mounting every row.
-    const [visibleLimit, setVisibleLimit] = useState(500);
-    React.useEffect(() => {
-        setVisibleLimit(500);
-    }, [parsedData]);
-    const visibleRows = filteredRows.slice(0, visibleLimit);
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: 'var(--color-bg-base)', minWidth: 0, minHeight: 0 }}>
@@ -831,7 +734,7 @@ function ExcelViewer({ filename, content }: { filename: string; content: string 
                 backgroundColor: isDark ? '#1a1a1c' : '#ffffff' 
             }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-success)', fontStyle: 'italic', paddingRight: 4 }}>fx</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#10b981', fontStyle: 'italic', paddingRight: 4 }}>fx</span>
                     <div style={{ borderLeft: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.1)', height: 16 }} />
                     <input 
                         type="text" 
@@ -872,7 +775,7 @@ function ExcelViewer({ filename, content }: { filename: string; content: string 
                         </tr>
                     </thead>
                     <tbody>
-                        {visibleRows.map((row, rowIndex) => (
+                        {filteredRows.map((row, rowIndex) => (
                             <tr key={rowIndex}>
                                 <td style={{ backgroundColor: isDark ? '#1e1e20' : '#f4f4f5', border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid rgba(0, 0, 0, 0.08)', fontWeight: 600, color: 'var(--color-text-secondary)', textAlign: 'center', width: 45, height: 26, position: 'sticky', left: 0, zIndex: 8 }}>
                                     {rowIndex + 1}
@@ -897,29 +800,10 @@ function ExcelViewer({ filename, content }: { filename: string; content: string 
                                 {Array.from({ length: Math.max(0, columns.length - row.length) }).map((_, i) => (
                                     <td key={row.length + i} style={{ border: isDark ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid rgba(0, 0, 0, 0.06)', backgroundColor: 'transparent' }} />
                                 ))}
-                             </tr>
+                            </tr>
                         ))}
                     </tbody>
                 </table>
-                {filteredRows.length > visibleLimit && (
-                    <div style={{ display: 'flex', justifyContent: 'center', padding: 12 }}>
-                        <button
-                            onClick={() => setVisibleLimit(prev => prev + 500)}
-                            style={{
-                                padding: '8px 18px',
-                                borderRadius: 8,
-                                border: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid rgba(0, 0, 0, 0.12)',
-                                backgroundColor: isDark ? '#222224' : '#ffffff',
-                                color: 'var(--color-text-primary)',
-                                fontSize: 12,
-                                fontWeight: 600,
-                                cursor: 'pointer'
-                            }}
-                        >
-                            Load more rows ({(filteredRows.length - visibleLimit).toLocaleString()} of {filteredRows.length.toLocaleString()} hidden)
-                        </button>
-                    </div>
-                )}
             </div>
         </div>
     );
@@ -981,7 +865,7 @@ function PPTViewer({ filename, filePath }: { filename: string; filePath?: string
     if (error || slides.length === 0) {
         return (
             <div style={{ display: 'flex', flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', backgroundColor: 'var(--color-bg-subtle)', padding: 24, textAlign: 'center', width: '100%', minHeight: 400, gap: 12 }}>
-                <PresentationChartBarIcon width={36} height={36} style={{ color: 'var(--color-warning)' }} />
+                <PresentationChartBarIcon width={36} height={36} style={{ color: '#f59e0b' }} />
                 <div style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>PowerPoint Presentation</div>
                 <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', maxWidth: 400 }}>{error || "Presentation slides ready."}</div>
             </div>
@@ -1181,45 +1065,11 @@ function CodeTextViewer({ filename, content, extension }: { filename: string; co
     const [copySuccess, setCopySuccess] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
 
-    // NR-LEAK-07: copy-feedback timer tracked so unmount clears it.
-    const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    useEffect(() => {
-        return () => {
-            if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-        };
-    }, []);
-
-    // NR-PERF-02: never let a huge log reach split/highlight/gutter paths.
-    // Small files pass through untouched (text === content).
-    const capped = React.useMemo(
-        () => (content === null ? null : capViewerContent(content)),
-        [content]
-    );
-
-    const lines = React.useMemo(
-        () => (capped === null ? [] : capped.text.split('\n')),
-        [capped]
-    );
-
-    // NR-PERF-02: render only the first MAX_RENDER_LINES rows; the rest of the
-    // gutter stays virtual (a "+N more lines" affordance replaces one DOM node
-    // per hidden line). highlightCode runs only over the capped text.
-    const { lines: visibleLines, hiddenLines } = React.useMemo(
-        () => sliceRenderLines(lines),
-        [lines]
-    );
-
-    const highlightedHtml = React.useMemo(
-        () => (capped === null ? '' : highlightCode(capped.text, extension, isDark)),
-        [capped, extension, isDark]
-    );
-
     const handleCopy = () => {
         if (!content) return;
         navigator.clipboard.writeText(content);
         setCopySuccess(true);
-        if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-        copyTimerRef.current = setTimeout(() => setCopySuccess(false), 2000);
+        setTimeout(() => setCopySuccess(false), 2000);
     };
 
     if (content === null) {
@@ -1229,6 +1079,8 @@ function CodeTextViewer({ filename, content, extension }: { filename: string; co
             </div>
         );
     }
+
+    const lines = content.split('\n');
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: isDark ? '#101012' : '#ffffff' }}>
@@ -1276,8 +1128,7 @@ function CodeTextViewer({ filename, content, extension }: { filename: string; co
                         </div>
                     )}
                     <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontFamily: 'monospace' }}>
-                        {capped!.totalLines} lines · {extension.toUpperCase()}
-                        {capped!.truncatedLines > 0 && ` · truncated (showing first ${capped!.totalLines - capped!.truncatedLines})`}
+                        {lines.length} lines · {extension.toUpperCase()}
                     </span>
                 </div>
 
@@ -1309,25 +1160,17 @@ function CodeTextViewer({ filename, content, extension }: { filename: string; co
                         title="HTML Preview"
                         srcDoc={content}
                         sandbox="allow-scripts allow-same-origin"
-                        style={{ width: '100%', height: '100%', border: 'none', backgroundColor: 'var(--color-bg-elevated)' }}
+                        style={{ width: '100%', height: '100%', border: 'none', backgroundColor: '#ffffff' }}
                     />
                 ) : (
                     <div style={{ display: 'flex', fontFamily: 'JetBrains Mono, Fira Code, monospace', fontSize: 12.5, lineHeight: '21px', color: 'var(--color-text-primary)', padding: '12px 16px' }}>
                         <div style={{ textAlign: 'right', paddingRight: 14, color: 'var(--color-text-tertiary)', userSelect: 'none', borderRight: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid rgba(0, 0, 0, 0.08)', marginRight: 14, minWidth: 32 }}>
-                            {visibleLines.map((_, i) => (
+                            {lines.map((_, i) => (
                                 <div key={i}>{i + 1}</div>
                             ))}
-                            {hiddenLines > 0 && (
-                                <div
-                                    title={`${hiddenLines} more lines not rendered for performance`}
-                                    style={{ color: 'var(--color-accent)', fontWeight: 600, marginTop: 4 }}
-                                >
-                                    +{hiddenLines.toLocaleString()} more lines truncated
-                                </div>
-                            )}
                         </div>
                         <pre style={{ margin: 0, overflowX: 'auto', flex: 1, whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>
-                            <code dangerouslySetInnerHTML={{ __html: highlightedHtml }} />
+                            <code dangerouslySetInnerHTML={{ __html: highlightCode(content, extension, isDark) }} />
                         </pre>
                     </div>
                 )}
@@ -1392,11 +1235,11 @@ function MediaViewer({ file }: { file: { name: string; path: string } }) {
                     width: 72,
                     height: 72,
                     borderRadius: '50%',
-                    backgroundColor: 'var(--color-info-dim)',
+                    backgroundColor: 'rgba(59, 130, 246, 0.15)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    color: 'var(--color-info)'
+                    color: '#3b82f6'
                 }}>
                     <MusicalNoteIcon width={36} height={36} />
                 </div>
@@ -1427,8 +1270,8 @@ function MediaViewer({ file }: { file: { name: string; path: string } }) {
                         gap: 8,
                         padding: '8px 18px',
                         borderRadius: 8,
-                        backgroundColor: 'var(--color-info)',
-                        color: 'var(--color-text-inverse)',
+                        backgroundColor: '#3b82f6',
+                        color: '#ffffff',
                         border: 'none',
                         fontWeight: 600,
                         cursor: 'pointer',
@@ -1486,21 +1329,6 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [lastModifiedText, setLastModifiedText] = useState('Just now');
     const [isPillBtnHovered, setIsPillBtnHovered] = useState(false);
-
-    // NR-LEAK-07: copy-path feedback timer tracked in a ref and cleared on
-    // unmount (this component previously leaked a bare setTimeout).
-    const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    useEffect(() => {
-        return () => {
-            if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-        };
-    }, []);
-
-    // NR-UI-12 (superseded): Esc close + real Tab focus trap + focus restore +
-    // body scroll lock now come from the shared useFocusTrap hook, so the modal
-    // gets full keyboard containment instead of the previous trap-lite.
-    const isOpen = !!file;
-    const trapRef = useFocusTrap<HTMLDivElement>({ active: isOpen, onEscape: onClose });
 
     useEffect(() => {
         if (!file) return;
@@ -1567,12 +1395,7 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
         readFileContent();
     }, [file, chatId, projectPath]);
 
-    if (!file) return null; // page.tsx wraps us in AnimatePresence + conditional; see below
-    // NOTE: the early return above means this component is mounted ONLY while a
-    // file is open. Exit animations are owned by the parent (page.tsx), which
-    // now wraps <FileViewerModal> in <AnimatePresence>{viewingFile && ...} —
-    // previously the local AnimatePresence wrapped unconditional children, so
-    // exit props never fired.
+    if (!file) return null;
 
     const extension = file.name.split('.').pop()?.toLowerCase() || '';
     
@@ -1619,7 +1442,7 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
         }
         if (viewerType === 'excel') {
             return {
-                icon: <TableCellsIcon width={16} height={16} style={{ color: 'var(--color-success)' }} />,
+                icon: <TableCellsIcon width={16} height={16} style={{ color: '#10b981' }} />,
                 text: "Turn this spreadsheet into an interactive dashboard?",
                 btnText: "Generate Dashboard",
                 query: `Generate an interactive dashboard for the spreadsheet ${file.name}`
@@ -1655,7 +1478,8 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
     };
 
     return (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 'var(--z-modal)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: isFullscreen ? 0 : 24 }}>
+        <AnimatePresence>
+            <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: isFullscreen ? 0 : 24 }}>
                 {/* Backdrop Blur Overlay */}
                 <motion.div 
                     initial={{ opacity: 0 }} 
@@ -1665,7 +1489,7 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                     style={{
                         position: 'absolute',
                         inset: 0,
-                        backgroundColor: 'var(--scrim)',
+                        backgroundColor: 'rgba(0, 0, 0, 0.65)',
                         backdropFilter: 'blur(8px)',
                         WebkitBackdropFilter: 'blur(8px)'
                     }} 
@@ -1673,10 +1497,6 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
 
                 {/* Modal Container */}
                 <motion.div
-                    ref={trapRef}
-                    role="dialog"
-                    aria-modal="true"
-                    aria-label={`Preview: ${file.name}`}
                     initial={{ opacity: 0, scale: 0.97, y: 10 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.97, y: 10 }}
@@ -1719,13 +1539,13 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                                 flexShrink: 0
                             }}>
                                 {extension === 'pdf' ? (
-                                    <DocumentTextIcon width={18} height={18} style={{ color: 'var(--color-error)' }} />
+                                    <DocumentTextIcon width={18} height={18} style={{ color: '#ef4444' }} />
                                 ) : ['xlsx', 'xls', 'csv'].includes(extension) ? (
-                                    <TableCellsIcon width={18} height={18} style={{ color: 'var(--color-success)' }} />
+                                    <TableCellsIcon width={18} height={18} style={{ color: '#10b981' }} />
                                 ) : ['pptx', 'ppt'].includes(extension) ? (
-                                    <PresentationChartBarIcon width={18} height={18} style={{ color: 'var(--color-warning)' }} />
+                                    <PresentationChartBarIcon width={18} height={18} style={{ color: '#f59e0b' }} />
                                 ) : (
-                                    <DocumentTextIcon width={18} height={18} style={{ color: 'var(--color-info)' }} />
+                                    <DocumentTextIcon width={18} height={18} style={{ color: '#3b82f6' }} />
                                 )}
                             </div>
                             
@@ -1852,7 +1672,7 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                                     justifyContent: 'center',
                                     transition: 'all 0.15s'
                                 }}
-                                onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--color-error)'; e.currentTarget.style.color = 'var(--color-text-inverse)'; }}
+                                onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#ef4444'; e.currentTarget.style.color = '#ffffff'; }}
                                 onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
                             >
                                 <XMarkIcon width={18} height={18} />
@@ -2026,6 +1846,7 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                         </AnimatePresence>
                     </div>
                 </motion.div>
-        </div>
+            </div>
+        </AnimatePresence>
     );
 }

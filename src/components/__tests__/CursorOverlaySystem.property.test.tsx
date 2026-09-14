@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { describe, it, expect, vi } from 'vitest';
 import * as fc from 'fast-check';
-import { CursorOverlaySystem } from '@/app/chat/components/CursorOverlaySystem';
+import { CursorOverlaySystem } from '../CursorOverlaySystem';
 
 /**
  * Property-Based Tests for CursorOverlaySystem
@@ -18,23 +18,9 @@ import { CursorOverlaySystem } from '@/app/chat/components/CursorOverlaySystem';
  */
 
 // Mock framer-motion to avoid animation issues in tests
-// Mock framer-motion to avoid animation issues in tests.
-// Projects motion x/y animate values into style left/top so positioning
-// assertions can observe the cursor target coordinates synchronously.
 vi.mock('framer-motion', () => ({
   motion: {
-    div: ({ children, animate, style, ...props }: any) => (
-      <div
-        {...props}
-        style={{
-          ...style,
-          left: typeof animate?.x === 'number' ? `${animate.x}px` : style?.left,
-          top: typeof animate?.y === 'number' ? `${animate.y}px` : style?.top,
-        }}
-      >
-        {children}
-      </div>
-    ),
+    div: ({ children, ...props }: any) => <div {...props}>{children}</div>,
   },
   AnimatePresence: ({ children }: any) => <>{children}</>,
 }));
@@ -128,23 +114,27 @@ describe('CursorOverlaySystem Property-Based Tests', () => {
             const cursorPosition = screen.getByTestId('cursor-position');
             expect(cursorPosition).toBeInTheDocument();
 
-            // Verify position: current implementation uses motion x/y pixel
-            // transforms (not percentages).
+            // Verify position is calculated as percentage
             const style = cursorPosition.style;
-            expect(style.left).toContain('px');
-            expect(style.top).toContain('px');
+            expect(style.left).toContain('%');
+            expect(style.top).toContain('%');
 
-            // Extract pixel values
-            const leftPx = parseFloat(style.left);
-            const topPx = parseFloat(style.top);
+            // Extract percentage values
+            const leftPercent = parseFloat(style.left);
+            const topPercent = parseFloat(style.top);
 
-            // Verify pixels are non-negative
-            expect(leftPx).toBeGreaterThanOrEqual(0);
-            expect(topPx).toBeGreaterThanOrEqual(0);
+            // Verify percentages are within valid range (0-100%)
+            // Note: May exceed 100% if coordinates are beyond screen dimensions
+            expect(leftPercent).toBeGreaterThanOrEqual(0);
+            expect(topPercent).toBeGreaterThanOrEqual(0);
 
-            // Verify coordinate mapping is 1:1 into transform pixels
-            expect(Math.abs(leftPx - testCase.x)).toBeLessThan(0.1);
-            expect(Math.abs(topPx - testCase.y)).toBeLessThan(0.1);
+            // Verify coordinate transformation is correct
+            const expectedLeftPercent = (testCase.x / testCase.screenWidth) * 100;
+            const expectedTopPercent = (testCase.y / testCase.screenHeight) * 100;
+
+            // Allow for floating point precision differences
+            expect(Math.abs(leftPercent - expectedLeftPercent)).toBeLessThan(0.1);
+            expect(Math.abs(topPercent - expectedTopPercent)).toBeLessThan(0.1);
 
             unmount();
           }

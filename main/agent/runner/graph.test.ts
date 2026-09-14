@@ -44,9 +44,12 @@ vi.mock('./nodes/specialized_agents', () => ({
   }),
   createWebExplorerNode: vi.fn(() => async (state: any) => {
     return {};
-  }),
-  createDeepResearchNode: vi.fn(() => async (state: any) => {
-    return {};
+  })
+}));
+
+vi.mock('./nodes/validation', () => ({
+  createValidationNode: vi.fn(() => async (state: any) => {
+    return { validationResult: { isHighRisk: false, reasoning: 'Safe' } };
   })
 }));
 

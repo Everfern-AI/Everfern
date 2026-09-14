@@ -10,21 +10,12 @@ import { DefaultContextEngine } from './default';
 import { CompactingContextEngine } from './compacting';
 import { VectorContextEngine, HybridContextEngine } from './vector';
 
-/** Factory signature registered per engine ID; invoked (or memoized) on resolve. */
 export type ContextEngineFactory = () => ContextEngine;
 
 // ── Registry State ───────────────────────────────────────────────────
 
 const registry = new Map<string, ContextEngineFactory>();
-// Module-level mutable default; consult resolveContextEngine() before changing.
 let _defaultId = 'default';
-
-// AI-PERF-03: stateless engines (default/compacting) are memoized so repeat
-// resolves share one instance; stateful engines (vector/hybrid) stay per-call
-// because their assemble() accumulates session state. Registering with
-// force:true swaps the factory and clears the memoized instance.
-const MEMOIZED_ENGINE_IDS = new Set(['default', 'compacting']);
-const instanceCache = new Map<string, ContextEngine>();
 
 // Initialize default engines
 registry.set('default', () => new DefaultContextEngine());
@@ -48,7 +39,6 @@ export function registerContextEngine(
     return;
   }
   registry.set(id, factory);
-  instanceCache.delete(id); // AI-PERF-03: force-registered factory invalidates the memo
   console.log(`[ContextEngine] Registered engine: "${id}"`);
 }
 
@@ -65,8 +55,6 @@ export function setDefaultContextEngine(id: string): void {
  */
 export function resolveContextEngine(id?: string): ContextEngine {
   const targetId = id ?? _defaultId;
-  // Unknown ID falls back to the default engine rather than throwing, so a
-  // stale session referencing a removed engine still resolves.
   const factory = registry.get(targetId) ?? registry.get(_defaultId);
 
   if (!factory) {
@@ -74,16 +62,6 @@ export function resolveContextEngine(id?: string): ContextEngine {
       `[ContextEngine] No engine registered for id "${targetId}" and no default is set. ` +
       `Call registerContextEngine("default", ...) during app startup.`,
     );
-  }
-
-  // AI-PERF-03: memoize stateless engines; stateful ones construct per call.
-  if (MEMOIZED_ENGINE_IDS.has(targetId)) {
-    let cached = instanceCache.get(targetId);
-    if (!cached) {
-      cached = factory();
-      instanceCache.set(targetId, cached);
-    }
-    return cached;
   }
 
   return factory();

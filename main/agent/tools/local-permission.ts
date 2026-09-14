@@ -78,16 +78,6 @@ export const localPermissionTool: AgentTool = {
       const resolvers = getLocalExecutionResolvers();
       console.log(`[local-permission] 🔑 Registering resolver for requestId: ${requestId}. Map size before: ${resolvers.size}`);
       resolvers.set(requestId, resolve);
-      // MP-CORR-23: release the pending resolver when the user never responds
-      // (dismissed/ignored dialog) so the Map and the tool call don't hang forever.
-      const timeout = setTimeout(() => {
-        if (resolvers.get(requestId) === resolve) {
-          resolvers.delete(requestId);
-          console.warn(`[local-permission] Request ${requestId} timed out without a response — denying.`);
-          resolve({ approved: false, alwaysAllow: false });
-        }
-      }, 10 * 60 * 1000);
-      timeout.unref?.();
     });
 
     const response = await approvalPromise;

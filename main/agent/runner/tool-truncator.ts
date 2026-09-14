@@ -90,78 +90,18 @@ const TOOL_CATEGORY_MAP: Array<{ pattern: RegExp; category: ToolCategory }> = [
 ];
 
 /**
- * Resolves a tool name to its category. Namespaced names containing a '/'
- * (e.g. "server/tool") are connected-session MCP tools and are classified as
- * 'mcp' before any regex pattern is consulted, so no other pattern can claim
- * them. All other names fall through the existing TOOL_CATEGORY_MAP unchanged.
- */
-function classifyToolName(name: string): ToolCategory | undefined {
-  if (name.includes('/')) return 'mcp';
-
-  for (const entry of TOOL_CATEGORY_MAP) {
-    if (entry.pattern.test(name)) {
-      return entry.category;
-    }
-  }
-
-  return undefined;
-}
-
-/**
- * Harvests MCP server names from connected-session tool definitions.
- * For each tool name containing '/', the prefix before the first '/' is
- * collected (lowercased, non-empty). Used to boost the 'mcp' category when a
- * connected server is mentioned in the task context.
- */
-function harvestMcpServerNames(toolDefs: ToolDefinition[]): Set<string> {
-  const serverNames = new Set<string>();
-  for (const def of toolDefs) {
-    if (!def.name.includes('/')) continue;
-    const prefix = def.name.slice(0, def.name.indexOf('/')).toLowerCase();
-    if (prefix) serverNames.add(prefix);
-  }
-  return serverNames;
-}
-
-/**
- * Source roster for tools that are always included regardless of task analysis.
+ * Tools that are always included regardless of task analysis.
  * These are fundamental to agent operation.
- *
- * Grouped logically; a load-time dedupe guard below guarantees every entry is
- * unique before it reaches TOOL_ALWAYS_INCLUDE.
  */
-const ALWAYS_INCLUDE_SOURCE: readonly string[] = [
-  // User interaction / permissions
+const ALWAYS_INCLUDE = new Set<string>([
   'ask_user_question',
   'local_permission',
-  // Filesystem (pi-tools host coding tools: read/write/edit/grep/find/ls)
-  'read',
-  'write',
+  'terminal_execute',
+  'bash',
+  'executePwsh',
+  'terminal_status',
   'edit',
   'multi_file_edit',
-  'grep',
-  'find',
-  'ls',
-  // Terminal
-  'terminal_execute',
-  'terminal_status',
-  'executePwsh',
-  // Memory
-  'memory_save',
-  'memory_search',
-  // Planning & lifecycle (planner.ts exports create_plan/update_plan_step)
-  // Issue #19 Fix: task_complete, update_plan_step, and execution_plan are structural
-  // lifecycle tools the agent MUST always have. Without task_complete the agent
-  // cannot signal completion and will run until maxIterations. Without update_plan_step
-  // it cannot update plan progress. These must never be truncated regardless of task.
-  'create_plan',
-  'update_plan_step',
-  'execution_plan',
-  'task_complete',
-  'todo_write',
-  // Web / search (webfetch.ts registers 'web_fetch')
-  'web_search',
-  'web_fetch',
   // Navigation / browser
   'navis',
   'computer_use',
@@ -171,96 +111,28 @@ const ALWAYS_INCLUDE_SOURCE: readonly string[] = [
   'edit_artifact',
   'visualize',
   'present_files',
+  // Memory & planning
+  'todo_write',
+  'planner',
+  'memory_save',
+  'memory_search',
+  // Web / search
+  'web_search',
   // Vision
   'analyze_image',
   // Subagent
   'spawn_agent',
   'spawn_swarm',
-];
+  // Issue #19 Fix: task_complete, update_step, and execution_plan are structural
+  // lifecycle tools the agent MUST always have. Without task_complete the agent
+  // cannot signal completion and will run until maxIterations. Without update_step
+  // it cannot update plan progress. These must never be truncated regardless of task.
+  'task_complete',
+  'update_step',
+  'execution_plan',
+]);
 
-/**
- * Load-time dedupe guard for ALWAYS_INCLUDE_SOURCE: throws on any duplicate
- * entry so a stale copy/paste can never silently widen the roster.
- */
-function dedupeAlwaysInclude(source: readonly string[]): readonly string[] {
-  const seen = new Set<string>();
-  const unique: string[] = [];
-  for (const name of source) {
-    if (seen.has(name)) {
-      throw new Error(`[ToolTruncator] duplicate ALWAYS_INCLUDE entry: ${name}`);
-    }
-    seen.add(name);
-    unique.push(name);
-  }
-  return unique;
-}
 
-/**
- * Tools that are always included regardless of task analysis.
- * These are fundamental to agent operation. Dedupe-checked at module load.
- */
-export const TOOL_ALWAYS_INCLUDE: readonly string[] = dedupeAlwaysInclude(ALWAYS_INCLUDE_SOURCE);
-
-/**
- * Set-form mirror of TOOL_ALWAYS_INCLUDE for O(1) membership checks in hot
- * loops (truncateTools consults it once per tool). Derived, never mutated.
- */
-const ALWAYS_INCLUDE = new Set<string>(TOOL_ALWAYS_INCLUDE);
-
-/**
- * Graded-relaxation constants (replace the old binary 20%-of-roster cliff).
- * When truncation drops the kept roster below RESCUE_FLOOR, the most relevant
- * removed tools are rescued back until the floor is met; only tools with a
- * relevance tier >= RESCUE_MIN_RELEVANCE are eligible for rescue. A full-set
- * fallback happens only as a last resort (see truncateTools).
- */
-const RESCUE_FLOOR = 12;
-const RESCUE_MIN_RELEVANCE = 0.5;
-
-/**
- * Graded relevance tier for a tool, used by the rescue pass in truncateTools.
- * Tiers (deterministic, no randomness):
- *  - 1.0: the tool is always-include, belongs to a relevant category
- *         (category score >= threshold), or is a connected MCP tool
- *         (namespaced MCP tool names contain '/').
- *  - 0.5: its category received a score > 0 but below the relevance
- *         threshold (borderline relevance).
- *  - 0:   no relevance signal at all.
- *
- * `cat` must be the category already resolved by the caller from
- * TOOL_CATEGORY_MAP (or undefined if unmatched) so categories are never
- * rescanned here.
- */
-function toolRelevanceTier(
-  defName: string,
-  cat: ToolCategory | undefined,
-  alwaysInclude: Set<string>,
-  relevantCategories: Set<ToolCategory>,
-  scores: Record<string, number>,
-): number {
-  if (
-    alwaysInclude.has(defName) ||
-    defName.includes('/') ||
-    (cat !== undefined && relevantCategories.has(cat))
-  ) {
-    return 1.0;
-  }
-  if (cat !== undefined && (scores[cat] ?? 0) > 0) {
-    return 0.5;
-  }
-  return 0;
-}
-
-/**
- * Scores one piece of task text (user input or recent assistant output)
- * against a single category's keyword signals. Every keyword occurrence
- * adds 1 point, capped at 3 occurrences per keyword so a single repeated
- * keyword cannot unboundedly inflate one category's score.
- *
- * @param text Raw text to scan; empty text scores 0.
- * @param signals Lowercase keywords belonging to one category.
- * @returns Non-negative additive score; not normalized across categories.
- */
 function scoreTaskText(text: string, signals: string[]): number {
   if (!text) return 0;
   const lower = text.toLowerCase();
@@ -277,7 +149,7 @@ function scoreTaskText(text: string, signals: string[]): number {
   return score;
 }
 
-interface TruncatorOptions {
+export interface TruncatorOptions {
   /** Minimum score for a category to be considered relevant. Default 1. */
   relevanceThreshold?: number;
   /** Always include these tool names regardless of analysis. */
@@ -286,7 +158,7 @@ interface TruncatorOptions {
   debug?: boolean;
 }
 
-interface TruncationDetails {
+export interface TruncationDetails {
   /** Estimated token count of the full (pre-truncation) tool schema JSON. */
   totalSchemaTokens: number;
   /** Estimated token count of the truncated tool schema JSON. */
@@ -295,7 +167,7 @@ interface TruncationDetails {
   toolsRemoved: number;
 }
 
-interface TruncationResult {
+export interface TruncationResult {
   /** The filtered tool definitions. */
   tools: ToolDefinition[];
   /** Names of tools that were removed. */
@@ -309,11 +181,8 @@ interface TruncationResult {
 /**
  * Estimate the token count of a JSON-serialised array of ToolDefinitions.
  * Uses a rough ratio of ~4 characters per token.
- *
- * @param toolDefs Tool definitions to size; an empty array yields 0.
- * @returns Estimated token count (never negative; ceil-rounded).
  */
-function estimateToolSchemaTokens(toolDefs: ToolDefinition[]): number {
+export function estimateToolSchemaTokens(toolDefs: ToolDefinition[]): number {
   const json = JSON.stringify(toolDefs);
   return Math.ceil(json.length / 4);
 }
@@ -326,20 +195,7 @@ function estimateToolSchemaTokens(toolDefs: ToolDefinition[]): number {
  *  1. Score each category by keyword overlap with user input + recent assistant text.
  *  2. Categories with score >= threshold are "relevant".
  *  3. Tools belonging to relevant categories are included, plus ALWAYS_INCLUDE tools.
- *  4. Graded relaxation: if the kept roster falls below RESCUE_FLOOR tools, the
- *     most relevant removed tools (relevance tier >= RESCUE_MIN_RELEVANCE) are
- *     rescued back until the floor is met, preserving original roster order;
- *     only if rescue is still insufficient (kept < RESCUE_FLOOR AND something
- *     was actually removed) does it fall back to the full set.
- *
- * @param toolDefs Full roster of tool definitions to filter (not mutated).
- * @param userInput Current user message text used for category scoring.
- * @param recentAssistantOutput Recent assistant text; contributes equally
- *        to scoring so mid-task pivots (not just the prompt) steer relevance.
- * @param options Optional overrides: relevance threshold, extra
- *        always-include names, and debug logging.
- * @returns Kept/removed tools, per-category scores, and before/after
- *         schema-token estimates. Pure: no side effects besides debug logs.
+ *  4. If the analysis produces fewer than 3 tools (too aggressive), fall back to full set.
  */
 export function truncateTools(
   toolDefs: ToolDefinition[],
@@ -356,29 +212,12 @@ export function truncateTools(
   const debug = options.debug ?? false;
 
   // Score every category
-  // Sparse map: only categories with combined > 0 get an entry, so
-  // `Object.keys(scores)` below is exactly the set of categories with any
-  // signal (irrelevant ones are never compared against threshold).
   const scores: Record<string, number> = {};
   for (const [cat, signals] of Object.entries(CATEGORY_SIGNALS)) {
     const userScore = scoreTaskText(userInput, signals);
     const assistantScore = scoreTaskText(recentAssistantOutput, signals);
     const combined = userScore + assistantScore;
     if (combined > 0) scores[cat] = combined;
-  }
-
-  // MCP server-name boost: if a connected MCP server's name appears in the
-  // combined task text, boost the 'mcp' category so its tools survive
-  // relevance filtering. Deterministic: +2 per matching server name.
-  const mcpServerNames = harvestMcpServerNames(toolDefs);
-  const combinedTaskText = `${userInput} ${recentAssistantOutput}`.toLowerCase();
-  for (const serverName of mcpServerNames) {
-    if (combinedTaskText.includes(serverName)) {
-      scores.mcp = (scores.mcp ?? 0) + 2;
-    }
-  }
-  if (debug && mcpServerNames.size > 0) {
-    console.log('[ToolTruncator] MCP server names:', [...mcpServerNames].join(', '));
   }
 
   // Determine relevant categories
@@ -393,25 +232,8 @@ export function truncateTools(
 
   const removed: string[] = [];
   const kept: ToolDefinition[] = [];
-  // Parallel to `removed` (which stays in original toolDefs order):
-  // original index of each removed tool in toolDefs, and its relevance tier
-  // computed once during this loop (categories are never rescanned later).
-  const removedToolIdx: number[] = [];
-  const removedRelevance: number[] = [];
 
-  let mcpKept = 0;
-
-  for (let i = 0; i < toolDefs.length; i++) {
-    const def = toolDefs[i];
-
-    // Connected-session MCP tools (namespaced "server/tool") are always kept,
-    // regardless of relevance scores or budget aggressiveness.
-    if (def.name.includes('/')) {
-      kept.push(def);
-      mcpKept++;
-      continue;
-    }
-
+  for (const def of toolDefs) {
     // Always include these
     if (alwaysInclude.has(def.name)) {
       kept.push(def);
@@ -419,70 +241,25 @@ export function truncateTools(
     }
 
     // Find the tool's category
-    const cat = classifyToolName(def.name);
+    let cat: ToolCategory | undefined;
+    for (const entry of TOOL_CATEGORY_MAP) {
+      if (entry.pattern.test(def.name)) {
+        cat = entry.category;
+        break;
+      }
+    }
 
     if (cat && relevantCategories.has(cat)) {
       kept.push(def);
     } else {
       removed.push(def.name);
-      removedToolIdx.push(i);
-      removedRelevance.push(
-        toolRelevanceTier(def.name, cat, alwaysInclude, relevantCategories, scores),
-      );
     }
   }
 
-  if (debug && mcpKept > 0) {
-    console.log(`[ToolTruncator] Kept ${mcpKept} connected-session MCP tool(s) unconditionally`);
-  }
-
-  // Graded relaxation (replaces the old binary cliff): if truncation dropped
-  // the roster below RESCUE_FLOOR, rescue the most relevant removed tools
-  // (relevance >= RESCUE_MIN_RELEVANCE) instead of returning everything.
-  let rescuedCount = 0;
-  if (kept.length < RESCUE_FLOOR && removed.length > 0) {
-    const need = RESCUE_FLOOR - kept.length;
-    const rescuePool = removed
-      .map((name, removedIdx) => ({
-        name,
-        removedIdx,
-        toolIdx: removedToolIdx[removedIdx],
-        relevance: removedRelevance[removedIdx],
-      }))
-      .filter((c) => c.relevance >= RESCUE_MIN_RELEVANCE)
-      // (relevance desc, original index in toolDefs asc) — deterministic & stable.
-      .sort((a, b) => (b.relevance - a.relevance) || (a.toolIdx - b.toolIdx));
-
-    const rescueCount = Math.min(need, rescuePool.length);
-    if (rescueCount > 0) {
-      rescuedCount = rescueCount;
-      const rescued = rescuePool.slice(0, rescueCount);
-
-      // Pull the exact definitions back, preserving original roster order.
-      const rescuedToolIdx = new Set(rescued.map((c) => c.toolIdx));
-      const rescuedDefs: ToolDefinition[] = [];
-      toolDefs.forEach((def, idx) => {
-        if (rescuedToolIdx.has(idx)) rescuedDefs.push(def);
-      });
-      kept.push(...rescuedDefs);
-
-      // Drop the rescued entries from the removed list (parallel arrays kept
-      // in sync; splice in descending index order so indices stay valid).
-      for (const idx of rescued.map((c) => c.removedIdx).sort((a, b) => b - a)) {
-        removed.splice(idx, 1);
-        removedToolIdx.splice(idx, 1);
-        removedRelevance.splice(idx, 1);
-      }
-      if (debug) console.log(`[ToolTruncator] Rescued ${rescuedCount} tool(s) back from the removed list`);
-    }
-  }
-
-  // Last resort: even after rescue the roster is still below RESCUE_FLOOR and
-  // there are tools we removed — return the full set. If nothing was removed
-  // in the first place there is nothing to rescue and the normal result below
-  // already IS the full set.
-  if (kept.length < RESCUE_FLOOR && removed.length > 0) {
-    if (debug) console.log(`[ToolTruncator] Rescue insufficient (kept ${kept.length} < RESCUE_FLOOR ${RESCUE_FLOOR}, ${removed.length} still removed), returning full set`);
+  // Fallback: if truncation was too aggressive (≤ 8 kept or ≤ 20% of original), return everything
+  const minKeep = Math.max(8, Math.ceil(toolDefs.length * 0.2));
+  if (kept.length < minKeep) {
+    if (debug) console.log(`[ToolTruncator] Truncation too aggressive (kept ${kept.length} < ${minKeep}), returning full set`);
     return {
       tools: [...toolDefs],
       removed: [],
@@ -496,7 +273,7 @@ export function truncateTools(
   }
 
   if (debug) {
-    console.log(`[ToolTruncator] Kept ${kept.length} tools, removed ${removed.length} (rescued ${rescuedCount} back from the removed list)`);
+    console.log(`[ToolTruncator] Kept ${kept.length} tools, removed ${removed.length}`);
     console.log('[ToolTruncator] Removed:', removed.join(', '));
   }
 

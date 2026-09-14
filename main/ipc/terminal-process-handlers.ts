@@ -1,36 +1,20 @@
-import { BrowserWindow, dialog, ipcMain } from 'electron';
+import { ipcMain } from 'electron';
 import { CommandRegistry } from '../agent/tools/terminal/registry';
-import { isPermissionGranted, grantComputerUsePermission } from './computer-use-permission';
 
-export { isPermissionGranted };
+let permissionsGranted = false;
+
+export function isPermissionGranted() {
+  return permissionsGranted;
+}
 
 export function registerTerminalProcessHandlers() {
-  // MP-SEC-15: the renderer cannot self-grant computer-use permission. The
-  // grant only takes effect after the user confirms a native dialog owned by
-  // the main process (native prompt = OS-level user gesture).
-  ipcMain.handle('permissions:grant', async () => {
-    const focused = BrowserWindow.getFocusedWindow();
-    const parent = focused && !focused.isDestroyed() ? focused : BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
-    const choice = await dialog.showMessageBox(parent!, {
-      type: 'warning',
-      title: 'Everfern — Computer Use',
-      message: 'Grant Computer Use permission?',
-      detail:
-        'This allows the assistant to control mouse and keyboard on this machine. Only grant this if you initiated it.',
-      buttons: ['Grant', 'Cancel'],
-      defaultId: 1,
-      cancelId: 1,
-      noLink: true,
-    });
-    if (choice.response === 0) {
-      grantComputerUsePermission();
-      return { success: true, granted: true };
-    }
-    return { success: true, granted: false };
+  ipcMain.handle('permissions:grant', () => {
+    permissionsGranted = true;
+    return { success: true };
   });
 
   ipcMain.handle('permissions:status', () => {
-    return { granted: isPermissionGranted() };
+    return { granted: permissionsGranted };
   });
 
   ipcMain.handle('terminal:list-processes', () => {

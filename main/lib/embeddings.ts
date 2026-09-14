@@ -5,7 +5,6 @@ import path from "path";
 import os from "os";
 import { PROVIDER_REGISTRY } from "./providers";
 import type { ProviderType } from "../acp/types";
-import { warnOnceEnvKeyFallback } from "./env-key-fallback";
 
 export interface EmbeddingConfig {
   provider: string;
@@ -25,9 +24,6 @@ export function getSystemEmbeddingConfig(): EmbeddingConfig {
 
   let provider = 'openai';
   let apiKey = process.env.OPENAI_API_KEY;
-  if (apiKey !== undefined && apiKey.trim().length > 0) {
-    warnOnceEnvKeyFallback('embeddings-openai');
-  }
   let customBaseUrl = undefined;
   let model = undefined;
 
@@ -97,74 +93,14 @@ export function getSystemEmbeddingConfig(): EmbeddingConfig {
   };
 }
 
-// LP-09: sanitize base URLs for direct getEmbeddingModel callers — mirrors the
-// sanitize step in getSystemEmbeddingConfig (trim + strip non-ASCII).
-function sanitizeBaseUrl(url?: string): string | undefined {
-  return url?.trim().replace(/[^\x00-\x7F]/g, "") || undefined;
-}
-
 function getEmbeddingModelRaw(config: EmbeddingConfig): ResolvedEmbeddingModel {
-  if (config.provider === 'ollama') {
+  if (config.provider === 'ollama' || config.provider === 'lmstudio') {
     return {
       embeddings: new OllamaEmbeddings({
         model: config.model || 'nomic-embed-text',
         baseUrl: config.baseUrl || 'http://localhost:11434',
       }),
       dimensions: 768
-    };
-  }
-
-  // LP-09: LM Studio runs its own OpenAI-compatible daemon on port 1234 — it must
-  // not be routed through OllamaEmbeddings (port 11434, wrong daemon). Mirror the
-  // nvidia branch's /embeddings POST against the LM Studio server instead.
-  if (config.provider === 'lmstudio') {
-    const baseUrl = sanitizeBaseUrl(config.baseUrl) || 'http://127.0.0.1:1234/v1'; // ai-client.ts:366 convention
-
-    const embedRequest = async (input: string | string[]): Promise<number[][]> => {
-      if (!config.model) {
-        throw new Error(
-          `[Embeddings] LM Studio embeddings require a model — set Settings → Embeddings → Model to a text-embedding model loaded in LM Studio.`
-        );
-      }
-      const url = baseUrl.endsWith('/embeddings') ? baseUrl : `${baseUrl}/embeddings`;
-      let res: Response;
-      try {
-        res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model: config.model, input })
-        });
-      } catch (err: any) {
-        throw new Error(`LM Studio embeddings not reachable at ${url} — start LM Studio → Developer → Local Server, or fix Settings → Embeddings Base URL (${err.message || err})`);
-      }
-      const resText = await res.text();
-      let data: any;
-      try {
-        data = JSON.parse(resText);
-      } catch (e) {
-        throw new Error(`Invalid JSON from LM Studio: ${resText.slice(0, 100)}...`);
-      }
-      if (!res.ok) throw new Error(`LM Studio embeddings not reachable at ${url} (${res.status} ${res.statusText}) — start LM Studio → Developer → Local Server, or fix Settings → Embeddings Base URL`);
-      // Order-preserving map with index + length checks (data[i] ↔ input[i]).
-      const rows: any[] = Array.isArray(data?.data) ? data.data : [];
-      const expected = Array.isArray(input) ? input.length : 1;
-      if (rows.length !== expected) {
-        throw new Error(`LM Studio embeddings returned ${rows.length} vectors for ${expected} input(s) at ${url}`);
-      }
-      return rows.map((row: any, i: number) => {
-        if (!Array.isArray(row?.embedding)) {
-          throw new Error(`LM Studio embeddings: missing embedding vector at index ${i}`);
-        }
-        return row.embedding;
-      });
-    };
-
-    return {
-      embeddings: {
-        embedQuery: async (text: string) => (await embedRequest(text))[0],
-        embedDocuments: async (texts: string[]) => embedRequest(texts),
-      } as any, // OpenAI-compatible shape; wrapper resizes to 1536 via resizeAndNormalizeEmbedding
-      dimensions: 768 // informational only — wrapper forces 1536
     };
   }
 
@@ -206,7 +142,7 @@ function getEmbeddingModelRaw(config: EmbeddingConfig): ResolvedEmbeddingModel {
         embedQuery: async (text: string) => {
           const modelName = config.model || "gemini-embedding-001";
           const modelPath = modelName.startsWith('models/') ? modelName : `models/${modelName}`;
-          const url = `https://generativelanguage.googleapis.com/v1beta/${modelPath}:embedContent`;
+          const url = `https://generativelanguage.googleapis.com/v1beta/${modelPath}:embedContent?key=${config.apiKey || ''}`;
 
           const res = await fetch(url, {
             method: 'POST',
@@ -233,7 +169,7 @@ function getEmbeddingModelRaw(config: EmbeddingConfig): ResolvedEmbeddingModel {
           return Promise.all(documents.map(doc => {
             const modelName = config.model || "gemini-embedding-001";
             const modelPath = modelName.startsWith('models/') ? modelName : `models/${modelName}`;
-            const url = `https://generativelanguage.googleapis.com/v1beta/${modelPath}:embedContent`;
+            const url = `https://generativelanguage.googleapis.com/v1beta/${modelPath}:embedContent?key=${config.apiKey || ''}`;
 
             return fetch(url, {
               method: 'POST',
@@ -392,8 +328,7 @@ function resizeAndNormalizeEmbedding(embedding: number[], targetDim = 1536): num
 
 let localPipeline: any = null;
 
-// LP-08: exported for testability (cloud fallback path regression tests).
-export async function getLocalFallbackEmbedding(text: string): Promise<number[]> {
+async function getLocalFallbackEmbedding(text: string): Promise<number[]> {
   try {
     if (!localPipeline) {
       console.log('[Embeddings] Initializing local Transformers.js fallback with Xenova/all-MiniLM-L6-v2...');
@@ -412,11 +347,6 @@ export async function getLocalFallbackEmbedding(text: string): Promise<number[]>
 export function getEmbeddingModel(config: EmbeddingConfig): ResolvedEmbeddingModel {
   const result = getEmbeddingModelRaw(config);
 
-  // LP-08: local daemons must not silently fall back to Transformers.js — the
-  // fallback downloads a CPU model that competes with the local daemon. Rethrow
-  // with actionable guidance instead; cloud providers keep the fallback.
-  const isLocalProvider = config.provider === 'ollama' || config.provider === 'lmstudio';
-
   // Wrap embeddings to guarantee 1536 dimensions
   const originalEmbedQuery = result.embeddings.embedQuery.bind(result.embeddings);
   const originalEmbedDocuments = result.embeddings.embedDocuments ? result.embeddings.embedDocuments.bind(result.embeddings) : undefined;
@@ -426,9 +356,6 @@ export function getEmbeddingModel(config: EmbeddingConfig): ResolvedEmbeddingMod
       const vector = await originalEmbedQuery(text);
       return resizeAndNormalizeEmbedding(vector, 1536);
     } catch (err: any) {
-      if (isLocalProvider) {
-        throw new Error(`[Embeddings] Local provider '${config.provider}' failed (${err.message || err}) — not falling back to Transformers.js (would download a CPU model and compete with the local daemon); fix the server/config.`);
-      }
       console.warn(`[Embeddings] Provider '${config.provider}' embedQuery failed. Falling back to local Transformers.js:`, err.message || err);
       const fallbackVector = await getLocalFallbackEmbedding(text);
       return resizeAndNormalizeEmbedding(fallbackVector, 1536);
@@ -441,9 +368,6 @@ export function getEmbeddingModel(config: EmbeddingConfig): ResolvedEmbeddingMod
         const vectors = await originalEmbedDocuments(texts);
         return vectors.map(v => resizeAndNormalizeEmbedding(v, 1536));
       } catch (err: any) {
-        if (isLocalProvider) {
-          throw new Error(`[Embeddings] Local provider '${config.provider}' failed (${err.message || err}) — not falling back to Transformers.js (would download a CPU model and compete with the local daemon); fix the server/config.`);
-        }
         console.warn(`[Embeddings] Provider '${config.provider}' embedDocuments failed. Falling back to local Transformers.js:`, err.message || err);
         return Promise.all(texts.map(async text => {
           const fallbackVector = await getLocalFallbackEmbedding(text);

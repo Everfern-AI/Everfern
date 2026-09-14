@@ -5,30 +5,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { homedir } from 'os';
 import { DataRetentionManager } from '../data-retention';
 import { EncryptionService } from '../encryption-service';
 import { SecurityLogger, SecurityEventType, SecurityEventSeverity } from '../security-logger';
-
-// Hermetic (wave f11): DataRetentionManager, SecurityLogger, and
-// EncryptionService all resolve their state paths from os.homedir()
-// (retention config at <home>/.everfern/privacy, security events at
-// <home>/.everfern/security-logs, etc.) on real fs. The previous
-// vi.spyOn(require('os'), 'homedir') mock never intercepted the product's
-// ESM imports, so the suite read/wrote the REAL ~/.everfern state —
-// polluted config from earlier runs (retentionDays=60, allowDataExport=false)
-// made 11 tests fail or flip nondeterministically. vi.mock('os') with a
-// per-run tmp home reaches the product modules (same fix as
-// input-validator.test.ts in this wave).
-const { HERMETIC_HOME } = vi.hoisted(() => ({
-  HERMETIC_HOME: `/tmp/everfern-test-homes/data-retention/${process.pid}-${Date.now()}`
-}));
-vi.mock('os', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('os')>();
-  // Override BOTH the named `homedir` export and `default` — products bind
-  // both styles; spreading ...actual alone would leak real-home writes.
-  const mocked = { ...actual, homedir: () => HERMETIC_HOME };
-  return { ...mocked, default: mocked };
-});
 
 describe('Data Retention and Privacy Controls Tests', () => {
   let dataRetentionManager: DataRetentionManager;
@@ -37,9 +17,12 @@ describe('Data Retention and Privacy Controls Tests', () => {
   let testDir: string;
 
   beforeEach(async () => {
-    // Create test directory inside the hermetic home
-    testDir = path.join(HERMETIC_HOME, '.everfern-test', 'retention-test');
+    // Create test directory
+    testDir = path.join(homedir(), '.everfern-test', 'retention-test');
     await fs.mkdir(testDir, { recursive: true });
+
+    // Mock homedir to use test directory
+    vi.spyOn(require('os'), 'homedir').mockReturnValue(path.dirname(testDir));
 
     // Initialize components
     securityLogger = new SecurityLogger();
@@ -55,13 +38,15 @@ describe('Data Retention and Privacy Controls Tests', () => {
     // Stop retention manager
     dataRetentionManager.stop();
 
-    // Clean up hermetic test directory (keep the rest of the tmp home tree
-    // for diagnosis; /tmp is reclaimed by the OS)
+    // Clean up test directory
     try {
       await fs.rm(testDir, { recursive: true, force: true });
     } catch (error) {
       // Ignore cleanup errors
     }
+
+    // Restore mocks
+    vi.restoreAllMocks();
   });
 
   describe('Data Retention Policies', () => {
@@ -123,11 +108,8 @@ describe('Data Retention and Privacy Controls Tests', () => {
     });
 
     it('should handle file attachment purging', async () => {
-      // wave f11: product purges <homedir>/.everfern/attachments — under the
-      // hermetic os mock that is HERMETIC_HOME/.everfern/attachments. Create
-      // the old/recent fixture files there (previously created under a
-      // test-only dir the product never read → itemsProcessed was always 0).
-      const attachmentsDir = path.join(HERMETIC_HOME, '.everfern', 'attachments');
+      // Create test attachment directory and files
+      const attachmentsDir = path.join(testDir, 'attachments');
       await fs.mkdir(attachmentsDir, { recursive: true });
 
       // Create old test files
@@ -153,26 +135,17 @@ describe('Data Retention and Privacy Controls Tests', () => {
 
   describe('Data Redaction', () => {
     it('should redact sensitive information from text', async () => {
-      // wave f11: the card pattern shipped in 5596cc7 matches contiguous
-      // PAN digits only (no dash separators) — verified it never matched
-      // '4111-1111-1111-1111' even on the original commit. Use the
-      // canonical contiguous form.
       const sensitiveText = `
         User email: john.doe@example.com
-        Phone: (555)123-4567
+        Phone: (555) 123-4567
         SSN: 123-45-6789
-        Credit Card: 4111111111111111
+        Credit Card: 4111-1111-1111-1111
         API Key: abc123def456ghi789jkl012mno345pqr678stu901vwx234yz
       `;
 
       const redactedText = dataRetentionManager.redactSensitiveData(sensitiveText, 'security_events');
 
       expect(redactedText).toContain('[EMAIL_REDACTED]');
-      // wave f11: contract updated — the phone pattern shipped in 5596cc7
-      // (`\\b(?:\\+?1[-.]?)?\\(?([0-9]{3})\\)?[-.]?([0-9]{3})[-.]?([0-9]{4})\\b`)
-      // has no space between `)` and the exchange, so `(555) 123-4567` was
-      // NEVER redacted (verified: fails on the original commit too). Use the
-      // canonical form the shipped regex matches: `(555)123-4567`.
       expect(redactedText).toContain('[PHONE_REDACTED]');
       expect(redactedText).toContain('[SSN_REDACTED]');
       expect(redactedText).toContain('[CARD_REDACTED]');
@@ -180,13 +153,13 @@ describe('Data Retention and Privacy Controls Tests', () => {
 
       // Ensure original sensitive data is not present
       expect(redactedText).not.toContain('john.doe@example.com');
-      expect(redactedText).not.toContain('(555)123-4567');
+      expect(redactedText).not.toContain('(555) 123-4567');
       expect(redactedText).not.toContain('123-45-6789');
-      expect(redactedText).not.toContain('4111111111111111');
+      expect(redactedText).not.toContain('4111-1111-1111-1111');
     });
 
     it('should respect redaction settings', async () => {
-      const sensitiveText = 'Contact us at support@example.com or call (555)123-4567';
+      const sensitiveText = 'Contact us at support@example.com or call (555) 123-4567';
 
       // Disable redaction
       await dataRetentionManager.updatePrivacySettings({
@@ -245,11 +218,7 @@ describe('Data Retention and Privacy Controls Tests', () => {
       expect(exportStatus).toBeDefined();
       expect(exportStatus?.userId).toBe(userId);
       expect(exportStatus?.dataTypes).toEqual(dataTypes);
-      // wave f11: contract updated — requestDataExport (shipped in 5596cc7)
-      // kicks off processDataExport synchronously, and processDataExport's
-      // FIRST statement sets status = 'processing' before its first await.
-      // By the time requestDataExport returns, 'pending' is never observable.
-      expect(exportStatus?.status).toBe('processing');
+      expect(exportStatus?.status).toBe('pending');
     });
 
     it('should process data export and create files', async () => {
@@ -310,14 +279,6 @@ describe('Data Retention and Privacy Controls Tests', () => {
 
     it('should log data deletion activities', async () => {
       const userId = 'user-for-logging';
-
-      // wave f11: the preceding test ('should respect privacy settings for
-      // data deletion') disables allowDataDeletion on the SHARED manager
-      // instance and never restores it — with hermetic per-run config that
-      // now actually persists. Restore the shipped default so deletion runs.
-      await dataRetentionManager.updatePrivacySettings({
-        allowDataDeletion: true
-      });
 
       await dataRetentionManager.deleteUserData(userId, ['user_data']);
 

@@ -14,8 +14,6 @@ import {
 import { FolderOpenIcon } from '@heroicons/react/24/outline';
 import { MarkdownViewer } from '../files/FileViewerModal';
 import ToolCallCodePane from './ToolCallCodePane';
-import { getFileIconVisual } from './file-icons';
-import { useDownscaledImageUrl } from './use-downscaled-image';
 
 /* ============================================================
    TYPES
@@ -60,13 +58,13 @@ const T = {
   inkMuted: 'var(--color-text-tertiary)',
 
   // Semantic
-  green: 'var(--color-success)',
-  greenFaint: 'var(--color-success-dim)',
-  red: 'var(--color-error)',
-  redFaint: 'var(--color-error-dim)',
-  amber: 'var(--color-warning)',
-  blue: 'var(--color-info)',
-  blueFaint: 'var(--color-info-dim)',
+  green: '#22c55e',
+  greenFaint: 'rgba(34,197,94,0.08)',
+  red: '#ef4444',
+  redFaint: 'rgba(239,68,68,0.07)',
+  amber: '#f59e0b',
+  blue: '#3b82f6',
+  blueFaint: 'rgba(59,130,246,0.08)',
 
   // Radius
   r4: 4, r6: 6, r8: 8, r10: 10, r12: 12, r14: 14, r16: 16,
@@ -86,10 +84,10 @@ const VS = {
   text: 'var(--color-text-primary)',
   muted: 'var(--color-text-secondary)',
   dim: 'var(--color-text-tertiary)',
-  green: 'var(--color-success)',
-  red: 'var(--color-error)',
-  yellow: 'var(--color-warning)',
-  blue: 'var(--color-navis-icon-color)',
+  green: '#22c55e',
+  red: '#ef4444',
+  yellow: '#f59e0b',
+  blue: '#6366f1',
 };
 
 const CLAY = {
@@ -250,9 +248,9 @@ function PanelHeader({
               <span style={{
                 fontSize: 10,
                 fontWeight: 600,
-                color: 'var(--color-success)',
-                background: 'var(--color-success-dim)',
-                border: '1px solid var(--color-success)',
+                color: '#10b981',
+                background: 'rgba(16,185,129,0.12)',
+                border: '1px solid rgba(16,185,129,0.3)',
                 padding: '2px 7px',
                 borderRadius: 20,
                 display: 'inline-flex',
@@ -262,7 +260,7 @@ function PanelHeader({
                 letterSpacing: '0.04em',
                 textTransform: 'uppercase',
               }}>
-                <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--color-success)', display: 'inline-block', animation: 'pulse 1.2s infinite' }} />
+                <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#10b981', display: 'inline-block', animation: 'pulse 1.2s infinite' }} />
                 Live
               </span>
             )}
@@ -449,13 +447,6 @@ function IconSearch() {
 function ScreenshotCard({ screenshot, index, onZoom }: { screenshot: any; index: number; onZoom: (s: any) => void }) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(false);
-  // Downscaled preview (~480px) instead of resident full-res base64 in the DOM
-  const previewUrl = useDownscaledImageUrl(screenshot?.base64, 'image/png');
-  const [previewFailed, setPreviewFailed] = useState(false);
-  const src = previewUrl || (previewFailed ? null : `data:image/png;base64,${screenshot?.base64}`);
-
-  // If downscaling produced a URL that fails to load, fall back to raw base64
-  useEffect(() => { if (previewUrl) setPreviewFailed(false); }, [previewUrl]);
 
   return (
     <motion.div
@@ -480,13 +471,13 @@ function ScreenshotCard({ screenshot, index, onZoom }: { screenshot: any; index:
             />
           </div>
         )}
-        {!err && src ? (
+        {!err ? (
           <img
-            src={src}
+            src={`data:image/png;base64,${screenshot.base64}`}
             alt={`Capture ${index + 1}`}
             style={{ width: '100%', height: '100%', objectFit: 'cover', display: loading ? 'none' : 'block' }}
             onLoad={() => setLoading(false)}
-            onError={() => { setLoading(false); if (previewUrl && !previewFailed) { setPreviewFailed(true); } else { setErr(true); } }}
+            onError={() => { setLoading(false); setErr(true); }}
           />
         ) : (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: T.textMuted, gap: 6 }}>
@@ -640,12 +631,6 @@ const CursorOverlayOnImage = ({ coordinate, action }: { coordinate: any, action:
 };
 
 function ZoomModal({ screenshot, onClose }: { screenshot: any; onClose: () => void }) {
-  // Downscaled render source; objectURL revoked on change/unmount by the hook.
-  // Zoom view keeps more detail (1280px cap) than thumbnails but avoids full-res residency.
-  const zoomUrl = useDownscaledImageUrl(screenshot?.base64, 'image/png', 1280);
-  const [rawFallback, setRawFallback] = useState(false);
-  const src = zoomUrl && !rawFallback ? zoomUrl : `data:image/png;base64,${screenshot?.base64}`;
-
   return (
     <motion.div
       style={{
@@ -674,9 +659,8 @@ function ZoomModal({ screenshot, onClose }: { screenshot: any; onClose: () => vo
         </button>
         <div style={{ position: 'relative', display: 'inline-block' }}>
           <motion.img
-            src={src}
+            src={`data:image/png;base64,${screenshot.base64}`}
             alt="Full screenshot"
-            onError={() => setRawFallback(true)}
             style={{
               width: '100%', maxHeight: '84vh', objectFit: 'contain',
               borderRadius: T.r12, border: '1px solid rgba(255,255,255,0.08)',
@@ -731,7 +715,7 @@ function NavisReportViewer({ report, isRunning }: { report: string; isRunning: b
     border: '#2c2b29',
     codeBg: '#1e1e1c',
     headerColor: '#f5f5f0',
-    accent: 'var(--color-warning)',
+    accent: '#f59e0b',
     accentFaint: 'rgba(245, 158, 11, 0.1)',
   };
 
@@ -819,14 +803,6 @@ function NavisReportViewer({ report, isRunning }: { report: string; isRunning: b
     return elements;
   };
 
-  // Memoize the markdown parse keyed on the raw string + theme: identical content
-  // across poll ticks (and unrelated re-renders) skips re-parsing entirely.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const parsedReport = useMemo(
-    () => (displayedReport ? renderMarkdown(displayedReport) : null),
-    [displayedReport, readerTheme],
-  );
-
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: themeColors.bg, color: themeColors.text, transition: 'all 0.2s ease' }}>
       <div style={{
@@ -886,7 +862,7 @@ function NavisReportViewer({ report, isRunning }: { report: string; isRunning: b
               <span style={{ fontSize: 10, color: themeColors.accent, fontFamily: T.sans, fontWeight: 600 }}>Writing...</span>
             </div>
           ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'var(--color-success-dim)', border: `1px solid var(--color-success)`, borderRadius: 20, padding: '2px 8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(34,197,94,0.08)', border: `1px solid rgba(34,197,94,0.3)`, borderRadius: 20, padding: '2px 8px' }}>
               <CheckCircle size={10} color={T.green} />
               <span style={{ fontSize: 10, color: T.green, fontFamily: T.sans, fontWeight: 600 }}>Complete</span>
             </div>
@@ -907,7 +883,7 @@ function NavisReportViewer({ report, isRunning }: { report: string; isRunning: b
         `}</style>
         {displayedReport ? (
           <div style={{ maxWidth: 640, margin: '0 auto' }}>
-            {parsedReport}
+            {renderMarkdown(displayedReport)}
           </div>
         ) : (
           <div style={{ color: themeColors.textMuted, fontSize: 12, textAlign: 'center', paddingTop: 40, fontFamily: T.sans }}>
@@ -938,22 +914,11 @@ function NavisView({
   const safe = Array.isArray(screenshots) ? screenshots : [];
 
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false); // Autoplay OFF by default; user opt-in via Play
+  const [isPlaying, setIsPlaying] = useState(true); // Autoplay by default
   const prevLengthRef = useRef(safe.length);
   const [activeTab, setActiveTab] = useState<'findings' | 'screenshots'>('findings');
 
   const [findingsContent, setFindingsContent] = useState<string>('');
-
-  const currentScreenshot = safe[currentIndex] || safe[0];
-  // Downscaled main-frame render source (~480px); falls back to raw base64 on failure.
-  // Declared before any early returns so hook order stays stable across tabs.
-  const mainFrameUrl = useDownscaledImageUrl(currentScreenshot?.base64, 'image/jpeg');
-  const [rawFrameFallback, setRawFrameFallback] = useState(false);
-  const frameSrc = mainFrameUrl && !rawFrameFallback
-    ? mainFrameUrl
-    : `data:image/jpeg;base64,${currentScreenshot?.base64}`;
-  // Reset the fallback when the frame changes
-  useEffect(() => { setRawFrameFallback(false); }, [mainFrameUrl]);
 
   useEffect(() => {
     let isMounted = true;
@@ -1018,17 +983,16 @@ function NavisView({
         }
 
         if (isMounted) {
-          setFindingsContent(prev => {
-            // Skip setState when unchanged: prevents a full markdown re-render
-            // on every poll tick while the file content hasn't actually changed.
-            const next = content !== null ? content : 'Could not find findings.md for this task.';
-            return prev === next ? prev : next;
-          });
+          if (content !== null) {
+            setFindingsContent(content);
+          } else {
+            setFindingsContent('Could not find findings.md for this task.');
+          }
         }
       } catch (err) {
         console.error('Error reading findings.md in NavisView:', err);
         if (isMounted) {
-          setFindingsContent(prev => prev === 'Could not find findings.md for this task.' ? prev : 'Could not find findings.md for this task.');
+          setFindingsContent('Could not find findings.md for this task.');
         }
       }
     };
@@ -1036,23 +1000,14 @@ function NavisView({
     readFindings();
 
     const isRunning = toolCall.status === 'executing' || toolCall.status === 'pending';
-    let timeoutId: any;
+    let intervalId: any;
     if (isRunning) {
-      // Adaptive poll: 1s while visible; backs off 1s → 2s → 5s (cap) while
-      // document.hidden so background tabs stop hammering the IPC channel.
-      let hiddenStreak = 0;
-      const schedule = () => {
-        const hidden = typeof document !== 'undefined' && document.hidden;
-        hiddenStreak = hidden ? Math.min(hiddenStreak + 1, 4) : 0;
-        const delay = hidden ? (hiddenStreak >= 2 ? 5000 : 2000) : 1000;
-        timeoutId = setTimeout(() => { readFindings(); schedule(); }, delay);
-      };
-      schedule();
+      intervalId = setInterval(readFindings, 1000);
     }
 
     return () => {
       isMounted = false;
-      if (timeoutId) clearTimeout(timeoutId);
+      if (intervalId) clearInterval(intervalId);
     };
   }, [toolCall]);
 
@@ -1176,22 +1131,7 @@ function NavisView({
     );
   }
 
-  if (safe.length === 0) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-        <SectionLabel>Browser session</SectionLabel>
-        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column' }}>
-          {renderTabs()}
-          <EmptyState
-            icon={CameraOff}
-            title="No captures yet"
-            description={`${toolName} ran but didn't produce screenshots during this session.`}
-            note="Frames appear here in real-time as the browser navigates."
-          />
-        </div>
-      </div>
-    );
-  }
+  const currentScreenshot = safe[currentIndex] || safe[0];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
@@ -1224,9 +1164,8 @@ function NavisView({
           >
             <div style={{ position: 'relative', display: 'inline-block' }}>
               <img
-                src={frameSrc}
+                src={`data:image/jpeg;base64,${currentScreenshot.base64}`}
                 alt="Navis frame"
-                onError={() => setRawFrameFallback(true)}
                 style={{ width: '100%', height: 'auto', maxHeight: '60vh', objectFit: 'contain', display: 'block', cursor: 'zoom-in' }}
                 onClick={() => setZoomed(currentScreenshot)}
               />
@@ -1627,7 +1566,7 @@ export function TerminalView({
           {showExit && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, paddingTop: 12, borderTop: `1px solid ${WIN.divider}` }}>
               {exitCode !== undefined && (
-                <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, fontFamily: monoStack, letterSpacing: '0.03em', background: isError ? 'var(--color-error-dim)' : 'var(--color-success-dim)', border: `1px solid ${isError ? 'var(--color-error)' : 'var(--color-success)'}`, color: isError ? WIN.textErr : 'var(--color-success-light)' }}>
+                <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, fontFamily: monoStack, letterSpacing: '0.03em', background: isError ? 'rgba(255,123,114,0.1)' : 'rgba(63,185,80,0.1)', border: `1px solid ${isError ? 'rgba(255,123,114,0.18)' : 'rgba(63,185,80,0.18)'}`, color: isError ? WIN.textErr : '#3fb950' }}>
                   {isError ? `exit ${exitCode}` : 'ok'}
                 </span>
               )}
@@ -1752,7 +1691,7 @@ function ResultCard({ title, url, snippet, description: initialDescription, doma
         boxShadow: '0 1px 3px rgba(0,0,0,0.02)', position: 'relative', overflow: 'hidden',
         flexShrink: 0,
       }}
-      whileHover={{ borderColor: T.textMuted, y: -1, background: T.surfaceRaised, backgroundColor: T.surfaceRaised, boxShadow: '0 4px 16px rgba(0,0,0,0.05)' }}
+      whileHover={{ borderColor: '#b8b8b4', y: -1, background: T.surfaceRaised, backgroundColor: T.surfaceRaised, boxShadow: '0 4px 16px rgba(0,0,0,0.05)' }}
       transition={{ duration: 0.12 }}
     >
       {/* Domain */}
@@ -2057,7 +1996,7 @@ function McpRegistryView({ keyword, connectors = [], totalResults = 0, output }:
                     {connector.name}
                   </p>
                   {connector.status && (
-                    <span style={{ color: T.green, border: '1px solid var(--color-success)', borderRadius: 999, padding: '3px 8px', fontSize: 10.5, lineHeight: 1, fontFamily: T.sans }}>
+                    <span style={{ color: T.green, border: '1px solid rgba(34,197,94,0.2)', borderRadius: 999, padding: '3px 8px', fontSize: 10.5, lineHeight: 1, fontFamily: T.sans }}>
                       {connector.status}
                     </span>
                   )}
@@ -2169,8 +2108,8 @@ function MemoryView({ args, output, toolName }: { args?: any; output?: string; t
   const query = args?.query || args?.fact || args?.content || args?.preference || args?.taskName || '';
   const tname = (toolName || '').toLowerCase();
   const opLabel = tname.includes('recall') ? 'Recall' : tname.includes('remember') || tname.includes('save') ? 'Save' : tname.includes('update') || tname.includes('profile') ? 'Update' : tname.includes('search') ? 'Search' : 'Consolidate';
-  const opColor = opLabel === 'Recall' ? 'var(--color-navis-icon-color)' : opLabel === 'Save' || opLabel === 'Consolidate' ? 'var(--color-success)' : opLabel === 'Update' ? 'var(--color-warning)' : 'var(--color-info)';
-  const opBg = opLabel === 'Recall' ? 'var(--color-navis-active-bg)' : opLabel === 'Save' || opLabel === 'Consolidate' ? 'var(--color-success-dim)' : opLabel === 'Update' ? 'var(--color-warning-dim)' : 'var(--color-info-dim)';
+  const opColor = opLabel === 'Recall' ? '#6366f1' : opLabel === 'Save' || opLabel === 'Consolidate' ? '#22c55e' : opLabel === 'Update' ? '#f59e0b' : '#3b82f6';
+  const opBg = opLabel === 'Recall' ? 'rgba(99,102,241,0.1)' : opLabel === 'Save' || opLabel === 'Consolidate' ? 'rgba(34,197,94,0.1)' : opLabel === 'Update' ? 'rgba(245,158,11,0.1)' : 'rgba(59,130,246,0.1)';
 
   const noResults = output && !parsedJson && memoriesList.length === 0 && plainBlocks.length === 0;
 
@@ -2207,8 +2146,8 @@ function MemoryView({ args, output, toolName }: { args?: any; output?: string; t
               const bodyText = srcMatch ? block.slice(srcMatch[0].length).trim() : block;
               // Pick color by source
               const isProfile = block.toLowerCase().includes('user profile');
-              const cardColor = isProfile ? 'var(--color-navis-icon-color)' : 'var(--color-success)';
-              const cardBg = isProfile ? 'var(--color-navis-active-bg)' : 'var(--color-success-dim)';
+              const cardColor = isProfile ? '#6366f1' : '#22c55e';
+              const cardBg = isProfile ? 'rgba(99,102,241,0.07)' : 'rgba(34,197,94,0.07)';
               return (
                 <div key={i} style={{ background: CLAY.card, border: `1px solid ${VS.border}`, borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6, boxShadow: CLAY.shadow }}>
                   {src && (
@@ -2236,7 +2175,7 @@ function MemoryView({ args, output, toolName }: { args?: any; output?: string; t
             {memoriesList.map((mem: any, index: number) => (
               <div key={index} style={{ background: CLAY.card, border: `1px solid ${VS.border}`, boxShadow: CLAY.shadow, borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: mem.type === 'preference' ? 'var(--color-navis-active-bg)' : mem.type === 'habit' ? 'var(--color-warning-dim)' : 'var(--color-success-dim)', color: mem.type === 'preference' ? 'var(--color-navis-icon-color)' : mem.type === 'habit' ? 'var(--color-warning)' : 'var(--color-success)', textTransform: 'uppercase', fontFamily: T.sans }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: mem.type === 'preference' ? 'rgba(99,102,241,0.1)' : mem.type === 'habit' ? 'rgba(245,158,11,0.1)' : 'rgba(34,197,94,0.1)', color: mem.type === 'preference' ? '#6366f1' : mem.type === 'habit' ? '#f59e0b' : '#22c55e', textTransform: 'uppercase', fontFamily: T.sans }}>
                     {mem.type || 'fact'}
                   </span>
                   {mem.linkedFile && <span style={{ fontSize: 10.5, color: VS.muted, fontFamily: T.mono }}>📁 {mem.linkedFile}</span>}
@@ -2341,7 +2280,7 @@ function SkillView({ skillName, name, path, content }: { skillName: string; name
           </h3>
           <span style={{
             fontSize: 9.5, fontWeight: 700, color: T.green, background: T.greenFaint,
-            border: `1px solid var(--color-success)`, padding: '2px 8px', borderRadius: 20, fontFamily: T.sans
+            border: `1px solid rgba(34,197,94,0.15)`, padding: '2px 8px', borderRadius: 20, fontFamily: T.sans
           }}>
             Skill Loaded
           </span>
@@ -2722,10 +2661,10 @@ const EDITOR_COLORS = {
   gutterText: 'var(--color-text-secondary)',
   border: '#27272a',
   text: '#e2e8f0',
-  keyword: 'var(--color-syntax-keyword)', // pink/magenta
-  string: 'var(--color-success-light)', // green
-  number: 'var(--color-info-light)', // blue
-  comment: 'var(--color-syntax-comment)', // grey
+  keyword: '#e879f9', // pink/magenta
+  string: '#34d399', // green
+  number: '#60a5fa', // blue
+  comment: '#a1a1aa', // grey
 };
 
 const detectLanguage = (ext: string): string => {
@@ -2797,15 +2736,15 @@ const CodeLine = ({ type, content, lineNumber, ext }: LineProps) => {
   let indicatorColor = EDITOR_COLORS.gutterText;
 
   if (type === 'add') {
-    lineBg = 'var(--diff-add-bg)'; // subtle green bg
-    textColor = 'var(--color-success-light)'; // green text
+    lineBg = 'rgba(34, 197, 94, 0.08)'; // subtle green bg
+    textColor = '#4ade80'; // green text
     indicator = '+';
-    indicatorColor = 'var(--color-success-light)';
+    indicatorColor = '#4ade80';
   } else if (type === 'del') {
-    lineBg = 'var(--diff-del-bg)'; // subtle red bg
-    textColor = 'var(--color-error-light)'; // red text
+    lineBg = 'rgba(239, 68, 68, 0.08)'; // subtle red bg
+    textColor = '#f87171'; // red text
     indicator = '-';
-    indicatorColor = 'var(--color-error-light)';
+    indicatorColor = '#f87171';
   }
 
   return (
@@ -3076,12 +3015,12 @@ function SidePanelMultiFileDiffView({ args, output }: { args: any; output?: stri
               </div>
               <div style={{ display: 'flex', gap: 6, fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
                 {file.addedCount > 0 && (
-                  <span style={{ color: T.green, background: 'var(--color-success-dim)', border: '1px solid var(--color-success)', padding: '2px 6px', borderRadius: 4 }}>
+                  <span style={{ color: T.green, background: 'rgba(34, 197, 94, 0.15)', border: '1px solid rgba(34, 197, 94, 0.25)', padding: '2px 6px', borderRadius: 4 }}>
                     +{file.addedCount}
                   </span>
                 )}
                 {file.removedCount > 0 && (
-                  <span style={{ color: T.red, background: 'var(--color-error-dim)', border: '1px solid var(--color-error)', padding: '2px 6px', borderRadius: 4 }}>
+                  <span style={{ color: T.red, background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.25)', padding: '2px 6px', borderRadius: 4 }}>
                     -{file.removedCount}
                   </span>
                 )}
@@ -3096,9 +3035,9 @@ function SidePanelMultiFileDiffView({ args, output }: { args: any; output?: stri
                     const isAdded = line.type === 'added';
                     const isRemoved = line.type === 'removed';
                     const rowBg = isAdded 
-                      ? 'var(--diff-add-bg)' 
+                      ? 'rgba(34, 197, 94, 0.12)' 
                       : isRemoved 
-                        ? 'var(--diff-del-bg)' 
+                        ? 'rgba(239, 68, 68, 0.12)' 
                         : 'transparent';
                     
                     const textColor = isAdded 
@@ -3282,9 +3221,93 @@ function basenameFromPath(filePath: string) {
   return filePath.split(/[\\/]/).filter(Boolean).pop() || filePath;
 }
 
-// Local, offline-safe icon resolution (see ./file-icons.tsx) — replaces the
-// runtime third-party icon-CDN fetches that fired once per file row.
+function extensionColor(name: string) {
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  if (['ts', 'tsx'].includes(ext)) return '#7dd3fc';
+  if (['js', 'jsx', 'mjs', 'cjs'].includes(ext)) return '#facc15';
+  if (['json'].includes(ext)) return '#f59e0b';
+  if (['md', 'mdx'].includes(ext)) return '#4ade80';
+  if (['css', 'scss', 'sass'].includes(ext)) return '#60a5fa';
+  return '#8a8a8a';
+}
 
+function getFileIconifyVisual(name: string) {
+  const lower = name.toLowerCase();
+  const ext = lower.startsWith('.') && !lower.slice(1).includes('.')
+    ? lower.slice(1)
+    : lower.split('.').pop() || '';
+
+  const exact: Record<string, string> = {
+    'package.json': 'npm',
+    'package-lock.json': 'npm',
+    'pnpm-lock.yaml': 'pnpm',
+    'yarn.lock': 'yarn',
+    'tsconfig.json': 'tsconfig',
+    'jsconfig.json': 'jsconfig',
+    'next.config.ts': 'next',
+    'next.config.js': 'next',
+    'next.config.mjs': 'next',
+    'vite.config.ts': 'vite',
+    'vite.config.js': 'vite',
+    'tailwind.config.ts': 'tailwind',
+    'tailwind.config.js': 'tailwind',
+    'eslint.config.js': 'eslint',
+    'eslint.config.mjs': 'eslint',
+    '.eslintrc': 'eslint',
+    '.eslintrc.js': 'eslint',
+    '.prettierrc': 'prettier',
+    '.gitignore': 'git',
+    '.gitmodules': 'git',
+    '.npmrc': 'npm',
+    'readme.md': 'readme',
+    'license': 'license',
+    'license.txt': 'license',
+  };
+
+  const byExt: Record<string, string> = {
+    env: 'dotenv',
+    gitignore: 'git',
+    log: 'log',
+    ts: 'typescript',
+    tsx: 'reactts',
+    js: 'javascript',
+    jsx: 'reactjs',
+    mjs: 'javascript',
+    cjs: 'javascript',
+    json: 'json',
+    css: 'css',
+    scss: 'sass',
+    sass: 'sass',
+    html: 'html',
+    md: 'markdown',
+    mdx: 'mdx',
+    py: 'python',
+    ps1: 'powershell',
+    bat: 'powershell',
+    yml: 'yaml',
+    yaml: 'yaml',
+    sql: 'database',
+    svg: 'svg',
+    png: 'image',
+    jpg: 'image',
+    jpeg: 'image',
+    gif: 'image',
+    webp: 'image',
+    bmp: 'image',
+    pdf: 'pdf',
+    lock: 'lock',
+    npmrc: 'npm',
+  };
+
+  const icon = lower === '.env' || lower.startsWith('.env.')
+    ? 'dotenv'
+    : exact[lower] || byExt[ext] || 'default-file';
+
+  return {
+    iconUrl: `https://api.iconify.design/vscode-icons:file-type-${icon}.svg`,
+    color: extensionColor(name),
+  };
+}
 
 function buildFilePaneItems(files: string[], filter: string): FilePaneItem[] {
   const q = filter.trim().toLowerCase();
@@ -3344,23 +3367,23 @@ function FileNavigatorPane({
     <aside style={{
       width: 290,
       flexShrink: 0,
-      borderLeft: '1px solid var(--color-border)',
-      background: 'var(--color-bg-subtle)',
+      borderLeft: '1px solid #252525',
+      background: '#151515',
       color: 'var(--color-bg-subtle)',
       display: 'flex',
       flexDirection: 'column',
       minHeight: 0,
       fontFamily: T.sans,
     }}>
-      <div style={{ padding: 12, borderBottom: '1px solid var(--color-border)', flexShrink: 0 }}>
+      <div style={{ padding: 12, borderBottom: '1px solid #252525', flexShrink: 0 }}>
         <div style={{
           height: 36,
           display: 'flex',
           alignItems: 'center',
           gap: 8,
           borderRadius: 10,
-          background: 'var(--color-bg-base)',
-          border: '1px solid var(--color-border-strong)',
+          background: '#202020',
+          border: '1px solid #303030',
           color: 'var(--color-text-tertiary)',
           padding: '0 10px',
         }}>
@@ -3385,12 +3408,12 @@ function FileNavigatorPane({
 
       <div style={{ overflowY: 'auto', padding: '8px 6px 16px', flex: 1 }}>
         {!loaded ? (
-          <div style={{ padding: 16, color: 'var(--color-text-tertiary)', fontSize: 12 }}>Loading files...</div>
+          <div style={{ padding: 16, color: '#777', fontSize: 12 }}>Loading files...</div>
         ) : items.length === 0 ? (
-          <div style={{ padding: 16, color: 'var(--color-text-tertiary)', fontSize: 12 }}>No files found.</div>
+          <div style={{ padding: 16, color: '#777', fontSize: 12 }}>No files found.</div>
         ) : items.map(item => {
           const active = item.kind === 'file' && selectedPath === item.path;
-          const visual = item.kind === 'file' ? getFileIconVisual(item.name) : null;
+          const visual = item.kind === 'file' ? getFileIconifyVisual(item.name) : null;
           return (
             <button
               key={`${item.kind}:${item.path}`}
@@ -3406,8 +3429,8 @@ function FileNavigatorPane({
                 height: 32,
                 border: 'none',
                 borderRadius: 7,
-                background: active ? 'var(--color-bg-active)' : 'transparent',
-                color: item.kind === 'folder' ? 'var(--color-bg-subtle)' : 'var(--color-text-primary)',
+                background: active ? '#242424' : 'transparent',
+                color: item.kind === 'folder' ? 'var(--color-bg-subtle)' : '#e7e7e7',
                 cursor: item.kind === 'file' ? 'pointer' : 'default',
                 textAlign: 'left',
                 padding: `0 8px 0 ${8 + Math.min(item.depth, 4) * 14}px`,
@@ -3415,15 +3438,20 @@ function FileNavigatorPane({
                 fontWeight: item.kind === 'folder' ? 650 : 450,
                 opacity: item.kind === 'folder' ? 0.95 : 1,
               }}
-              onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--color-bg-hover)'; }}
+              onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'rgba(255,255,255,0.045)'; }}
               onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}
             >
               {item.kind === 'folder' ? (
-                <Folder size={15} strokeWidth={1.8} color="var(--color-text-tertiary)" style={{ flexShrink: 0 }} />
-              ) : visual ? (
-                <visual.Icon size={16} strokeWidth={1.6} color={visual.color} style={{ flexShrink: 0 }} />
+                <Folder size={15} strokeWidth={1.8} color="#a3a3a3" style={{ flexShrink: 0 }} />
               ) : (
-                <FileIcon size={16} strokeWidth={1.6} color="var(--color-text-tertiary)" style={{ flexShrink: 0 }} />
+                <img
+                  src={visual?.iconUrl}
+                  alt=""
+                  style={{ width: 16, height: 16, flexShrink: 0 }}
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
               )}
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
             </button>
@@ -3573,24 +3601,6 @@ export default function ToolDetailSidePanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, toolCall?.id, toolCall?.output]);
 
-  // Stable primitive keys for the file-pane loader below: the raw [toolCall, toolData]
-  // object identities churn on every live streaming event, which re-fired this effect
-  // (and its projects.list()/listFiles() IPC) per event during streaming. Depending on
-  // the derived path candidates (joined into one string) preserves behavior: the load
-  // only re-runs when the identity of the selected call or its path-relevant fields change.
-  const filePaneLoaderArgs = toolCall?.args || toolCall?.arguments || {};
-  const filePaneLoaderKey = [
-    toolCall?.id,
-    filePaneLoaderArgs.cwd ?? '',
-    filePaneLoaderArgs.path ?? '',
-    filePaneLoaderArgs.filePath ?? '',
-    filePaneLoaderArgs.file ?? '',
-    filePaneLoaderArgs.TargetFile ?? '',
-    filePaneLoaderArgs.DirectoryPath ?? '',
-    toolData?.cwd ?? '',
-    toolData?.path ?? '',
-  ].join('\u0000');
-
   useEffect(() => {
     if (!isOpen || !showFilePane || filePaneLoaded) return;
     let cancelled = false;
@@ -3659,10 +3669,7 @@ export default function ToolDetailSidePanel({
     })();
 
     return () => { cancelled = true; };
-    // Stable key (see filePaneLoaderKey above) instead of the churning toolCall/toolData
-    // object identities, so streaming events no longer re-run projects.list()/listFiles().
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, showFilePane, filePaneLoaded, filePaneLoaderKey]);
+  }, [isOpen, showFilePane, filePaneLoaded, toolCall, toolData]);
 
   const handleSelectFileFromPane = async (filePath: string) => {
     setSelectedFilePath(filePath);
@@ -3747,8 +3754,8 @@ export default function ToolDetailSidePanel({
 
     const poll = async () => {
       try {
-        if (!mounted || !(window as any).electronAPI?.terminal?.getStatus) return;
-        const res = await (window as any).electronAPI.terminal.getStatus(pollId);
+        if (!mounted || !window.electronAPI?.terminal?.getStatus) return;
+        const res = await window.electronAPI.terminal.getStatus(pollId);
         if (mounted && res && res.success) {
           setToolData((prev: any) => ({
             ...prev,
@@ -3791,7 +3798,7 @@ export default function ToolDetailSidePanel({
     if (error) return (
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, textAlign: 'center' }}>
         <div style={{
-          width: 44, height: 44, borderRadius: T.r12, background: T.redFaint, border: `1px solid var(--color-error)`,
+          width: 44, height: 44, borderRadius: T.r12, background: T.redFaint, border: `1px solid rgba(239,68,68,0.18)`,
           display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16,
         }}>
           <AlertCircle size={18} color={T.red} strokeWidth={1.75} />
@@ -3830,49 +3837,44 @@ export default function ToolDetailSidePanel({
         <>
           {/* Backdrop (mobile only) */}
           <motion.div
-            style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', zIndex: 40 }}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(9,9,9,0.45)', zIndex: 40 }}
             className="lg:hidden"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             onClick={onClose}
           />
 
           {/* Panel */}
-          {/* NR-PERF-04: static-width clipper + transform slide. Animating `width` triggers layout/reflow every frame; the outer flex item holds a fixed width (single layout change on open) while the panel slides in via x-transform, clipped by overflow:hidden. Content is measured once at final width and never scales (no scaleX distortion). */}
-          <div style={isDesktop ? {
-            width: panelWidth, position: 'relative', height: '100%',
-            overflow: 'hidden', flexShrink: 0, boxSizing: 'border-box',
-          } : { display: 'contents' }}>
-            <motion.div
-              ref={panelRef}
-              tabIndex={-1}
-              role="complementary"
-              aria-label="Tool execution details"
-              style={isDesktop ? {
-                width: '100%', height: '100%',
-                background: 'var(--color-bg-base)', borderLeft: isFileEditor ? 'none' : `1px solid ${T.border}`,
-                padding: isFileEditor ? '8px 12px 12px 0' : '0',
-                display: 'flex', flexDirection: 'column',
-                overflow: 'hidden', outline: 'none',
-                boxSizing: 'border-box',
-              } : {
-                position: 'fixed', right: 0, top: 0, bottom: 0,
-                width: 'min(100%, 520px)',
-                background: 'var(--color-bg-base)', borderLeft: isFileEditor ? 'none' : `1px solid ${T.border}`,
-                padding: isFileEditor ? '8px 12px 12px 0' : '0',
-                display: 'flex', flexDirection: 'column',
-                zIndex: 50, overflow: 'hidden', outline: 'none',
-                boxSizing: 'border-box',
-              }}
-              initial={isDesktop ? { x: panelWidth, opacity: 0 } : { x: '100%' }}
-              animate={isDesktop ? { x: 0, opacity: 1 } : { x: 0 }}
-              exit={isDesktop ? { x: panelWidth, opacity: 0 } : { x: '100%' }}
-              transition={{ type: 'spring', stiffness: 340, damping: 36 }}
-            >
-              {/* Inner wrapper prevents layout reflow during animation */}
-              <div style={{
-                width: '100%', height: '100%',
-                display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0,
-              }}>
+          <motion.div
+            ref={panelRef}
+            tabIndex={-1}
+            role="complementary"
+            aria-label="Tool execution details"
+            style={isDesktop ? {
+              position: 'relative', height: '100%',
+              background: 'var(--color-bg-base)', borderLeft: isFileEditor ? 'none' : `1px solid ${T.border}`,
+              padding: isFileEditor ? '8px 12px 12px 0' : '0',
+              display: 'flex', flexDirection: 'column',
+              overflow: 'hidden', outline: 'none', flexShrink: 0,
+              boxSizing: 'border-box',
+            } : {
+              position: 'fixed', right: 0, top: 0, bottom: 0,
+              width: 'min(100%, 520px)',
+              background: 'var(--color-bg-base)', borderLeft: isFileEditor ? 'none' : `1px solid ${T.border}`,
+              padding: isFileEditor ? '8px 12px 12px 0' : '0',
+              display: 'flex', flexDirection: 'column',
+              zIndex: 50, overflow: 'hidden', outline: 'none',
+              boxSizing: 'border-box',
+            }}
+            initial={isDesktop ? { width: 0, opacity: 0 } : { x: '100%' }}
+            animate={isDesktop ? { width: panelWidth, opacity: 1 } : { x: 0 }}
+            exit={isDesktop ? { width: 0, opacity: 0 } : { x: '100%' }}
+            transition={{ type: 'spring', stiffness: 340, damping: 36 }}
+          >
+            {/* Inner wrapper prevents layout reflow during animation */}
+            <div style={{
+              width: '100%', height: '100%',
+              display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0,
+            }}>
               {!isFileEditor && toolCall && (
                 <PanelHeader
                   agentName={toolCall.agentName}
@@ -3912,8 +3914,7 @@ export default function ToolDetailSidePanel({
                 )}
               </motion.div>
             </div>
-            </motion.div>
-          </div>
+          </motion.div>
         </>
       )}
     </AnimatePresence>

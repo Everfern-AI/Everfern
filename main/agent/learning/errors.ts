@@ -14,7 +14,6 @@ import type {
   SecurityContext,
   LearningErrorHandler
 } from './types';
-import { sleep } from '../../lib/sleep';
 
 export class LearningSystemError extends Error implements LearningError {
   public readonly type: 'analysis' | 'storage' | 'processing' | 'security';
@@ -215,7 +214,7 @@ export class ResilientLearningSystem {
         }
 
         // Wait before retry
-        await sleep(delay);
+        await this.sleep(delay);
         delay = Math.min(delay * this.retryPolicy.backoffMultiplier, this.retryPolicy.maxDelayMs);
       }
     }
@@ -245,6 +244,10 @@ export class ResilientLearningSystem {
       undefined,
       true
     );
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }
 

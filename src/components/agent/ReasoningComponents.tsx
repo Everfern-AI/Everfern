@@ -259,31 +259,31 @@ export const ReasoningPane = ({
                     {/* ── Header ── */}
                     <div style={{
                         padding: '16px 20px 14px',
-                        borderBottom: '1px solid var(--color-border-subtle)',
+                        borderBottom: '1px solid #f3f4f6',
                         display: 'flex', alignItems: 'center', gap: 12,
                     }}>
                         {/* Progress icon — updates as tools complete */}
-                        <div style={{ color: isLive ? 'var(--color-navis-icon-color)' : 'var(--color-text-tertiary)', display: 'flex', flexShrink: 0 }}>
+                        <div style={{ color: isLive ? '#6366f1' : 'var(--color-text-tertiary)', display: 'flex', flexShrink: 0 }}>
                             <ProgressStepsIcon done={doneCount} />
                         </div>
 
                         <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>Agent Activity</div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>Agent Activity</div>
                             <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 1, display: 'flex', alignItems: 'center', gap: 5 }}>
                                 {isLive ? (
                                     <>
                                         <motion.span
                                             animate={{ opacity: [1, 0.3, 1] }}
                                             transition={{ repeat: Infinity, duration: 1.4 }}
-                                            style={{ display: 'block', width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--color-success)', flexShrink: 0 }}
+                                            style={{ display: 'block', width: 6, height: 6, borderRadius: '50%', backgroundColor: '#22c55e', flexShrink: 0 }}
                                         />
                                         Processing
                                     </>
                                 ) : (
                                     <>
                                         <svg width="7" height="7" viewBox="0 0 8 8" fill="none">
-                                            <circle cx="4" cy="4" r="3.5" stroke="var(--color-success)" strokeWidth="1" />
-                                            <path d="M2 4L3.5 5.5L6 2.5" stroke="var(--color-success)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                                            <circle cx="4" cy="4" r="3.5" stroke="#22c55e" strokeWidth="1" />
+                                            <path d="M2 4L3.5 5.5L6 2.5" stroke="#22c55e" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
                                         </svg>
                                         Completed
                                     </>
@@ -315,12 +315,12 @@ export const ReasoningPane = ({
                                 <div style={{
                                     display: 'inline-flex', alignItems: 'center', gap: 6,
                                     padding: '4px 10px', borderRadius: 99,
-                                    backgroundColor: 'var(--color-navis-active-bg)',
-                                    border: '1px solid var(--color-navis-active-border)',
+                                    backgroundColor: 'rgba(99,102,241,0.08)',
+                                    border: '1px solid rgba(99,102,241,0.18)',
                                 }}>
-                                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-navis-icon-color)' }}>{intent}</span>
+                                    <span style={{ fontSize: 12, fontWeight: 600, color: '#6366f1' }}>{intent}</span>
                                     {confidence !== undefined && (
-                                        <span style={{ fontSize: 11, color: 'var(--color-navis-active-text)' }}>{Math.round(confidence * 100)}%</span>
+                                        <span style={{ fontSize: 11, color: '#a5b4fc' }}>{Math.round(confidence * 100)}%</span>
                                     )}
                                 </div>
                             </div>
@@ -377,13 +377,13 @@ export const ReasoningPane = ({
                                 <div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                                         <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>Step {progress.current} of {progress.total}</span>
-                                        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-success)' }}>{Math.round((progress.current / progress.total) * 100)}%</span>
+                                        <span style={{ fontSize: 12, fontWeight: 600, color: '#22c55e' }}>{Math.round((progress.current / progress.total) * 100)}%</span>
                                     </div>
                                     <div style={{ width: '100%', height: 3, borderRadius: 99, backgroundColor: 'var(--color-bg-subtle)', overflow: 'hidden' }}>
                                         <motion.div
                                             initial={{ width: 0 }}
                                             animate={{ width: `${(progress.current / progress.total) * 100}%` }}
-                                            style={{ height: '100%', borderRadius: 99, backgroundColor: 'var(--color-success)' }}
+                                            style={{ height: '100%', borderRadius: 99, backgroundColor: '#22c55e' }}
                                         />
                                     </div>
                                 </div>
@@ -418,21 +418,21 @@ export const ReasoningPane = ({
                                                 width: 8, height: 8, borderRadius: '50%',
                                                 backgroundColor:
                                                     tc.status === 'running' ? 'var(--color-bg-subtle)'
-                                                        : tc.status === 'error' ? 'var(--color-error-dim)'
-                                                            : 'var(--color-success-dim)',
+                                                        : tc.status === 'error' ? 'rgba(239,68,68,0.15)'
+                                                            : 'rgba(34,197,94,0.15)',
                                                 border:
-                                                    tc.status === 'running' ? '1.5px solid var(--color-text-placeholder)'
-                                                        : tc.status === 'error' ? '1.5px solid var(--color-error)'
-                                                            : '1.5px solid var(--color-success)',
+                                                    tc.status === 'running' ? '1.5px solid #d1d5db'
+                                                        : tc.status === 'error' ? '1.5px solid rgba(239,68,68,0.4)'
+                                                            : '1.5px solid rgba(34,197,94,0.4)',
                                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                                             }}>
                                                 {tc.status === 'running' ? (
                                                     <Loader size={4} strokeWidth={1.5} className="text-zinc-400" />
                                                 ) : tc.status === 'error' ? (
-                                                    <XMarkIcon width={5} height={5} color="var(--color-error)" strokeWidth={3} />
+                                                    <XMarkIcon width={5} height={5} color="#ef4444" strokeWidth={3} />
                                                 ) : (
                                                     <svg width="5" height="5" viewBox="0 0 8 8" fill="none">
-                                                        <path d="M1.5 4L3 5.5L6.5 2" stroke="var(--color-success)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                                        <path d="M1.5 4L3 5.5L6.5 2" stroke="#22c55e" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                                                     </svg>
                                                 )}
                                             </div>
@@ -465,10 +465,10 @@ export const ReasoningPane = ({
                                         <div>
                                             <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>Completed</div>
                                             {context.completedSteps.map((step, i) => (
-                                                <div key={i} style={{ fontSize: 12, color: 'var(--color-success)', marginBottom: 3, display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                                                <div key={i} style={{ fontSize: 12, color: '#22c55e', marginBottom: 3, display: 'flex', gap: 6, alignItems: 'flex-start' }}>
                                                     <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ flexShrink: 0, marginTop: 2 }}>
-                                                        <circle cx="5" cy="5" r="4.5" fill="var(--color-success-dim)" stroke="var(--color-success-light)" strokeWidth="1" />
-                                                        <path d="M3 5L4.5 6.5L7 3.5" stroke="var(--color-success)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                                                        <circle cx="5" cy="5" r="4.5" fill="rgba(34,197,94,0.1)" stroke="rgba(34,197,94,0.3)" strokeWidth="1" />
+                                                        <path d="M3 5L4.5 6.5L7 3.5" stroke="#22c55e" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
                                                     </svg>
                                                     <span style={{ color: 'var(--color-text-primary)' }}>{step}</span>
                                                 </div>
@@ -480,7 +480,7 @@ export const ReasoningPane = ({
                                             <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>Pending</div>
                                             {context.pendingSteps.map((step, i) => (
                                                 <div key={i} style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginBottom: 3, display: 'flex', gap: 6, alignItems: 'flex-start' }}>
-                                                    <div style={{ width: 10, height: 10, borderRadius: '50%', border: '1.5px solid var(--color-text-placeholder)', flexShrink: 0, marginTop: 2 }} />
+                                                    <div style={{ width: 10, height: 10, borderRadius: '50%', border: '1.5px solid #d1d5db', flexShrink: 0, marginTop: 2 }} />
                                                     <span>{step}</span>
                                                 </div>
                                             ))}

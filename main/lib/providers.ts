@@ -277,9 +277,6 @@ export const PROVIDER_REGISTRY: Record<ProviderType, ProviderMeta> = {
     image: '/images/ai-providers/lm-studio.png',
     requiresApiKey: false,
     isLocal: true,
-    // LP-07: 'local-model' is a sentinel resolved client-side at first send
-    // (AIClient probes listModels() and substitutes the first loaded model id)
-    // — do not persist real ids here.
     defaultModel: 'local-model',
     engine: 'local',
     baseUrl: 'http://localhost:1234/v1',

@@ -275,14 +275,6 @@ async function continueWithSetup(db: sqlite3.Database, resolve: (db: sqlite3.Dat
     // Run persistence schema migrations (idempotent)
     await migratePersistenceSchema();
     console.log('[DB] Database initialization complete');
-
-    // MP-LEAK-12: prune usage_events older than 180 days so the analytics
-    // table stops growing forever. Fire-and-forget — off the init critical path.
-    void dbOps.run(
-      `DELETE FROM usage_events WHERE created_at < datetime('now', '-180 days')`
-    ).catch((retentionErr: any) => {
-      console.warn('[DB] usage_events retention prune failed:', retentionErr?.message || retentionErr);
-    });
     resolve(db);
   } catch (err: any) {
     console.error('[DB] Setup error:', err);
@@ -351,7 +343,7 @@ export async function initMemoryDb(): Promise<sqlite3.Database> {
   });
 }
 
-function getDb(): Promise<sqlite3.Database> {
+export function getDb(): Promise<sqlite3.Database> {
   // Re-entrant fast path: continueWithSetup sets `instance` before running
   // migrations, and those migrations call back into getDb() via dbOps.
   if (instance) return Promise.resolve(instance);
@@ -424,77 +416,31 @@ export const dbOps = {
   }
 };
 
-/**
- * Ensure vector tables exist with the requested embedding dimensions.
- *
- * MP-CORR-07: dims are persisted in the `vector_meta` table so a restart with
- * a changed embedding model reconciles correctly instead of silently keeping
- * stale vec0 tables (which brick inserts with dimension-mismatch errors).
- */
 export async function ensureVectorTable(dimensions: number) {
   if (currentVectorDims === dimensions) {
     return;
   }
 
-  // Read persisted dims (vector_meta is created lazily below on first use).
-  let persistedDims: number | null = null;
-  try {
-    const row = await dbOps.get('SELECT dims FROM vector_meta WHERE id = ?', ['vector_dims']);
-    persistedDims = row && typeof row.dims === 'number' ? row.dims : null;
-  } catch {
-    // Table may not exist yet (fresh DB / sqlite-vec unavailable) — create it.
-    try {
-      await dbOps.exec('CREATE TABLE IF NOT EXISTS vector_meta (id TEXT PRIMARY KEY, dims INTEGER, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)');
-      await dbOps.run('INSERT OR IGNORE INTO vector_meta (id, dims) VALUES (?, ?)', ['vector_dims', dimensions]);
-      persistedDims = dimensions;
-    } catch (err) {
-      console.warn('[DB] Failed to persist vector dims; falling back to module state:', err);
-    }
-  }
-
-  if (persistedDims && persistedDims !== dimensions) {
-    // Model changed since last run — drop and rebuild the vec0 tables at new dims.
-    console.warn(`[DB] Embedding dimension drift detected: persisted=${persistedDims}, requested=${dimensions}. Rebuilding vector tables.`);
+  // Drop existing vector table if dimensions change
+  if (currentVectorDims && currentVectorDims !== dimensions) {
     try {
       await dbOps.exec(`DROP TABLE IF EXISTS memory_chunks_vec`);
       await dbOps.exec(`DROP TABLE IF EXISTS semantic_cache_vec`);
-      await dbOps.exec(`DROP TABLE IF EXISTS chat_messages_vec`);
     } catch (err) {
-      console.warn('Failed to drop vector tables on dimension drift', err);
+      console.warn('Failed to drop vector tables', err);
     }
-    try {
-      await dbOps.run('INSERT OR REPLACE INTO vector_meta (id, dims, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)', ['vector_dims', dimensions]);
-    } catch {
-      // Non-fatal: module-state below still guards this session.
-    }
-  } else if (!persistedDims) {
-    try {
-      await dbOps.run('INSERT OR REPLACE INTO vector_meta (id, dims, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)', ['vector_dims', dimensions]);
-    } catch { /* non-fatal */ }
   }
 
-  try {
-    await dbOps.exec(`
-      CREATE VIRTUAL TABLE IF NOT EXISTS memory_chunks_vec USING vec0(
-        id TEXT PRIMARY KEY,
-        embedding float[${dimensions}]
-      );
-      CREATE VIRTUAL TABLE IF NOT EXISTS semantic_cache_vec USING vec0(
-        id TEXT PRIMARY KEY,
-        embedding float[${dimensions}]
-      );
-      CREATE VIRTUAL TABLE IF NOT EXISTS chat_messages_vec USING vec0(
-        id TEXT PRIMARY KEY,
-        embedding float[${dimensions}]
-      );
-    `);
-  } catch (err: any) {
-    // vec0 requires the sqlite-vec extension; without it, keep going (health-check
-    // reports degraded vector support) but don't update module dims so a later
-    // call with the extension available retries the build.
-    console.warn('[DB] Failed to ensure vector tables (sqlite-vec unavailable?):', err?.message ?? err);
-    return;
-  }
+  await dbOps.exec(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS memory_chunks_vec USING vec0(
+      id TEXT PRIMARY KEY,
+      embedding float[${dimensions}]
+    );
+    CREATE VIRTUAL TABLE IF NOT EXISTS semantic_cache_vec USING vec0(
+      id TEXT PRIMARY KEY,
+      embedding float[${dimensions}]
+    );
+  `);
 
   currentVectorDims = dimensions;
 }

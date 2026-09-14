@@ -6,8 +6,8 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { PeerAgentDebateEngine, VanguardAgent, PhantomAgent, ArbiterAgent } from '../debate-engine';
-import type { DebateContext, DebateResult, ExecutionProposal, CriticalReview } from '../debate-types';
+import { PeerAgentDebateEngine, VanguardAgent, PhantomAgent, ArbiterAgent } from './debate-engine';
+import type { DebateContext, DebateResult, ExecutionProposal, CriticalReview } from './debate-types';
 import type { AIClient } from '../../lib/ai-client';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -16,16 +16,14 @@ import type { AIClient } from '../../lib/ai-client';
 
 class MockAIClient implements Partial<AIClient> {
   async chat(options: any): Promise<any> {
-    // Return mock responses based on system prompt. All three debate prompt
-    // files cross-mention each other's role names, so dispatch on the
-    // distinctive "You are <Role>" lead sentence, not a first-match includes().
+    // Return mock responses based on system prompt
     const systemPrompt = options.messages?.[0]?.content || '';
 
-    if (systemPrompt.includes('You are Vanguard')) {
+    if (systemPrompt.includes('Vanguard')) {
       return this.mockVanguardResponse();
-    } else if (systemPrompt.includes('You are Phantom')) {
+    } else if (systemPrompt.includes('Phantom')) {
       return this.mockPhantomResponse();
-    } else if (systemPrompt.includes('You are Arbiter')) {
+    } else if (systemPrompt.includes('Arbiter')) {
       return this.mockArbiterResponse();
     }
 
@@ -38,7 +36,7 @@ class MockAIClient implements Partial<AIClient> {
         taskSummary: 'Refactor codebase to TypeScript',
         approach: 'Migrate files systematically to TypeScript',
         rationale: 'This approach minimizes risk by handling one file at a time',
-        phases: [
+        steps: [
           {
             sequence: 1,
             description: 'Analyze project structure',
@@ -134,7 +132,7 @@ class MockAIClient implements Partial<AIClient> {
       content: JSON.stringify({
         goNogo: 'proceed-with-caution',
         explanation: 'Plan is sound but requires careful handling of edge cases',
-        approvedPhases: [
+        steps: [
           {
             sequence: 1,
             description: 'Check for circular dependencies',
@@ -233,7 +231,7 @@ describe('VanguardAgent', () => {
 
     expect(proposal).toBeDefined();
     expect(proposal.taskSummary).toBeDefined();
-    expect(proposal.phases.length).toBeGreaterThan(0);
+    expect(proposal.steps.length).toBeGreaterThan(0);
     expect(proposal.proposalId).toMatch(/^proposal-/);
     expect(proposal.timestamp).toBeDefined();
   });
@@ -249,10 +247,14 @@ describe('VanguardAgent', () => {
 
     const proposal = await agent.proposeExecutionPlan(context);
 
-    // Vanguard now proposes abstract strategy phases, not granular steps
-    proposal.phases.forEach(phase => {
-      expect(typeof phase).toBe('string');
-      expect(phase.length).toBeGreaterThan(0);
+    proposal.steps.forEach(step => {
+      expect(step.id).toBeDefined();
+      expect(step.sequence).toBeGreaterThan(0);
+      expect(step.description).toBeDefined();
+      expect(step.action).toBeDefined();
+      expect(step.toolsNeeded).toBeInstanceOf(Array);
+      expect(step.dependencies).toBeInstanceOf(Array);
+      expect(['low', 'medium', 'high']).toContain(step.riskLevel);
     });
   });
 });
@@ -273,7 +275,7 @@ describe('PhantomAgent', () => {
       timestamp: new Date().toISOString(),
       taskSummary: 'Migrate to TypeScript',
       approach: 'Systematic conversion',
-      phases: [],
+      steps: [],
       parallelizable: false,
       estimatedTotalTimeMs: 30000,
       requiredTools: ['readFile', 'writeFile'],
@@ -304,7 +306,7 @@ describe('PhantomAgent', () => {
       timestamp: new Date().toISOString(),
       taskSummary: 'Task',
       approach: 'Approach',
-      phases: [],
+      steps: [],
       parallelizable: false,
       estimatedTotalTimeMs: 30000,
       requiredTools: [],
@@ -346,7 +348,7 @@ describe('ArbiterAgent', () => {
       timestamp: new Date().toISOString(),
       taskSummary: 'Task',
       approach: 'Approach',
-      phases: ['Phase 1: Do the thing'],
+      steps: [{ id: 'step-0', sequence: 1, description: 'Step', action: 'Action', toolsNeeded: [], dependencies: [], riskLevel: 'low' }],
       parallelizable: false,
       estimatedTotalTimeMs: 30000,
       requiredTools: [],
@@ -431,7 +433,7 @@ describe('PeerAgentDebateEngine', () => {
     const result = await engine.debate(context);
 
     // Validate proposal
-    expect(result.proposal.phases).toBeInstanceOf(Array);
+    expect(result.proposal.steps).toBeInstanceOf(Array);
     expect(result.proposal.proposalId).toBeDefined();
 
     // Validate review
@@ -439,7 +441,7 @@ describe('PeerAgentDebateEngine', () => {
     expect(result.review.reviewId).toBeDefined();
 
     // Validate final plan
-    expect(result.finalPlan.approvedPhases).toBeInstanceOf(Array);
+    expect(result.finalPlan.steps).toBeInstanceOf(Array);
     expect(result.finalPlan.goNogo).toBeDefined();
     expect(result.finalPlan.addressedConcerns).toBeInstanceOf(Array);
     expect(result.finalPlan.remainingRisks).toBeInstanceOf(Array);
@@ -514,7 +516,7 @@ describe('Debate Scenarios', () => {
 
     const result = await engine.debate(context);
 
-    expect(result.proposal.phases.length).toBeGreaterThan(0);
+    expect(result.proposal.steps.length).toBeGreaterThan(0);
     expect(result.review.concerns.length).toBeGreaterThan(0);
     expect(result.finalPlan.goNogo).toBeDefined();
 

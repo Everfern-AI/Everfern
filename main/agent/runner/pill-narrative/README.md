@@ -173,14 +173,14 @@ The system validates:
 
 ```typescript
 import {
-  PillNarrativeTimelineManager,
+  createPillNarrativeTimelineManager,
   NarrativeTimeline,
   ToolPill,
   Task,
 } from './pill-narrative';
 
 // Create manager
-const manager = new PillNarrativeTimelineManager();
+const manager = createPillNarrativeTimelineManager();
 
 // Create timeline
 const timeline: NarrativeTimeline = {

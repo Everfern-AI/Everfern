@@ -12,6 +12,11 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { app } from 'electron';
 
+export interface AutoStartConfig {
+  enabled: boolean;
+  minimizeToTray: boolean;
+}
+
 export class AutoStartManager {
   private readonly appName = 'EverFern';
   private readonly platform: string;
@@ -108,6 +113,107 @@ export class AutoStartManager {
     return app.getPath('exe');
   }
 
+  // ── Windows Implementation (Legacy/Custom if needed, but using app.setLoginItemSettings now) ─────────
+
+  private async isEnabledWindows(): Promise<boolean> {
+    // Note: We're now using app.getLoginItemSettings() instead
+    return app.getLoginItemSettings().openAtLogin;
+  }
+
+  private async enableWindows(): Promise<void> {
+    // Note: We're now using app.setLoginItemSettings() instead
+    app.setLoginItemSettings({
+      openAtLogin: true,
+      path: app.getPath('exe'),
+      args: ['--auto-start']
+    });
+  }
+
+  private async disableWindows(): Promise<void> {
+    // Note: We're now using app.setLoginItemSettings() instead
+    app.setLoginItemSettings({
+      openAtLogin: false,
+      path: app.getPath('exe'),
+      args: ['--auto-start']
+    });
+  }
+
+  // ── macOS Implementation ────────────────────────────────────────────
+
+  private async isEnabledMacOS(): Promise<boolean> {
+    const plistPath = this.getMacOSPlistPath();
+    return fs.existsSync(plistPath);
+  }
+
+  private async enableMacOS(): Promise<void> {
+    const plistPath = this.getMacOSPlistPath();
+    const plistDir = path.dirname(plistPath);
+
+    // Ensure LaunchAgents directory exists
+    if (!fs.existsSync(plistDir)) {
+      fs.mkdirSync(plistDir, { recursive: true });
+    }
+
+    const exePath = this.getStartupPath();
+    const plistContent = this.generateMacOSPlist(exePath);
+
+    fs.writeFileSync(plistPath, plistContent, 'utf8');
+
+    // Load the launch agent
+    try {
+      const { execSync } = require('child_process');
+      execSync(`launchctl load "${plistPath}"`, { stdio: 'ignore' });
+    } catch (error) {
+      console.warn('[AutoStart] Failed to load launch agent, but plist was created:', error);
+      // Don't throw - the plist file exists and will work on next login
+    }
+  }
+
+  private async disableMacOS(): Promise<void> {
+    const plistPath = this.getMacOSPlistPath();
+
+    if (fs.existsSync(plistPath)) {
+      // Unload the launch agent
+      try {
+        const { execSync } = require('child_process');
+        execSync(`launchctl unload "${plistPath}"`, { stdio: 'ignore' });
+      } catch (error) {
+        console.warn('[AutoStart] Failed to unload launch agent:', error);
+        // Continue with file removal
+      }
+
+      // Remove the plist file
+      fs.unlinkSync(plistPath);
+    }
+  }
+
+  private getMacOSPlistPath(): string {
+    const homeDir = os.homedir();
+    return path.join(homeDir, 'Library', 'LaunchAgents', `com.everfern.desktop.plist`);
+  }
+
+  private generateMacOSPlist(exePath: string): string {
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.everfern.desktop</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${exePath}</string>
+        <string>--auto-start</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <false/>
+    <key>LaunchOnlyOnce</key>
+    <true/>
+</dict>
+</plist>`;
+  }
+
   // ── Linux Implementation ────────────────────────────────────────────
 
   private async isEnabledLinux(): Promise<boolean> {
@@ -129,11 +235,11 @@ export class AutoStartManager {
 
     fs.writeFileSync(desktopFilePath, desktopContent, 'utf8');
 
-    // MP-XPLAT-05: desktop files are data files, not executables — 0644 per XDG spec
+    // Make the desktop file executable
     try {
-      fs.chmodSync(desktopFilePath, 0o644);
+      fs.chmodSync(desktopFilePath, 0o755);
     } catch (error) {
-      console.warn('[AutoStart] Failed to set desktop file permissions:', error);
+      console.warn('[AutoStart] Failed to make desktop file executable:', error);
     }
   }
 
@@ -151,14 +257,11 @@ export class AutoStartManager {
   }
 
   private generateLinuxDesktopFile(exePath: string): string {
-    // MP-XPLAT-05: TryExec lets desktop environments hide/skip the entry when
-    // the executable is missing (plain absolute path, no quotes per spec).
     return `[Desktop Entry]
 Type=Application
 Name=EverFern
 Comment=EverFern AI Assistant
 Exec="${exePath}" --auto-start
-TryExec=${exePath}
 Icon=everfern
 Terminal=false
 NoDisplay=true
@@ -182,12 +285,10 @@ Categories=Utility;
           location: 'Windows Registry (HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run)'
         };
       case 'darwin':
-        // MP-XPLAT-05: darwin uses app.setLoginItemSettings (backed by
-        // SMAppService on modern macOS) — not a hand-rolled LaunchAgent plist.
         return {
           platform: 'macOS',
-          method: 'Electron app.setLoginItemSettings (SMAppService / Login Items)',
-          location: 'System Settings › General › Login Items (via app.setLoginItemSettings)'
+          method: 'Electron app.setLoginItemSettings (LaunchAgent)',
+          location: 'Login Items / LaunchAgents'
         };
       case 'linux':
         return {

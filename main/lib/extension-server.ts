@@ -455,28 +455,9 @@ class ExtensionBridgeServer extends EventEmitter {
       pending.reject(new Error('Extension bridge server stopped'));
       this.pendingRequests.delete(requestId);
     }
-    // MP-LEAK-04: terminate live sockets first — wss.close() alone only
-    // performs the handshake for connected clients and can leave the
-    // underlying handles open when the server never fully drains.
-    if (this.wss) {
-      for (const client of this.wss.clients) {
-        try {
-          client.terminate();
-        } catch { /* already closed */ }
-      }
-    }
     this.wss?.close();
-    if (this.server) {
-      const srv = this.server;
-      this.server = null;
-      try {
-        // Node ≥18.2: force-close lingering keep-alive sockets so close()
-        // can't hang waiting on them during app quit.
-        (srv as any).closeAllConnections?.();
-        srv.close();
-        srv.unref();
-      } catch { /* never-listening or already closed */ }
-    }
+    this.server?.close();
+    this.server = null;
     this.wss = null;
   }
 }

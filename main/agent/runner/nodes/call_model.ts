@@ -1,6 +1,6 @@
 import * as crypto from 'crypto';
 import { SystemMessage, HumanMessage, AIMessage } from '@langchain/core/messages';
-import { AIClient, AIClientConfig, ChatMessage, ChatRequest, ToolDefinition, getPooledAIClient, releasePooledAIClient } from '../../../lib/ai-client';
+import { AIClient, ChatMessage, ChatRequest, ToolDefinition } from '../../../lib/ai-client';
 import { GraphStateType, StreamEvent } from '../state';
 import { parseTextToToolCalls } from '../../parsers/text-to-tool';
 import { AgentRunner } from '../runner';
@@ -198,10 +198,6 @@ export const createCallModelNode = (
     }
 
     integrator.startNode('call_model', 'Calling AI model');
-    // AI-PERF-01: lease for the pooled VLM client — declared outside the try so
-    // the finally below can release it on success AND failure (agent-runtime.ts
-    // clientToRelease discipline).
-    let visionClientLease: { client: AIClient; config: AIClientConfig } | undefined;
     try {
       runner.telemetry.transition('call_model');
     runner.telemetry.metrics(state.iterations);
@@ -235,17 +231,14 @@ export const createCallModelNode = (
     let updatedMessages: ChatMessage[] | null = null;
     if (needsVisionGrounding && vlm) {
       runner.telemetry.info(` telescope Vision Grounding: Analyzing workspace footprint with ${vlm.model} (${vlm.provider})`);
-      // AI-PERF-01: route through the client pool instead of an unpooled one-off
-      const visionClientConfig: AIClientConfig = {
+      client = new AIClient({
         provider: (vlm.engine === 'cloud' && vlm.provider === 'ollama' ? 'ollama-cloud' :
                    vlm.engine === 'cloud' && vlm.provider === 'everfern' ? 'everfern' :
                    vlm.provider) as any,
         apiKey: vlm.apiKey,
         model: vlm.model,
         baseUrl: vlm.baseUrl
-      };
-      client = getPooledAIClient(visionClientConfig);
-      visionClientLease = { client, config: visionClientConfig };
+      });
       modelUsed = vlm.model;
 
       try {
@@ -284,14 +277,8 @@ export const createCallModelNode = (
     // Get current intent for AI-based decisions
     const currentIntent = state.currentIntent || 'unknown';
 
-    // LP-01: local fast-path — the slim-check pre-call is an extra LLM round
-    // trip before every main call. On local providers, skip it and reuse the
-    // deterministic fallback semantics shouldUseSlimmedPrompt already uses
-    // when no client is available (keyword read-only intents → slim), so no
-    // new behavior shape is introduced. Cloud path is byte-identical below.
-    const shouldSlimPrompt = (runner.client as any)?.isLocal?.()
-      ? (currentIntent === 'conversation' || currentIntent === 'question')
-      : await shouldUseSlimmedPrompt(currentIntent, normalizedMessages, client);
+    // Use AI to determine if system prompt slimming is appropriate
+    const shouldSlimPrompt = await shouldUseSlimmedPrompt(currentIntent, normalizedMessages, client);
 
     if (shouldSlimPrompt && normalizedMessages.length > 0 && normalizedMessages[0].role === 'system') {
       const originalPrompt = normalizedMessages[0].content as string;
@@ -624,12 +611,6 @@ You do not need to use complex execution plans or tools for this interaction.`;
     } catch (error) {
       integrator.failNode('call_model', error instanceof Error ? error.message : String(error));
       throw error;
-    } finally {
-      // AI-PERF-01: return the pooled vision client on success AND failure —
-      // matches the release discipline of agent-runtime.ts (clientToRelease).
-      if (visionClientLease) {
-        releasePooledAIClient(visionClientLease.client, visionClientLease.config);
-      }
     }
   };
 };

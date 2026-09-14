@@ -22,62 +22,35 @@ import type {
 
 // ── Token Estimation Utilities ─────────────────────────────────────────
 
-/**
- * AI-CORR-03: token budgeting uses the chars÷4 heuristic. The `tiktoken`
- * dependency was dropped (zero imports — see BK-DEPS audit table); this
- * heuristic is the documented estimator for all providers/models. For
- * exotic models where ÷4 drifts, the per-message overhead constant below
- * absorbs part of the error; budget telemetry is exposed via assemble()
- * results rather than a second tokenizer dependency.
- *
- * Memoized per message-content identity: assemble() runs on every model
- * turn and re-estimates the same stable history prefix each time.
- */
-const messageTokenMemo = new Map<object, number>();
-
-function estimateSingleMessageTokens(msg: ChatMessage): number {
-  let total = 4; // Per-message overhead (role, formatting tokens)
-
-  if (typeof msg.content === 'string') {
-    total += Math.ceil(msg.content.length / 4);
-  } else if (Array.isArray(msg.content)) {
-    for (const block of msg.content) {
-      if (block && typeof block === 'object') {
-        if ('text' in block && typeof (block as any).text === 'string') {
-          total += Math.ceil((block as any).text.length / 4);
-        } else if ('image_url' in block) {
-          // Rough estimation for images in multi-modal contexts
-          total += 85;
-        }
-      }
-    }
-  }
-
-  // Include tool calls token overhead
-  if (msg.tool_calls && Array.isArray(msg.tool_calls)) {
-    for (const tc of msg.tool_calls as any[]) {
-      const nameStr = tc.name || tc.function?.name || '';
-      const rawArgs = tc.arguments || tc.args || tc.function?.arguments || {};
-      const argsStr = typeof rawArgs === 'string' ? rawArgs : JSON.stringify(rawArgs);
-      total += Math.ceil((nameStr.length + argsStr.length) / 4) + 6;
-    }
-  }
-  return total;
-}
-
 export function estimateMessageTokens(messages: ChatMessage[]): number {
   let total = 0;
   for (const msg of messages) {
-    // AI-CORR-03: memoize per message object identity — history entries are
-    // stable objects across assemble() calls within a session.
-    let cached = messageTokenMemo.get(msg);
-    if (cached === undefined) {
-      cached = estimateSingleMessageTokens(msg);
-      if (messageTokenMemo.size < 5000) {
-        messageTokenMemo.set(msg, cached);
+    total += 4; // Per-message overhead (role, formatting tokens)
+    
+    if (typeof msg.content === 'string') {
+      total += Math.ceil(msg.content.length / 4);
+    } else if (Array.isArray(msg.content)) {
+      for (const block of msg.content) {
+        if (block && typeof block === 'object') {
+          if ('text' in block && typeof (block as any).text === 'string') {
+            total += Math.ceil((block as any).text.length / 4);
+          } else if ('image_url' in block) {
+            // Rough estimation for images in multi-modal contexts
+            total += 85;
+          }
+        }
       }
     }
-    total += cached;
+
+    // Include tool calls token overhead
+    if (msg.tool_calls && Array.isArray(msg.tool_calls)) {
+      for (const tc of msg.tool_calls as any[]) {
+        const nameStr = tc.name || tc.function?.name || '';
+        const rawArgs = tc.arguments || tc.args || tc.function?.arguments || {};
+        const argsStr = typeof rawArgs === 'string' ? rawArgs : JSON.stringify(rawArgs);
+        total += Math.ceil((nameStr.length + argsStr.length) / 4) + 6;
+      }
+    }
   }
   return total;
 }

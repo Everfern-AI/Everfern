@@ -12,9 +12,8 @@ describe('Electron Blank Window Bug Condition', () => {
     const mainContent = fs.readFileSync(mainFilePath, 'utf-8');
 
     // Extract the app.whenReady().then(...) block
-    // MP-LIFE-05 note: tolerate `async` arrow (main.ts whenReady is async).
     const whenReadyMatch = mainContent.match(
-      /app\.whenReady\(\)\.then\(\s*(?:async\s*)?\(\)\s*=>\s*\{[\s\S]*?\n\}\);/
+      /app\.whenReady\(\)\.then\(\(\)\s*=>\s*\{[\s\S]*?\n\}\);/
     );
 
     expect(
@@ -52,9 +51,9 @@ describe('Electron Blank Window Bug Condition', () => {
     );
     expect(mainWindowDeclared, 'mainWindow should be declared as null').toBe(true);
 
-    // Extract the whenReady block (tolerate async arrow — see above).
+    // Extract the whenReady block
     const whenReadyMatch = mainContent.match(
-      /app\.whenReady\(\)\.then\(\s*(?:async\s*)?\(\)\s*=>\s*\{[\s\S]*?\n\}\);/
+      /app\.whenReady\(\)\.then\(\(\)\s*=>\s*\{[\s\S]*?\n\}\);/
     );
 
     if (!whenReadyMatch) return;

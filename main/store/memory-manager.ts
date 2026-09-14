@@ -97,19 +97,9 @@ function isSuccessfulInteraction(userInput: string, response: string): boolean {
 /**
  * Learning Memory Manager - Extends existing memory system with learning capabilities
  */
-class LearningMemoryManager implements LearningMemoryExtension {
+export class LearningMemoryManager implements LearningMemoryExtension {
   private learningData: Map<string, LearnedKnowledge> = new Map();
   private initialized = false;
-  // MP-LEAK-11: debounce + size cap + rotation for learning.json — every
-  // storeLearning used to trigger a full unbounded rewrite of the file.
-  private static readonly MAX_ENTRIES = 5000;
-  private static readonly PERSIST_DEBOUNCE_MS = 2000;
-  private persistTimer: NodeJS.Timeout | null = null;
-  private persistPromise: Promise<void> | null = null;
-  // MP-LEAK-11 guard: only persist once the store has loaded (or after a
-  // real mutation) — otherwise a quit-time flush could clobber learning.json
-  // with `{}` while the async initial load is still in flight (or failed).
-  private dirty = false;
 
   constructor() {
     this.initializeLearningStorage();
@@ -138,69 +128,13 @@ class LearningMemoryManager implements LearningMemoryExtension {
     }
   }
 
-  /**
-   * Enforce the entry cap by evicting the oldest entries (rotation).
-   */
-  private capLearningData(): void {
-    const max = LearningMemoryManager.MAX_ENTRIES;
-    if (this.learningData.size <= max) return;
-    const excess = this.learningData.size - max;
-    let evicted = 0;
-    for (const id of this.learningData.keys()) {
-      if (evicted >= excess) break;
-      this.learningData.delete(id);
-      evicted++;
-    }
-  }
-
-  private persistLearningDataNow(): Promise<void> {
-    // Reuse an in-flight write so concurrent flushes don't stack.
-    if (this.persistPromise) return this.persistPromise;
-    // Never write an unloaded store over the on-disk file — the only case
-    // where a not-yet-loaded store may legitimately hold data is after
-    // mutations made through store/clear APIs, which set `dirty`.
-    if (!this.initialized && !this.dirty) return Promise.resolve();
-    this.persistPromise = (async () => {
-      try {
-        const data = Object.fromEntries(this.learningData);
-        fs.writeFileSync(LEARNING_DB_PATH, JSON.stringify(data, null, 2));
-        this.dirty = false;
-      } catch (error) {
-        console.error('[Learning Memory] ❌ Failed to persist learning data:', error);
-      } finally {
-        this.persistPromise = null;
-      }
-    })();
-    return this.persistPromise;
-  }
-
-  /**
-   * Debounced persist: coalesces bursts of store/delete calls into one write.
-   */
-  private schedulePersist(): void {
-    if (this.persistTimer) clearTimeout(this.persistTimer);
-    this.persistTimer = setTimeout(() => {
-      this.persistTimer = null;
-      void this.persistLearningDataNow();
-    }, LearningMemoryManager.PERSIST_DEBOUNCE_MS);
-    this.persistTimer.unref?.();
-  }
-
-  /**
-   * Flush pending debounced writes immediately (call on app quit).
-   */
-  async flush(): Promise<void> {
-    if (this.persistTimer) {
-      clearTimeout(this.persistTimer);
-      this.persistTimer = null;
-    }
-    await this.persistLearningDataNow();
-  }
-
   private async persistLearningData(): Promise<void> {
-    this.capLearningData();
-    this.dirty = true;
-    await this.persistLearningDataNow();
+    try {
+      const data = Object.fromEntries(this.learningData);
+      fs.writeFileSync(LEARNING_DB_PATH, JSON.stringify(data, null, 2));
+    } catch (error) {
+      console.error('[Learning Memory] ❌ Failed to persist learning data:', error);
+    }
   }
 
   async storeLearning(knowledge: LearnedKnowledge): Promise<void> {
@@ -209,9 +143,7 @@ class LearningMemoryManager implements LearningMemoryExtension {
     }
 
     this.learningData.set(knowledge.id, knowledge);
-    this.capLearningData();
-    this.dirty = true;
-    this.schedulePersist();
+    await this.persistLearningData();
     console.log(`[Learning Memory] 📚 Stored learning: ${knowledge.type} - ${knowledge.content.substring(0, 50)}...`);
   }
 
@@ -406,10 +338,9 @@ Respond with ONLY new memory entries in Markdown bullet format, or "NO_NEW_MEMOR
       const entry = `\n\n### ${timestamp}\n${content}`;
 
       const dir = path.dirname(MEMORY_FILE_PATH);
-      if (!fs.existsSync(dir)) await fs.promises.mkdir(dir, { recursive: true });
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-      // XI.E: async append — a sync appendFileSync on the main process blocks the event loop
-      await fs.promises.appendFile(MEMORY_FILE_PATH, entry);
+      fs.appendFileSync(MEMORY_FILE_PATH, entry);
       console.log('[Memory] 🧠 User preference/project fact logged to MEMORY.md');
     } catch (err) {
       console.error('[Memory] ❌ Reflection failed:', err);

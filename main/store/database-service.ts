@@ -15,7 +15,8 @@ import type {
   HealthCheckResult,
   DatabaseOperationResult,
 } from './chat-memory-types';
-import { dbOps } from '../lib/db';
+import { dbOps, getDb } from '../lib/db';
+import type sqlite3 from 'sqlite3';
 
 /**
  * Configuration for retry logic
@@ -52,37 +53,12 @@ export class DatabaseService {
 
   private failedOperationQueue: Map<string, QueuedOperation> = new Map();
   private inTransaction = false;
-  /**
-   * MP-CORR-17: cap the retry queue so persistently-failing operations can't
-   * grow it forever (each entry pins closures). Oldest entries are dropped.
-   */
-  private static readonly MAX_QUEUED_OPERATIONS = 100;
-  private drainTimer: ReturnType<typeof setInterval> | null = null;
-  private draining = false;
+  private transactionConnection: sqlite3.Database | null = null;
 
   constructor(config?: Partial<RetryConfig>) {
     if (config) {
       this.retryConfig = { ...this.retryConfig, ...config };
     }
-    // MP-CORR-17: drain the failed-op queue periodically so queued writes
-    // actually retry instead of accumulating forever with nobody calling
-    // retryQueuedOperations() in production.
-    this.drainTimer = setInterval(() => {
-      this.retryQueuedOperations().catch(() => { /* logged inside */ });
-    }, 60_000);
-    // Interval must not hold the event loop open at quit time.
-    this.drainTimer.unref?.();
-  }
-
-  /**
-   * MP-CORR-17: stop the background drain (used on shutdown / in tests).
-   */
-  dispose(): void {
-    if (this.drainTimer) {
-      clearInterval(this.drainTimer);
-      this.drainTimer = null;
-    }
-    this.failedOperationQueue.clear();
   }
 
   /**
@@ -171,15 +147,6 @@ export class DatabaseService {
       error,
     };
 
-    // MP-CORR-17: bounded queue — drop the oldest entry when at capacity.
-    if (this.failedOperationQueue.size >= DatabaseService.MAX_QUEUED_OPERATIONS) {
-      const oldestKey = this.failedOperationQueue.keys().next().value;
-      if (oldestKey !== undefined) {
-        console.warn(`[DatabaseService] Retry queue full; dropping oldest operation ${oldestKey}`);
-        this.failedOperationQueue.delete(oldestKey);
-      }
-    }
-
     this.failedOperationQueue.set(id, queuedOp);
     console.log(
       `[DatabaseService] Queued operation ${id} for later retry at ${new Date(queuedOp.nextRetryTime).toISOString()}`
@@ -233,11 +200,6 @@ export class DatabaseService {
    *
    * **Validates: Requirement 10.4 - Transaction Atomicity**
    *
-   * MP-CORR-17: the previously-stored `transactionConnection` was never used —
-   * BEGIN/COMMIT always ran over the shared singleton connection. The dead
-   * field is removed; callers needing connection isolation must serialize via
-   * the history save mutex or their own connection.
-   *
    * @throws Error if a transaction is already in progress
    */
   async beginTransaction(): Promise<void> {
@@ -246,6 +208,7 @@ export class DatabaseService {
     }
 
     try {
+      this.transactionConnection = await getDb();
       await this.executeWithRetry(
         () => dbOps.run('BEGIN TRANSACTION'),
         'BEGIN TRANSACTION'
@@ -253,6 +216,7 @@ export class DatabaseService {
       this.inTransaction = true;
       console.log('[DatabaseService] Transaction started');
     } catch (error) {
+      this.transactionConnection = null;
       throw error;
     }
   }
@@ -275,6 +239,7 @@ export class DatabaseService {
         'COMMIT TRANSACTION'
       );
       this.inTransaction = false;
+      this.transactionConnection = null;
       console.log('[DatabaseService] Transaction committed');
     } catch (error) {
       // Attempt rollback on commit failure
@@ -307,6 +272,7 @@ export class DatabaseService {
       console.log('[DatabaseService] Transaction rolled back');
     } finally {
       this.inTransaction = false;
+      this.transactionConnection = null;
     }
   }
 

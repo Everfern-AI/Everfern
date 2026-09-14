@@ -22,7 +22,7 @@ import {
   ElementPrefetcher,
   ParallelProcessingCoordinator,
 } from '../parallel-processing';
-import { invalidateElementSnapshotCache, getCacheStats } from '../element-capture';
+import { clearElementCache, getCacheStats } from '../element-capture';
 
 describe('Navis Performance Optimization - Phase 1', () => {
   // ─────────────────────────────────────────────────────────────────────────
@@ -32,7 +32,7 @@ describe('Navis Performance Optimization - Phase 1', () => {
   describe('1.1 Element Capture Performance', () => {
     describe('1.1.2 Element snapshot caching with 500ms TTL (Req 1.4)', () => {
       beforeEach(() => {
-        invalidateElementSnapshotCache();
+        clearElementCache();
       });
 
       it('should maintain cache statistics', () => {

@@ -82,8 +82,7 @@ describe('bashTool integration', () => {
     expect(toolNames).toContain('ls');
     expect(toolNames).toContain('executePwsh');
 
-    // Verify we have exactly 10 tools (6 file ops + 1 bash + multi-file edit
-    // + multi-replace + task_complete)
-    expect(tools).toHaveLength(10);
+    // Verify we have exactly 7 tools (6 file ops + 1 bash)
+    expect(tools).toHaveLength(7);
   });
 });

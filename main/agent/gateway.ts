@@ -2,10 +2,10 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { AgentRunner } from './runner/runner';
 import { getPooledAIClient } from '../lib/ai-client';
 import { acpManager } from '../acp/manager';
-import { globalAbortManager, getConversationAbortManager } from './runner/abort-manager';
+import { globalAbortManager } from './runner/abort-manager';
 import * as crypto from 'crypto';
 
-class AgentGatewayServer {
+export class AgentGatewayServer {
   private wss: WebSocketServer | null = null;
   private port: number;
 
@@ -30,14 +30,7 @@ class AgentGatewayServer {
           if (type === 'run_task') {
             await this.handleRunTask(ws, requestId, data);
           } else if (type === 'abort_task') {
-            // MP-CORR-13: scope the abort to the task's conversation when the
-            // payload carries one; only abort globally for legacy callers.
-            const convId = (data as any)?.conversationId;
-            if (convId) {
-              getConversationAbortManager(convId).setAborted();
-            } else {
-              globalAbortManager.setAborted();
-            }
+            globalAbortManager.setAborted();
             ws.send(JSON.stringify({ type: 'task_aborted', requestId }));
           }
         } catch (err: any) {

@@ -8,8 +8,11 @@ import { Page, Browser } from 'playwright';
 import { chromium } from 'playwright';
 import {
   captureInteractiveElements,
-  captureHtmlDomParserContext,
-  invalidateElementSnapshotCache,
+  captureFastSnapshot,
+  parseRefs,
+  parseRefsOptimized,
+  parseHtmlDomParserContext,
+  clearElementCache,
   getCacheStats,
   AriaSnapshotResult,
 } from '../element-capture';
@@ -21,20 +24,18 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
   beforeEach(async () => {
     browser = await chromium.launch({ headless: true });
     page = await browser.newPage();
-    invalidateElementSnapshotCache();
+    clearElementCache();
   });
 
   afterEach(async () => {
     if (page) await page.close();
     if (browser) await browser.close();
-    invalidateElementSnapshotCache();
+    clearElementCache();
   });
 
   describe('html-dom-parser context', () => {
-    test('should extract page structure from raw HTML', async () => {
-      // parseHtmlDomParserContext is private; exercise it via the public
-      // page-based wrapper captureHtmlDomParserContext.
-      await page.setContent(`
+    test('should extract page structure from raw HTML', () => {
+      const context = parseHtmlDomParserContext(`
         <html>
           <head><title>Booking Flow</title></head>
           <body>
@@ -55,15 +56,12 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
         </html>
       `);
 
-      const context = await captureHtmlDomParserContext(page);
-
-      expect(context).not.toBeNull();
-      expect(context!.parser).toBe('html-dom-parser');
-      expect(context!.title).toBe('Booking Flow');
-      expect(context!.headings.some(item => item.text === 'Find a stay')).toBe(true);
-      expect(context!.forms.some(item => item.action === '/search')).toBe(true);
-      expect(context!.controls.some(item => item.placeholder === 'City or address')).toBe(true);
-      expect(context!.links.some(item => item.href === '/book')).toBe(true);
+      expect(context.parser).toBe('html-dom-parser');
+      expect(context.title).toBe('Booking Flow');
+      expect(context.headings.some(item => item.text === 'Find a stay')).toBe(true);
+      expect(context.forms.some(item => item.action === '/search')).toBe(true);
+      expect(context.controls.some(item => item.placeholder === 'City or address')).toBe(true);
+      expect(context.links.some(item => item.href === '/book')).toBe(true);
     });
   });
 
@@ -79,7 +77,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
         </html>
       `);
 
-      const result = await captureInteractiveElements(page);
+      const result = await captureFastSnapshot(page);
       expect(result).not.toBeNull();
       expect(result!.elementCount).toBeGreaterThan(0);
       expect(result!.raw).toContain('Button 1');
@@ -100,7 +98,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
         </html>
       `);
 
-      const result = await captureInteractiveElements(page);
+      const result = await captureFastSnapshot(page);
       expect(result).not.toBeNull();
       expect(result!.raw).toContain('Visible Button');
       // Far button should not be captured (2000px > 720 + 500 buffer)
@@ -119,7 +117,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
         </html>
       `);
 
-      const result = await captureInteractiveElements(page);
+      const result = await captureFastSnapshot(page);
       expect(result).not.toBeNull();
       // Element at 1000px should be within buffer (720 + 500 = 1220)
       expect(result!.raw).toContain('In Buffer');
@@ -138,7 +136,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
         </html>
       `);
 
-      const result = await captureInteractiveElements(page);
+      const result = await captureFastSnapshot(page);
       expect(result).not.toBeNull();
       expect(result!.raw).toContain('Visible');
       // Element at -1000px should not be captured (outside -500 buffer)
@@ -158,7 +156,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
         </html>
       `);
 
-      const result = await captureInteractiveElements(page);
+      const result = await captureFastSnapshot(page);
       expect(result).not.toBeNull();
       expect(result!.raw).toContain('Visible');
       // Element at -300px should be within buffer (-500 to 0)
@@ -177,7 +175,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
         </html>
       `);
 
-      const result = await captureInteractiveElements(page);
+      const result = await captureFastSnapshot(page);
       expect(result).not.toBeNull();
       expect(result!.raw).toContain('Visible');
       // Element at 3000px right should not be captured (outside 1280 + 200 buffer)
@@ -196,7 +194,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
         </html>
       `);
 
-      const result = await captureInteractiveElements(page);
+      const result = await captureFastSnapshot(page);
       expect(result).not.toBeNull();
       expect(result!.raw).toContain('Visible');
       // Element at 1400px should be within buffer (1280 + 200 = 1480)
@@ -232,7 +230,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
     });
 
     test('should invalidate cache on navigation', async () => {
-      invalidateElementSnapshotCache();
+      clearElementCache();
 
       await page.setContent(`
         <html>
@@ -246,7 +244,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
       expect(result1.raw).toContain('Button 1');
 
       // Clear cache to simulate navigation
-      invalidateElementSnapshotCache();
+      clearElementCache();
 
       // Navigate to new content
       await page.setContent(`
@@ -270,7 +268,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
         </html>
       `);
 
-      invalidateElementSnapshotCache();
+      clearElementCache();
       let stats = getCacheStats();
       expect(stats.size).toBe(0);
 
@@ -278,13 +276,13 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
       stats = getCacheStats();
       expect(stats.size).toBeGreaterThan(0);
 
-      invalidateElementSnapshotCache();
+      clearElementCache();
       stats = getCacheStats();
       expect(stats.size).toBe(0);
     });
 
     test('should return cached snapshot within TTL window', async () => {
-      invalidateElementSnapshotCache();
+      clearElementCache();
 
       await page.setContent(`
         <html>
@@ -313,7 +311,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
     });
 
     test('should recapture after TTL expires', async () => {
-      invalidateElementSnapshotCache();
+      clearElementCache();
 
       await page.setContent(`
         <html>
@@ -345,7 +343,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
     });
 
     test('should invalidate cache when URL changes', async () => {
-      invalidateElementSnapshotCache();
+      clearElementCache();
 
       // First page
       await page.setContent(`
@@ -367,7 +365,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
       expect(result1b.raw).toBe(result1.raw); // Same reference (cached)
 
       // Clear cache to simulate navigation
-      invalidateElementSnapshotCache();
+      clearElementCache();
 
       // Modify content (simulating navigation)
       await page.setContent(`
@@ -388,7 +386,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
     });
 
     test('should provide accurate cache age in statistics', async () => {
-      invalidateElementSnapshotCache();
+      clearElementCache();
 
       await page.setContent(`
         <html>
@@ -424,7 +422,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
       await page.setContent(html);
 
       const startTime = Date.now();
-      const result = await captureInteractiveElements(page);
+      const result = await captureFastSnapshot(page);
       const duration = Date.now() - startTime;
 
       expect(result).not.toBeNull();
@@ -443,7 +441,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
       await page.setContent(html);
 
       const startTime = Date.now();
-      const result = await captureInteractiveElements(page);
+      const result = await captureFastSnapshot(page);
       const duration = Date.now() - startTime;
 
       expect(result).not.toBeNull();
@@ -463,7 +461,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
       await page.setContent(html);
 
       const startTime = Date.now();
-      const result = await captureInteractiveElements(page);
+      const result = await captureFastSnapshot(page);
       const duration = Date.now() - startTime;
 
       expect(result).not.toBeNull();
@@ -471,8 +469,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
       expect(duration).toBeLessThan(250);
     });
 
-    // parseRefsOptimized is private; no public API accepts a raw snapshot string.
-    it.skip('should parse refs efficiently for <100 elements', async () => {
+    test('should parse refs efficiently for <100 elements', async () => {
       const snapshot = `- button "Button 1" [ref=e1]
 - button "Button 2" [ref=e2]
 - button "Button 3" [ref=e3]`;
@@ -485,8 +482,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
       expect(duration).toBeLessThan(5); // Should be very fast
     });
 
-    // parseRefsOptimized is private; no public API accepts a raw snapshot string.
-    it.skip('should parse refs efficiently for large snapshots', async () => {
+    test('should parse refs efficiently for large snapshots', async () => {
       // Create a large snapshot
       const lines: string[] = [];
       for (let i = 1; i <= 500; i++) {
@@ -504,55 +500,41 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
   });
 
   describe('Ref Parsing and Extraction', () => {
-    test('should parse refs from snapshot correctly', async () => {
-      await page.setContent(`
-        <html>
-          <body>
-            <button>Click me</button>
-            <input type="text" aria-label="Search" />
-            <a href="/">Home</a>
-          </body>
-        </html>
-      `);
+    test('should parse refs from snapshot correctly', () => {
+      const snapshot = `
+- button "Click me" [ref=e1]
+- input "Search" [ref=e2]
+- link "Home" [ref=e3]
+      `;
 
-      const result = await captureInteractiveElements(page);
-      expect(result.refs.size).toBeGreaterThanOrEqual(3);
-      expect(result.refs.size).toBe(result.elementCount);
-      for (const ref of result.refs.keys()) {
-        expect(ref).toMatch(/^e\d+$/);
-      }
+      const refs = parseRefs(snapshot);
+      expect(refs.size).toBe(3);
+      expect(refs.has('e1')).toBe(true);
+      expect(refs.has('e2')).toBe(true);
+      expect(refs.has('e3')).toBe(true);
     });
 
-    test('should extract role and name from refs', async () => {
-      await page.setContent(`
-        <html>
-          <body>
-            <button>Submit</button>
-            <input type="text" aria-label="Email" />
-          </body>
-        </html>
-      `);
+    test('should extract role and name from refs', () => {
+      const snapshot = `
+- button "Submit" [ref=e1]
+- textbox "Email" [ref=e2]
+      `;
 
-      const result = await captureInteractiveElements(page);
-      const entries = Array.from(result.refs.values());
-      expect(entries.some(item => item.role === 'button' && item.name === 'Submit')).toBe(true);
-      expect(entries.some(item => item.name === 'Email')).toBe(true);
+      const refs = parseRefs(snapshot);
+      expect(refs.get('e1')).toEqual({ role: 'button', name: 'Submit' });
+      expect(refs.get('e2')).toEqual({ role: 'textbox', name: 'Email' });
     });
 
-    test('should handle refs with special characters in names', async () => {
-      await page.setContent(`
-        <html>
-          <body>
-            <button>Click & Submit</button>
-            <a href="/faq">FAQ?</a>
-          </body>
-        </html>
-      `);
+    test('should handle refs with special characters in names', () => {
+      const snapshot = `
+- button "Click & Submit" [ref=e1]
+- link "FAQ?" [ref=e2]
+      `;
 
-      const result = await captureInteractiveElements(page);
-      const entries = Array.from(result.refs.values());
-      expect(entries.some(item => item.name?.includes('Click'))).toBe(true);
-      expect(entries.some(item => item.name?.includes('FAQ'))).toBe(true);
+      const refs = parseRefs(snapshot);
+      expect(refs.size).toBe(2);
+      expect(refs.get('e1')?.name).toContain('Click');
+      expect(refs.get('e2')?.name).toContain('FAQ');
     });
   });
 
@@ -566,7 +548,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
         </html>
       `);
 
-      const result = await captureInteractiveElements(page);
+      const result = await captureFastSnapshot(page);
       expect(result).not.toBeNull();
       expect(result!.raw).toContain('button');
       expect(result!.raw).toContain('Click me');
@@ -581,7 +563,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
         </html>
       `);
 
-      const result = await captureInteractiveElements(page);
+      const result = await captureFastSnapshot(page);
       expect(result).not.toBeNull();
       expect(result!.raw).toContain('Home');
     });
@@ -595,7 +577,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
         </html>
       `);
 
-      const result = await captureInteractiveElements(page);
+      const result = await captureFastSnapshot(page);
       expect(result).not.toBeNull();
       expect(result!.raw).toContain('input');
     });
@@ -612,7 +594,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
         </html>
       `);
 
-      const result = await captureInteractiveElements(page);
+      const result = await captureFastSnapshot(page);
       expect(result).not.toBeNull();
       expect(result!.raw).toContain('select');
     });
@@ -626,7 +608,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
         </html>
       `);
 
-      const result = await captureInteractiveElements(page);
+      const result = await captureFastSnapshot(page);
       expect(result).not.toBeNull();
       expect(result!.raw).toContain('Custom Button');
     });
@@ -640,7 +622,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
         </html>
       `);
 
-      const result = await captureInteractiveElements(page);
+      const result = await captureFastSnapshot(page);
       // Empty pages may return null or a minimal result
       if (result) {
         expect(result.elementCount).toBe(0);
@@ -656,7 +638,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
         </html>
       `);
 
-      const result = await captureInteractiveElements(page);
+      const result = await captureFastSnapshot(page);
       // Pages with only text may return null or a minimal result
       if (result) {
         expect(result.raw).toBeDefined();
@@ -673,7 +655,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
         </html>
       `);
 
-      const result = await captureInteractiveElements(page);
+      const result = await captureFastSnapshot(page);
       expect(result).not.toBeNull();
       expect(result!.raw).toContain('Visible Button');
     });
@@ -688,7 +670,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
         </html>
       `);
 
-      const result = await captureInteractiveElements(page);
+      const result = await captureFastSnapshot(page);
       expect(result).not.toBeNull();
       // Should truncate to 100 chars
       expect(result!.raw.length).toBeLessThan(300);
@@ -703,7 +685,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
         </html>
       `);
 
-      const result = await captureInteractiveElements(page);
+      const result = await captureFastSnapshot(page);
       expect(result).not.toBeNull();
       expect(result!.raw).toContain('Close dialog');
     });
@@ -723,7 +705,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
         </html>
       `);
 
-      const result = await captureInteractiveElements(page);
+      const result = await captureFastSnapshot(page);
       expect(result).not.toBeNull();
       expect(result!.raw).toContain('Top');
     });
@@ -743,7 +725,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
       // Scroll down
       await page.evaluate(() => window.scrollBy(0, 500));
 
-      const result = await captureInteractiveElements(page);
+      const result = await captureFastSnapshot(page);
       expect(result).not.toBeNull();
     });
   });
@@ -761,9 +743,9 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
 
       const timings: number[] = [];
       for (let i = 0; i < 5; i++) {
-        invalidateElementSnapshotCache();
+        clearElementCache();
         const startTime = Date.now();
-        const result = await captureInteractiveElements(page);
+        const result = await captureFastSnapshot(page);
         const duration = Date.now() - startTime;
         timings.push(duration);
         expect(result).not.toBeNull();
@@ -786,9 +768,9 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
 
       const timings: number[] = [];
       for (let i = 0; i < 3; i++) {
-        invalidateElementSnapshotCache();
+        clearElementCache();
         const startTime = Date.now();
-        const result = await captureInteractiveElements(page);
+        const result = await captureFastSnapshot(page);
         const duration = Date.now() - startTime;
         timings.push(duration);
         expect(result).not.toBeNull();
@@ -811,9 +793,9 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
 
       const timings: number[] = [];
       for (let i = 0; i < 3; i++) {
-        invalidateElementSnapshotCache();
+        clearElementCache();
         const startTime = Date.now();
-        const result = await captureInteractiveElements(page);
+        const result = await captureFastSnapshot(page);
         const duration = Date.now() - startTime;
         timings.push(duration);
         expect(result).not.toBeNull();
@@ -824,8 +806,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
       expect(Math.max(...timings)).toBeLessThan(200);
     });
 
-    // parseRefs and parseRefsOptimized are both private.
-    it.skip('should verify parseRefsOptimized is faster than parseRefs', async () => {
+    test('should verify parseRefsOptimized is faster than parseRefs', async () => {
       // Create a large snapshot with 500 elements
       const lines: string[] = [];
       for (let i = 1; i <= 500; i++) {
@@ -861,7 +842,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
       html += '</body></html>';
 
       await page.setContent(html);
-      invalidateElementSnapshotCache();
+      clearElementCache();
 
       const startTime = Date.now();
       const result = await captureInteractiveElements(page);
@@ -886,7 +867,7 @@ describe('Element Capture - Viewport-Aware Filtering', () => {
         </html>
       `);
 
-      const result = await captureInteractiveElements(page);
+      const result = await captureFastSnapshot(page);
       expect(result).not.toBeNull();
       expect(result!.raw).toContain('cart');
     });

@@ -5,6 +5,18 @@
  * the Discord.js library for bot functionality.
  */
 
+import {
+  Client,
+  Events,
+  GatewayIntentBits,
+  Message,
+  TextChannel,
+  DMChannel,
+  ChannelType,
+  AttachmentBuilder,
+  ActivityType,
+  Partials
+} from 'discord.js';
 import { promises as fs } from 'fs';
 import {
   MessagePlatform,
@@ -17,21 +29,6 @@ import {
   PlatformAuthError,
   PlatformRateLimitError
 } from './platform-interface';
-
-type DiscordJsModule = typeof import('discord.js');
-type Client = DiscordJsModule['Client']['prototype'];
-type Message = DiscordJsModule['Message']['prototype'];
-type TextChannel = DiscordJsModule['TextChannel']['prototype'];
-type DMChannel = DiscordJsModule['DMChannel']['prototype'];
-type DiscordChannelType = DiscordJsModule['ChannelType'][keyof DiscordJsModule['ChannelType']];
-
-let discordJs: DiscordJsModule | null = null;
-function getDiscordJs(): DiscordJsModule {
-  if (!discordJs) {
-    discordJs = require('discord.js') as DiscordJsModule;
-  }
-  return discordJs;
-}
 
 /**
  * Discord-specific configuration
@@ -87,8 +84,6 @@ export class DiscordPlatform extends MessagePlatform {
     }
 
     try {
-      const { Client, Events, GatewayIntentBits, Partials, ActivityType } = getDiscordJs();
-
       // Create Discord client with necessary intents and partials for DM support
       this.client = new Client({
         intents: [
@@ -216,7 +211,6 @@ export class DiscordPlatform extends MessagePlatform {
     this.validateMessage(text, options);
 
     try {
-      const { AttachmentBuilder } = getDiscordJs();
       const channel = await this.client.channels.fetch(options.chatId);
 
       if (!channel || (!channel.isTextBased())) {
@@ -483,8 +477,6 @@ export class DiscordPlatform extends MessagePlatform {
   private setupEventHandlers(): void {
     if (!this.client) return;
 
-    const { Events, GatewayIntentBits, ChannelType } = getDiscordJs();
-
     this.client.on(Events.ClientReady, () => {
       console.log(`[Discord] ✅ Bot logged in as ${this.client!.user?.tag}`);
       console.log(`[Discord] Bot ID: ${this.client!.user?.id}`);
@@ -684,7 +676,6 @@ export class DiscordPlatform extends MessagePlatform {
    */
   private async handleIncomingMessage(message: Message): Promise<void> {
     console.log(`[Discord] 📨 handleIncomingMessage called`);
-    const { ChannelType } = getDiscordJs();
 
     // Check if we've already processed this message (to avoid duplicates from fallback)
     if (this.processedMessageIds.has(message.id)) {
@@ -875,7 +866,6 @@ export class DiscordPlatform extends MessagePlatform {
    * Get channel display name
    */
   private getChannelDisplayName(message: Message): string {
-    const { ChannelType } = getDiscordJs();
     if (message.channel.type === ChannelType.DM) {
       return `DM with ${message.author.username}`;
     }
@@ -891,8 +881,7 @@ export class DiscordPlatform extends MessagePlatform {
   /**
    * Map Discord channel type to platform-agnostic type
    */
-  private mapChannelType(channelType: DiscordChannelType): 'private' | 'group' | 'channel' {
-    const { ChannelType } = getDiscordJs();
+  private mapChannelType(channelType: ChannelType): 'private' | 'group' | 'channel' {
     switch (channelType) {
       case ChannelType.DM:
         return 'private';

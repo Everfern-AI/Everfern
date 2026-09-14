@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useTheme } from '@/components/common/ThemeProvider';
+import { useTheme } from '@/components/ThemeProvider';
 
 interface FileArtifactProps {
     path: string;

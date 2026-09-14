@@ -3,10 +3,10 @@ import { Figtree, JetBrains_Mono, Fira_Code, Geist } from "next/font/google";
 import localFont from "next/font/local";
 import "./globals.css";
 import { cn } from "@/lib/utils";
-import { ThemeProvider } from "@/components/common/ThemeProvider";
-import UpdateNotification from "@/components/common/UpdateNotification";
-import { AnnouncementPopup } from "@/components/common/AnnouncementPopup";
-import { MaterialSymbolsLoader } from "@/components/common/MaterialSymbolsLoader";
+import { ThemeProvider } from "@/components/ThemeProvider";
+import UpdateNotification from "@/components/UpdateNotification";
+import { AnnouncementPopup } from "@/components/AnnouncementPopup";
+import { MaterialSymbolsLoader } from "@/components/MaterialSymbolsLoader";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -61,6 +61,7 @@ export default function RootLayout({
       lang="en"
       suppressHydrationWarning
       className={cn(
+        "font-body",
         "h-full",
         "antialiased",
         loretta.variable,
@@ -87,7 +88,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body suppressHydrationWarning className="min-h-full flex flex-col bg-background">
+      <body suppressHydrationWarning className="min-h-full flex flex-col bg-background text-on-surface">
         <ThemeProvider>
           {children}
           <MaterialSymbolsLoader />

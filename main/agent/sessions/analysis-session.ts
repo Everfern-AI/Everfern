@@ -41,7 +41,7 @@ export interface ExecutionRecord {
  * Cached computation result
  * Requirements: 10.4
  */
-interface CachedResult {
+export interface CachedResult {
     key: string;
     value: any;
     computedAt: number;
@@ -52,7 +52,7 @@ interface CachedResult {
 /**
  * Analysis session maintaining state across multiple analysis steps
  */
-interface AnalysisSession {
+export interface AnalysisSession {
     id: string;
     conversationId: string;
     createdAt: number;
@@ -457,10 +457,6 @@ export class AnalysisSessionManagerImpl implements AnalysisSessionManager {
  */
 let analysisSessionManagerInstance: AnalysisSessionManagerImpl | null = null;
 
-// AG-MEM-12 FIX: hoisted, unref'd cleanup interval — never holds the event
-// loop open; stopAnalysisSessionCleanup() allows explicit teardown.
-let analysisCleanupInterval: NodeJS.Timeout | null = null;
-
 /**
  * Get the singleton AnalysisSessionManager instance
  */
@@ -469,20 +465,9 @@ export function getAnalysisSessionManager(): AnalysisSessionManager {
         analysisSessionManagerInstance = new AnalysisSessionManagerImpl();
 
         // Set up periodic cleanup (every 10 minutes)
-        analysisCleanupInterval = setInterval(() => {
+        setInterval(() => {
             analysisSessionManagerInstance?.cleanupInactiveSessions();
         }, 10 * 60 * 1000);
-        analysisCleanupInterval.unref?.();
     }
     return analysisSessionManagerInstance;
-}
-
-/**
- * AG-MEM-12: Stop the periodic analysis session cleanup interval.
- */
-export function stopAnalysisSessionCleanup(): void {
-    if (analysisCleanupInterval) {
-        clearInterval(analysisCleanupInterval);
-        analysisCleanupInterval = null;
-    }
 }

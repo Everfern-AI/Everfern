@@ -33,22 +33,6 @@ import { createBrainNode } from '../brain';
 
 // ── Mock dependencies ────────────────────────────────────────────────────────
 
-// Routing decisions now flow through CognitiveRouter (dynamic import in
-// brain.ts). Mock it so these tests keep controlling the routing outcome
-// via the runner's mocked client response shape below.
-const routerState = vi.hoisted(() => ({ decision: null as string | null }));
-
-vi.mock('../../cognitive-router', () => ({
-  CognitiveRouter: class {
-    route = vi.fn(async () => {
-      // null simulates a routing failure so brain's intent-based fallback
-      // kicks in (matching the pre-router mock-client JSON-parse behavior).
-      if (routerState.decision === null) throw new Error('routing failed');
-      return { decision: routerState.decision, confidence: 1, explanation: `Routing to ${routerState.decision}` };
-    });
-  },
-}));
-
 // Mock the agent runtime service
 vi.mock('../../services/agent-runtime', () => ({
   runAgentStep: vi.fn(async (state, options) => {
@@ -75,7 +59,7 @@ vi.mock('../../mission-integrator', () => ({
 }));
 
 // Mock prompt loading
-vi.mock('../../../../lib/prompt-sync', () => ({
+vi.mock('../../../lib/prompt-sync', () => ({
   loadPrompt: vi.fn(() => 'Mock system prompt'),
 }));
 
@@ -86,11 +70,6 @@ vi.mock('../../abort-manager', () => ({
       signal: new AbortController().signal,
     },
   },
-  getConversationAbortManager: () => ({
-    abortController: {
-      signal: new AbortController().signal,
-    },
-  }),
 }));
 
 // Mock node utils
@@ -123,18 +102,6 @@ const makeStateWithCompletion = (
   intentConfidence: 0.95,
   decomposedTask: undefined as any,
   agiHints: '',
-  // When a specialist completion flag is set, the graph marks the state as
-  // returning from that specialist — brain's completion override and the
-  // web-explorer early-exit both key off this field.
-  returningFromSpecialist: completionFlags.webExplorerComplete
-    ? 'web_explorer'
-    : completionFlags.dataAnalysisComplete
-      ? 'data_analyst'
-      : completionFlags.codingComplete
-        ? 'coding_specialist'
-        : completionFlags.computerUseComplete
-          ? 'computer_use'
-          : null,
   taskPhase: 'brain' as any,
   pendingToolCalls: [],
   toolCallRecords: [],
@@ -166,18 +133,14 @@ const makeStateWithCompletion = (
   completedSteps: [],
   decompositionAttempts: 0,
   brainToolsInFlight: false,
+  returningFromSpecialist: null,
   debateResult: undefined as any,
 });
 
 /**
  * Creates a mock AgentRunner with configurable routing LLM response
  */
-const makeMockRunner = (routingDecision: string | null) => {
-  // Route the mocked CognitiveRouter's answer through the same value the
-  // routing LLM would have returned (brain consumes the router, not the
-  // client, for routing decisions now).
-  routerState.decision = routingDecision;
-  return {
+const makeMockRunner = (routingDecision: string | null) => ({
   client: {
     chat: vi.fn().mockImplementation(async (options) => {
       // Check if this is a routing decision call or completion signal call
@@ -230,8 +193,7 @@ const makeMockRunner = (routingDecision: string | null) => {
     { name: 'web_search', description: 'Search the web' },
     { name: 'navis', description: 'Browser automation' },
   ]),
-  };
-};
+});
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 

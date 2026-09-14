@@ -290,7 +290,6 @@ function PhaseCard({
               height: '100%',
               background: meta.color,
               borderRadius: '0 2px 0 0',
-              transformOrigin: 'left center',
             }}
             initial={{ scaleX: 0 }}
             animate={{ scaleX: phase.status === 'completed' || phase.status === 'failed' ? 1 : 0.3 }}

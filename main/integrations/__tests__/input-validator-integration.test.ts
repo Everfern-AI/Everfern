@@ -5,27 +5,8 @@
  * to ensure proper message validation and sanitization.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { BotIntegrationManager, defaultBotIntegrationConfig } from '../bot-manager';
 import { IncomingMessage } from '../platform-interface';
-
-// Hermetic (wave f11): BotIntegrationManager constructs an InputValidator,
-// which wires the GLOBAL SecurityMonitor singleton (getSecurityMonitor())
-// that persists security events to <homedir>/.everfern/security-logs on real
-// fs. Mock os.homedir to a per-run tmp dir so no real home-directory state
-// is touched. vi.mock('os') reaches the product module because
-// security-monitor.ts binds homedir via ESM named import (verified).
-const { HERMETIC_HOME } = vi.hoisted(() => ({
-  HERMETIC_HOME: `/tmp/everfern-test-homes/input-validator-integration/${process.pid}-${Date.now()}`
-}));
-vi.mock('os', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('os')>();
-  // Override BOTH the named `homedir` export and `default` — products bind
-  // both styles (security-monitor.ts uses `import os from 'os'`).
-  const mocked = { ...actual, homedir: () => HERMETIC_HOME };
-  return { ...mocked, default: mocked };
-});
-
 
 describe('Input Validator Integration', () => {
   let botManager: BotIntegrationManager;
@@ -176,16 +157,12 @@ describe('Input Validator Integration', () => {
   });
 
   describe('Webhook Validation Integration', () => {
-    // wave f11: contract updated — validateWebhookRequest became async in
-    // commit 5596cc7 ("Pre release exe") (it awaits InputValidator's async
-    // validateWebhookSignature); it returns Promise<boolean> and must be
-    // awaited.
-    it('should validate webhook signatures correctly', async () => {
+    it('should validate webhook signatures correctly', () => {
       const payload = '{"test": "data"}';
       const timestamp = Math.floor(Date.now() / 1000).toString();
 
       // This should work with the bot manager's validateWebhookRequest method
-      const isValid = await botManager.validateWebhookRequest(payload, 'invalid-signature', timestamp);
+      const isValid = botManager.validateWebhookRequest(payload, 'invalid-signature', timestamp);
       expect(isValid).toBe(false);
     });
 

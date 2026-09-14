@@ -59,18 +59,10 @@ function mergeCimGpuInfo(cim: { name: string; vramBytes: number } | null, gpuNam
   return { gpuName, vramGB, isNvidia };
 }
 
-// MP-LEAK-06: single cached hardware detector (TTL 5 min, in-flight promise
-// memoized) — kills the 2–4s system_profiler stall being re-paid on every
-// Settings open and removes the sync duplicate below.
-const HW_CACHE_TTL_MS = 5 * 60 * 1000;
-let hwCache: { at: number; value: Awaited<ReturnType<typeof detectHardwareSpecsUncached>> } | null = null;
-let hwInFlight: Promise<Awaited<ReturnType<typeof detectHardwareSpecsUncached>>> | null = null;
-
-async function detectHardwareSpecsUncached() {
-  // MP-CORR-21: argv form — no shell interpolation anywhere in detection.
-  const { execFile } = require('child_process');
+export async function detectHardwareSpecsAsync() {
+  const { exec } = require('child_process');
   const { promisify } = require('util');
-  const execFileAsync = promisify(execFile);
+  const execAsync = promisify(exec);
 
   const ramGB = Math.round((os.totalmem() / (1024 * 1024 * 1024)) * 10) / 10;
   const freeRamGB = Math.round((os.freemem() / (1024 * 1024 * 1024)) * 10) / 10;
@@ -89,7 +81,7 @@ async function detectHardwareSpecsUncached() {
   try {
     if (process.platform === 'win32') {
       try {
-        const { stdout: nvsmi } = await execFileAsync('nvidia-smi', ['--query-gpu=name,memory.total,driver_version,temperature.gpu', '--format=csv,noheader,nounits'], { timeout: 3000 });
+        const { stdout: nvsmi } = await execAsync('nvidia-smi --query-gpu=name,memory.total,driver_version,temperature.gpu --format=csv,noheader,nounits', { timeout: 3000 });
         const parts = nvsmi.trim().split(',');
         if (parts.length >= 2) {
           gpuName = parts[0].trim();
@@ -100,38 +92,33 @@ async function detectHardwareSpecsUncached() {
           isNvidia = true;
         }
       } catch {
-        // MP-CORR-21: CIM first — wmic was removed in Win11 24H2+, so on
-        // modern machines a wmic spawn is a guaranteed dead 3s timeout.
-        // Keep wmic only as a legacy last resort for old Win10 installs.
-        let cimResolved = false;
+        let wmicResolved = false;
         try {
-          ({ gpuName, vramGB, isNvidia } = mergeCimGpuInfo(await getGpuInfoViaCim(), gpuName, vramGB));
-          cimResolved = gpuName !== 'Unknown GPU' || vramGB > 0;
-        } catch {}
-        if (!cimResolved) {
-          try {
-            const { stdout } = await execFileAsync('wmic', ['path', 'Win32_VideoController', 'get', 'AdapterRAM,Name,DriverVersion', '/format:list'], { timeout: 3000, windowsHide: true });
-            for (const line of stdout.split('\n')) {
-              const trimmed = line.trim();
-              if (trimmed.startsWith('AdapterRAM=')) {
-                const bytes = parseInt(trimmed.substring(11), 10);
-                if (!isNaN(bytes) && bytes > 0) vramGB = Math.max(vramGB, Math.round((bytes / (1024 * 1024 * 1024)) * 10) / 10);
-              } else if (trimmed.startsWith('Name=')) {
-                const name = trimmed.substring(5).trim();
-                if (name && (gpuName === 'Unknown GPU' || name.toLowerCase().includes('nvidia') || name.toLowerCase().includes('rtx'))) {
-                  gpuName = name;
-                }
-              } else if (trimmed.startsWith('DriverVersion=')) {
-                driverVersion = trimmed.substring(14).trim();
+          const { stdout } = await execAsync('wmic path Win32_VideoController get AdapterRAM,Name,DriverVersion /format:list', { timeout: 3000 });
+          for (const line of stdout.split('\n')) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith('AdapterRAM=')) {
+              const bytes = parseInt(trimmed.substring(11), 10);
+              if (!isNaN(bytes) && bytes > 0) vramGB = Math.max(vramGB, Math.round((bytes / (1024 * 1024 * 1024)) * 10) / 10);
+            } else if (trimmed.startsWith('Name=')) {
+              const name = trimmed.substring(5).trim();
+              if (name && (gpuName === 'Unknown GPU' || name.toLowerCase().includes('nvidia') || name.toLowerCase().includes('rtx'))) {
+                gpuName = name;
               }
+            } else if (trimmed.startsWith('DriverVersion=')) {
+              driverVersion = trimmed.substring(14).trim();
             }
-            isNvidia = gpuName.toLowerCase().includes('nvidia') || gpuName.toLowerCase().includes('rtx') || gpuName.toLowerCase().includes('gtx');
-          } catch {}
+          }
+          isNvidia = gpuName.toLowerCase().includes('nvidia') || gpuName.toLowerCase().includes('rtx') || gpuName.toLowerCase().includes('gtx');
+          wmicResolved = gpuName !== 'Unknown GPU' || vramGB > 0;
+        } catch {}
+        if (!wmicResolved) {
+          ({ gpuName, vramGB, isNvidia } = mergeCimGpuInfo(await getGpuInfoViaCim(), gpuName, vramGB));
         }
       }
     } else if (process.platform === 'darwin') {
       try {
-        const { stdout } = await execFileAsync('system_profiler', ['SPDisplaysDataType'], { timeout: 4000 });
+        const { stdout } = await execAsync('system_profiler SPDisplaysDataType', { timeout: 4000 });
         isAppleSilicon = stdout.includes('Apple M') || (os.cpus()[0]?.model || '').includes('Apple');
         const chipsetMatch = stdout.match(/Chipset Model:\s*(.+)/);
         gpuName = chipsetMatch ? chipsetMatch[1].trim() : (isAppleSilicon ? 'Apple Silicon' : 'Intel/AMD Mac');
@@ -148,7 +135,7 @@ async function detectHardwareSpecsUncached() {
       } catch {}
     } else if (process.platform === 'linux') {
       try {
-        const { stdout } = await execFileAsync('nvidia-smi', ['--query-gpu=name,memory.total,driver_version,temperature.gpu', '--format=csv,noheader,nounits'], { timeout: 3000 });
+        const { stdout } = await execAsync('nvidia-smi --query-gpu=name,memory.total,driver_version,temperature.gpu --format=csv,noheader,nounits', { timeout: 3000 });
         const parts = stdout.trim().split(',');
         if (parts.length >= 2) {
           gpuName = parts[0].trim();
@@ -175,26 +162,6 @@ async function detectHardwareSpecsUncached() {
     driverVersion,
     gpuTemp
   };
-}
-
-/**
- * Cached hardware detection (MP-LEAK-06 / battery A4).
- * Concurrent callers share one in-flight promise; results memoized for 5 min.
- * freeRamGB is refreshed on every call (cheap os.freemem()) so "available RAM"
- * stays live even on cache hits.
- */
-export async function detectHardwareSpecsAsync() {
-  if (hwCache && Date.now() - hwCache.at < HW_CACHE_TTL_MS) {
-    return { ...hwCache.value, freeRamGB: Math.round((os.freemem() / (1024 * 1024 * 1024)) * 10) / 10 };
-  }
-  if (!hwInFlight) {
-    hwInFlight = detectHardwareSpecsUncached().finally(() => {
-      hwInFlight = null;
-    });
-  }
-  const value = await hwInFlight;
-  hwCache = { at: Date.now(), value };
-  return { ...value, freeRamGB: Math.round((os.freemem() / (1024 * 1024 * 1024)) * 10) / 10 };
 }
 
 export function enrichModelWithHardware(m: any, hardware: { vramGB: number; ramGB: number; isAppleSilicon?: boolean }) {
@@ -403,21 +370,71 @@ export function registerHardwareHandlers(): void {
     console.log(`\n[EverFern Desktop] [IPC:system:get-local-models] Querying local provider '${provider}' at '${baseUrl}'...`);
 
     // 1. Detect hardware for exact VRAM and TPS calculations
-    // MP-LEAK-06: use the single cached async detector (TTL 5 min) — replaces
-    // the blocking execSync system_profiler/wmic duplicate path and its
-    // 2–4 s main-thread stall.
     let hardware: any = null;
     try {
-      const hw = await detectHardwareSpecsAsync();
+      const ramGB = Math.round((os.totalmem() / (1024 * 1024 * 1024)) * 10) / 10;
+      const freeRamGB = Math.round((os.freemem() / (1024 * 1024 * 1024)) * 10) / 10;
+      const cpus = os.cpus() || [];
+      const cpuModel = cpus[0]?.model ? cpus[0].model.trim() : 'Generic Processor';
+      const cpuCores = cpus.length;
+      let gpuName = 'Unknown GPU';
+      let vramGB = 0;
+      let isNvidia = false;
+      let isAppleSilicon = false;
+
+      if (process.platform === 'darwin') {
+        const { execSync } = require('child_process');
+        try {
+          const stdout = execSync('system_profiler SPDisplaysDataType', { encoding: 'utf8' });
+          isAppleSilicon = stdout.includes('Apple M') || (os.cpus()[0]?.model || '').includes('Apple');
+          const chipsetMatch = stdout.match(/Chipset Model:\s*(.+)/);
+          gpuName = chipsetMatch ? chipsetMatch[1].trim() : (isAppleSilicon ? 'Apple Silicon' : 'Intel/AMD Mac');
+          vramGB = isAppleSilicon ? Math.round(ramGB * 0.75 * 10) / 10 : 0;
+        } catch {}
+      } else if (process.platform === 'win32') {
+        const { execSync } = require('child_process');
+        try {
+          const stdout = execSync('nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits', { encoding: 'utf8' });
+          const parts = stdout.trim().split(',');
+          if (parts.length >= 2) {
+            gpuName = parts[0].trim();
+            const mb = parseInt(parts[1].trim(), 10);
+            if (!isNaN(mb)) vramGB = Math.round((mb / 1024) * 10) / 10;
+            isNvidia = true;
+          }
+        } catch {
+          let wmicResolved = false;
+          try {
+            const stdout = execSync('wmic path Win32_VideoController get AdapterRAM,Name /format:list', { encoding: 'utf8' });
+            for (const line of stdout.split('\n')) {
+              const trimmed = line.trim();
+              if (trimmed.startsWith('AdapterRAM=')) {
+                const bytes = parseInt(trimmed.substring(11), 10);
+                if (!isNaN(bytes) && bytes > 0) vramGB = Math.max(vramGB, Math.round((bytes / (1024 * 1024 * 1024)) * 10) / 10);
+              } else if (trimmed.startsWith('Name=')) {
+                const name = trimmed.substring(5).trim();
+                if (name && (gpuName === 'Unknown GPU' || name.toLowerCase().includes('nvidia') || name.toLowerCase().includes('rtx'))) {
+                  gpuName = name;
+                }
+              }
+            }
+            wmicResolved = gpuName !== 'Unknown GPU' || vramGB > 0;
+          } catch {}
+          if (!wmicResolved) {
+            ({ gpuName, vramGB, isNvidia } = mergeCimGpuInfo(await getGpuInfoViaCim(), gpuName, vramGB));
+          }
+        }
+      }
+
       hardware = {
-        ramGB: hw.ramGB,
-        freeRamGB: hw.freeRamGB,
-        cpuModel: hw.cpuModel,
-        cpuCores: hw.cpuCores,
-        gpuName: hw.gpuName,
-        vramGB: hw.vramGB,
-        isNvidia: hw.isNvidia,
-        isAppleSilicon: hw.isAppleSilicon,
+        ramGB,
+        freeRamGB,
+        cpuModel,
+        cpuCores,
+        gpuName,
+        vramGB,
+        isNvidia,
+        isAppleSilicon,
       };
     } catch (e) {
       hardware = {

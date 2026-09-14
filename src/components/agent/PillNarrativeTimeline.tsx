@@ -239,7 +239,7 @@ function MemoryTimelineCard({
   const isCheck = tname.includes('check') || tname.includes('confirm');
   
   let opLabel = "Memory Access";
-  let themeColor = "var(--color-success)"; // Unified EverFern emerald green brand theme
+  let themeColor = "#10b981"; // Unified EverFern emerald green brand theme
   let cardClass = "bg-emerald-50/10 border-emerald-100/70 hover:border-gray-300 hover:shadow-sm";
   let badgeClass = "bg-emerald-100 text-emerald-700";
   
@@ -255,7 +255,7 @@ function MemoryTimelineCard({
   
   if (isError) {
     opLabel = "Memory Access Failed";
-    themeColor = "var(--color-error)";
+    themeColor = "#ef4444";
     cardClass = "bg-red-50/15 border-red-150/70 hover:border-gray-300 hover:shadow-sm";
     badgeClass = "bg-red-100 text-red-700";
   }

@@ -80,6 +80,12 @@ vi.mock('../specialized_agents', () => ({
   })
 }));
 
+vi.mock('../validation', () => ({
+  createValidationNode: vi.fn(() => async (state: any) => {
+    return { validationResult: { isHighRisk: false, reasoning: 'Safe' } };
+  })
+}));
+
 vi.mock('../memory-consolidator', () => ({
   createMemoryConsolidatorNode: vi.fn(() => async (state: any) => {
     return { messages: state.messages };
@@ -90,11 +96,8 @@ describe('ask_user_wait Graph Node Integration', () => {
   let mockRunner: any;
 
   beforeEach(() => {
-    // wave f11: graph.ts buildGraph cache key now reads runner.client.provider/model
     mockRunner = {
-      client: { provider: 'test-provider', model: 'test-model' },
       config: { maxIterations: 10 },
-      currentAgentSessionKey: 'test-session',
       telemetry: {
         warn: vi.fn(),
         info: vi.fn(),

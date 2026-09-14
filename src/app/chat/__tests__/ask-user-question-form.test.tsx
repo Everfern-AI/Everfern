@@ -15,8 +15,6 @@ describe('Bug Condition: ask_user_question Form Not Displayed', () => {
   let missionCompleteListener: ((event: any, data: any) => void) | null = null;
   
   beforeEach(() => {
-    vi.useFakeTimers();
-
     // Mock window.electron API
     mockWindow = {
       electron: {
@@ -38,7 +36,6 @@ describe('Bug Condition: ask_user_question Form Not Displayed', () => {
   });
   
   afterEach(() => {
-    vi.useRealTimers();
     toolCallListener = null;
     missionCompleteListener = null;
   });
@@ -50,10 +47,6 @@ describe('Bug Condition: ask_user_question Form Not Displayed', () => {
     let activeUserQuestionSet = false;
     let listenersRemoved = false;
     let flagSetBeforeListenerRemoval = false;
-
-    // Mock the __activeUserQuestion flag (shipped code sets this ref FIRST,
-    // synchronously in the onToolCall handler — page.tsx:4384-4386).
-    let activeUserQuestionFlag = false;
     
     // Mock state setter
     const setActiveUserQuestion = vi.fn((value) => {
@@ -70,37 +63,6 @@ describe('Bug Condition: ask_user_question Form Not Displayed', () => {
         console.log('[Test] Listeners removed. Flag was set:', flagSetBeforeListenerRemoval);
       }
       originalRemoveAllListeners(channel);
-    });
-    
-    // wave f11: register the listeners through the mocked API so the
-    // simulated handlers actually run. The handlers model the SHIPPED
-    // page.tsx behavior: the tool_call handler sets the
-    // __activeUserQuestion flag IMMEDIATELY (page.tsx:4384-4386) before
-    // any state update, and the mission_complete handler re-checks the
-    // flag before removing listeners (page.tsx:3306-3311).
-    mockWindow.electron.onToolCall((data: any) => {
-      const record = data;
-      if (record.toolName === 'ask_user_question' && record.result?.success && record.result?.data?.questions) {
-        // Set flag FIRST — prevents the mission_complete race
-        activeUserQuestionFlag = true;
-        const questionData = record.result.data.questions[0] || record.result.data.question;
-        if (questionData) {
-          setActiveUserQuestion(questionData);
-        }
-      }
-    });
-
-    mockWindow.electron.onMissionComplete(() => {
-      // Shipped guard: re-check the active-question flag when the
-      // completion flush runs; only remove listeners if nothing is pending.
-      setTimeout(() => {
-        const hasActiveQuestion = activeUserQuestionFlag || activeUserQuestionSet;
-        
-        if (!hasActiveQuestion) {
-          // Remove listeners if no active question
-          mockWindow.electron.removeAllListeners('tool_call');
-        }
-      }, 200);
     });
     
     // Simulate tool_call event with ask_user_question data
@@ -137,20 +99,34 @@ describe('Bug Condition: ask_user_question Form Not Displayed', () => {
     
     // Simulate the race condition: tool_call event arrives
     if (toolCallListener) {
-      toolCallListener(toolCallData);
+      // Simulate the onToolCall handler logic
+      const record = toolCallData;
+      if (record.toolName === 'ask_user_question' && record.result?.success && record.result?.data?.questions) {
+        const questionData = record.result.data.questions[0] || record.result.data.question;
+        if (questionData) {
+          setActiveUserQuestion(questionData);
+        }
+      }
     }
     
-    // Simulate mission_complete firing within 100ms (race condition).
-    // wave f11: fake timers — advance deterministically instead of
-    // wall-clock sleeping.
-    await vi.advanceTimersByTimeAsync(50);
+    // Simulate mission_complete firing within 100ms (race condition)
+    await new Promise(resolve => setTimeout(resolve, 50));
     
     if (missionCompleteListener) {
-      missionCompleteListener(null, {});
+      // Simulate the onMissionComplete handler with 200ms delay
+      setTimeout(() => {
+        // Check if there's an active user question
+        const hasActiveQuestion = activeUserQuestionSet;
+        
+        if (!hasActiveQuestion) {
+          // Remove listeners if no active question
+          mockWindow.electron.removeAllListeners('tool_call');
+        }
+      }, 200);
     }
     
     // Wait for mission_complete delay to complete
-    await vi.advanceTimersByTimeAsync(250);
+    await new Promise(resolve => setTimeout(resolve, 250));
     
     // ASSERTIONS - These should FAIL on unfixed code
     

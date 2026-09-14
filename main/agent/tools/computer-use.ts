@@ -13,7 +13,6 @@ import { AIClient, ChatMessage } from "../../lib/ai-client";
 import { globalAbortManager } from "../runner/abort-manager";
 import DesktopOverlay from "./desktop-overlay";
 import { checkToolPermission } from "./permission-checker";
-import { isPermissionGranted } from "../../ipc/computer-use-permission";
 
 // ── Optional native deps ─────────────────────────────────────────────────────
 
@@ -24,30 +23,6 @@ catch { console.warn("[ComputerUse] robotjs unavailable"); }
 let sharp: typeof import("sharp") | null = null;
 try { sharp = require("sharp"); }
 catch { console.warn("[ComputerUse] sharp unavailable — cursor circle disabled"); }
-
-// ── LP-10: local-VLM screenshot downscale decision ──────────────────────────
-
-/** Local VLM ceiling for screenshot payloads (audit §X.C LP-09): fit inside
- * 1024×1024, never upscale. */
-export const LOCAL_VLM_MAX_DIM = 1024;
-
-/**
- * LP-10 (audit LP-09): should this provider's screenshots be downscaled before
- * base64? LOCAL vision models (ollama/lmstudio/loopback) run on user hardware
- * with no payload budget — a 1–2MB full-res frame per iteration is pure cost —
- * so they get the ≤1024px/JPEG-q70 path. CLOUD coordinate VLMs keep the
- * full-res physical capture untouched: on HiDPI displays the crisp pixels are
- * what the VLM reads coordinates from (see the capture comment in
- * attachScreenshot), and cloud payload budgets are fine. Signal comes from
- * AIClient.isLocal() (ai-client.ts) — never reimplemented here.
- */
-export function shouldDownscaleForVlm(
-  client: { isLocal?: () => boolean; provider?: string } | null | undefined,
-): boolean {
-  if (!client) return false;
-  if (typeof client.isLocal === "function") return client.isLocal();
-  return false;
-}
 
 // Removed screenshot-desktop import - using native desktopCapturer
 
@@ -264,18 +239,12 @@ Now output ONLY:
 Thought: <why you are taking this action>
 Action: <structured action call>`;
 
-// Remove reasoning blocks (some providers emit them inline)
-// before action parsing — the Action: regexes would otherwise match inside
-// the model's deliberation text instead of its final answer.
 function stripThinking(text: string): string {
   let clean = text.replace(/<think>[\s\S]*?<\/think>/gi, "");
   clean = clean.replace(/<\/?think>/gi, "");
   return clean.trim();
 }
 
-// Parse the strict "Thought: ... Action: ..." format. Only ONE action is
-// taken from the Action block (first non-empty line) — the protocol is
-// single-action-per-turn, matching the prompt's explicit rule.
 function parseOutput(raw: string): { thought: string; actions: string[] } {
   let thought = "";
   const actions: string[] = [];
@@ -322,9 +291,6 @@ const KNOWN_ACTION_PREFIXES = [
   "hotkey(", "type(", "scroll(", "wait(", "finished(", "call_user("
 ];
 
-// Match a known action prefix exactly (trim + lowercase first) — this is the
-// gate between "structured action" and "natural-language ramble" that drives
-// format-correction retries.
 function isStructuredAction(line: string): boolean {
   const stripped = line.trim().toLowerCase();
   return KNOWN_ACTION_PREFIXES.some(p => stripped.startsWith(p));
@@ -406,168 +372,7 @@ function sleep(seconds: number): Promise<void> {
   return new Promise(r => setTimeout(r, seconds * 1000));
 }
 
-function sleepMs(ms: number): Promise<void> {
-  return new Promise(r => setTimeout(r, ms));
-}
-
-// ── AG-SAF-06: external URL guard ────────────────────────────────────────────
-// Only http(s) URLs may ever reach shell.openExternal; model-provided strings
-// such as `javascript:` or `file:` are blocked fail-closed.
-
-/** AG-SAF-06: allow only http(s) URLs through to shell.openExternal.
- * Fails closed on any parse error — model-provided `javascript:`/`file:`
- * schemes must never reach the OS default browser. */
-export function isSafeExternalUrl(url: unknown): boolean {
-  if (typeof url !== 'string' || !url) return false;
-  try {
-    const u = new URL(url);
-    return u.protocol === 'http:' || u.protocol === 'https:';
-  } catch {
-    return false;
-  }
-}
-
-// ── AG-SAF-11: destructive-action heuristic ──────────────────────────────────
-// Backstop for the model-driven safetyDecision: if any in-scope text names a
-// destructive verb, interactive user confirmation is required before dispatch.
-
-export const DESTRUCTIVE_ACTION_PATTERN = /\b(delete|remove|uninstall|format|purge|wipe|erase|trash|shred|reset|clear)\b/i;
-
-/** AG-SAF-11: true if any text part names a destructive verb.
- * Deliberately over-broad (false positives just trigger a confirm dialog) —
- * a missed "delete" is far worse than an unnecessary prompt. */
-export function looksDestructive(parts: Array<string | undefined | null>): boolean {
-  return parts.some(p => typeof p === 'string' && p.length > 0 && DESTRUCTIVE_ACTION_PATTERN.test(p));
-}
-
-// AG-SAF-07: maximum duration any hold action may keep a button/key down.
-export const MAX_HOLD_MS = 30_000;
-
-// ── Memory hygiene ────────────────────────────────────────────────────────────
-
-const MAX_HISTORY_STEPS = 8;
-
-// Replace (not drop) screenshots in history entries older than the window:
-// entry count/thought/action stay for trajectory context while the heavy
-// base64 payload is freed — keeps prompt assembly cheap.
-function trimHistory(history: any[]): any[] {
-  const overflow = history.length - MAX_HISTORY_STEPS;
-  for (let i = 0; i < overflow; i++) {
-    const h = history[i];
-    if (h && typeof h === "object") {
-      h.screenshot = `[step ${i + 1} screenshot archived]`;
-    }
-  }
-  return history;
-}
-
-/**
- * Keep only the newest `maxFiles` PNGs in `dir` (oldest by mtime are deleted).
- * Every capture writes a full screenshot, so long sessions grow unboundedly;
- * per-file try/catch (not one blanket catch) keeps a race with a vanished
- * file from aborting the whole prune. Never throws — callers fire-and-forget.
- */
-export async function pruneScreenshotDir(dir: string, maxFiles = 500): Promise<void> {
-  try {
-    const entries = await fs.promises.readdir(dir);
-    const files: { name: string; mtimeMs: number }[] = [];
-    for (const name of entries) {
-      if (!name.endsWith(".png")) continue;
-      try {
-        const st = await fs.promises.stat(path.join(dir, name));
-        files.push({ name, mtimeMs: st.mtimeMs });
-      } catch { /* file vanished mid-prune */ }
-    }
-    if (files.length <= maxFiles) return;
-    files.sort((a, b) => b.mtimeMs - a.mtimeMs);
-    for (const f of files.slice(maxFiles)) {
-      try { await fs.promises.unlink(path.join(dir, f.name)); }
-      catch { /* already gone */ }
-    }
-    console.log(`[ComputerUse] Pruned ${files.length - maxFiles} old screenshots from ${dir}`);
-  } catch (err) {
-    console.warn("[ComputerUse] pruneScreenshotDir failed:", err);
-  }
-}
-
-// One-way latch: once a settle capture throws (e.g. desktopCapturer denied),
-// never retry it — repeated failing captures cost far more than the short
-// fixed waits we fall back to.
-let settleCaptureFailed = false;
-
-/**
- * Cheap "has the screen changed?" probe for waitForScreenSettle.
- * Grabs a tiny 160x90 desktopCapturer thumbnail and FNV-1a hashes its PNG
- * bytes into a `size:hash` string — small enough to poll rapidly, and only
- * the digest is ever compared, never the image itself.
- * Side effects: none on success; latches settleCaptureFailed on first error.
- * Returns null when capture is unavailable (latched failure / empty thumbnail).
- */
-async function captureScreenFingerprint(): Promise<string | null> {
-  if (settleCaptureFailed) return null;
-  try {
-    const { desktopCapturer } = require("electron");
-    const sources = await desktopCapturer.getSources({
-      types: ["screen"],
-      thumbnailSize: { width: 160, height: 90 },
-    });
-    const thumb = sources[0]?.thumbnail;
-    if (!thumb || thumb.isEmpty()) return null;
-    // PNG bytes are hashed directly (size included in the fingerprint) —
-    // identical screens → identical digest; any pixel change flips the hash.
-    const buf = thumb.toPNG();
-    // FNV-1a: cheap 32-bit rolling hash, fast enough for a full ~14KB PNG
-    // on every poll. Math.imul keeps 32-bit wraparound correct in JS.
-    let hash = 0x811c9dc5;
-    for (let i = 0; i < buf.length; i++) {
-      hash ^= buf[i];
-      hash = Math.imul(hash, 0x01000193);
-    }
-    return `${buf.length}:${(hash >>> 0).toString(16)}`;
-  } catch (err) {
-    settleCaptureFailed = true;
-    console.warn("[ComputerUse] settle fingerprint unavailable:", err);
-    return null;
-  }
-}
-
-/**
- * Block until the screen stops changing (two consecutive identical
- * fingerprints) or `maxMs` elapses. Screenshots taken mid-animation are
- * stale, so the agent waits for the UI to settle before re-capturing.
- * Falls back to a short fixed sleep whenever fingerprinting is unavailable.
- */
-async function waitForScreenSettle(pollMs = 120, maxMs = 900): Promise<void> {
-  let last = await captureScreenFingerprint();
-  if (last === null) {
-    // Fingerprinting unavailable (latched failure) — best-effort fixed wait
-    // so the caller still gives animations roughly one poll-and-change cycle.
-    await sleepMs(180);
-    return;
-  }
-  const deadline = Date.now() + maxMs;
-  while (Date.now() < deadline) {
-    await sleepMs(pollMs);
-    const current = await captureScreenFingerprint();
-    if (current === null) {
-      await sleepMs(180);
-      return;
-    }
-    if (current === last) return;
-    // Screen still animating: keep polling — the deadline, not this loop,
-    // is the only bound when pixels never stop changing.
-    last = current;
-  }
-}
-
-// WHY: screenshots taken mid-animation show stale UI state, which makes the
-// VLM hallucinate elements and click wrong targets. Polling until the
-// fingerprint stops changing guarantees the next capture is post-animation.
-// Fixed 900ms default deadline bounds the wait even when pixels keep
-// changing (videos, animated spinners) — settle is best-effort, never blocking.
 function ensureXy(coordinate?: [number, number] | null): [number, number] {
-  // Floor to integers: robotjs takes pixel indices; fractional model output
-  // would otherwise be silently truncated (or rejected) downstream.
   if (!coordinate || coordinate.length !== 2) throw new Error("coordinate=[x, y] is required.");
   return [Math.floor(coordinate[0]), Math.floor(coordinate[1])];
 }
@@ -582,9 +387,6 @@ function maybeInt(v: number | undefined | null, def = 0): number {
 class ToolResult {
   constructor(public payload: Record<string, any>) {}
 
-  /** Flatten the payload into provider content parts: human-readable text
-   * lines first, then the screenshot part. Works on a shallow copy — the
-   * original payload (kept by callers) is never mutated. */
   asContent(): any[] {
     const p = { ...this.payload };
     const screenshot = p.screenshot as string | undefined; delete p.screenshot;
@@ -616,33 +418,10 @@ class ToolResult {
 
 // ── ComputerUseTool ───────────────────────────────────────────────────────────
 
-export class ComputerUseTool {
+class ComputerUseTool {
   public lastViewport: Record<string, any> = {};
   public overlay: DesktopOverlay | null = null;
   public client: AIClient | null = null;
-
-  // AG-SAF-07: mouse buttons currently held down by holdAction's coordinate
-  // path, so releaseAll() can physically release them at abort / turn end.
-  private heldMouse = new Set<'left' | 'right' | 'middle'>();
-
-  // AG-MEM-02: track every tool whose overlay window is still alive so
-  // destroyAllComputerUseOverlays() can reap them on app quit.
-  private static readonly liveToolOverlays = new Set<ComputerUseTool>();
-  static getLiveToolOverlays(): Set<ComputerUseTool> { return ComputerUseTool.liveToolOverlays; }
-
-  // AG-CORR-07: cross-instance hardware mutex (robotjs drives one physical
-  // desktop — even distinct ComputerUseTool instances must serialize).
-  private static hardwareMutex: Promise<void> = Promise.resolve();
-
-  /** Acquire the cross-instance hardware lock; resolves with a release fn.
-   * Promise-chaining (no separate queue): each waiter holds `prev` and only
-   * then resolves release — FIFO by construction. */
-  static acquireGlobalMutex(): Promise<() => void> {
-    let release!: () => void;
-    const prev = ComputerUseTool.hardwareMutex;
-    ComputerUseTool.hardwareMutex = new Promise<void>(resolve => { release = resolve; });
-    return prev.then(() => release);
-  }
 
   constructor(
     private screenshotDir: string,
@@ -653,8 +432,6 @@ export class ComputerUseTool {
   ) {
     fs.mkdirSync(this.screenshotDir, { recursive: true });
 
-    void pruneScreenshotDir(this.screenshotDir);
-
     // Initialize overlay
     try {
       this.overlay = new DesktopOverlay();
@@ -662,10 +439,6 @@ export class ComputerUseTool {
     } catch (err) {
       console.warn("[ComputerUse] Failed to initialize overlay:", err);
     }
-    // AG-MEM-02 registration half of the invariant: constructor adds,
-    // cleanup() removes — so a quit-time sweep of liveToolOverlays finds
-    // every overlay still holding a BrowserWindow.
-    ComputerUseTool.liveToolOverlays.add(this);
 
     // Configure mouse delay after robotjs availability check
     if (!robot) {
@@ -690,32 +463,11 @@ export class ComputerUseTool {
   async call(params: Record<string, any>): Promise<ToolResult> {
     const { action } = params;
 
-    // MP-SEC-15: fail closed — no computer-use action runs unless the user
-    // granted permission through the native main-process dialog. Checked
-    // before the AG-CORR-07 mutex so a denied call never queues behind (or
-    // delays) real hardware actions.
-    if (!isPermissionGranted()) {
-      return new ToolResult({
-        status: 'error',
-        detail: 'Computer-use permission not granted: the user must approve computer use via the permission dialog before any action can run.',
-      });
-    }
-
-    // AG-CORR-07: serialize all hardware-affecting calls through an internal
-    // promise queue. The parallel executor can run multiple computer_use calls
-    // concurrently; interleaved robotjs sequences corrupt automation.
-    const releaseMutex = await ComputerUseTool.acquireGlobalMutex();
-
-    try {
     // Handle execute_actions specially - dispatch multiple actions
     if (action === 'execute_actions' && Array.isArray(params.actions)) {
       console.log(`[ComputerUse] Executing ${params.actions.length} actions`);
       for (const actionStr of params.actions) {
         console.log(`[ComputerUse] Dispatching: ${actionStr}`);
-        // AG-CORR-08: abort a long execute_actions run between queued actions.
-        if (activeAgent && activeAgent.isAborted()) {
-          return new ToolResult({ status: "error", detail: "execute_actions aborted" });
-        }
         // Parse and execute each action using dispatchAction logic
         await this.executeActionString(actionStr);
       }
@@ -753,10 +505,6 @@ export class ComputerUseTool {
       return new ToolResult(result);
     }
     return new ToolResult(await this.attachScreenshot(result));
-    } finally {
-      // AG-CORR-07: release the hardware mutex on every path, including throws.
-      releaseMutex();
-    }
   }
 
   private async executeActionString(text: string): Promise<void> {
@@ -923,27 +671,7 @@ export class ComputerUseTool {
     return this.attachScreenshot({ status: "observe" });
   }
 
-  /** AG-SAF-07: physically release every tracked held mouse button.
-   * Physical (robotjs) release is required — dropping the JS Set alone leaves
-   * the OS-level button latched down. */
-  releaseHeldMouse(): void {
-    for (const btn of this.heldMouse) {
-      try {
-        if (robot) {
-          robot.mouseToggle("up", btn);
-        }
-      } catch (err) {
-        console.warn(`[ComputerUse] releaseHeldMouse: failed to release '${btn}':`, err);
-      }
-    }
-    this.heldMouse.clear();
-  }
-
-  /** Tear down this tool's overlay window and drop it from the live registry.
-   * AG-MEM-02 invariant: constructor adds to liveToolOverlays, cleanup() removes —
-   * so destroyAllComputerUseOverlays() always reaps every live instance. */
   cleanup(): void {
-    ComputerUseTool.liveToolOverlays.delete(this);
     if (this.overlay) {
       this.overlay.hide();
       this.overlay.destroy();
@@ -1127,9 +855,6 @@ export class ComputerUseTool {
     const pixels = maybeInt(p.pixels);
     console.log(`[Scroll] Scrolling ${pixels} pixels vertically`);
     try {
-      // robotjs scrolls in discrete wheel clicks (~100px each on Windows);
-      // the || fallback preserves sign for sub-100px requests (0 rounds to 0,
-      // which would silently no-op a small scroll).
       const amount = Math.round(pixels / 100) || (pixels > 0 ? 1 : -1);
       robot.scrollMouse(0, amount);
       console.log(`[Scroll] Executed successfully`);
@@ -1192,9 +917,6 @@ export class ComputerUseTool {
     if (!keys.length) throw new Error("keys is required for action=key.");
     console.log(`[Key] Pressing keys ${keys}`);
     try {
-      // pressKeys maps model key names to robotjs ones (win→command, ctrl→
-      // command for common macOS shortcuts) and applies last-key-as-main,
-      // prefix-as-modifiers semantics.
       this.pressKeys(keys);
       console.log(`[Key] Executed successfully`);
       return { status: "ok", detail: `Pressed keys ${keys}.` };
@@ -1210,16 +932,10 @@ export class ComputerUseTool {
     return { status: "ok", detail: `Waited ${p.time} seconds.` };
   }
 
-  /** hold without explicit hold_time returns immediately with the key/button
-   * still physically down — the auto-release timer is the only thing that can
-   * un-stick it if the model never sends a matching release action. */
   private async holdAction(p: any) {
     if (!robot) throw new Error("robotjs unavailable");
     const keys: string[] = p.keys || [];
     const holdTime = p.hold_time;
-    // AG-SAF-07: cap every hold at MAX_HOLD_MS. Absent/invalid hold_time means
-    // "hold indefinitely" for the model — schedule an auto-release instead.
-    const clampedHold = Math.min(Number(holdTime) > 0 ? Number(holdTime) : MAX_HOLD_MS, MAX_HOLD_MS);
 
     const KEY_MAP: Record<string, string> = {
       control: "control", ctrl: "control", alt: "alt", shift: "shift",
@@ -1230,23 +946,13 @@ export class ComputerUseTool {
       const [x, y] = this.absoluteXy(p.coordinate);
       robot.moveMouse(x, y);
       robot.mouseToggle("down", "left");
-      this.heldMouse.add("left");
       console.log(`[Hold] Holding left mouse button at (${x}, ${y})`);
-      // AG-SAF-07: always schedule an auto-release so an unbounded hold
-      // can never leave the physical mouse button stuck down.
-      const autoRelease = setTimeout(() => {
-        try { robot.mouseToggle("up", "left"); } catch { /* robot died */ }
-        this.heldMouse.delete("left");
-      }, clampedHold);
-      autoRelease.unref?.();
       if (holdTime) {
-        await new Promise(r => setTimeout(r, clampedHold));
-        clearTimeout(autoRelease);
-        try { robot.mouseToggle("up", "left"); } catch { /* already up */ }
-        this.heldMouse.delete("left");
-        return { status: "ok", detail: `Held left mouse button for ${clampedHold}ms at (${x}, ${y})` };
+        await new Promise(r => setTimeout(r, holdTime));
+        robot.mouseToggle("up", "left");
+        return { status: "ok", detail: `Held left mouse button for ${holdTime}ms at (${x}, ${y})` };
       }
-      return { status: "ok", detail: `Holding left mouse button at (${x}, ${y}) (auto-release in ${clampedHold}ms)` };
+      return { status: "ok", detail: `Holding left mouse button at (${x}, ${y})` };
     }
 
     if (!keys.length) throw new Error("keys or coordinate required for hold");
@@ -1256,25 +962,16 @@ export class ComputerUseTool {
       robot.keyToggle(key, "down");
     }
 
-    // AG-SAF-07: same auto-release guarantee for held keys.
-    const autoReleaseKeys = setTimeout(() => {
-      for (const k of keys) {
-        const key = KEY_MAP[k.toLowerCase()] ?? k.toLowerCase();
-        try { robot.keyToggle(key, "up"); } catch { /* robot died */ }
-      }
-    }, clampedHold);
-    autoReleaseKeys.unref?.();
     if (holdTime) {
-      await new Promise(r => setTimeout(r, clampedHold));
-      clearTimeout(autoReleaseKeys);
+      await new Promise(r => setTimeout(r, holdTime));
       for (const k of keys) {
         const key = KEY_MAP[k.toLowerCase()] ?? k.toLowerCase();
-        try { robot.keyToggle(key, "up"); } catch { /* already up */ }
+        robot.keyToggle(key, "up");
       }
-      return { status: "ok", detail: `Held keys ${keys} for ${clampedHold}ms` };
+      return { status: "ok", detail: `Held keys ${keys} for ${holdTime}ms` };
     }
 
-    return { status: "ok", detail: `Held keys ${keys} (auto-release in ${clampedHold}ms)` };
+    return { status: "ok", detail: `Held keys ${keys}` };
   }
 
   private async releaseAction(p: any) {
@@ -1283,7 +980,6 @@ export class ComputerUseTool {
 
     if (p.coordinate || (!keys.length && !p.keys)) {
       robot.mouseToggle("up", "left");
-      this.heldMouse.delete("left");
       return { status: "ok", detail: "Released left mouse button" };
     }
 
@@ -1310,14 +1006,12 @@ export class ComputerUseTool {
     console.log(`[Drag] Dragging from (${sx}, ${sy}) to (${ex}, ${ey})`);
     
     try {
-      // Throw path releases the button before rethrowing — otherwise a failed
-      // drag leaves the OS thinking left-click is still held (poisoning every
-      // subsequent user interaction until the next releaseAll).
       robot.moveMouse(sx, sy);
       robot.mouseToggle("down", "left");
       await new Promise(r => setTimeout(r, 200)); // Small pause to ensure drag is registered
       robot.dragMouse(ex, ey);
       robot.mouseToggle("up", "left");
+      
       return { status: "ok", detail: `Dragged from (${sx}, ${sy}) to (${ex}, ${ey})` };
     } catch (err) {
       console.error(`[Drag] Error:`, err);
@@ -1426,9 +1120,6 @@ export class ComputerUseTool {
 
       const normalizedKeys = [...keys];
       if (process.platform === "darwin") {
-        // macOS remap: models trained on Windows emit ctrl+c/ctrl+v etc., but
-        // the same shortcuts on macOS use Cmd — so translate only the common
-        // editing shortcuts (other ctrl combos like ctrl+tab stay literal).
         const commandShortcuts = new Set(["c", "v", "a", "x", "z", "f", "t", "w", "n", "s", "r"]);
         if (
           normalizedKeys.length === 2 &&
@@ -1454,14 +1145,10 @@ export class ComputerUseTool {
   }
 
   // ── Screenshot (inline, no worker thread) ────────────────────────────────────
-  // Mirrors Python's _attach_screenshot: capture → draw cursor circle →
-  // [LP-10: local VLMs only] resize ≤1024 inside → JPEG q70; cloud VLMs keep
-  // full-res webp q75 (physical-pixel capture is intentional for coordinate VLMs).
+  // Mirrors Python's _attach_screenshot: capture → draw cursor circle → resize → JPEG
 
   private async attachScreenshot(payload: Record<string, any>): Promise<Record<string, any>> {
-    // Timestamp + hrtime + random suffix: multiple captures can land in the
-    // same second, so a pure timestamp filename would collide/overwrite.
-    const imgPath = path.join(this.screenshotDir, `${nowTs()}-${process.hrtime.bigint().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}.png`);
+    const imgPath = path.join(this.screenshotDir, `${nowTs()}.png`);
 
     // 1. Capture via Electron native API
     let rawBuffer: Buffer;
@@ -1475,9 +1162,6 @@ export class ComputerUseTool {
       monTop  = d.bounds.y;
       
       const scaleFactor = d.scaleFactor || 1;
-      // Capture at PHYSICAL pixels: on HiDPI displays (Retina scale 2), a
-      // logical-size thumbnail would be upscaled/blurry — real pixels give
-      // the VLM crisp text to read coordinates from.
       const physicalWidth = Math.floor(d.size.width * scaleFactor);
       const physicalHeight = Math.floor(d.size.height * scaleFactor);
 
@@ -1513,16 +1197,7 @@ export class ComputerUseTool {
     const relY = cursor.y - monTop;
     const radius = 18;
 
-    // LP-10 (audit LP-09): local VLMs get a downscaled payload — fit inside
-    // 1024×1024, JPEG q70 — before base64. Cloud VLMs keep the full-res path
-    // (physical-pixel capture is intentional, see step 1) so this gate uses
-    // AIClient.isLocal() and never a reimplemented heuristic.
-    const downscale = shouldDownscaleForVlm(this.client);
-
     let encoded: string;
-    let mime = "webp";
-    let newW = rawW;
-    let newH = rawH;
     if (sharp) {
       try {
         const svgCircle = `
@@ -1531,47 +1206,24 @@ export class ComputerUseTool {
                     fill="none" stroke="red" stroke-width="4"/>
             <circle cx="${relX}" cy="${relY}" r="4" fill="yellow"/>
           </svg>`;
-        // LP-10: cursor composite stays BEFORE resize so the circle shrinks
-        // with the image and stays aligned with the content it marks.
-        let pipeline = sharp(rawBuffer)
-          .composite([{ input: Buffer.from(svgCircle), top: 0, left: 0 }]);
-        if (downscale) {
-          // resolveWithObject gives the OUTPUT dims — the payload the VLM
-          // sees — so image_width/height stay consistent with the base64.
-          pipeline = pipeline.resize(LOCAL_VLM_MAX_DIM, LOCAL_VLM_MAX_DIM, {
-            fit: "inside",          // shrink only — never upscale small displays
-            withoutEnlargement: true,
-          });
-          const { data, info } = await pipeline
-            .jpeg({ quality: 70 })
-            .toBuffer({ resolveWithObject: true });
-          encoded = data.toString("base64");
-          mime = "jpeg";
-          newW = info.width;
-          newH = info.height;
-        } else {
-          const webp = await pipeline.webp({ quality: 75 }).toBuffer();
-          encoded = webp.toString("base64");
-        }
+        const webp = await sharp(rawBuffer)
+          .composite([{ input: Buffer.from(svgCircle), top: 0, left: 0 }])
+          .webp({ quality: 75 })
+          .toBuffer();
+        encoded = webp.toString("base64");
       } catch (e) {
         console.warn("[ComputerUse] sharp composite failed, skipping cursor circle:", e);
         encoded = rawBuffer.toString("base64");
-        // Composite failed → raw PNG payload; dims unchanged.
-        if (downscale) mime = "png";
       }
     } else {
-      // LP-10: sharp-less fallback cannot downscale (no decoder available) —
-      // rare path (sharp is a packaged dep); keep current raw-PNG behavior.
       encoded = rawBuffer.toString("base64");
-      mime = "png";
     }
 
     // 5. Compute display-scale dims for viewport
-    // LP-10: image_width/height reflect the DOWNSCALED image while
-    // raw_/display_ keep display truth — absoluteXy maps image→display via
-    // these ratios, so coords stay correct only when dims match the payload.
+    const newW = rawW;
+    const newH = rawH;
 
-    console.log(`[Screenshot] ${imgPath} cursor=(${cursor.x}, ${cursor.y})${downscale ? ` downscale=${newW}x${newH}` : ""}`);
+    console.log(`[Screenshot] ${imgPath} cursor=(${cursor.x}, ${cursor.y})`);
 
     this.lastViewport = {
       monitor_left:   monLeft,
@@ -1586,9 +1238,7 @@ export class ComputerUseTool {
 
     return {
       ...payload,
-      // LP-10: mime tracks the actual encoded payload (jpeg=downscaled local,
-      // webp=full-res cloud, png=sharp-less/composite-failure fallback).
-      screenshot:      `data:image/${mime};base64,${encoded}`,
+      screenshot:      `data:image/webp;base64,${encoded}`,
       screenshot_path: imgPath,
       cursor,
       display:         { width: rawW, height: rawH },
@@ -1597,17 +1247,6 @@ export class ComputerUseTool {
   }
 
   // ── Coordinate transform (identical logic to Python) ─────────────────────────
-
-  /**
-   * AG-CORR-16: provider-declared coordinate space. `absoluteXy` previously
-   * treated ANY value ≤1000 from "normalized" providers as grid coords, so
-   * genuine pixel coordinates ≤1000 (e.g. (835,138) on a small display) were
-   * mis-scaled. The provider (adapter metadata) now declares its space:
-   *   'grid'    → 0–1000 normalized grid (UI-TARS style)
-   *   'pixel'   → genuine pixels (scaled image → display)
-   *   undefined → legacy magnitude heuristic (unchanged behavior)
-   */
-  public declaredCoordinateSpace: 'grid' | 'pixel' | undefined = undefined;
 
   private absoluteXy(coordinate?: [number, number] | null): [number, number] {
     const [x, y] = ensureXy(coordinate);
@@ -1620,19 +1259,13 @@ export class ComputerUseTool {
     const ih     = vp.image_height;
 
     const isNormalized = this.client && ["everfern", "openrouter", "ollama-cloud", "gemini"].includes(this.client.provider);
-    // Fallback flag only (legacy path): when declaredCoordinateSpace is set
-    // upstream, isNormalized is ignored — this heuristic remains solely for
-    // providers that never declare a space.
+
     if (!dw || !dh) {
       console.warn("[Coord] Viewport not initialized - using offset-only fallback");
     }
 
     if (dw && dh) {
-      // AG-CORR-16: declared space wins over the magnitude heuristic.
-      const useGrid =
-        this.declaredCoordinateSpace === 'grid' ||
-        (this.declaredCoordinateSpace === undefined && isNormalized && x <= 1000 && y <= 1000);
-      if (useGrid) {
+      if (isNormalized && x <= 1000 && y <= 1000) {
         // Normalised 0–1000 coords (UI-TARS raw output via OpenRouter)
         const absX = left + Math.floor((x / 1000) * dw);
         const absY = top  + Math.floor((y / 1000) * dh);
@@ -1653,9 +1286,6 @@ export class ComputerUseTool {
 
   // ── PNG header reader ─────────────────────────────────────────────────────────
 
-  // Read width/height straight from the IHDR header (bytes 16/20) — no image
-  // decode needed just to know the capture size. 1080p fallback keeps the
-  // pipeline moving on malformed buffers instead of hard-crashing a turn.
   private pngDimensions(buf: Buffer): { width: number; height: number } {
     if (buf.length >= 24 && buf.toString("ascii", 1, 4) === "PNG") {
       return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
@@ -1667,7 +1297,7 @@ export class ComputerUseTool {
 // ── ComputerUseAgent ──────────────────────────────────────────────────────────
 // Mirrors Python's ComputerUseAgent.run() very closely.
 
-export class ComputerUseAgent {
+class ComputerUseAgent {
   private messages: ChatMessage[] = [];
   private baseCount: number;
   public finalAnswer: string | null = null;
@@ -1675,8 +1305,7 @@ export class ComputerUseAgent {
   private lastScreenshot?: string;
   private aborted = false;
 
-  // Game state for tars-test parity. heldKeys mirrors every key physically
-  // held down (hold_w etc.) so releaseAll() can un-stick them at abort/turn end.
+  // Game state for tars-test parity
   private heldKeys = new Set<string>();
   private lastX: number | null = null;
   private lastY: number | null = null;
@@ -1793,7 +1422,6 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
     private historyWindow = 12,
     private toolCallId   = "",
   ) {
-    // Clamp to >=1: a 0/negative window would slice to an empty prompt.
     this.historyWindow = Math.max(1, historyWindow);
     this.messages  = [{ role: "system", content: SYSTEM_PROMPT }];
     this.baseCount = this.messages.length;
@@ -1802,17 +1430,7 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
   public abort(): void {
     this.aborted = true;
     this.terminated = "aborted";
-    // AG-CORR-06: release any held keys so an aborted turn doesn't leave the
-    // keyboard stuck (e.g. W held in a game loop).
-    try { void this.releaseAll(); } catch (err) {
-      console.warn("[ComputerUse] releaseAll during abort failed:", err);
-    }
     this.tool.overlay?.hide();
-  }
-
-  /** AG-CORR-08: exposed so mid-dispatch abort checks don't poke privates. */
-  public isAborted(): boolean {
-    return this.aborted;
   }
 
   private async getScreenshotBase64(): Promise<string> {
@@ -1831,35 +1449,14 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
     return (response.content as string) || "";
   }
 
-  /** AG-CORR-06/AG-SAF-07: public so the tool's turn-end finally can call it.
-   * Physical keyToggle("up") is mandatory: abort() only flips flags, but the
-   * OS keyboard still has the key down — without this, a stuck modifier (e.g.
-   * W in a game loop, or shift) keeps firing into whatever the user types next. */
-  async releaseAll(): Promise<void> {
-    for (const rawKey of Array.from(this.heldKeys)) {
-      const key = rawKey.toLowerCase();
-      const mapped =
-        key === "win" || key === "windows" || key === "super" || key === "meta" || key === "cmd" || key === "command"
-          ? (process.platform === "win32" ? "win" : "command")
-          : key;
+  private releaseAll() {
+    for (const key of Array.from(this.heldKeys)) {
       try {
-        if (robot) {
-          await robot.keyToggle(mapped, "up");
-        }
-      } catch (err) {
-        console.warn(`[ComputerUse] releaseAll: failed to release '${mapped}':`, err);
-      }
+        // Map keys if needed (ComputerUseTool.pressKeys has a map)
+        this.tool.call({ action: "key", keys: [key], _type: "release" }); // We might need a direct tool call for release
+      } catch {}
     }
     this.heldKeys.clear();
-    // AG-SAF-07: also release any held mouse buttons (keyboard-only release
-    // left physical buttons stuck after an aborted mouse hold).
-    try {
-      this.tool.releaseHeldMouse();
-    } catch (err) {
-      console.warn(`[ComputerUse] releaseAll: failed to release held mouse:`, err);
-    }
-    // Resetting last coords makes the next turn re-anchor cursor state
-    // instead of trusting positions from the aborted session.
     this.lastX = null;
     this.lastY = null;
   }
@@ -1948,7 +1545,7 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
             break;
           }
           if (step === this.maxTurns) break;
-          await sleepMs(500);
+          await sleep(3);
           continue;
         }
 
@@ -1985,37 +1582,23 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
 
         // Check safety decision / user confirmation requirement
         const safetyDecision = chatResponse.safetyDecision as any;
-        // AG-SAF-11: heuristic backstop — the model may omit/fabricate
-        // safetyDecision, so independently scan the task, the model's stated
-        // intent, and the queued action names/args for destructive verbs.
-        const heuristicHit = looksDestructive([
-          this.task,
-          content,
-          ...toolCalls.map((tc: any) => tc?.name),
-          ...toolCalls.map((tc: any) => {
-            try { return typeof tc?.arguments === 'object' ? JSON.stringify(tc.arguments) : String(tc?.arguments ?? ''); }
-            catch { return ''; }
-          }),
-        ]);
-        const requiresConfirmation = heuristicHit || (safetyDecision && (
+        const requiresConfirmation = safetyDecision && (
           safetyDecision === 'require_confirmation' ||
           safetyDecision === 'OFF-NOMINAL' ||
           (typeof safetyDecision === 'object' && (
             safetyDecision.decision === 'require_confirmation' ||
             safetyDecision.decision === 'OFF-NOMINAL'
           ))
-        ));
+        );
 
-        let userConfirmed = true; // only meaningful when requiresConfirmation
+        let userConfirmed = true;
         if (requiresConfirmation) {
-          console.log(`[${agentName} Agent] Action requires confirmation${heuristicHit ? ' (destructive heuristic)' : ''}. Prompting user...`);
+          console.log(`[${agentName} Agent] Action requires confirmation. Prompting user...`);
           onUpdate?.("⚠️ Action requires security confirmation...");
           try {
             const { dialog, BrowserWindow } = require("electron");
             const win = BrowserWindow.getAllWindows()[0];
-            const explanation = heuristicHit
-              ? `\n\nExplanation: The action text matches a destructive-action pattern (e.g. delete/format/uninstall).`
-              : typeof safetyDecision === 'object' && (safetyDecision as any).explanation
+            const explanation = typeof safetyDecision === 'object' && (safetyDecision as any).explanation
               ? `\n\nExplanation: ${(safetyDecision as any).explanation}`
               : "";
             const dialogResponse = await dialog.showMessageBox(win || undefined, {
@@ -2070,21 +1653,15 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
               await this.tool.call({ action: "key", keys: ["alt", "right"] });
             } else if (fname === "search") {
               const { shell } = require("electron");
-              // AG-SAF-06: only http(s) may reach shell.openExternal.
-              if (!isSafeExternalUrl("https://www.google.com")) {
-                actionResult = { status: "error", error: "Blocked non-http(s) URL: " + "https://www.google.com".slice(0, 120) };
-              } else {
-                await shell.openExternal("https://www.google.com");
-                await sleep(2);
-              }
+              await shell.openExternal("https://www.google.com");
+              await sleep(2);
             } else if (fname === "navigate") {
               const { shell } = require("electron");
-              // AG-SAF-06: model-provided URL — validate protocol fail-closed.
-              if (!isSafeExternalUrl(args.url)) {
-                actionResult = { status: "error", error: "Blocked non-http(s) URL: " + String(args.url).slice(0, 120) };
-              } else {
+              if (args.url) {
                 await shell.openExternal(args.url);
                 await sleep(2);
+              } else {
+                throw new Error("url is required for navigate");
               }
             } else if (fname === "click_at" || fname === "left_click" || fname === "click") {
               const coord = args.coordinate || (args.x != null && args.y != null ? [args.x, args.y] : undefined);
@@ -2195,7 +1772,7 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
         }
 
         results.push({ name: tc.name, result: actionResult });
-        await waitForScreenSettle();
+        await sleep(1);
       }
 
         const newImg = await this.getScreenshotBase64();
@@ -2234,9 +1811,8 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
         for (const tp of toolParts) {
           this.messages.push(tp);
         }
-        this.trimMessages(); // AG-MEM-03: bound history growth each step
 
-        await waitForScreenSettle();
+        await sleep(1);
       }
 
       return {
@@ -2279,9 +1855,6 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
         } as any);
 
         const histLines: string[] = [];
-        // Same windowing rationale as historyWindow: only the last 6 steps
-        // enter the per-turn prompt; the VLM screenshot carries current state,
-        // and older steps cost tokens without improving the next decision.
         const startIdx = Math.max(0, history.length - 6);
         for (let i = startIdx; i < history.length; i++) {
           const h = history[i];
@@ -2295,8 +1868,6 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
         const vp = this.tool.lastViewport;
         const dw = vp.display_width || 1920;
         const dh = vp.display_height || 1080;
-        // Report cursor in the SAME 0–1000 normalized grid the model outputs —
-        // mixing coordinate spaces between input and output confuses grounding.
         const norm_x = Math.round((cursor.x / dw) * 1000);
         const norm_y = Math.round((cursor.y / dh) * 1000);
 
@@ -2341,7 +1912,7 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
         } catch (err: any) {
           console.error("[ComputerUse] API error:", err);
           if (step === this.maxTurns) break;
-          await sleepMs(500);
+          await sleep(3);
           continue;
         }
 
@@ -2442,8 +2013,7 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
           if (actions.length === 0 || !isStructuredAction(actions[0])) {
             console.log("[WARN] Correction also failed — skipping step.");
             history.push({ thought, actions: [], screenshot: img });
-            trimHistory(history);
-            await waitForScreenSettle();
+            await sleep(1);
             continue;
           } else {
             badFormatCount = 0;
@@ -2455,22 +2025,13 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
         if (actions.length === 0) {
           console.log("[WARN] No actions parsed — skipping step.");
           history.push({ thought, actions: [], screenshot: img });
-          trimHistory(history);
-          await waitForScreenSettle();
-          continue;
-        }
-
-        // AG-SAF-11: text-action loop bypasses the toolCall safetyDecision gate
-        // — run the destructive heuristic over thought + queued actions.
-        if (!(await this.confirmDestructive([thought, ...actions], onUpdate))) {
-          console.log("  [EXEC] destructive actions denied by user — skipping step");
-          history.push({ thought, actions: [], screenshot: img });
-          trimHistory(history);
+          await sleep(1);
           continue;
         }
 
         let done = false;
         const dispatched: string[] = [];
+        let lastActionWasWin = false;
 
         for (const act of actions) {
           console.log(`  [EXEC] ${act}`);
@@ -2494,22 +2055,26 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
             break;
           }
 
-          // Action-aware settle: slow UI transitions need more time, but exit early once the screen settles
+          // Action-aware sleep: slow UI transitions need more time
+          const actLower = act.toLowerCase();
           if (/hotkey.*key=.*win/i.test(act) || /hotkey.*key=.*super/i.test(act)) {
             // Start Menu takes 600-900ms to animate open
-            await waitForScreenSettle(150, 1500);
+            await sleep(1.5);
+            lastActionWasWin = true;
           } else if (/hotkey/i.test(act)) {
-            await waitForScreenSettle(150, 800);
+            await sleep(0.8);
+            lastActionWasWin = false;
           } else if (/left_double|double_click/i.test(act)) {
             // App launch via double-click can be slow
-            await waitForScreenSettle(150, 1500);
+            await sleep(1.5);
+            lastActionWasWin = false;
           } else {
-            await waitForScreenSettle(120, 400);
+            await sleep(0.3);
+            lastActionWasWin = false;
           }
         }
 
         history.push({ thought, actions: dispatched, screenshot: img });
-        trimHistory(history);
 
         if (done) {
           console.log("\n[TASK COMPLETE — finished() called]");
@@ -2517,10 +2082,6 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
           break;
         }
 
-        // Stuck detection on the exact action signature: identical repeats
-        // mean the model is looping on an unchanging screen (a modal/menu is
-        // probably blocking); recovery click dismisses it rather than burning
-        // more turns on the same failed action.
         const sig = actions.join("|");
         if (sig === lastActionSig) {
           stuckCount++;
@@ -2533,14 +2094,10 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
           console.log(`\n[STUCK] Same actions repeated ${MAX_STUCK}x — trying recovery (click desktop + wait)...`);
           stuckCount = 0;
           lastActionSig = null; // reset so next different action isn't double-counted
-          // Click center of the active monitor (AG-CORR-19: real viewport center,
-          // not hardcoded (500,500)) to dismiss any stuck menu, then wait.
+          // Click center of screen to dismiss any stuck menu, then wait for screen to settle
           if (robot) {
-            const vp = this.tool.lastViewport || {};
-            const cx = Math.floor((vp.monitor_left ?? 0) + (vp.display_width ?? 1000) / 2);
-            const cy = Math.floor((vp.monitor_top ?? 0) + (vp.display_height ?? 1000) / 2);
             const pos = robot.getMousePos();
-            robot.moveMouse(cx, cy);
+            robot.moveMouse(500, 500); // center
             robot.mouseClick();
             robot.moveMouse(pos.x, pos.y); // restore
           }
@@ -2548,7 +2105,7 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
         }
 
         // Give the screen extra time to settle between steps
-        await waitForScreenSettle();
+        await sleep(lastActionWasWin ? 0.5 : 1);
       }
 
       return {
@@ -2608,20 +2165,17 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
               console.log(`[Dumb-Agent] Hand: ${actions.join(", ")}`);
               await this.dispatchAll(actions, onUpdate, onProgress, step);
               this.history.push(`${instruction} -> ${actions.join(", ")}`);
-              // Keep only the last historyWindow entries — the prompt already
-              // carries full screenshots; older action lines cost tokens without
-              // adding decision-relevant context.
               if (this.history.length > this.historyWindow) this.history = this.history.slice(-this.historyWindow);
               consecutiveErrors = 0;
               if (this.terminated || this.finalAnswer) break;
-              await waitForScreenSettle();
+              await sleep(1);
               continue;
             }
 
             noActionRetries++;
             if (noActionRetries <= 2 && !isFinalTurn) {
               console.warn(`[Dumb-Agent] Brain/HAND produced no executable action; retrying (${noActionRetries}/2)`);
-              await waitForScreenSettle();
+              await sleep(1);
               consecutiveErrors = 0;
               continue;
             }
@@ -2678,7 +2232,7 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
             await this.dispatchAll(textActions, onUpdate, onProgress, step);
             noActionRetries = 0;
             if (this.terminated || this.finalAnswer) break;
-            await waitForScreenSettle();
+            await sleep(1);
             continue;
           }
 
@@ -2689,7 +2243,7 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
           noActionRetries++;
           if (noActionRetries <= 2 && !isFinalTurn) {
             console.warn(`[Dumb-Agent] No executable action received from API; retrying with stricter instruction (${noActionRetries}/2)`);
-            await waitForScreenSettle();
+            await sleep(1);
             continue;
           }
           console.warn("[Dumb-Agent] No actions received from API");
@@ -2730,7 +2284,7 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
         }
 
         if (this.terminated || this.finalAnswer) break;
-        await waitForScreenSettle();
+        await sleep(1);
       }
 
       return {
@@ -2761,9 +2315,6 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
     if (!models) return null;
 
     console.log(`[Dumb-Agent] Brain/HAND provider=${this.client.provider} brain=${models.brain} hand=${models.hand}`);
-    // Hard 8-step cap (tighter than historyWindow) for the brain prompt —
-    // reasoning models only need recent trajectory, and this keeps the
-    // instruction request small enough for its 512-token budget.
     const historyText = this.history.slice(-8).join("\n");
     const instruction = (await this.ask(models.brain, [
       {
@@ -2974,56 +2525,9 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
     return trimmed;
   }
 
-  /**
-   * AG-SAF-11: destructive-action gate for text-action dispatch paths that
-   * don't pass through the toolCall safetyDecision gate (dispatchAll and the
-   * Thought/Action loop). If any action text matches the destructive pattern,
-   * prompt the user; deny by default when the dialog fails. Returns true when
-   * the action may proceed.
-   */
-  private async confirmDestructive(actionTexts: Array<string | undefined | null>, onUpdate?: (msg: string) => void): Promise<boolean> {
-    if (!looksDestructive(actionTexts)) return true;
-    const agentName = "ComputerUse";
-    console.log(`[${agentName}] Action requires confirmation (destructive heuristic). Prompting user...`);
-    onUpdate?.("⚠️ Action requires security confirmation...");
-    try {
-      const { dialog, BrowserWindow } = require("electron");
-      const win = BrowserWindow.getAllWindows()[0];
-      const dialogResponse = await dialog.showMessageBox(win || undefined, {
-        type: "warning",
-        title: "EverFern Security Authorization",
-        message: `${agentName} has requested an action that requires your confirmation.\n\nExplanation: The action text matches a destructive-action pattern (e.g. delete/format/uninstall).\n\nDo you want to authorize this action?`,
-        buttons: ["Approve", "Deny"],
-        defaultId: 0,
-        cancelId: 1
-      });
-      const approved = dialogResponse.response === 0;
-      console.log(`[${agentName}] User confirmation result: ${approved ? "Approved" : "Denied"}`);
-      return approved;
-    } catch (dialogErr) {
-      console.error(`[${agentName}] Failed to show confirmation dialog:`, dialogErr);
-      return false; // fail-closed
-    }
-  }
-
-  /** Execute a queued batch of action strings. releaseAll() first: the
-   * previous batch's hold state (game keys, mouse) must not bleed into the
-   * next batch — every dispatch starts from a clean input state. */
   async dispatchAll(actions: string[], onUpdate?: any, onProgress?: any, step?: number) {
-    await this.releaseAll();
-    // AG-SAF-11: model-provided action text bypasses the toolCall gate — run
-    // the destructive heuristic over the whole queued batch before dispatch.
-    if (!(await this.confirmDestructive(actions, onUpdate))) {
-      console.log("  [EXEC] destructive batch denied by user — skipping");
-      return;
-    }
+    this.releaseAll();
     for (const action of actions) {
-      // AG-CORR-08: honor abort between queued actions so a long
-      // execute_actions run stops within one action of abort().
-      if (this.aborted) {
-        console.log("  [EXEC] aborted — stopping remaining actions");
-        return;
-      }
       const sentence = this.formatActionSentence(action);
       console.log(`  [EXEC] ${sentence}`);
       onUpdate?.(`${sentence}...`);
@@ -3039,8 +2543,6 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
       });
 
       const handled = await this.dispatchAction(action);
-      // __done__ = model signalled finished(): stop the whole batch but report
-      // success — unlike abort, this is the task's normal completion path.
       if (handled === "__done__") {
         this.terminated = "success";
         break;
@@ -3290,26 +2792,6 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
 
   // ── Message helpers ───────────────────────────────────────────────────────────
 
-  /** AG-MEM-03: elide image payloads older than the recent window to bound memory.
-   * Each embedded screenshot is ~100s of KB; 200 turns would otherwise pin
-   * tens of MB in this.messages even after trimMessages slices messages out. */
-  private elideStaleScreenshots(): void {
-    const keep = 4; // keep the most recent exchanges intact for vision continuity
-    // In-place rewrite (not slice) — messages older than the keep window stay
-    // structurally present but lose their payload, so provider-side message
-    // orderings (tool_call_id pairings) remain valid.
-    for (let i = this.baseCount; i < this.messages.length - keep; i++) {
-      const m: any = this.messages[i];
-      if (!m || !Array.isArray(m.content)) continue;
-      for (let j = 0; j < m.content.length; j++) {
-        const c = m.content[j];
-        if (c && c.type === 'image_url' && c.image_url && typeof c.image_url.url === 'string' && c.image_url.url.startsWith('data:image')) {
-          m.content[j] = { type: 'text', text: '[screenshot elided]' };
-        }
-      }
-    }
-  }
-
   private async appendInitialObservation(): Promise<void> {
     const obs        = await this.tool.captureObservation();
     const screenshot = obs.screenshot as string | undefined;
@@ -3322,11 +2804,8 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
 
   /** Mirror Python: keep base + last (historyWindow * 2) dynamic messages. */
   private trimMessages(force = false): void {
-    this.elideStaleScreenshots(); // AG-MEM-03: drop stale image payloads before slicing
     const base    = this.messages.slice(0, this.baseCount);
     const dynamic = this.messages.slice(this.baseCount);
-    // historyWindow * 2 = one user + one assistant/tool message per windowed
-    // turn; baseCount (system prompt) is never trimmed away.
     const maxItems = this.historyWindow * 2;
     if (!force && dynamic.length <= maxItems) return;
     this.messages = [...base, ...dynamic.slice(-maxItems)];
@@ -3335,12 +2814,9 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
 
 // ── Exports ───────────────────────────────────────────────────────────────────
 
-// Module-level slot for the currently running agent so abortComputerUse()
-// can reach it from outside the tool closure (no tool handle available there).
 let activeAgent: ComputerUseAgent | null = null;
 
-/** Abort the in-flight agent (releases held keys via abort→releaseAll). */
-function abortComputerUse(): void {
+export function abortComputerUse(): void {
   activeAgent?.abort();
   activeAgent = null;
 }
@@ -3371,10 +2847,6 @@ export function createComputerUseTool(
 
   const model = vlm?.model ?? originalClient.model ?? "unknown";
   tool.client = client;
-  // AG-CORR-16: UI-TARS-style models emit a 0–1000 grid; other providers emit
-  // genuine pixels. Declaring the space kills the ≤1000 magnitude heuristic
-  // that mis-scaled real pixel coordinates.
-  tool.declaredCoordinateSpace = /ui-tars|tars/i.test(model) ? 'grid' : 'pixel';
 
   return createToolWithClient(client, tool, model);
 }
@@ -3418,27 +2890,15 @@ function createToolWithClient(
             });
           }
           // Create a temporary agent just to execute the actions
-          // AG-CORR-08: register the temp agent in the active slot so
-          // abortComputerUse()/tool.abort() can interrupt mid-dispatch.
           const tempAgent = new ComputerUseAgent(client, tool, model, thought || "Execute actions", 0, 200, 12, toolCallId ?? "");
-          const prevActiveAgent = activeAgent;
-          activeAgent = tempAgent;
-          try {
-            await tempAgent.dispatchAll(actions, onUpdate, (ev: any) => {
-              emitEvent?.({
-                type: "subagent-progress",
-                toolCallId: toolCallId ?? "",
-                timestamp: new Date().toISOString(),
-                data: ev,
-              });
+          await tempAgent.dispatchAll(actions, onUpdate, (ev: any) => {
+            emitEvent?.({
+              type: "subagent-progress",
+              toolCallId: toolCallId ?? "",
+              timestamp: new Date().toISOString(),
+              data: ev,
             });
-          } finally {
-            // Restore the saved slot only if we still own it — a concurrent
-            // abort/replace during dispatch would have overwritten the slot,
-            // and clobbering that newer agent would break its abort path.
-            if (activeAgent === tempAgent) activeAgent = prevActiveAgent ?? null;
-            tempAgent.abort(); // releases any held keys/buttons via abort→releaseAll
-          }
+          });
           const obs = await tool.captureObservation();
           const b64 = (obs.screenshot as string)?.split(",")?.[1] || "";
           return { success: true, output: "Actions executed", base64Image: b64, data: { actions, thought, screenshot: b64 } };
@@ -3470,103 +2930,29 @@ function createToolWithClient(
         return { success: true, output: finalAnswer, base64Image: b64, data: { task, finalAnswer, screenshot: b64 } };
       } finally {
         console.log("[ComputerUse] Task finished, cleaning up activeAgent and overlay");
-        // AG-SAF-07: unconditional turn-end release — covers both normal turn
-        // end and any path abort() didn't reach (held keys + mouse buttons).
-        try { await agent.releaseAll(); } catch (err) {
-          console.warn('[ComputerUse] turn-end releaseAll failed:', err);
-        }
-        // Guard: only clear if still ours — a nested execute_actions temp
-        // agent must not clobber a newer agent that replaced us mid-flight.
         if (activeAgent === agent) activeAgent = null;
-        tool.overlay?.hide();
+        if (tool.overlay) {
+          tool.overlay.hide();
+        }
       }
     },
 
     abort() {
       activeAgent?.abort();
       activeAgent = null;
-      tool.overlay?.hide();
+      if (tool.overlay) {
+        tool.overlay.hide();
+      }
     },
   };
 }
 
-// ── AG-MEM-01/04: shared lazy capture tool ────────────────────────────────────
-// captureScreen() used to construct a fresh ComputerUseTool (and thus a
-// fullscreen always-on-top overlay BrowserWindow) per call and never destroy
-// it. Reuse one module-level instance instead, and destroy it after a minute
-// of idleness so no overlay lingers for the app's lifetime.
-
-let sharedCaptureTool: ComputerUseTool | null = null;
-let overlayIdleTimer: NodeJS.Timeout | null = null;
-
-/**
- * Lazily construct (or return the existing) module-wide capture tool.
- * AG-MEM-01: each ComputerUseTool owns a fullscreen always-on-top overlay
- * BrowserWindow; constructing one per capture leaked a window per call.
- * One shared instance, destroyed after idle (see below), prevents that leak.
- * Side effect: creates ~/.everfern/screenshots and prunes old PNGs on first use.
- */
-export function getSharedCaptureTool(): ComputerUseTool {
-  if (!sharedCaptureTool) {
-    const home = process.env.USERPROFILE ?? process.env.HOME ?? "";
-    const dir = path.join(home, ".everfern", "screenshots");
-    sharedCaptureTool = new ComputerUseTool(dir);
-    // AG-MEM-04: keep pruning even though the constructor now rarely runs.
-    void pruneScreenshotDir(dir);
-  }
-  return sharedCaptureTool;
-}
-
-/** Destroy the shared capture tool after a minute without captures. */
-function scheduleOverlayIdleCleanup(): void {
-  // unref: the idle timer must never keep the Electron main process alive
-  // on quit just to fire a cleanup it no longer needs.
-  if (overlayIdleTimer) clearTimeout(overlayIdleTimer);
-  overlayIdleTimer = setTimeout(() => {
-    overlayIdleTimer = null;
-    try { sharedCaptureTool?.cleanup(); } catch { /* already torn down */ }
-    sharedCaptureTool = null;
-  }, 60_000);
-  overlayIdleTimer.unref?.();
-}
-
-/** Tear down the shared capture tool immediately (wired into app quit).
- * Nulling sharedCaptureTool lets a later getSharedCaptureTool() lazily rebuild
- * a fresh instance, so quit-time teardown never permanently breaks capture. */
-export function shutdownComputerUseCapture(): void {
-  if (overlayIdleTimer) {
-    clearTimeout(overlayIdleTimer);
-    overlayIdleTimer = null;
-  }
-  try { sharedCaptureTool?.cleanup(); } catch { /* already torn down */ }
-  sharedCaptureTool = null;
-}
-
-/** AG-MEM-02: destroy every live tool overlay (wired into app quit).
- * Iterates a copy because cleanup() mutates the live set while we sweep. */
-export function destroyAllComputerUseOverlays(): void {
-  for (const t of [...ComputerUseTool.getLiveToolOverlays()]) {
-    try { t.cleanup(); } catch { /* already torn down */ }
-  }
-}
-
-/**
- * Capture the primary screen via the shared capture tool.
- * Always reschedules the 60s idle cleanup in `finally` — success or throw —
- * so no capture failure can leave the singleton overlay alive forever.
- */
 export async function captureScreen(): Promise<{ b64: string; w: number; h: number; physW: number; physH: number }> {
   const home = process.env.USERPROFILE ?? process.env.HOME ?? "";
-  // AG-MEM-04: fire-and-forget prune on every capture cadence.
-  void pruneScreenshotDir(path.join(home, ".everfern", "screenshots"));
-  const tool = getSharedCaptureTool();
-  try {
-    const obs  = await tool.captureObservation();
-    const b64  = (obs.screenshot as string)?.split(",")?.[1] || "";
-    const w    = (obs.display as any)?.width || 1920;
-    const h    = (obs.display as any)?.height || 1080;
-    return { b64, w, h, physW: w, physH: h };
-  } finally {
-    scheduleOverlayIdleCleanup();
-  }
+  const tool = new ComputerUseTool(path.join(home, ".everfern", "screenshots"));
+  const obs  = await tool.captureObservation();
+  const b64  = (obs.screenshot as string)?.split(",")?.[1] || "";
+  const w    = (obs.display as any)?.width || 1920;
+  const h    = (obs.display as any)?.height || 1080;
+  return { b64, w, h, physW: w, physH: h };
 }

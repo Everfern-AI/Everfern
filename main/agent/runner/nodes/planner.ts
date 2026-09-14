@@ -87,20 +87,6 @@ export const createPlannerNode = (runner: AgentRunner, eventQueue?: StreamEvent[
       missionTracker.setPhase('planning');
     }
 
-    // LP-01: local fast-path — on local providers, skip ALL planner LLM
-    // round trips (isReadOnlyIntent probe, plan generation) and hand the
-    // task straight to execution. Local triage (nodes/triage.ts:64) already
-    // answers deterministically, so a local plan pass adds latency without
-    // signal. Reuses the existing "no decomposition / direct execution"
-    // output shape (below) so no new event shapes are introduced.
-    // The cloud branch below is byte-identical to the pre-LP-01 behavior.
-    if ((runner.client as any)?.isLocal?.()) {
-      const logger = nodeLifecycle(runner, 'planner');
-      logger.info('Local provider — skipping planner LLM passes (LP-01 fast-path)');
-      integrator.completeNode('planner', 'Local fast-path: direct execution');
-      return { taskPhase: 'executing' };
-    }
-
     try {
       const logger = nodeLifecycle(runner, 'planner');
       logger.info('Compiling execution pipeline and integrating context hints...');

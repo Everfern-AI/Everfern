@@ -12,7 +12,6 @@ export interface DebateStreamEvent {
   type: 'debate_start' | 'vanguard_complete' | 'phantom_complete' | 'arbiter_complete' | 'debate_complete' | 'debate_error' | 'debate_skipped';
   timestamp: string;
   debateId: string;
-  conversationId?: string;
   phase?: 'vanguard' | 'phantom' | 'arbiter';
   data?: any;
   error?: string;
@@ -102,3 +101,5 @@ export class DebateEventEmitter {
     };
   }
 }
+
+export const debateEventEmitter = DebateEventEmitter;

@@ -277,16 +277,6 @@ class StateManager {
 export const stateManager = new StateManager();
 
 // BUG-14 FIX: Run cleanup every 5 minutes (down from 10)
-// AG-MEM-12 FIX: unref'd so the interval never holds the event loop open;
-// stopStateCleanup() allows explicit teardown (e.g. app before-quit).
-const stateCleanupInterval = setInterval(() => {
+setInterval(() => {
   stateManager.cleanup();
 }, CLEANUP_INTERVAL_MS);
-stateCleanupInterval.unref?.();
-
-/**
- * AG-MEM-12: Stop the periodic state cleanup interval.
- */
-export function stopStateCleanup(): void {
-  clearInterval(stateCleanupInterval);
-}

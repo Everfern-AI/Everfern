@@ -9,7 +9,6 @@ import { createMemoryConsolidatorNode } from './nodes/memory-consolidator';
 import { createBrainNode } from './nodes/brain';
 import { createDecomposerNode } from './nodes/decomposer';
 import { loadPrompt } from '../../lib/prompt-sync';
-import { resolvePromptPlaceholders } from './system-prompt';
 import { createDebateChamberNode } from './nodes/debate-chamber';
 import {
   createCodingSpecialistNode,
@@ -101,7 +100,7 @@ const routePendingToolsWithAutomationApproval = (
   return 'multi_tool_orchestrator';
 };
 
-const cleanCommandNarrative = (rawCmd: string): string => {
+export const cleanCommandNarrative = (rawCmd: string): string => {
   if (!rawCmd || typeof rawCmd !== 'string') return '';
   let cmd = rawCmd;
   // Issue #23 Fix: Only strip Windows/PowerShell boilerplate on Windows.
@@ -430,14 +429,7 @@ ${plan.steps.map(s => `${s.id}: ${s.description} (Tool: ${s.tool})`).join('\n')}
 
 If a specialized agent failed to complete a step, identify the issue and use your tools to proceed.\n\n`;
 
-        const mainPrompt = await resolvePromptPlaceholders(
-          loadPrompt('SYSTEM_PROMPT.md') || '',
-          process.platform,
-          ctx.runner.currentConversationId || undefined,
-          [],
-          (ctx.runner as any).projectId || undefined,
-          (ctx.runner as any).skills
-        );
+        const mainPrompt = loadPrompt('SYSTEM_PROMPT.md') || '';
         systemPromptOverride = planContext + mainPrompt;
     }
 

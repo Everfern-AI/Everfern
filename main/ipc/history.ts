@@ -1,7 +1,6 @@
 import { ipcMain } from 'electron';
 import { ChatHistoryStore } from '../store/history';
 import { listHitlRecords, saveHitlResponse } from '../store/hitl';
-import { assertSafeSegment } from '../lib/path-guard';
 
 export function registerHistoryHandlers(historyStore: ChatHistoryStore) {
   ipcMain.handle('history:list', async () => {
@@ -72,13 +71,8 @@ export function registerHistoryHandlers(historyStore: ChatHistoryStore) {
   });
 
   // Mark a HITL request as resolved (approved or rejected) on disk.
-  // MP-SEC-13: sanitize both ids BEFORE touching the store — the store's
-  // internal catch would otherwise swallow assertSafeSegment failures and
-  // report {success:true} to the renderer for traversal inputs.
   ipcMain.handle('hitl:resolve', async (_event, conversationId: string, requestId: string, approved: boolean) => {
     try {
-      assertSafeSegment(conversationId, 'conversationId');
-      assertSafeSegment(requestId, 'requestId');
       saveHitlResponse({
         id: `resp-${Date.now()}`,
         requestId,

@@ -30,7 +30,7 @@ export interface NavisEvent {
   timestamp: number;
 }
 
-const MAX_SCREENSHOT_BUFFER = 12;
+const MAX_SCREENSHOT_BUFFER = 40;
 
 export class NavisLogger {
   private listeners: Set<(event: NavisEvent) => void> = new Set();
@@ -41,16 +41,6 @@ export class NavisLogger {
   on(listener: (event: NavisEvent) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
-  }
-
-  /**
-   * Drop all buffered screenshots (base64 JPEG payloads) without touching listeners.
-   * Called at the end of each navis run so the app-lifetime logger does not
-   * accumulate megabytes of retained screenshot strings between runs.
-   */
-  clear(): void {
-    this.screenshotBuffer.clear();
-    this.screenshotKeys = [];
   }
 
   /**

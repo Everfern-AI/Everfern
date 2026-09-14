@@ -15,7 +15,7 @@ import { UserAuthenticationService, UserAccount } from './user-auth';
 /**
  * Identity verification request
  */
-interface IdentityVerificationRequest {
+export interface IdentityVerificationRequest {
   /** Request ID */
   id: string;
   /** User ID requesting verification */
@@ -51,7 +51,7 @@ interface IdentityVerificationRequest {
 /**
  * Identity conflict information
  */
-interface IdentityConflict {
+export interface IdentityConflict {
   /** Conflict ID */
   id: string;
   /** Platform where conflict occurred */
@@ -96,7 +96,7 @@ interface IdentityConflict {
 /**
  * Identity linking result
  */
-interface IdentityLinkingResult {
+export interface IdentityLinkingResult {
   /** Whether linking succeeded */
   success: boolean;
   /** User account (if successful) */
@@ -114,7 +114,7 @@ interface IdentityLinkingResult {
 /**
  * Identity verification result
  */
-interface IdentityVerificationResult {
+export interface IdentityVerificationResult {
   /** Whether verification succeeded */
   success: boolean;
   /** Verification request */
@@ -128,7 +128,7 @@ interface IdentityVerificationResult {
 /**
  * Identity linking configuration
  */
-interface IdentityLinkingConfig {
+export interface IdentityLinkingConfig {
   /** Base directory for identity data */
   baseDir: string;
   /** Verification code length */
@@ -170,7 +170,6 @@ export class IdentityLinkingService extends EventEmitter {
   private verificationRequests = new Map<string, IdentityVerificationRequest>();
   private identityConflicts = new Map<string, IdentityConflict>();
   private linkingAttempts = new Map<string, Date[]>(); // userId -> timestamps
-  private cleanupTimer: NodeJS.Timeout | null = null;
   private isInitialized = false;
 
   constructor(authService: UserAuthenticationService, config: Partial<IdentityLinkingConfig> = {}) {
@@ -235,12 +234,6 @@ export class IdentityLinkingService extends EventEmitter {
     }
 
     try {
-      // Clear cleanup timer (MP-LEAK-01)
-      if (this.cleanupTimer) {
-        clearInterval(this.cleanupTimer);
-        this.cleanupTimer = null;
-      }
-
       // Save data
       await this.saveVerificationRequests();
       await this.saveIdentityConflicts();
@@ -583,11 +576,6 @@ export class IdentityLinkingService extends EventEmitter {
       user.platformIdentities.delete(platform);
       user.status.updatedAt = new Date();
 
-      // f11 fix: also remove the platform→user lookup entry, otherwise the
-      // unlinked identity still resolves to the user via getUserByPlatformId
-      // and can even block future registrations/links on that platform id.
-      this.authService.unlinkPlatformIdentityLookup(userId, platform, identity.platformId);
-
       this.emit('identityUnlinked', userId, platform, identity.platformId);
       return true;
 
@@ -765,8 +753,7 @@ export class IdentityLinkingService extends EventEmitter {
    * Start cleanup timer
    */
   private startCleanupTimer(): void {
-    // MP-LEAK-01: store handle so shutdown() can clear it.
-    this.cleanupTimer = setInterval(async () => {
+    setInterval(async () => {
       await this.cleanupExpiredRequests();
     }, 60 * 60 * 1000); // Run every hour
   }

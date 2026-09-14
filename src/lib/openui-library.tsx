@@ -17,26 +17,26 @@ const StatCard = defineComponent({
     <div style={{
       padding: '20px',
       borderRadius: '12px',
-      backgroundColor: 'var(--color-bg-surface)',
-      border: '1px solid var(--color-border)',
-      boxShadow: 'var(--shadow-sm)',
+      backgroundColor: '#ffffff',
+      border: '1px solid #e5e7eb',
+      boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
       transition: 'transform 0.2s, box-shadow 0.2s',
     }}
     onMouseEnter={(e) => {
       e.currentTarget.style.transform = 'translateY(-2px)';
-      e.currentTarget.style.boxShadow = 'var(--shadow-md)';
+      e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
     }}
     onMouseLeave={(e) => {
       e.currentTarget.style.transform = 'none';
-      e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
+      e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.05)';
     }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
-          <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)', margin: '0 0 8px 0', fontWeight: 500 }}>
+          <p style={{ fontSize: '13px', color: '#6b7280', margin: '0 0 8px 0', fontWeight: 500 }}>
             {props.label}
           </p>
-          <p style={{ fontSize: '28px', fontWeight: 700, color: 'var(--color-text-primary)', margin: 0 }}>
+          <p style={{ fontSize: '28px', fontWeight: 700, color: '#111827', margin: 0 }}>
             {props.value}
           </p>
         </div>
@@ -48,7 +48,7 @@ const StatCard = defineComponent({
         <div style={{
           marginTop: '12px',
           fontSize: '13px',
-          color: props.trendUp ? 'var(--color-success)' : 'var(--color-error)',
+          color: props.trendUp ? '#10b981' : '#ef4444',
           display: 'flex',
           alignItems: 'center',
           gap: '4px'
@@ -73,19 +73,19 @@ const Card = defineComponent({
     <div style={{
       padding: '20px',
       borderRadius: '12px',
-      backgroundColor: 'var(--color-bg-surface)',
-      border: '1px solid var(--color-border)',
-      boxShadow: 'var(--shadow-sm)',
+      backgroundColor: '#ffffff',
+      border: '1px solid #e5e7eb',
+      boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
       marginBottom: '16px',
     }}>
       {props.title && (
         <h3 style={{
           fontSize: '16px',
           fontWeight: 600,
-          color: 'var(--color-text-primary)',
+          color: '#111827',
           margin: '0 0 16px 0',
           paddingBottom: '12px',
-          borderBottom: '1px solid var(--color-border-subtle)'
+          borderBottom: '1px solid #f3f4f6'
         }}>
           {props.title}
         </h3>
@@ -143,10 +143,10 @@ const TextContent = defineComponent({
   }),
   component: ({ props }) => {
     const sizeMap: Record<string, React.CSSProperties> = {
-      "small": { fontSize: '13px', color: 'var(--color-text-secondary)' },
-      "medium": { fontSize: '15px', color: 'var(--color-text-primary)' },
-      "large": { fontSize: '18px', color: 'var(--color-text-primary)' },
-      "large-heavy": { fontSize: '18px', fontWeight: 600, color: 'var(--color-text-primary)' },
+      "small": { fontSize: '13px', color: '#6b7280' },
+      "medium": { fontSize: '15px', color: '#374151' },
+      "large": { fontSize: '18px', color: '#111827' },
+      "large-heavy": { fontSize: '18px', fontWeight: 600, color: '#111827' },
     };
     return (
       <p style={{ margin: '8px 0', lineHeight: 1.6, ...sizeMap[props.size || 'medium'] }}>
@@ -168,19 +168,19 @@ const Button = defineComponent({
   component: ({ props }) => {
     const variantStyles: Record<string, React.CSSProperties> = {
       "primary": {
-        backgroundColor: 'var(--color-info)',
-        color: 'var(--color-text-inverse)',
+        backgroundColor: '#3b82f6',
+        color: '#ffffff',
         border: 'none',
       },
       "secondary": {
-        backgroundColor: 'var(--color-bg-subtle)',
-        color: 'var(--color-text-primary)',
-        border: '1px solid var(--color-border)',
+        backgroundColor: '#f3f4f6',
+        color: '#374151',
+        border: '1px solid #e5e7eb',
       },
       "outline": {
         backgroundColor: 'transparent',
-        color: 'var(--color-info)',
-        border: '1px solid var(--color-info)',
+        color: '#3b82f6',
+        border: '1px solid #3b82f6',
       },
     };
     return (
@@ -224,21 +224,21 @@ const ProgressBar = defineComponent({
       <div style={{ margin: '12px 0' }}>
         {props.label && (
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-            <span style={{ fontSize: '13px', color: 'var(--color-text-primary)' }}>{props.label}</span>
-            <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{percentage.toFixed(0)}%</span>
+            <span style={{ fontSize: '13px', color: '#374151' }}>{props.label}</span>
+            <span style={{ fontSize: '13px', color: '#6b7280' }}>{percentage.toFixed(0)}%</span>
           </div>
         )}
         <div style={{
           width: '100%',
           height: '8px',
-          backgroundColor: 'var(--color-bg-subtle)',
+          backgroundColor: '#f3f4f6',
           borderRadius: '4px',
           overflow: 'hidden',
         }}>
           <div style={{
             width: `${percentage}%`,
             height: '100%',
-            backgroundColor: props.color || 'var(--color-info)',
+            backgroundColor: props.color || '#3b82f6',
             borderRadius: '4px',
             transition: 'width 0.3s ease',
           }} />
@@ -258,10 +258,10 @@ const Badge = defineComponent({
   }),
   component: ({ props }) => {
     const variantStyles: Record<string, React.CSSProperties> = {
-      "success": { backgroundColor: 'var(--color-success-dim)', color: 'var(--color-success)' },
-      "warning": { backgroundColor: 'var(--color-warning-dim)', color: 'var(--color-warning)' },
-      "error": { backgroundColor: 'var(--color-error-dim)', color: 'var(--color-error)' },
-      "info": { backgroundColor: 'var(--color-info-dim)', color: 'var(--color-info)' },
+      "success": { backgroundColor: '#d1fae5', color: '#065f46' },
+      "warning": { backgroundColor: '#fef3c7', color: '#92400e' },
+      "error": { backgroundColor: '#fee2e2', color: '#991b1b' },
+      "info": { backgroundColor: '#dbeafe', color: '#1e40af' },
     };
     return (
       <span style={{
@@ -294,13 +294,13 @@ const Table = defineComponent({
         fontSize: '14px',
       }}>
         <thead>
-          <tr style={{ backgroundColor: 'var(--color-bg-subtle)', borderBottom: '1px solid var(--color-border)' }}>
+          <tr style={{ backgroundColor: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
             {props.headers.map((header, i) => (
               <th key={i} style={{
                 padding: '12px 16px',
                 textAlign: 'left',
                 fontWeight: 600,
-                color: 'var(--color-text-secondary)',
+                color: '#374151',
                 fontSize: '12px',
                 textTransform: 'uppercase',
                 letterSpacing: '0.05em',
@@ -312,11 +312,11 @@ const Table = defineComponent({
         </thead>
         <tbody>
           {props.rows.map((row, ri) => (
-            <tr key={ri} style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
+            <tr key={ri} style={{ borderBottom: '1px solid #f3f4f6' }}>
               {row.map((cell, ci) => (
                 <td key={ci} style={{
                   padding: '12px 16px',
-                  color: 'var(--color-text-primary)',
+                  color: '#374151',
                 }}>
                   {cell}
                 </td>
@@ -337,7 +337,7 @@ const Divider = defineComponent({
   component: () => (
     <hr style={{
       border: 'none',
-      borderTop: '1px solid var(--color-border)',
+      borderTop: '1px solid #e5e7eb',
       margin: '16px 0',
     }} />
   ),

@@ -12,8 +12,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as crypto from 'crypto';
-import { exec as cpExec } from 'child_process';
-import { promisify } from 'util';
 import { invalidateSkillsCache } from '../agent/runner/skills-loader';
 
 
@@ -143,76 +141,6 @@ function getAllSkillPaths(skillsDir: string, prefix = ''): { name: string; relPa
   return results;
 }
 
-// ── Sync skills into WSL /everfern/skills/ (async, non-blocking) ──────────
-
-/**
- * MP-XPLAT-04: WSL skills sync.
- *
- * Previously this ran as a synchronous `execSync` inside syncBuiltInSkills at
- * startup — a hung WSL would block app launch for up to 60s. Now async and
- * fire-and-forget from syncBuiltInSkills.
- *
- * Path mapping: UNC paths (\\server\share\...) cannot be mapped by wslpath
- * (no drive to mount) — skip with a notice. Drive-letter paths are converted
- * via `wsl.exe --exec wslpath` first (handles mount points correctly), with a
- * regex /mnt/<drive>/ fallback if wslpath fails.
- *
- * @returns a promise that always resolves (never rejects) — failures are
- *          logged as warnings and are non-fatal.
- */
-export async function syncSkillsToWSLAsync(skillsDir: string): Promise<void> {
-  if (process.platform !== 'win32') {
-    return;
-  }
-
-  // UNC paths (\\server\share\...) have no drive letter — wsl cannot mount them
-  if (skillsDir.startsWith('\\\\')) {
-    console.info('[SkillsSync] WSL sync skipped: UNC paths cannot be mapped by wsl (\\\\server\\share)');
-    return;
-  }
-
-  // Try wslpath first for a correct /mnt mapping
-  let wslSkillsSrc: string | null = null;
-  try {
-    const execAsync = promisify(cpExec);
-    // sh-quote the Windows path (escape any embedded single quotes)
-    const quoted = skillsDir.replace(/'/g, "'\\''");
-    const { stdout } = await execAsync(`wsl.exe --exec wslpath -- '${quoted}'`, { timeout: 60000 });
-    const mapped = (stdout || '').trim();
-    if (mapped && mapped.startsWith('/mnt/')) {
-      wslSkillsSrc = mapped;
-    }
-  } catch (err: any) {
-    console.warn(`[SkillsSync] ⚠️ wslpath mapping failed (${err?.message ?? err}); falling back to /mnt/<drive>/ mapping`);
-  }
-
-  // Fallback: regex mapping for drive-letter paths
-  if (!wslSkillsSrc) {
-    if (!/^[A-Za-z]:[\\/]/.test(skillsDir)) {
-      console.warn(`[SkillsSync] ⚠️ WSL sync skipped: unsupported skills directory path: ${skillsDir}`);
-      return;
-    }
-    const driveLetter = skillsDir.replace(/^([A-Za-z]):.*/, '$1').toLowerCase();
-    const relPath = skillsDir.replace(/^[A-Za-z]:[\\/]/, '').replace(/\\/g, '/');
-    wslSkillsSrc = `/mnt/${driveLetter}/${relPath}`;
-  }
-
-  const src = wslSkillsSrc;
-  try {
-    const execAsync = promisify(cpExec);
-    // sh-quote the mapped WSL path (POSIX, but escape quotes defensively)
-    const quoted = src.replace(/'/g, "'\\''");
-    console.log(`[SkillsSync] 🐧 Syncing skills to WSL: ${src} → /everfern/skills/`);
-    await execAsync(
-      `wsl.exe --exec bash -c "mkdir -p /everfern/skills && cp -r '${quoted}/.' /everfern/skills/ && chmod -R 755 /everfern/skills/"`,
-      { timeout: 60000 }
-    );
-    console.log(`[SkillsSync] ✅ Skills synced to WSL /everfern/skills/`);
-  } catch (wslErr: any) {
-    console.warn(`[SkillsSync] ⚠️ WSL skills sync failed (non-fatal): ${wslErr.message}`);
-  }
-}
-
 // ── Sync built-in skills to ~/.everfern/skills ──────────────────────────
 
 export function syncBuiltInSkills(): void {
@@ -325,8 +253,23 @@ export function syncBuiltInSkills(): void {
     }
 
     // ── Also sync skills into WSL /everfern/skills/ ───────────────────
-    // MP-XPLAT-04: fire-and-forget async (never blocks startup; UNC-safe)
-    void syncSkillsToWSLAsync(skillsDir).catch(() => {});
+    if (process.platform === 'win32') {
+      try {
+        const { execSync } = require('child_process');
+        // Build WSL path for Windows skillsDir (e.g. C:\Users\srini\.everfern\skills)
+        const driveLetter = skillsDir.replace(/^([A-Za-z]):.*/, '$1').toLowerCase();
+        const relPath = skillsDir.replace(/^[A-Za-z]:\\/, '').replace(/\\/g, '/');
+        const wslSkillsSrc = `/mnt/${driveLetter}/${relPath}`;
+        console.log(`[SkillsSync] 🐧 Syncing skills to WSL: ${wslSkillsSrc} → /everfern/skills/`);
+        execSync(
+          `wsl.exe --exec bash -c "mkdir -p /everfern/skills && cp -r '${wslSkillsSrc}/.' /everfern/skills/ && chmod -R 755 /everfern/skills/"`,
+          { timeout: 60000, stdio: 'pipe' }
+        );
+        console.log(`[SkillsSync] ✅ Skills synced to WSL /everfern/skills/`);
+      } catch (wslErr: any) {
+        console.warn(`[SkillsSync] ⚠️ WSL skills sync failed (non-fatal): ${wslErr.message}`);
+      }
+    }
   } catch (error) {
     console.error(`[SkillsSync] ❌ Error syncing skills:`, error);
   }
@@ -334,7 +277,7 @@ export function syncBuiltInSkills(): void {
 
 // ── Validate and correct skill paths ────────────────────────────────────
 
-interface PathValidationResult {
+export interface PathValidationResult {
   isValid: boolean;
   correctedPath?: string;
   suggestions?: string[];
@@ -578,7 +521,7 @@ export async function listAllSkills(): Promise<{ name: string; path: string; des
 
 // ── Save a custom skill ────────────────────────────────────────────
 
-interface CustomSkillData {
+export interface CustomSkillData {
   name: string;
   description: string;
   content: string;
@@ -642,7 +585,40 @@ export function deleteCustomSkill(name: string): { success: boolean; error?: str
 
 // ── Ensure skills directory exists (even if empty) ──────────────────
 
+export function ensureSkillsDirectoryExists(): string {
+  const skillsDir = getSkillsPath();
+
+  if (!fs.existsSync(skillsDir)) {
+    console.log(`[SkillsSync] 📁 Creating skills directory: ${skillsDir}`);
+    fs.mkdirSync(skillsDir, { recursive: true });
+  }
+
+  return skillsDir;
+}
+
 // ── List all available skills ──────────────────────────────────────────
+
+export function listAvailableSkills(): string[] {
+  try {
+    const skillsDir = getSkillsPath();
+    if (!fs.existsSync(skillsDir)) {
+      return [];
+    }
+
+    const allSkills = getAllSkillPaths(skillsDir);
+    const skillNames = new Set<string>();
+
+    for (const skill of allSkills) {
+      const skillName = skill.relPath.split('/')[0];
+      skillNames.add(skillName);
+    }
+
+    return Array.from(skillNames).sort();
+  } catch (error) {
+    console.error(`[SkillsSync] ❌ Error listing skills:`, error);
+    return [];
+  }
+}
 
 // ── Resolve skill path with auto-correction ──────────────────────────────
 

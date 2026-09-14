@@ -9,7 +9,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { AIClient } from '../../lib/ai-client';
 import { getPooledAIClient, releasePooledAIClient } from '../../lib/ai-client';
-import type { ToolDefinition, ChatMessage, AIClientConfig } from '../../lib/ai-client';
+import type { ToolDefinition, ChatMessage } from '../../lib/ai-client';
 import { buildSystemMessages, getSlimSystemPromptAsync } from './system-prompt';
 import { ChatHistoryStore } from '../../store/history';
 import { AgentTool, ToolCallRecord, AgentRunnerConfig } from './types';
@@ -23,7 +23,7 @@ import { getBaseTools } from './tools_manager';
 import { loadPrompt } from '../../lib/prompt-sync';
 import { TelemetryLogger } from '../helpers/telemetry-logger';
 import { stateManager } from './state-manager';
-import { globalAbortManager, AbortError, getConversationAbortManager, cleanupConversationAbort } from './abort-manager';
+import { globalAbortManager, AbortError } from './abort-manager';
 import { toolApprovalStore } from '../../store/tool-approvals';
 
 
@@ -39,7 +39,7 @@ import { todoWriteTool } from '../tools/todo-write';
 import { askUserTool } from '../tools/ask-user';
 import { skillTool } from '../tools/skill-tool';
 import { presentFilesTool } from '../tools/present-files';
-import { NavisOrchestrator } from '../tools/navis/orchestrator';
+import { NavisOrchestrator } from '../tools/navis/agent/orchestrator';
 
 // Tool Truncator
 import { truncateTools } from './tool-truncator';
@@ -64,40 +64,15 @@ export class AgentRunner {
   /** Session key of the currently executing sub-agent (set by subagent-spawn.ts for depth tracking). */
   public currentAgentSessionKey?: string;
   /** Truncation metadata from the most recent tool-schema truncation (used by call_model to emit usage stats). */
-  public lastTruncationDetails?: { toolSchemaTokens: number; truncatedTools: number; schemaTokenSavings: number; omittedToolNames?: string[] };
+  public lastTruncationDetails?: { toolSchemaTokens: number; truncatedTools: number; schemaTokenSavings: number };
   public workspaceDir?: string;
   public projectId?: string;
   public telemetry: TelemetryLogger;
   public navisOrchestrator?: NavisOrchestrator;
-  /**
-   * AI-PERF-01: pooled vision client acquired by tools_manager for the Navis
-   * orchestrator (held for this runner's lifetime). Released in runStream()'s
-   * outer finally so success, error, and abort paths all give it back.
-   */
-  public visionClientLease?: { client: AIClient; config: AIClientConfig };
   public reasoningEffort?: string;
 
   /** Session lock map to prevent concurrent execution on the same conversation */
   private static sessionLocks: Map<string, Promise<void>> = new Map();
-
-  /**
-   * AG-CORR-03: serialize acquisitions per conversation as a FIFO queue.
-   * Previously caller C awaiting B's lock overwrote B's slot with C's own
-   * lockPromise, so once B released, BOTH B-waiters could proceed alongside
-   * the A that was still running. Chaining each new lock onto the previous
-   * one means at most one holder ever proceeds.
-   */
-  private static async acquireSessionLock(convId: string): Promise<() => void> {
-    const prev = AgentRunner.sessionLocks.get(convId) ?? Promise.resolve();
-    // Ensure a rejection in the predecessor doesn't deadlock the queue.
-    const prevSettled = prev.catch(() => {});
-    let release!: () => void;
-    const releasePromise = new Promise<void>(resolve => { release = resolve; });
-    // The tail promise settles only when this holder releases.
-    AgentRunner.sessionLocks.set(convId, prevSettled.then(() => releasePromise));
-    await prevSettled;
-    return release;
-  }
 
   /** Issue #2 Fix: Serialise initializePiTools() calls so concurrent invocations
    *  from the constructor and waitForToolsReady() share one promise instead of
@@ -640,34 +615,17 @@ export class AgentRunner {
   /**
    * Abort the current execution
    * Requirement 1.1: Stop button shall immediately set the Stream_Abort_Flag to true
-   *
-   * Scoping: aborts only this runner's conversation when the id is known so
-   * parallel runs (child agents, other chats) keep streaming; only falls back
-   * to the process-wide flag for legacy callers with no conversationId.
    */
   public abort(): void {
-    // MP-CORR-13: scope to this runner's conversation when known so stopping
-    // one chat does not kill others; fall back to the global flag otherwise.
-    if (this.currentConversationId) {
-      getConversationAbortManager(this.currentConversationId).setAborted();
-    } else {
-      globalAbortManager.setAborted();
-    }
-    console.log(`[AgentRunner] 🛑 Abort requested - execution will be terminated${this.currentConversationId ? ` (conversation ${this.currentConversationId})` : ''}`);
+    globalAbortManager.setAborted();
+    console.log('[AgentRunner] 🛑 Abort requested - execution will be terminated');
   }
 
   /**
    * Check if execution is currently aborted
-   *
-   * Checks the global flag OR this conversation's scoped flag: either one
-   * terminates this run. The global check keeps legacy stop-all behavior for
-   * aborts that never had a conversationId.
    */
   public isAborted(): boolean {
-    return (
-      globalAbortManager.streamAborted ||
-      getConversationAbortManager(this.currentConversationId).streamAborted
-    );
+    return globalAbortManager.streamAborted;
   }
 
   /**
@@ -765,23 +723,25 @@ export class AgentRunner {
     reasoningEffort?: string,
   ): AsyncGenerator<StreamEvent, void, unknown> {
     this.reasoningEffort = reasoningEffort;
-    // MP-CORR-13: reset only this conversation's scoped abort state (and the
-    // global flag for legacy watchers). Resetting only the global previously
-    // let a new stream in chat B clear an abort just set for chat A.
-    // This reset runs BEFORE acquiring the session lock, so an abort issued
-    // while queued behind a prior run still lands after our reset — the lock
-    // guarantees it can't be interleaved with an in-flight run of the same
-    // conversation.
-    const convId = conversationId || crypto.randomUUID();
-    const scopedAbortManager = getConversationAbortManager(convId);
-    scopedAbortManager.reset();
+    // Reset abort state for new execution
     globalAbortManager.reset();
+
+    const convId = conversationId || crypto.randomUUID();
 
     // UNITY: Ensure only one execution runs at a time for this conversation
     // This prevents clobbering state and "messages being wiped" due to race conditions
-    // AG-CORR-03: FIFO queue via acquireSessionLock — waiting callers no longer
-    // overwrite the lock slot (which previously let two runners proceed together).
-    const releaseLock = await AgentRunner.acquireSessionLock(convId);
+    const existingLock = AgentRunner.sessionLocks.get(convId);
+    if (existingLock) {
+      console.log(`[AgentRunner] ⏳ Waiting for existing execution on session ${convId} to finish...`);
+      await existingLock;
+    }
+
+    // Issue #1 Fix: Initialize resolveLock to a no-op so that if an early error
+    // occurs before the Promise constructor executes the callback, the finally
+    // block's resolveLock() call never throws, preventing an eternal session lock.
+    let resolveLock: () => void = () => {};
+    const lockPromise = new Promise<void>(resolve => { resolveLock = resolve; });
+    AgentRunner.sessionLocks.set(convId, lockPromise);
 
     let syncToDb: ((force?: boolean) => Promise<void>) | undefined;
     // Issue #21 Fix: Track whether telemetry.terminate() was already called on the
@@ -926,9 +886,6 @@ export class AgentRunner {
       const durationTracker = new DurationTracker();
 
       // Create eventQueue early so we can push status updates
-      // pushResolver holds the pump's pending wait-resolver; it's nulled
-      // before invoking so a resolver can only fire once (abort listeners
-      // and the patched push below share this "take and clear" pattern).
       let pushResolver: any = null;
       const eventQueue: StreamEvent[] = [];
       const originalPush = eventQueue.push.bind(eventQueue);
@@ -1013,10 +970,7 @@ export class AgentRunner {
       }
 
       try {
-        // Composite abort check: the conversation-scoped flag covers "user
-        // stopped THIS chat"; the global flag covers legacy stop-all aborts
-        // with no conversationId. Graph nodes call this before each step.
-        const shouldAbort = () => scopedAbortManager.streamAborted || globalAbortManager.streamAborted;
+        const shouldAbort = globalAbortManager.createShouldAbortCallback();
         let toolDefs = this._buildToolDefinitions();
 
         // Dynamic Tool-Schema Truncator: strip irrelevant tool definitions
@@ -1033,7 +987,6 @@ export class AgentRunner {
             toolSchemaTokens: truncated.details.totalSchemaTokens,
             truncatedTools: truncated.details.toolsRemoved,
             schemaTokenSavings: truncated.details.totalSchemaTokens - truncated.details.keptSchemaTokens,
-            omittedToolNames: truncated.removed,
           };
         }
 
@@ -1188,16 +1141,11 @@ export class AgentRunner {
           let activeSanitizedMessages: any[] = [];
 
           try {
-            // Re-check abort at each await boundary inside the async IIFE so
-            // an abort issued during the graph.getState/import window throws
-            // here instead of starting a fresh graph invocation.
-            scopedAbortManager.checkAbort();
             globalAbortManager.checkAbort();
 
             const currentState = await graph.getState(threadConfig);
             const { Command } = await import('@langchain/langgraph');
 
-            scopedAbortManager.checkAbort();
             globalAbortManager.checkAbort();
 
             const isWaitingForAnswer = stateManager.isInterrupted(convId) && !!stateManager.getInterruptData(convId);
@@ -1344,28 +1292,14 @@ export class AgentRunner {
               const sanitizedInitialMessages = sanitizeMessagesRoleAlternation(initialMessages);
               activeSanitizedMessages = sanitizedInitialMessages;
 
-              // Inject truncation awareness into the system message (AG-PERF-05).
-              // Idempotence guard: skip if a registry block was already injected
-              // (e.g. persisted in prior-turn history) to prevent accumulation.
+              // Inject truncation awareness into the system message
               if (this.lastTruncationDetails && this.lastTruncationDetails.truncatedTools > 0) {
                 const sysMsg = sanitizedInitialMessages[0];
-                if (sysMsg && typeof sysMsg.content === 'string' && !sysMsg.content.includes('**Available Tool Registry')) {
-                  const REGISTRY_CAP = 25;
-                  const toolByName = new Map(this.tools.map(t => [t.name, t]));
-                  const omittedNames = this.lastTruncationDetails.omittedToolNames ?? [];
-                  // Prefer the omitted tools: those are what the model might
-                  // need to request. Resolve names against the live roster.
-                  const registryTools = omittedNames.length > 0
-                    ? omittedNames
-                        .map(n => toolByName.get(n))
-                        .filter((t): t is AgentTool => !!t && !!t.description)
-                    : this.tools.filter(t => t.name && t.description);
-                  const list = registryTools.slice(0, REGISTRY_CAP);
-                  if (list.length > 0) {
-                    const registryLines = list
-                      .map(t => `- **${t.name}**: ${(t.description || '').split('\n')[0].substring(0, 80)}`);
-                    sysMsg.content += `\n\n**Available Tool Registry (${list.length} of ${this.tools.length} tools, ${this.lastTruncationDetails.truncatedTools} omitted):**\n${registryLines.join('\n')}\n\n> To optimize your context window, ${this.lastTruncationDetails.truncatedTools} tools were omitted from your active tool set (only the most relevant were kept). If you need a tool listed above that isn't currently available, explicitly mention it by name and describe why you need it so it can be made available.`;
-                  }
+                if (sysMsg && typeof sysMsg.content === 'string') {
+                  const allToolNames = this.tools
+                    .filter(t => t.name && t.description)
+                    .map(t => `- **${t.name}**: ${t.description.split('\n')[0].substring(0, 100)}`);
+                  sysMsg.content += `\n\n**Available Tool Registry (${this.tools.length} tools):**\n${allToolNames.join('\n')}\n\n> To optimize your context window, ${this.lastTruncationDetails.truncatedTools} tools were omitted from your active tool set (only the most relevant were kept). If you need a tool listed above that isn't currently available, explicitly mention it by name and describe why you need it so it can be made available.`;
                 }
               }
 
@@ -1467,30 +1401,13 @@ export class AgentRunner {
         })();
 
         // Register abort listener to wake up loop immediately
-        // (MP-CORR-13: composite listener over the scoped + global abort
-        // managers; IIFE must be parenthesized — `() => {...}()` is a
-        // syntax error.)
-        // Without these listeners the pump below only notices an abort on
-        // its next event/graphDone — up to a full graph step later. The
-        // listeners resolve pushResolver so the "Stopped by user" chunk is
-        // emitted within ms of the click.
-        const unbindAbort = (() => {
-          const uA = scopedAbortManager.onAbort(() => {
-            if (pushResolver) {
-              const r = pushResolver;
-              pushResolver = null;
-              r();
-            }
-          });
-          const uB = globalAbortManager.onAbort(() => {
-            if (pushResolver) {
-              const r = pushResolver;
-              pushResolver = null;
-              r();
-            }
-          });
-          return () => { uA(); uB(); };
-        })();
+        const unbindAbort = globalAbortManager.onAbort(() => {
+          if (pushResolver) {
+            const r = pushResolver;
+            pushResolver = null;
+            r();
+          }
+        });
 
         try {
           while (true) {
@@ -1542,7 +1459,7 @@ export class AgentRunner {
               continue; // Immediately check for more events
             }
 
-            if (graphDone || scopedAbortManager.streamAborted || globalAbortManager.streamAborted) {
+            if (graphDone || globalAbortManager.streamAborted) {
               // Final check to ensure no events were pushed just before graphDone was set
               if (eventQueue.length === 0) break;
               continue;
@@ -1550,18 +1467,12 @@ export class AgentRunner {
 
             // Wait for next push with built-in race protection
             // If items were pushed between the check above and this point, resolve immediately
-            // The abort flags in this condition exist purely to short-circuit
-            // the wait — an abort fires the listeners above, but this guard
-            // closes the small window where a listener fired before
-            // pushResolver was assigned.
             await new Promise<void>(r => {
-              if (eventQueue.length > 0 || graphDone || scopedAbortManager.streamAborted || globalAbortManager.streamAborted) return r();
+              if (eventQueue.length > 0 || graphDone || globalAbortManager.streamAborted) return r();
               pushResolver = r;
             });
           }
         } finally {
-          // Always unbind both abort listeners — even on error/abort paths —
-          // or they'd fire into a dead pushResolver on the next abort.
           unbindAbort();
         }
 
@@ -1583,9 +1494,7 @@ export class AgentRunner {
         }
 
         const thinkingDuration = durationTracker.onMissionComplete();
-        // Report failure (not success) when aborted even if the timeline is
-        // otherwise clean — aborts currently surface through the error path.
-        const success = !missionTracker.getTimeline().error && !scopedAbortManager.streamAborted && !globalAbortManager.streamAborted;
+        const success = !missionTracker.getTimeline().error && !globalAbortManager.streamAborted;
         this.telemetry.terminate(success, currentContent || undefined);
         telemetryTerminated = true;
 
@@ -1602,20 +1511,6 @@ export class AgentRunner {
         removeProgressListener?.();
       }
     } finally {
-      // AI-PERF-01: return the pooled Navis vision client (acquired in
-      // getBaseTools) to the pool. Runs on success, error, and abort paths.
-      // Clear first so a later stream that acquires its own lease is never
-      // affected, and the main client (never pooled here) has no lease.
-      const visionLease = this.visionClientLease;
-      this.visionClientLease = undefined;
-      if (visionLease) {
-        try {
-          releasePooledAIClient(visionLease.client, visionLease.config);
-        } catch (releaseErr) {
-          console.warn('[AgentRunner] Failed to release pooled vision client:', releaseErr);
-        }
-      }
-
       // Issue #21 Fix: Only terminate telemetry in the outer finally if it was not
       // already called on the success path (tracked by telemetryTerminated flag).
       // missionTracker is scoped to the inner try block and cannot be referenced here.
@@ -1631,13 +1526,11 @@ export class AgentRunner {
       }
 
       // Check for pending HITL to decide whether to clean up the browser session
-      // AG-MEM-07/02: hoisted so the emitter/overlay teardown below can read it.
-      let hasPendingHitl = false;
       try {
         const { listHitlRecords } = await import('../../store/hitl');
         const records = listHitlRecords(convId);
-        hasPendingHitl = records.some(r => r.status === 'pending');
-
+        const hasPendingHitl = records.some(r => r.status === 'pending');
+        
         // Issue #11 Fix: Only attempt browser cleanup if the NavisOrchestrator was
         // actually used in this session. Unconditionally instantiating BrowserSession
         // fires Chromium cleanup on every stream end (even text-only sessions) and
@@ -1657,8 +1550,9 @@ export class AgentRunner {
       // Release session lock
       // Issue #17 Fix: Always delete the entry so sessionLocks doesn't grow
       // without bound (one entry per completed conversation = memory leak).
-      // Issue #5 Fix: releaseLock is always a real release fn from
-      // acquireSessionLock() — the legacy no-op dance is gone.
+      // Issue #5 Fix: Use resolveLock() instead of resolveLock!() — the '!' is
+      // a TypeScript lie; we initialise it to a safe no-op above so it never throws.
+
       // Issue #15 Fix: Clear session-scoped tool approval policies so that
       // 'allow for this session' HITL approvals don't persist into future sessions.
       try {
@@ -1667,41 +1561,8 @@ export class AgentRunner {
         console.warn('[Runner] Failed to clear session approval policies:', policyErr);
       }
 
-      // AG-MEM-07: remove the per-conversation event emitter unless a pending
-      // HITL approval may still deliver follow-up events when the user approves
-      // (getAgentEvents lazily re-creates it for the next turn).
-      if (!hasPendingHitl) {
-        try {
-          const { removeAgentEvents } = await import('../infra/agent-events');
-          removeAgentEvents(`session:${convId}`);
-        } catch { /* agent-events module unavailable */ }
-      }
-
-      // AG-MEM-02: destroy this conversation's computer-use overlay windows.
-      // The capture singleton must be nulled too (shutdownComputerUseCapture)
-      // because its overlay is destroyed alongside the rest while the singleton
-      // object would otherwise persist — the getter recreates a fresh tool
-      // (and overlay) lazily on the next captureScreen() call.
-      if (!hasPendingHitl) {
-        try {
-          const { destroyAllComputerUseOverlays, shutdownComputerUseCapture } = await import('../tools/computer-use');
-          destroyAllComputerUseOverlays();
-          shutdownComputerUseCapture();
-        } catch { /* computer-use module unavailable */ }
-      }
-
-      // AG-CORR-04: also clean up this conversation's scoped abort manager.
-      // Runs in the OUTER finally so it happens on abort/error/throw paths
-      // too, not just success — otherwise the registry entry (and its aborted
-      // controller) would leak and poison the next stream for this chat.
-      try { cleanupConversationAbort(convId); } catch {}
-
-      // Issue #17 Fix: Always delete the entry so sessionLocks doesn't grow
-      // without bound (one entry per completed conversation = memory leak).
-      // AG-CORR-03: delete our tail then release; if someone queued behind us
-      // their acquisition already replaced the tail with their own chain.
       AgentRunner.sessionLocks.delete(convId);
-      releaseLock();
+      resolveLock();
 
     }
   }
