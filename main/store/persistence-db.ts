@@ -425,7 +425,20 @@ export async function cleanupOldPersistenceData(options?: {
     }
 
     // Clean up old file snapshots for completed tasks
-    const snapshotsResult = await dbOps.run(`
+    // MP-CORR-25: count rows before deleting so the cleanup report is accurate.
+    try {
+      const snapshotCountRow = await dbOps.get(`
+        SELECT COUNT(*) as cnt FROM file_snapshots
+        WHERE timestamp < ?
+        AND task_id IN (
+          SELECT id FROM task_schedules WHERE status IN ('completed', 'failed')
+        )
+      `, [cutoffTimestamp]);
+      stats.snapshotsDeleted = Number(snapshotCountRow?.cnt ?? 0);
+    } catch (err) {
+      console.warn('[PersistenceDB] Failed to count file snapshots for cleanup stats:', err);
+    }
+    await dbOps.run(`
       DELETE FROM file_snapshots
       WHERE timestamp < ?
       AND task_id IN (
@@ -433,10 +446,20 @@ export async function cleanupOldPersistenceData(options?: {
       )
     `, [cutoffTimestamp]);
 
-    // Note: sqlite3 doesn't provide changes directly, we'd need to query before/after
-    // For now, we'll skip tracking the exact count
-
     // Clean up old command history for completed tasks
+    // MP-CORR-25: same pre-count for command history.
+    try {
+      const commandCountRow = await dbOps.get(`
+        SELECT COUNT(*) as cnt FROM command_history
+        WHERE timestamp < ?
+        AND task_id IN (
+          SELECT id FROM task_schedules WHERE status IN ('completed', 'failed')
+        )
+      `, [cutoffTimestamp]);
+      stats.commandsDeleted = Number(commandCountRow?.cnt ?? 0);
+    } catch (err) {
+      console.warn('[PersistenceDB] Failed to count command history for cleanup stats:', err);
+    }
     await dbOps.run(`
       DELETE FROM command_history
       WHERE timestamp < ?

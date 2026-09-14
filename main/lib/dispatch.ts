@@ -1,12 +1,26 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { io, Socket } from 'socket.io-client';
+import type { Socket } from 'socket.io-client';
 import os from 'os';
 import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
 
+// socket.io-client is lazy-required at its enable-point (DispatchService.initialize)
+// so the module is not loaded at app startup.
+type SocketIoClientModule = typeof import('socket.io-client');
+let socketIoClientModule: SocketIoClientModule | null = null;
+function getSocketIoClient(): SocketIoClientModule {
+  if (!socketIoClientModule) socketIoClientModule = require('socket.io-client') as SocketIoClientModule;
+  return socketIoClientModule;
+}
+
 let lifecycleHandlersInstalled = false;
 
+/**
+ * Bridges the desktop app to the web client: owns the dispatch socket
+ * (socket.io), pairing + session lifecycle in Supabase, and routes
+ * commands arriving from the web into the local onCommand handler.
+ */
 export class DispatchService {
   private static instance: DispatchService;
   private supabase: SupabaseClient | null = null;
@@ -22,6 +36,9 @@ export class DispatchService {
   public onCommand: ((command: string, model?: string) => void) | null = null;
 
   private constructor() {
+    // Persist a stable device UUID on disk so the Supabase `devices` row
+    // (upserted on every pairing) keeps mapping to this machine across
+    // restarts instead of registering as a new device.
     const configPath = path.join(os.homedir(), '.everfern', 'device_id.txt');
     if (fs.existsSync(configPath)) {
       this.deviceId = fs.readFileSync(configPath, 'utf8').trim();
@@ -32,6 +49,7 @@ export class DispatchService {
     }
   }
 
+  /** Returns the shared DispatchService singleton (constructor is private, so this is the only instance path). */
   public static getInstance(): DispatchService {
     if (!DispatchService.instance) {
       DispatchService.instance = new DispatchService();
@@ -46,6 +64,8 @@ export class DispatchService {
 
   /**
    * Initialize the Dispatch service.
+   * Side effects: creates the Supabase client, tears down any prior socket,
+   * lazily loads socket.io-client, and installs a one-shot process exit hook.
    */
   public async initialize(
     config: {
@@ -82,6 +102,7 @@ export class DispatchService {
       this.socket = null;
     }
 
+    const { io } = getSocketIoClient();
     this.socket = io(this.apiUrl, {
       auth: { token: config.token },
       transports: ['websocket', 'polling'],   // prefer WebSocket, fall back to polling
@@ -103,6 +124,7 @@ export class DispatchService {
     this.socket.on('reconnect_failed', () => {
       console.warn('[DispatchService] Socket gave up reconnecting after 10 attempts.');
       // Periodic self-heal every 5 minutes after give-up.
+      // unref() keeps this timer from holding the main process alive at quit.
       setTimeout(() => {
         try {
           if (!this.socket?.connected) this.socket?.connect();
@@ -157,6 +179,11 @@ export class DispatchService {
   }
 
   // ── Restore a previously active session ───────────────────────────────────
+  /**
+   * Re-adopts the most recent dispatch session after an app restart.
+   * Side effects: sets sessionId and fires onActiveCallback when that
+   * session is still live (UI re-enters dispatch without re-pairing).
+   */
   public async restoreSession() {
     if (!this.token) return { success: false, error: 'No token' };
 
@@ -186,6 +213,10 @@ export class DispatchService {
   // ── Private helpers ────────────────────────────────────────────────────────
   private joinUserRoom() {
     if (!this.socket) return;
+
+    // The server prefixes joins with 'session_', so joining
+    // `dispatch:user_X` here is what lands us in `session_dispatch:user_X`
+    // — the exact room broadcastToWeb() targets. Keep the two in sync.
     
     if (this.userId) {
       const userRoom = `dispatch:user_${this.userId}`;
@@ -204,6 +235,8 @@ export class DispatchService {
 
     try {
       // Register device
+      // (upsert keyed on the stable deviceId: re-pairing refreshes the
+      // existing row instead of creating a duplicate device entry)
       await this.supabase.from('devices').upsert({
         id: this.deviceId,
         user_id: this.userId,
@@ -296,6 +329,11 @@ export class DispatchService {
     });
   }
 
+  /**
+   * Marks the device offline and the session closed, then always tears the
+   * socket down in `finally` — a Supabase failure must not leak a live
+   * socket (and its listeners) past a failed disconnect.
+   */
   public async disconnect() {
     try {
       if (this.supabase && this.userId) {

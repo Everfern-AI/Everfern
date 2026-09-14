@@ -6,17 +6,253 @@ import type { MissionTracker } from '../mission-tracker';
 import { createMissionIntegrator } from '../mission-integrator';
 import { loadPrompt } from '../../../lib/prompt-sync';
 import type { AIClient } from '../../../lib/ai-client';
-import { globalAbortManager } from '../abort-manager';
+import { getConversationAbortManager } from '../abort-manager';
 import { nodeLifecycle } from '../services/node-utils';
 import { getCheckpointEngine, type Checkpoint, type FailedCheckpoint } from '../../persistence/checkpoint-engine';
 import { loadSoul, loadAgents } from '../../personality-manager';
+import { resolvePromptPlaceholders } from '../system-prompt';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 
 type CompletionReason = 'task_complete' | 'waiting_for_user_input' | 'needs_hitl' | 'cannot_proceed';
 type RoutingDecision = 'continue_brain' | 'route_coding' | 'route_data_analyst' | 'route_web_explorer' | 'route_deep_research' | 'complete_task';
 
+// ── HP-04: static-first / volatile-last prompt assembly ─────────────────────
+// The system prompt is split into a STABLE prefix (base + memory + soul + agents,
+// byte-stable across steps so prompt-prefix caches hit) and a VOLATILE block
+// (findings tail + DWSP git-status) that is appended as a trailing system
+// message on every step and never persisted into conversation history.
+
+export const VOLATILE_CONTEXT_HEADER = '# VOLATILE CONTEXT';
+export const MEMORY_MARKER = '# PERSISTENT MEMORY & SYSTEM STATE';
+export const SOUL_MARKER = '# PERSONALITY & BEHAVIOR CORE';
+export const AGENTS_MARKER = '# SUB-AGENTS & ROUTING RULES';
+export const FINDINGS_MARKER = 'RECENT RESEARCH FINDINGS';
+export const DWSP_MARKER = 'DYNAMIC WORKSPACE PROJECTION';
+export const FINDINGS_TAIL_MAX_CHARS = 2000;
+export const DWSP_GIT_STATUS_MAX_LINES = 40;
+const DWSP_GIT_TIMEOUT_MS = 1500;
+
+const execAsync = promisify(exec);
+
+interface VolatilePromptContext {
+  /** Pre-capped tail of ~/.everfern/findings.md (see readFindingsTail). */
+  findingsTail?: string;
+  /** Pre-built DWSP block (see buildDwspBlock). */
+  dwspBlock?: string;
+}
+
+interface SystemPromptParts {
+  memory?: string;
+  soul?: string;
+  agents?: string;
+}
+
+/**
+ * Trim text to at most `maxChars` characters, keeping the TAIL (most recent
+ * content) and snapping the cut forward to a line boundary when possible.
+ * The tail is kept because findings.md is append-only — the newest (and
+ * most relevant) findings always live at the end of the file.
+ */
+function capFindingsTail(text: string, maxChars: number = FINDINGS_TAIL_MAX_CHARS): string {
+  const trimmed = (text || '').trim();
+  if (trimmed.length <= maxChars) return trimmed;
+  const tail = trimmed.slice(-maxChars);
+  // If the char budget cut landed mid-line, drop the partial first line —
+  // a truncated leading line would leak half a markdown bullet or URL.
+  const nl = tail.indexOf('\n');
+  return nl >= 0 && nl < tail.length - 1 ? tail.slice(nl + 1) : tail;
+}
+
+/**
+ * Cap `block` to at most `maxLines` lines, replacing the overflow with a
+ * trailing `... and N more` summary line (codebase idiom from system-files.ts).
+ */
+function capLines(text: string, maxLines: number): string {
+  const lines = (text || '').split('\n');
+  if (lines.length <= maxLines) return text;
+  const shown = lines.slice(0, Math.max(0, maxLines - 1));
+  const hidden = lines.length - shown.length;
+  return `${shown.join('\n')}\n... and ${hidden} more`;
+}
+
+/**
+ * Read the tail (≤ `maxChars` chars) of the session findings file.
+ * Only the tail is read because findings.md grows unboundedly as research
+ * tools append to it; the ≤2000-char cap bounds the volatile block and keeps
+ * it fresh (a whole-file read would bloat the prompt with stale
+ * early-session findings).
+ * Pure w.r.t. conversation state — filesystem read only, never throws.
+ *
+ * @param maxChars - Hard cap on returned characters (tail-kept, line-snapped).
+ * @param findingsPath - Path override (tests); defaults to ~/.everfern/findings.md.
+ * @returns The capped findings tail, or '' when missing or unreadable.
+ */
+export function readFindingsTail(
+  maxChars: number = FINDINGS_TAIL_MAX_CHARS,
+  findingsPath?: string
+): string {
+  try {
+    const p = findingsPath || path.join(os.homedir(), '.everfern', 'findings.md');
+    if (!fs.existsSync(p)) return '';
+    return capFindingsTail(fs.readFileSync(p, 'utf-8'), maxChars);
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Build the DWSP git-status block for the volatile prompt tail.
+ * Runs `git status --porcelain` with a 1.5s timeout; non-repo, missing dir,
+ * git failure or timeout all yield '' (never throws, never blocks the step).
+ * Output is capped at `maxLines` lines total including a `... and N more` line.
+ *
+ * @param workspaceDir - Repo to inspect; null/undefined, missing dir, or any
+ *                       git failure yields '' (never throws, never blocks).
+ * @param maxLines - Total line budget for the block, header lines included.
+ * @returns The DWSP git-status block, or '' when unavailable.
+ */
+export async function buildDwspBlock(
+  workspaceDir?: string | null,
+  maxLines: number = DWSP_GIT_STATUS_MAX_LINES
+): Promise<string> {
+  if (!workspaceDir) return '';
+  try {
+    if (!fs.existsSync(workspaceDir)) return '';
+    const { stdout } = await execAsync('git status --porcelain', {
+      cwd: workspaceDir,
+      timeout: DWSP_GIT_TIMEOUT_MS,
+    });
+    const trimmed = stdout.trim();
+    let statusLines = trimmed
+      ? trimmed.split('\n').map(line => {
+          // Porcelain v1 format: 2-char XY status code, one space, then path.
+          const status = line.slice(0, 2).trim();
+          const file = line.slice(3).trim();
+          return `- \`${file}\` [Status: ${status}]`;
+        })
+      : ['Workspace is clean (no uncommitted Git modifications).'];
+
+    const header = ['## DYNAMIC WORKSPACE PROJECTION (DWSP)', '', '### Active Git Modifications'];
+    // The line budget must also cover the header lines so the assembled
+    // block never exceeds `maxLines` in total.
+    const budget = Math.max(1, maxLines - header.length);
+    if (statusLines.length > budget) {
+      const shown = statusLines.slice(0, budget - 1);
+      statusLines = [...shown, `... and ${statusLines.length - shown.length} more`];
+    }
+    return [...header, ...statusLines].join('\n');
+  } catch {
+    // Non-repo, git not installed, or 1.5s timeout — emit no volatile git context.
+    return '';
+  }
+}
+
+/**
+ * Pure prompt assembly (HP-04 static-first / volatile-last).
+ *
+ * Stable = base + memory (once) + soul (once) + agents (once). Each static
+ * section is appended at most once, guarded by the canonical `includes()`
+ * markers already used by this file, so re-entrant assembly never duplicates.
+ *
+ * Volatile = a `# VOLATILE CONTEXT` block containing the findings tail
+ * (≤2000 chars) and the DWSP git-status block (≤40 lines, `... and N more`).
+ * The caller must emit the volatile block as a trailing system message
+ * AFTER the conversation history — never bake it into the stable prompt.
+ *
+ * Performs no I/O; findings/DWSP content is passed in pre-read.
+ *
+ * Why the split exists: providers cache longest-common prompt prefixes. If
+ * findings/DWSP (which change every step) were baked into the system prompt,
+ * the prefix would diverge each step and every cache entry would miss. The
+ * stable head stays byte-identical across steps, so the head + early
+ * history remain cache-hot; only the cheap trailing volatile message is
+ * re-tokenized per step.
+ *
+ * @param base - Base system prompt (SYSTEM_PROMPT.md) or an explicit override.
+ * @param parts - Marker-guarded static sections (memory, soul, agents), each
+ *                appended at most once per assembly.
+ * @param volatile - Pre-read volatile inputs; findings are re-capped defensively.
+ * @returns `{ stable, volatile }` — the stable head prompt and the volatile
+ *          block ('' when no findings or DWSP content is available).
+ */
+export function assembleSystemPrompt(
+  base: string,
+  parts: SystemPromptParts,
+  volatile?: VolatilePromptContext
+): { stable: string; volatile: string } {
+  let stable = base ?? '';
+
+  // The `includes(MARKER)` guards make assembly idempotent: callers may pass a
+  // base prompt that already carries these sections (e.g. a resumed step or
+  // an override), and re-appending would duplicate content and shift the
+  // cached prefix bytes.
+  if (parts.memory && !stable.includes(MEMORY_MARKER)) {
+    stable += parts.memory;
+  }
+  if (parts.soul && !stable.includes(SOUL_MARKER)) {
+    stable += `\n\n# PERSONALITY & BEHAVIOR CORE (SOUL.md)\n${parts.soul}\n`;
+  }
+  if (parts.agents && !stable.includes(AGENTS_MARKER)) {
+    stable += `\n\n# SUB-AGENTS & ROUTING RULES (AGENTS.md)\n${parts.agents}\n`;
+  }
+
+  const volatileSections: string[] = [];
+  // Re-cap even though readFindingsTail already caps: this function is
+  // exported, so callers may pass an uncapped findingsTail directly.
+  const findings = capFindingsTail(volatile?.findingsTail ?? '');
+  if (findings) {
+    volatileSections.push(
+      `## ${FINDINGS_MARKER}\nBelow are findings from tools (navis, web_search) already executed during this session. Do NOT repeat the same URLs or searches unless new information is needed:\n${findings}\n`
+    );
+  }
+  const dwsp = volatile?.dwspBlock ? capLines(volatile.dwspBlock, DWSP_GIT_STATUS_MAX_LINES) : '';
+  if (dwsp) {
+    volatileSections.push(dwsp);
+  }
+
+  const volatileBlock = volatileSections.length
+    ? `${VOLATILE_CONTEXT_HEADER}\nVolatile, session-scoped context for the current step only. Refreshed every step — never treat as durable instructions.\n\n${volatileSections.join('\n')}`
+    : '';
+
+  return { stable, volatile: volatileBlock };
+}
+
+/**
+ * Build the persistent-memory injection string from ~/.everfern/memory.
+ * Returns '' when neither USER_PROFILE.md nor PROJECT_STATE.md exists so
+ * the absence of memory never introduces an empty marker section into
+ * the stable prompt.
+ */
+function buildMemoryInjection(): string {
+  try {
+    const memoryDir = path.join(os.homedir(), '.everfern', 'memory');
+    const profilePath = path.join(memoryDir, 'USER_PROFILE.md');
+    const projectPath = path.join(memoryDir, 'PROJECT_STATE.md');
+
+    let memoryInjection = `\n\n${MEMORY_MARKER}\n`;
+    if (fs.existsSync(profilePath)) {
+      memoryInjection += `\n## USER_PROFILE.md (User preferences, rules, styles):\n${fs.readFileSync(profilePath, 'utf-8')}\n`;
+    }
+    if (fs.existsSync(projectPath)) {
+      memoryInjection += `\n## PROJECT_STATE.md (Persistent facts, architectural choices):\n${fs.readFileSync(projectPath, 'utf-8')}\n`;
+    }
+
+    return memoryInjection !== `\n\n${MEMORY_MARKER}\n` ? memoryInjection : '';
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Build the clarification question shown to the user when the brain signals
+ * `waiting_for_user_input`. Preference order: the signal's own explanation,
+ * then a short (<600 char) raw LLM response, then a truncated echo of the
+ * original request — so the user always gets SOME actionable question.
+ */
 export function buildUserInputQuestion(explanation: string, responseContent: string, originalRequest: string): string {
   const cleanExplanation = explanation.replace(/\s+/g, ' ').trim();
   const cleanResponse = responseContent.replace(/\s+/g, ' ').trim();
@@ -32,6 +268,16 @@ export function buildUserInputQuestion(explanation: string, responseContent: str
   return `Please provide the missing details I need to continue with: ${originalRequest.slice(0, 220)}`;
 }
 
+/**
+ * Wrap a `waiting_for_user_input` completion signal as a synthetic
+ * `ask_user_question` tool call so the UI renders a structured input form
+ * instead of a dead-end chat message.
+ *
+ * @param signal - The completion signal carrying reason and explanation.
+ * @param responseContent - The brain's raw response text (fallback question body).
+ * @param originalRequest - The originating user request (last-resort question body).
+ * @returns A single-question `ask_user_question` tool-call object.
+ */
 export function buildAskUserQuestionToolCall(
   signal: { reason: CompletionReason; explanation: string },
   responseContent: string,
@@ -205,7 +451,11 @@ Respond with JSON only:
           responseFormat: 'json',
           temperature: 0.3,
           maxTokens: 1500,
-          abortSignal: globalAbortManager.abortController.signal,
+          // Scoped abort: ties this auxiliary LLM call to the same
+          // conversation-scoped AbortController as the main step, so a user
+          // stop cancels the completion-signal probe too instead of letting
+          // it race the timeout in the background.
+          abortSignal: getConversationAbortManager(runner.currentConversationId).abortController.signal,
         }),
         timeoutPromise,
       ]) as any;
@@ -405,73 +655,56 @@ export const createBrainNode = (
 
 
     // Load the main system prompt from synchronized location
-    let systemPrompt = systemPromptOverride;
-    if (!systemPrompt) {
+    let basePrompt = systemPromptOverride;
+    if (!basePrompt) {
       const mainSystemPrompt = loadPrompt('SYSTEM_PROMPT.md');
       if (mainSystemPrompt) {
-        systemPrompt = mainSystemPrompt;
-        console.log('[Brain] 📖 Using main SYSTEM_PROMPT.md from ~/.everfern/prompts/');
+        // HP-02: resolve {{OS_INFO}}/{{SKILLS}}/{{PLUGIN_SKILLS}}/paths before the
+        // prompt reaches the model — brain previously sent the raw template.
+        basePrompt = await resolvePromptPlaceholders(
+          mainSystemPrompt,
+          process.platform,
+          (runner as any).currentConversationId || undefined,
+          [],
+          (runner as any).projectId || undefined,
+          (runner as any).skills
+        );
+        console.log('[Brain] 📖 Using main SYSTEM_PROMPT.md from ~/.everfern/prompts/ (placeholders resolved)');
       } else {
         console.warn('[Brain] ⚠️  Could not load SYSTEM_PROMPT.md, using default');
       }
     }
 
-    // Inject graph-based persistent memories (USER_PROFILE.md and PROJECT_STATE.md)
-    try {
-      const os = require('os');
-      const memoryDir = path.join(os.homedir(), '.everfern', 'memory');
-      const profilePath = path.join(memoryDir, 'USER_PROFILE.md');
-      const projectPath = path.join(memoryDir, 'PROJECT_STATE.md');
+    // ── HP-04 static-first / volatile-last ──────────────────────────────────
+    // Stable prompt = base + persistent memory + SOUL.md + AGENTS.md, each
+    // injected exactly once (marker-guarded). Volatile context (findings tail
+    // + DWSP git-status) is assembled separately and appended by the runtime
+    // as a trailing system message AFTER the conversation history.
+    const { stable, volatile: volatileSystemPrompt } = assembleSystemPrompt(
+      basePrompt || '',
+      {
+        memory: buildMemoryInjection(),
+        soul: loadSoul(runner.workspaceDir),
+        agents: loadAgents(runner.workspaceDir),
+      },
+      {
+        findingsTail: readFindingsTail(),
+        dwspBlock: await buildDwspBlock(runner.workspaceDir),
+      }
+    );
 
-      let memoryInjection = '\n\n# PERSISTENT MEMORY & SYSTEM STATE\n';
-      if (fs.existsSync(profilePath)) {
-        memoryInjection += `\n## USER_PROFILE.md (User preferences, rules, styles):\n${fs.readFileSync(profilePath, 'utf-8')}\n`;
-      }
-      if (fs.existsSync(projectPath)) {
-        memoryInjection += `\n## PROJECT_STATE.md (Persistent facts, architectural choices):\n${fs.readFileSync(projectPath, 'utf-8')}\n`;
-      }
-
-      if (systemPrompt && memoryInjection !== '\n\n# PERSISTENT MEMORY & SYSTEM STATE\n') {
-        systemPrompt += memoryInjection;
-        console.log('[Brain] 🧠 Injected persistent memories into system prompt');
-      }
-    } catch (memErr) {
-      console.warn('[Brain] Failed to inject persistent memory:', memErr);
+    let systemPrompt = stable;
+    if (stable) {
+      console.log('[Brain] 🧩 Assembled stable system prompt (base + memory + soul + agents)');
     }
-
-    // Inject OpenClaw personality and routing configurations
-    try {
-      const workspaceRoot = runner.workspaceDir;
-      const soulContent = loadSoul(workspaceRoot);
-      const agentsContent = loadAgents(workspaceRoot);
-      
-      if (systemPrompt) {
-        systemPrompt += `\n\n# PERSONALITY & BEHAVIOR CORE (SOUL.md)\n${soulContent}\n`;
-        systemPrompt += `\n\n# SUB-AGENTS & ROUTING RULES (AGENTS.md)\n${agentsContent}\n`;
-        console.log('[Brain] 🎭 Injected SOUL.md and AGENTS.md into system prompt');
-      }
-    } catch (openclawErr) {
-      console.warn('[Brain] Failed to inject OpenClaw configurations:', openclawErr);
+    if (volatileSystemPrompt) {
+      console.log('[Brain] ⚡ Assembled volatile context (findings tail + DWSP git-status)');
     }
 
     // Inject harness workflow phase prompt if available
-    if (systemPrompt && state.harnessPhasePrompt) {
+    if (state.harnessPhasePrompt) {
       systemPrompt += `\n\n=== WORKFLOW PHASE ===\n${state.harnessPhasePrompt}\n`;
       console.log('[Brain] 🏗️ Injected harness phase prompt into system prompt');
-    }
-
-    // Inject recent findings from findings.md so the brain doesn't repeat navis/web_search work
-    try {
-      const findingsPath = path.join(os.homedir(), '.everfern', 'findings.md');
-      if (fs.existsSync(findingsPath)) {
-        const findingsContent = fs.readFileSync(findingsPath, 'utf-8').trim();
-        if (findingsContent && findingsContent.length > 0) {
-          systemPrompt += `\n\n# RECENT RESEARCH FINDINGS\nBelow are findings from tools (navis, web_search) already executed during this session. Do NOT repeat the same URLs or searches unless new information is needed:\n${findingsContent}\n`;
-          console.log('[Brain] 📄 Injected findings.md context into system prompt');
-        }
-      }
-    } catch (findingsErr) {
-      console.warn('[Brain] Failed to inject findings:', findingsErr);
     }
 
     let skipRouting = false;
@@ -495,7 +728,8 @@ export const createBrainNode = (
         toolDefs: allTools,
         eventQueue,
         nodeName: 'brain',
-        systemPromptOverride: systemPrompt
+        systemPromptOverride: systemPrompt,
+        volatileSystemPrompt: volatileSystemPrompt || undefined,
       }),
       'Processing request with Brain orchestrator'
     );
@@ -729,6 +963,9 @@ export const createBrainNode = (
       const isWebExplorerDone = routingDecision.decision === 'route_web_explorer' && state.webExplorerComplete && state.returningFromSpecialist === 'web_explorer';
       const isDataAnalystDone = routingDecision.decision === 'route_data_analyst' && state.dataAnalysisComplete && state.returningFromSpecialist === 'data_analyst';
       const isDeepResearchDone = routingDecision.decision === 'route_deep_research' && state.deepResearchComplete && state.returningFromSpecialist === 'deep_research';
+      // computer_use has no first-class RoutingDecision literal — routers emit
+      // either a legacy 'route_computer_use' string or 'continue_brain' under
+      // the 'automate' intent — so both spellings must be matched here.
       const isComputerUseDone = ((routingDecision.decision as any) === 'route_computer_use' || 
                                  (routingDecision.decision === 'continue_brain' && state.currentIntent === 'automate')) && 
                                 state.computerUseComplete && state.returningFromSpecialist === 'computer_use';

@@ -13,13 +13,13 @@
 import fc from 'fast-check';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import PillNarrativeTimeline from '../PillNarrativeTimeline';
-import type { NarrativeTimeline, Task, ToolPill } from '../../../../main/agent/runner/pill-narrative/types';
+import PillNarrativeTimeline from '../../../../components/agent/PillNarrativeTimeline';
+import type { NarrativeTimeline, Task, ToolPill } from '../../../../../main/agent/runner/pill-narrative/types';
 
 /**
  * Mock ToolDetailSidePanel
  */
-vi.mock('../ToolDetailSidePanel', () => ({
+vi.mock('../../../../components/tools/ToolDetailSidePanel', () => ({
   default: ({ isOpen, toolCall, onClose }: any) => (
     isOpen ? (
       <div data-testid="tool-detail-panel">

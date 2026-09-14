@@ -8,8 +8,9 @@ import { toolApprovalStore } from '../store/tool-approvals';
 const activeNotifications = new Map<string, Notification>();
 const shownRequestTimestamps = new Map<string, number>();
 
-// Clean up stale timestamps periodically (every 5 minutes)
-setInterval(() => {
+// MP-LEAK-07: module-level cleanup interval is now tracked so it can be
+// cancelled on app shutdown instead of running for the whole process lifetime.
+const shownTimestampsCleanup = setInterval(() => {
   const now = Date.now();
   for (const [reqId, ts] of shownRequestTimestamps.entries()) {
     if (now - ts > 5 * 60 * 1000) {
@@ -17,6 +18,15 @@ setInterval(() => {
     }
   }
 }, 5 * 60 * 1000);
+shownTimestampsCleanup.unref?.();
+
+/**
+ * Cancel the module-level notification cleanup interval (MP-LEAK-07).
+ * Called from the app quit path.
+ */
+export function stopPermissionNotificationCleanup(): void {
+  clearInterval(shownTimestampsCleanup);
+}
 
 function getNotificationIcon(): string | undefined {
   try {

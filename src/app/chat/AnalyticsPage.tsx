@@ -11,7 +11,6 @@ import {
     ClockIcon,
     XMarkIcon,
     BoltIcon,
-    CheckCircleIcon,
     ArrowPathIcon,
     FireIcon,
 } from "@heroicons/react/24/outline";
@@ -42,6 +41,53 @@ function formatTokens(n: number): string {
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
     if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
     return String(n);
+}
+
+// ── Pure analytics helpers (exported for node-environment unit tests) ────────
+
+const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "2026-09" → "Sep '26"; invalid strings pass through unchanged. */
+export function formatMonthLabel(month: string): string {
+    const match = /^(\d{4})-(\d{2})$/.exec(month || "");
+    if (!match) return month || "";
+    const idx = Number(match[2]) - 1;
+    if (idx < 0 || idx > 11) return month;
+    return `${MONTH_LABELS[idx]} '${match[1].slice(-2)}`;
+}
+
+/** Normalizes raw monthlyUsage aggregates into sorted, display-ready spend bars. */
+export function toMonthlySpendBars(
+    monthlyUsage: Array<{ month: string; tokens: number; cost: number; requests: number }> | null | undefined
+): Array<{ label: string; cost: number }> {
+    return (monthlyUsage || [])
+        .filter((u) => u && typeof u.month === "string" && u.month.length > 0)
+        .slice()
+        .sort((a, b) => a.month.localeCompare(b.month))
+        .map((u) => ({ label: formatMonthLabel(u.month), cost: u.cost || 0 }));
+}
+
+export interface UsageHealth {
+    daysActive30d: number;
+    activeProviders: number;
+    activeModels: number;
+    hasUsage: boolean;
+}
+
+/** Real aggregates derived from the fetched usage-event summary (no synthetic telemetry). */
+export function computeUsageHealth(summary: AnalyticsSummary | null | undefined): UsageHealth {
+    const daily = (summary && summary.dailyUsage) || [];
+    const daysActive30d = daily.filter(
+        (d) => d && ((d.requests || 0) > 0 || (d.tokens || 0) > 0 || (d.cost || 0) > 0)
+    ).length;
+    const requests30d = daily.reduce((sum, d) => sum + ((d && d.requests) || 0), 0);
+    const totalRequests = (summary && summary.totalRequests) || 0;
+    return {
+        daysActive30d,
+        activeProviders: summary && summary.topProviders ? summary.topProviders.length : 0,
+        activeModels: summary && summary.topModels ? summary.topModels.length : 0,
+        hasUsage: totalRequests > 0 || requests30d > 0 || daysActive30d > 0,
+    };
 }
 
 const CustomDollarIcon = (props: any) => (
@@ -217,7 +263,7 @@ function DualAxisDailyChart({ data, height = 200 }: {
                                     width: "100%",
                                     height: `${Math.max(costPct, 3)}%`,
                                     background: isHovered
-                                        ? "linear-gradient(to top, #10b981, #34d399)"
+                                        ? "linear-gradient(to top, var(--color-success), var(--color-success-light))"
                                         : "linear-gradient(to top, rgba(16,185,129,0.85), rgba(16,185,129,0.35))",
                                     borderRadius: "4px 4px 0 0",
                                     transition: "all 0.2s ease",
@@ -282,7 +328,7 @@ function DualAxisDailyChart({ data, height = 200 }: {
                                 }}>
                                     <div style={{ fontWeight: 600, borderBottom: "1px solid rgba(255,255,255,0.2)", paddingBottom: 2 }}>{label}</div>
                                     <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                                        <span style={{ color: "#34d399" }}>Spend:</span>
+                                        <span style={{ color: "var(--color-success-light)" }}>Spend:</span>
                                         <span>{formatCost(d.cost)}</span>
                                     </div>
                                     <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
@@ -379,10 +425,10 @@ function HorizBar({ label, value, maxValue, cost, color }: {
             </div>
             <div style={{ height: 7, background: "var(--color-bg-base)", borderRadius: 4, overflow: "hidden" }}>
                 <motion.div
-                    initial={{ width: 0 }}
-                    animate={{ width: `${pct}%` }}
+                    initial={{ scaleX: 0 }}
+                    animate={{ scaleX: pct / 100 }}
                     transition={{ duration: 0.6, delay: 0.1 }}
-                    style={{ height: "100%", background: `linear-gradient(to right, ${color}, ${color}88)`, borderRadius: 4 }}
+                    style={{ width: "100%", height: "100%", background: `linear-gradient(to right, ${color}, ${color}88)`, borderRadius: 4, transformOrigin: "left center" }}
                 />
             </div>
         </div>
@@ -494,6 +540,7 @@ export default function AnalyticsPage({ onClose, sidebarOpen }: AnalyticsPagePro
     const [error, setError] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<"overview" | "models" | "timeline">("overview");
     const [sharing, setSharing] = useState(false);
+    const [pageError, setPageError] = useState<string | null>(null);
 
     const handleShareAnalytics = async () => {
         if (!summary) return;
@@ -533,10 +580,10 @@ export default function AnalyticsPage({ onClose, sidebarOpen }: AnalyticsPagePro
 
             // Metrics Grid
             const cards = [
-                { label: 'Total Spend', val: formatCost(summary.totalCost), color: '#10b981' },
+                { label: 'Total Spend', val: formatCost(summary.totalCost), color: 'var(--color-success)' },
                 { label: 'Total Tokens', val: formatTokens(summary.totalTokens), color: '#6366f1' },
-                { label: 'Total Requests', val: summary.totalRequests.toLocaleString(), color: '#f59e0b' },
-                { label: 'Top Model', val: summary.topModels[0]?.model?.split("/").pop() || "everfern-1", color: '#3b82f6' }
+                { label: 'Total Requests', val: summary.totalRequests.toLocaleString(), color: 'var(--color-warning)' },
+                { label: 'Top Model', val: summary.topModels[0]?.model?.split("/").pop() || "everfern-1", color: 'var(--color-info)' }
             ];
 
             cards.forEach((c, idx) => {
@@ -571,19 +618,23 @@ export default function AnalyticsPage({ onClose, sidebarOpen }: AnalyticsPagePro
             link.href = url;
             link.click();
         } catch (e: any) {
-            alert('Failed to generate sharing image: ' + e.message);
+            setPageError("Failed to generate sharing image: " + (e?.message || String(e)));
         } finally {
             setSharing(false);
         }
     };
 
-    const loadData = useCallback(async () => {
-        setLoading(true);
-        setError(null);
+    const loadData = useCallback(async (opts?: { silent?: boolean }) => {
+        const silent = !!opts?.silent;
+        // Background refetch: never toggle the global loading flag, so charts
+        // stay mounted. Only user-initiated loads show the loading state.
+        if (!silent) setLoading(true);
+        if (!silent) setError(null);
         try {
             const res = await (window as any).electronAPI?.analytics?.getSummary();
             if (res?.success && res?.data) {
                 setSummary(res.data);
+                setError(null);
             } else {
                 setError(res?.error || "Failed to load analytics");
             }
@@ -596,8 +647,21 @@ export default function AnalyticsPage({ onClose, sidebarOpen }: AnalyticsPagePro
 
     useEffect(() => {
         loadData();
-        const interval = setInterval(loadData, 30000);
-        return () => clearInterval(interval);
+        const interval = setInterval(() => {
+            // Pause polling while the window is hidden to avoid churn + jank.
+            if (typeof document !== "undefined" && document.hidden) return;
+            loadData({ silent: true });
+        }, 30000);
+
+        // Resume polling with an immediate refetch when the page becomes visible again.
+        const handleVisibility = () => {
+            if (!document.hidden) loadData({ silent: true });
+        };
+        document.addEventListener("visibilitychange", handleVisibility);
+        return () => {
+            clearInterval(interval);
+            document.removeEventListener("visibilitychange", handleVisibility);
+        };
     }, [loadData]);
 
     const sidebarWidth = sidebarOpen ? 260 : 68;
@@ -664,7 +728,7 @@ export default function AnalyticsPage({ onClose, sidebarOpen }: AnalyticsPagePro
                         {sharing ? "Generating..." : "✨ Share & Flex"}
                     </button>
                     <button
-                        onClick={loadData}
+                        onClick={() => loadData()}
                         className="glossy"
                         style={{
                             padding: "6px 14px",
@@ -749,11 +813,56 @@ export default function AnalyticsPage({ onClose, sidebarOpen }: AnalyticsPagePro
                     </div>
                 )}
 
+                {pageError && (
+                    <div
+                        role="alert"
+                        style={{
+                            position: "relative",
+                            background: "var(--color-error-dim)",
+                            border: "1px solid var(--color-error)",
+                            borderRadius: 12,
+                            padding: "12px 44px 12px 16px",
+                            color: "var(--color-error-light)",
+                            fontSize: 13.5,
+                            fontWeight: 500,
+                            marginBottom: 16,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10
+                        }}
+                    >
+                        <span>{pageError}</span>
+                        <button
+                            onClick={() => setPageError(null)}
+                            aria-label="Dismiss"
+                            style={{
+                                position: "absolute",
+                                right: 10,
+                                top: "50%",
+                                transform: "translateY(-50%)",
+                                width: 24,
+                                height: 24,
+                                borderRadius: 6,
+                                background: "transparent",
+                                border: "none",
+                                cursor: "pointer",
+                                color: "inherit",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center"
+                            }}
+                        >
+                            <XMarkIcon style={{ width: 15, height: 15 }} />
+                        </button>
+                    </div>
+                )}
+
                 {error && !loading && (
                     <div className="glossy" style={{
-                        background: "#fff5f5", border: "1px solid #fecaca",
+                        background: "var(--color-error-dim)",
+                        border: "1px solid var(--color-error)",
                         borderTop: "1px solid var(--glossy-highlight)",
-                        borderRadius: 16, padding: 24, color: "#ef4444",
+                        borderRadius: 16, padding: 24, color: "var(--color-error-light)",
                         fontSize: 14, marginBottom: 20,
                         boxShadow: "var(--glossy-inner), var(--glossy-outer)"
                     }}>
@@ -827,6 +936,9 @@ function OverviewTab({ summary }: { summary: AnalyticsSummary }) {
     const promptPct = summary.totalTokens > 0 ? ((summary.totalPromptTokens / summary.totalTokens) * 100).toFixed(1) : "0.0";
     const completionPct = summary.totalTokens > 0 ? ((summary.totalCompletionTokens / summary.totalTokens) * 100).toFixed(1) : "0.0";
 
+    const health = computeUsageHealth(summary);
+    const requests30d = (summary.dailyUsage || []).reduce((sum, d) => sum + ((d && d.requests) || 0), 0);
+
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
             {/* CostMeter Element with Glossy finish */}
@@ -897,7 +1009,7 @@ function OverviewTab({ summary }: { summary: AnalyticsSummary }) {
                 >
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                         <span style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>Monthly Projection</span>
-                        <span style={{ fontSize: 11, fontWeight: 600, color: "#10b981", background: "rgba(16,185,129,0.1)", padding: "2px 8px", borderRadius: 10 }}>Forecast</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: "var(--color-success)", background: "rgba(16,185,129,0.1)", padding: "2px 8px", borderRadius: 10 }}>Forecast</span>
                     </div>
                     <div style={{ fontSize: 20, fontWeight: 600, color: "var(--color-text-primary)", fontVariantNumeric: "tabular-nums" }}>
                         ~{formatCost(projectedMonthlySpend)} <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)" }}>/ mo</span>
@@ -951,10 +1063,10 @@ function OverviewTab({ summary }: { summary: AnalyticsSummary }) {
                 >
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                         <span style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>Cache Savings</span>
-                        <span style={{ fontSize: 11, fontWeight: 600, color: "#f59e0b", background: "rgba(245,158,11,0.1)", padding: "2px 8px", borderRadius: 10 }}>Prompt Cache</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: "var(--color-warning)", background: "rgba(245,158,11,0.1)", padding: "2px 8px", borderRadius: 10 }}>Prompt Cache</span>
                     </div>
                     <div style={{ fontSize: 20, fontWeight: 600, color: "var(--color-text-primary)", fontVariantNumeric: "tabular-nums" }}>
-                        ~{formatTokens(estimatedCacheSavings)} <span style={{ fontSize: 12, fontWeight: 500, color: "#10b981" }}>(${cacheUsdSaved.toFixed(2)} saved)</span>
+                        ~{formatTokens(estimatedCacheSavings)} <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-success)" }}>(${cacheUsdSaved.toFixed(2)} saved)</span>
                     </div>
                     <div style={{ fontSize: 11.5, color: "var(--color-text-secondary)", fontWeight: 500 }}>
                         Estimated reduction via cached prompts
@@ -981,7 +1093,7 @@ function OverviewTab({ summary }: { summary: AnalyticsSummary }) {
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 16, fontSize: 12, fontWeight: 500 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                            <div style={{ width: 10, height: 10, borderRadius: 2, background: "#10b981" }} />
+                            <div style={{ width: 10, height: 10, borderRadius: 2, background: "var(--color-success)" }} />
                             <span style={{ color: "var(--color-text-primary)" }}>Spend ($)</span>
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -1057,11 +1169,11 @@ function OverviewTab({ summary }: { summary: AnalyticsSummary }) {
                         </div>
                         <div>
                             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 12 }}>
-                                <span style={{ color: "#10b981", fontWeight: 600 }}>Output (Generated) — {completionPct}%</span>
+                                <span style={{ color: "var(--color-success)", fontWeight: 600 }}>Output (Generated) — {completionPct}%</span>
                                 <span style={{ color: "var(--color-text-primary)", fontWeight: 600 }}>{formatTokens(summary.totalCompletionTokens)}</span>
                             </div>
                             <div style={{ height: 8, background: "var(--color-bg-base)", borderRadius: 4, overflow: "hidden" }}>
-                                <div style={{ height: "100%", width: `${summary.totalTokens > 0 ? (summary.totalCompletionTokens / summary.totalTokens) * 100 : 0}%`, background: "#10b981", borderRadius: 4 }} />
+                                <div style={{ height: "100%", width: `${summary.totalTokens > 0 ? (summary.totalCompletionTokens / summary.totalTokens) * 100 : 0}%`, background: "var(--color-success)", borderRadius: 4 }} />
                             </div>
                         </div>
                         <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2, lineHeight: 1.4 }}>
@@ -1071,8 +1183,8 @@ function OverviewTab({ summary }: { summary: AnalyticsSummary }) {
                 </div>
             </div>
 
-            {/* ── 5. Operational Health & Reliability ── */}
-            <div 
+            {/* ── 5. Usage Health (real aggregates from recorded usage events) ── */}
+            <div
                 className="glossy"
                 style={{
                     background: "var(--color-bg-surface)",
@@ -1083,34 +1195,47 @@ function OverviewTab({ summary }: { summary: AnalyticsSummary }) {
                     padding: "20px 24px",
                     display: "flex",
                     alignItems: "center",
-                    justifyContent: "space-between"
+                    justifyContent: "space-between",
+                    flexWrap: "wrap",
+                    gap: 16
                 }}
             >
                 <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                     <div style={{ width: 38, height: 38, borderRadius: 10, background: "rgba(16,185,129,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        <BoltIcon style={{ width: 20, height: 20, color: "#10b981" }} />
+                        <BoltIcon style={{ width: 20, height: 20, color: "var(--color-success)" }} />
                     </div>
                     <div>
-                        <div style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)" }}>System Operational Health</div>
-                        <div style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>API endpoints and provider stream latencies</div>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)" }}>Usage Health</div>
+                        <div style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>Aggregated from recorded usage events</div>
                     </div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap" }}>
                     <div>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>Error Rate</div>
-                        <div style={{ fontSize: 15, fontWeight: 600, color: "#10b981", display: "flex", alignItems: "center", gap: 4 }}>
-                            <CheckCircleIcon style={{ width: 15, height: 15 }} /> 0.0%
+                        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>Requests (30d)</div>
+                        <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+                            {requests30d.toLocaleString()}
                         </div>
                     </div>
                     <div style={{ width: 1, height: 28, background: "var(--color-border)" }} />
                     <div>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>Avg Latency</div>
-                        <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)" }}>~1.2s</div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>Active Days (30d)</div>
+                        <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+                            {health.daysActive30d}
+                        </div>
+                    </div>
+                    <div style={{ width: 1, height: 28, background: "var(--color-border)" }} />
+                    <div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>Providers / Models</div>
+                        <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+                            {health.activeProviders} / {health.activeModels}
+                        </div>
                     </div>
                     <div style={{ width: 1, height: 28, background: "var(--color-border)" }} />
                     <div>
                         <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>Status</div>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: "#10b981" }}>All Systems Active</div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: health.hasUsage ? "var(--color-success)" : "var(--color-text-secondary)" }}>
+                            {health.hasUsage ? "Usage Recording" : "No Usage Yet"}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1183,7 +1308,7 @@ function ModelsTab({ summary }: { summary: AnalyticsSummary }) {
                                     <td style={{ padding: "12px 12px", color: "var(--color-text-secondary)" }}>{m.provider}</td>
                                     <td style={{ padding: "12px 12px", color: "var(--color-text-secondary)", fontVariantNumeric: "tabular-nums" }}>{m.requests.toLocaleString()}</td>
                                     <td style={{ padding: "12px 12px", color: "var(--color-text-secondary)", fontVariantNumeric: "tabular-nums" }}>{formatTokens(m.tokens)}</td>
-                                    <td style={{ padding: "12px 12px", color: m.cost > 0 ? "#10b981" : "var(--color-text-secondary)", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{formatCost(m.cost)}</td>
+                                    <td style={{ padding: "12px 12px", color: m.cost > 0 ? "var(--color-success)" : "var(--color-text-secondary)", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{formatCost(m.cost)}</td>
                                 </tr>
                             ))}
                         </tbody>
@@ -1195,6 +1320,7 @@ function ModelsTab({ summary }: { summary: AnalyticsSummary }) {
 }
 
 function TimelineTab({ summary }: { summary: AnalyticsSummary }) {
+    const monthlySpendBars = toMonthlySpendBars(summary.monthlyUsage);
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
             <div 
@@ -1226,7 +1352,7 @@ function TimelineTab({ summary }: { summary: AnalyticsSummary }) {
             >
                 <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: 4 }}>Monthly Spend</div>
                 <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 18 }}>Historical spend over billing periods</div>
-                <BarChart data={summary.dailyUsage} valueKey="cost" labelKey="date" color="#f59e0b" height={160} />
+                <BarChart data={monthlySpendBars} valueKey="cost" labelKey="label" color="#f59e0b" height={160} />
             </div>
 
             <div 
@@ -1285,7 +1411,7 @@ function TimelineTab({ summary }: { summary: AnalyticsSummary }) {
                                     <td style={{ padding: "12px 12px", color: "var(--color-text-primary)", fontWeight: 600 }}>{m.month}</td>
                                     <td style={{ padding: "12px 12px", color: "var(--color-text-secondary)", fontVariantNumeric: "tabular-nums" }}>{m.requests.toLocaleString()}</td>
                                     <td style={{ padding: "12px 12px", color: "var(--color-text-secondary)", fontVariantNumeric: "tabular-nums" }}>{formatTokens(m.tokens)}</td>
-                                    <td style={{ padding: "12px 12px", color: "#10b981", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{formatCost(m.cost)}</td>
+                                    <td style={{ padding: "12px 12px", color: "var(--color-success)", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{formatCost(m.cost)}</td>
                                 </tr>
                             ))}
                         </tbody>

@@ -62,7 +62,9 @@ vi.mock('../../nodes/specialized_agents', () => ({
     modelCallCount++;
     return {
       messages: [...(state.messages || []), { role: 'assistant', content: 'Coding response' }],
-      finalResponse: 'Coding response'
+      finalResponse: 'Coding response',
+      codingComplete: true,
+      returningFromSpecialist: 'coding_specialist'
     };
   }),
   createDataAnalystNode: vi.fn(() => async (state: any) => {
@@ -70,7 +72,9 @@ vi.mock('../../nodes/specialized_agents', () => ({
     modelCallCount++;
     return {
       messages: [...(state.messages || []), { role: 'assistant', content: 'Analysis response' }],
-      finalResponse: 'Analysis response'
+      finalResponse: 'Analysis response',
+      dataAnalysisComplete: true,
+      returningFromSpecialist: 'data_analyst'
     };
   }),
   createComputerUseNode: vi.fn(() => async (state: any) => {
@@ -78,7 +82,9 @@ vi.mock('../../nodes/specialized_agents', () => ({
     modelCallCount++;
     return {
       messages: [...(state.messages || []), { role: 'assistant', content: 'Computer use response' }],
-      finalResponse: 'Computer use response'
+      finalResponse: 'Computer use response',
+      computerUseComplete: true,
+      returningFromSpecialist: 'computer_use'
     };
   }),
   createWebExplorerNode: vi.fn(() => async (state: any) => {
@@ -86,7 +92,19 @@ vi.mock('../../nodes/specialized_agents', () => ({
     modelCallCount++;
     return {
       messages: [...(state.messages || []), { role: 'assistant', content: 'Hello! How can I help you today?' }],
-      finalResponse: 'Hello! How can I help you today?'
+      finalResponse: 'Hello! How can I help you today?',
+      webExplorerComplete: true,
+      returningFromSpecialist: 'web_explorer'
+    };
+  }),
+  createDeepResearchNode: vi.fn(() => async (state: any) => {
+    executedNodes.push('deep_research');
+    modelCallCount++;
+    return {
+      messages: [...(state.messages || []), { role: 'assistant', content: 'Deep research response' }],
+      finalResponse: 'Deep research response',
+      deepResearchComplete: true,
+      returningFromSpecialist: 'deep_research'
     };
   })
 }));
@@ -101,13 +119,29 @@ describe('Bug Condition Exploration - Conversation Intent No Response', () => {
 
     mockRunner = {
       config: { maxIterations: 50 },
+      // wave f11: graph.ts buildGraph cache key now reads runner.client.provider/model;
+      // the real brain node also calls client.chat for completion signals.
+      client: {
+        provider: 'test-provider',
+        model: 'test-model',
+        chat: vi.fn(async () => ({
+          content: JSON.stringify({
+            reason: 'task_complete',
+            explanation: 'Task completed successfully',
+            decision: 'complete_task',
+          }),
+          tool_calls: []
+        })),
+      },
       telemetry: {
         warn: vi.fn(),
         info: vi.fn(),
         action: vi.fn(),
         transition: vi.fn(),
+        metrics: vi.fn(),
       },
-      _buildToolDefinitions: vi.fn(() => [])
+      _buildToolDefinitions: vi.fn(() => []),
+      shouldCaptureScreenshot: vi.fn(() => false)
     };
   });
 
@@ -132,7 +166,7 @@ describe('Bug Condition Exploration - Conversation Intent No Response', () => {
 
     // Invoke the graph
     const result = await graph.invoke(initialState, {
-      configurable: { thread_id: 'test-conversation-1' }
+      configurable: { thread_id: 'test-conversation-1', executionContext: { runner: mockRunner, eventQueue: [], conversationId: 'test-conversation-1' } }
     });
 
     // ASSERTIONS - These will FAIL on unfixed code (proving the bug exists)
@@ -175,7 +209,7 @@ describe('Bug Condition Exploration - Conversation Intent No Response', () => {
     };
 
     const result = await graph.invoke(initialState, {
-      configurable: { thread_id: 'test-conversation-2' }
+      configurable: { thread_id: 'test-conversation-2', executionContext: { runner: mockRunner, eventQueue: [], conversationId: 'test-conversation-2' } }
     });
 
     // ASSERTIONS - These will FAIL on unfixed code
@@ -210,7 +244,7 @@ describe('Bug Condition Exploration - Conversation Intent No Response', () => {
     };
 
     const result = await graph.invoke(initialState, {
-      configurable: { thread_id: 'test-conversation-3' }
+      configurable: { thread_id: 'test-conversation-3', executionContext: { runner: mockRunner, eventQueue: [], conversationId: 'test-conversation-3' } }
     });
 
     // ASSERTIONS - These will FAIL on unfixed code
@@ -239,7 +273,7 @@ describe('Bug Condition Exploration - Conversation Intent No Response', () => {
     };
 
     await graph.invoke(initialState, {
-      configurable: { thread_id: 'test-conversation-routing' }
+      configurable: { thread_id: 'test-conversation-routing', executionContext: { runner: mockRunner, eventQueue: [], conversationId: 'test-conversation-routing' } }
     });
 
     // On unfixed code: web_explorer is NOT in executedNodes, model is never called
@@ -279,7 +313,7 @@ describe('Bug Condition Exploration - Conversation Intent No Response', () => {
     };
 
     const result = await graph.invoke(initialState, {
-      configurable: { thread_id: 'test-mixed-intent' }
+      configurable: { thread_id: 'test-mixed-intent', executionContext: { runner: mockRunner, eventQueue: [], conversationId: 'test-mixed-intent' } }
     });
 
     // Should route through coding_specialist, not web_explorer (conversation handler)

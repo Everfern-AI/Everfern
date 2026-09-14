@@ -41,7 +41,7 @@ export function ProjectCreator({ onProjectCreate, isCreating = false }: any) {
             style={{
               width: '100%',
               padding: '10px 12px',
-              border: '1px solid #e5e7eb',
+              border: '1px solid var(--color-border)',
               borderRadius: '8px',
               fontSize: '14px',
               boxSizing: 'border-box',
@@ -60,7 +60,7 @@ export function ProjectCreator({ onProjectCreate, isCreating = false }: any) {
             style={{
               width: '100%',
               padding: '10px 12px',
-              border: '1px solid #e5e7eb',
+              border: '1px solid var(--color-border)',
               borderRadius: '8px',
               fontSize: '14px',
               backgroundColor: 'white',
@@ -88,7 +88,7 @@ export function ProjectCreator({ onProjectCreate, isCreating = false }: any) {
             style={{
               width: '100%',
               padding: '10px 12px',
-              border: '1px solid #e5e7eb',
+              border: '1px solid var(--color-border)',
               borderRadius: '8px',
               fontSize: '14px',
               boxSizing: 'border-box',
@@ -106,7 +106,7 @@ export function ProjectCreator({ onProjectCreate, isCreating = false }: any) {
               padding: '10px 20px',
               borderRadius: '8px',
               border: 'none',
-              backgroundColor: (!projectName || isCreating) ? 'var(--color-text-tertiary)' : '#3b82f6',
+              backgroundColor: (!projectName || isCreating) ? 'var(--color-text-tertiary)' : 'var(--color-info)',
               color: 'white',
               fontSize: '14px',
               fontWeight: 500,
@@ -121,7 +121,7 @@ export function ProjectCreator({ onProjectCreate, isCreating = false }: any) {
             style={{
               padding: '10px 20px',
               borderRadius: '8px',
-              border: '1px solid #e5e7eb',
+              border: '1px solid var(--color-border)',
               backgroundColor: 'white',
               fontSize: '14px',
               cursor: 'pointer',

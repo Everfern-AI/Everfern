@@ -580,7 +580,7 @@ const HitlApprovalForm = ({
             )}
 
             {userDecision && (
-                <div style={{ backgroundColor: userDecision === 'approved' ? 'var(--color-bg-hover)' : 'rgba(239, 68, 68, 0.15)', border: `1px solid ${userDecision === 'approved' ? 'var(--color-border)' : 'var(--color-error)'}`, borderRadius: 8, padding: 12, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ backgroundColor: userDecision === 'approved' ? 'var(--color-bg-hover)' : 'var(--color-error-dim)', border: `1px solid ${userDecision === 'approved' ? 'var(--color-border)' : 'var(--color-error)'}`, borderRadius: 8, padding: 12, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontSize: 16 }}>{userDecision === 'approved' ? '✅' : '❌'}</span>
                     <span style={{ color: userDecision === 'approved' ? 'var(--color-success)' : 'var(--color-error)', fontWeight: 600, fontSize: 14 }}>
                         {userDecision === 'approved'
@@ -1299,7 +1299,7 @@ const UserQuestionForm = ({
                             let sub = '';
                             let badge = '1-CLICK';
                             let badgeBg = 'rgba(16, 185, 129, 0.1)';
-                            let badgeColor = '#10b981';
+                            let badgeColor = 'var(--color-success)';
                             let borderHoverColor = 'var(--color-border-strong)';
 
                             if (isApproveOnce) {
@@ -1308,7 +1308,7 @@ const UserQuestionForm = ({
                                 badge = 'PROCEED ONCE';
                                 badgeBg = 'rgba(16, 185, 129, 0.12)';
                                 badgeColor = '#059669';
-                                borderHoverColor = '#10b981';
+                                borderHoverColor = 'var(--color-success)';
                             } else if (isAlways) {
                                 title = 'Approve & Allow Always';
                                 sub = 'Never ask for this specific command again';
@@ -1329,7 +1329,7 @@ const UserQuestionForm = ({
                                 badge = 'DENY';
                                 badgeBg = 'rgba(239, 68, 68, 0.12)';
                                 badgeColor = '#dc2626';
-                                borderHoverColor = '#ef4444';
+                                borderHoverColor = 'var(--color-error)';
                             }
 
                             return (

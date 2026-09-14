@@ -28,7 +28,8 @@ import {
     FolderMinusIcon
 } from "@heroicons/react/24/outline";
 import SearchPopup from "./SearchPopup";
-import { useTheme } from "@/components/ThemeProvider";
+import { useTheme } from "@/components/common/ThemeProvider";
+import { isEditableTarget } from "@/lib/keyboard";
 
 interface SidebarProps {
     isOpen: boolean;
@@ -62,7 +63,9 @@ interface ConversationSummary {
     isUnread?: boolean;
 }
 
-export default function Sidebar({ 
+// CU-REND-10: memoized so chat-page streaming re-renders (20/sec) don't
+// re-render the sidebar; its own 4s history poll updates only its internal state.
+function Sidebar({
     isOpen, 
     onToggle, 
     activeConversationId, 
@@ -251,6 +254,7 @@ export default function Sidebar({
             if (menuConvId) {
                 const activeItem = history.find(h => h.id === menuConvId);
                 if (!activeItem) return;
+                if (isEditableTarget(e.target)) return;
 
                 if (e.key === "p" || e.key === "P") {
                     e.preventDefault();
@@ -371,6 +375,7 @@ export default function Sidebar({
     const handleDelete = async (id: string) => {
         setMenuConvId(null);
         setShowChangeProjectSubmenu(false);
+        if (!window.confirm('Delete this conversation? This cannot be undone.')) return;
         try {
             if ((window as any).electronAPI?.history?.delete) {
                 await (window as any).electronAPI.history.delete(id);
@@ -872,7 +877,7 @@ export default function Sidebar({
                             position: "fixed",
                             top: menuPosition.top,
                             left: menuPosition.left,
-                            zIndex: 9999,
+                            zIndex: 'var(--z-dropdown)',
                             backgroundColor: "var(--color-bg-surface, #ffffff)",
                             border: "1px solid var(--color-border, #e5e5e5)",
                             borderRadius: 14,
@@ -1140,3 +1145,5 @@ export default function Sidebar({
         </>
     );
 }
+
+export default React.memo(Sidebar);

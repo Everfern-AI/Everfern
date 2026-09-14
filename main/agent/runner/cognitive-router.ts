@@ -1,6 +1,6 @@
 import { GraphStateType, IntentType, StreamEvent } from './state';
 import { AgentRunner } from './runner';
-import { globalAbortManager } from './abort-manager';
+import { globalAbortManager, getConversationAbortManager } from './abort-manager';
 import { extractJsonFromLLM } from './json-repair';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -13,7 +13,7 @@ export type RoutingDecision =
   | 'route_deep_research'
   | 'complete_task';
 
-export interface RouterResult {
+interface RouterResult {
   decision: RoutingDecision;
   confidence: number;
   explanation: string;
@@ -190,6 +190,7 @@ TRIAGE INTENT: "${intent}"`
     while (currentIteration < this.maxIterations) {
       currentIteration++;
       globalAbortManager.checkAbort();
+      getConversationAbortManager(this.runner.currentConversationId).checkAbort();
 
       this.runner.telemetry.info(`[CognitiveRouter] ReAct Loop Iteration ${currentIteration}/${this.maxIterations}...`);
 
@@ -198,7 +199,7 @@ TRIAGE INTENT: "${intent}"`
         responseFormat: 'json',
         temperature: 0.1,
         maxTokens: 500,
-        abortSignal: globalAbortManager.abortController.signal,
+        abortSignal: getConversationAbortManager(this.runner.currentConversationId).abortController.signal,
       }) as any;
 
       let content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
@@ -335,7 +336,7 @@ Respond with JSON only:
         responseFormat: 'json',
         temperature: 0.1,
         maxTokens: 250,
-        abortSignal: globalAbortManager.abortController.signal,
+        abortSignal: getConversationAbortManager(this.runner.currentConversationId).abortController.signal,
       }) as any;
 
       let content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
@@ -391,7 +392,7 @@ Respond ONLY with a JSON object: {"subsystem": "<one of the options above>"}`;
         responseFormat: 'json',
         temperature: 0.1,
         maxTokens: 100,
-        abortSignal: globalAbortManager.abortController.signal,
+        abortSignal: getConversationAbortManager(this.runner.currentConversationId).abortController.signal,
       }) as any;
 
       let content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);

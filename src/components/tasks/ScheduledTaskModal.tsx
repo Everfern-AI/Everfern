@@ -221,7 +221,7 @@ const s = {
     border: '1.5px solid var(--color-border)',
     borderRadius: 12,
     zIndex: 50,
-    boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
+    boxShadow: 'var(--shadow-lg)',
     overflow: 'hidden',
     maxHeight: 220,
     overflowY: 'auto' as const,

@@ -1,13 +1,15 @@
 'use client';
 import React from 'react';
 import { motion } from 'framer-motion';
-import { useTheme } from '@/components/ThemeProvider';
+import { useTheme } from '@/components/common/ThemeProvider';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 
 export const GITHUB_REPO_URL = 'https://github.com/Everfern-AI/Everfern';
 
 export default function StarRepoPopup({ onClose, onStar }: { onClose: () => void; onStar: () => void }) {
     const { theme } = useTheme();
     const isDark = theme === 'dark';
+    const trapRef = useFocusTrap<HTMLDivElement>({ active: true, onEscape: onClose });
 
     return (
         <motion.div
@@ -16,7 +18,7 @@ export default function StarRepoPopup({ onClose, onStar }: { onClose: () => void
             exit={{ opacity: 0 }}
             transition={{ duration: 0.25 }}
             style={{
-                position: 'fixed', inset: 0, zIndex: 9999,
+                position: 'fixed', inset: 0, zIndex: 'var(--z-modal)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 backgroundColor: 'rgba(0,0,0,0.55)',
                 backdropFilter: 'blur(8px)',
@@ -24,6 +26,10 @@ export default function StarRepoPopup({ onClose, onStar }: { onClose: () => void
             onClick={onClose}
         >
             <motion.div
+                ref={trapRef}
+                role="dialog"
+                aria-modal="true"
+                aria-label="Star EverFern on GitHub"
                 initial={{ scale: 0.88, opacity: 0, y: 30 }}
                 animate={{ scale: 1, opacity: 1, y: 0 }}
                 exit={{ scale: 0.92, opacity: 0, y: 20 }}

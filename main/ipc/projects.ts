@@ -2,6 +2,10 @@ import { ipcMain } from 'electron';
 import { projectsStore } from '../store/projects/projects';
 import { resolveWithin } from '../lib/path-guard';
 
+/**
+ * Maps a file extension (with or without a leading dot) to a MIME type,
+ * defaulting to application/octet-stream for unknown extensions.
+ */
 function mimeFromExt(ext: string): string {
   const clean = ext.replace(/^\./, '').toLowerCase();
   const map: Record<string, string> = {
@@ -25,6 +29,11 @@ function mimeFromExt(ext: string): string {
   return map[clean] || 'application/octet-stream';
 }
 
+/**
+ * Registers all projects:* IPC handlers: CRUD against the projects store,
+ * folder/file pickers, and sandboxed file reads within a project directory.
+ * Side effect: installs ipcMain.handle listeners; must be called exactly once.
+ */
 export function registerProjectsHandlers() {
   ipcMain.handle('projects:list', async () => {
     return projectsStore.list();
@@ -90,6 +99,10 @@ export function registerProjectsHandlers() {
     const path = require('path');
     const results: string[] = [];
 
+    /**
+     * Depth-first walk collecting relative file paths; skips dot-directories
+     * and node_modules so the listing stays bounded and relevant.
+     */
     function walk(dir: string, relativePath: string = '') {
       let entries: string[];
       try {
@@ -125,6 +138,9 @@ export function registerProjectsHandlers() {
   ipcMain.handle('projects:readFile', async (_event, projectPath: string, filePath: string) => {
     const fs = require('fs');
     try {
+      // Security: resolve the project root to its physical (symlink-free)
+      // location before containment checks — a symlinked root would let
+      // resolveWithin compare against a fake prefix and approve escapes.
       const root = fs.realpathSync(projectPath);
       const fullPath = resolveWithin(root, filePath);
       return fs.readFileSync(fullPath, 'utf-8');
@@ -138,6 +154,9 @@ export function registerProjectsHandlers() {
     const path = require('path');
     const maxPreviewBytes = 32 * 1024 * 1024;
     try {
+      // Security: realpath the root (and let resolveWithin realpath the
+      // target) so symlinks planted inside the project cannot redirect the
+      // read outside it; unresolvable paths fail closed.
       const root = fs.realpathSync(projectPath);
       let fullPath: string;
       try {
@@ -148,6 +167,8 @@ export function registerProjectsHandlers() {
       const stat = fs.statSync(fullPath);
       if (!stat.isFile()) return { success: false, error: 'Path is not a file' };
       if (stat.size > maxPreviewBytes) {
+        // 32 MB cap: the whole file is base64-inlined into the IPC payload,
+        // so an unbounded read would balloon renderer memory (~1.37x size).
         return { success: false, error: 'File is too large to preview inline', size: stat.size };
       }
       const ext = path.extname(fullPath);

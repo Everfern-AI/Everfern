@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
-import { ToolCallTag } from '../ToolCallComponents';
+import { ToolCallTag } from '../tools/ToolCallComponents';
 import type { ToolCallDisplay } from '../../types';
 
 describe('Preservation Tests: Tool Calls Without Narratives', () => {

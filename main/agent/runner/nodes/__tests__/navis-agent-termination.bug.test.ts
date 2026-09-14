@@ -57,18 +57,26 @@ vi.mock('../../mission-integrator', () => ({
 }));
 
 // Mock prompt loading
-vi.mock('../../../lib/prompt-sync', () => ({
+vi.mock('../../../../lib/prompt-sync', () => ({
   loadPrompt: vi.fn(() => 'Mock system prompt'),
 }));
 
 // Mock abort manager
-vi.mock('../../abort-manager', () => ({
-  globalAbortManager: {
-    abortController: {
-      signal: new AbortController().signal,
+vi.mock('../../abort-manager', () => {
+  const signal = new AbortController().signal;
+  return {
+    globalAbortManager: {
+      abortController: {
+        signal,
+      },
     },
-  },
-}));
+    getConversationAbortManager: () => ({
+      abortController: {
+        signal,
+      },
+    }),
+  };
+});
 
 // Mock node utils
 vi.mock('../../services/node-utils', () => ({

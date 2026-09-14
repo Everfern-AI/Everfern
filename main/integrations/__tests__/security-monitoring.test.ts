@@ -5,24 +5,45 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { homedir } from 'os';
 import { SecurityLogger, SecurityEventType, SecurityEventSeverity } from '../security-logger';
 import { AdminNotificationManager, NotificationChannel, NotificationPriority } from '../admin-notification';
 import { SecurityDashboardManager } from '../security-dashboard';
+
+// Hermetic (wave f11): the previous setup spied on require('os').homedir,
+// which never intercepts the products' ESM `import { homedir } from 'os'`
+// bindings — every run read/wrote the REAL ~/.everfern (stale
+// security-events.jsonl events, a notification-config.json polluted by the
+// retry test of a previous run, etc.), making results depend on machine
+// state. Instead, mock the os module (both named and default exports) to a
+// per-test tmp home so each test starts with pristine fs state.
+const hermetic = vi.hoisted(() => ({
+  home: `/tmp/everfern-test-homes/security-monitoring/${process.pid}`
+}));
+vi.mock('os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('os')>();
+  const mocked = { ...actual, homedir: () => hermetic.home };
+  return { ...mocked, default: mocked };
+});
 
 describe('Security Monitoring Integration Tests', () => {
   let securityLogger: SecurityLogger;
   let adminNotificationManager: AdminNotificationManager;
   let securityDashboard: SecurityDashboardManager;
   let testDir: string;
+  let testCounter = 0;
 
   beforeEach(async () => {
-    // Create test directory
-    testDir = path.join(homedir(), '.everfern-test', 'security-test');
+    // Fresh hermetic home per test: the mocked homedir is read at call
+    // time, so mutating hermetic.home here redirects every product
+    // constructed in this test to a pristine directory — no state saved
+    // by one test (e.g. the webhook retry test persisting
+    // channels=[WEBHOOK] in notification-config.json, or events in
+    // security-events.jsonl being re-loaded by initialize()) can leak
+    // into another test.
+    testCounter += 1;
+    testDir = `${hermetic.home}/t${testCounter}`;
+    hermetic.home = testDir;
     await fs.mkdir(testDir, { recursive: true });
-
-    // Mock homedir to use test directory
-    vi.spyOn(require('os'), 'homedir').mockReturnValue(path.dirname(testDir));
 
     // Initialize components
     securityLogger = new SecurityLogger();
@@ -71,7 +92,11 @@ describe('Security Monitoring Integration Tests', () => {
       expect(events[0].userId).toBe('test-user');
 
       // Verify event is persisted to file
-      const logFile = path.join(testDir, 'security', 'security-events.jsonl');
+      // wave f11: contract updated — product ships the log at
+      // <homedir>/.everfern/security/security-events.jsonl (commit 5596cc7
+      // "Pre release exe"); the old expectation pointed at
+      // <testDir>/security/security-events.jsonl.
+      const logFile = path.join(testDir, '.everfern', 'security', 'security-events.jsonl');
       const fileContent = await fs.readFile(logFile, 'utf8');
       const loggedEvent = JSON.parse(fileContent.trim());
       expect(loggedEvent.type).toBe(SecurityEventType.AUTHENTICATION_FAILURE);
@@ -290,9 +315,20 @@ describe('Security Monitoring Integration Tests', () => {
       const alerts = securityDashboard.getActiveAlerts();
       expect(alerts.length).toBeGreaterThan(0);
 
-      const thresholdAlert = alerts.find(alert => alert.type === 'threshold_exceeded');
+      // wave f11: contract updated — threshold alerts ship with the event
+      // type token in the title ("Security Event Threshold Exceeded:
+      // auth_failure" from checkEventForAlerts, or "Security Threshold
+      // Exceeded: auth_failure" from performSecurityAnalysis), commit
+      // 5596cc7 "Pre release exe". The "Authentication Failure" wording
+      // only exists on suspicious-pattern alerts, which require 5+
+      // same-userId failures; this test logs without userId.
+      const thresholdAlert = alerts.find(alert =>
+        alert.type === 'threshold_exceeded' &&
+        (alert.title.includes('Security Event Threshold Exceeded: auth_failure') ||
+         alert.title.includes('Security Threshold Exceeded: auth_failure'))
+      );
       expect(thresholdAlert).toBeDefined();
-      expect(thresholdAlert?.title).toContain('Authentication Failure');
+      expect(thresholdAlert?.severity).toBe(SecurityEventSeverity.HIGH);
     });
 
     it('should detect suspicious patterns', async () => {
@@ -437,8 +473,17 @@ describe('Security Monitoring Integration Tests', () => {
 
       // Verify notification was sent
       expect(notifications.length).toBeGreaterThan(0);
-      const securityNotification = notifications.find(n => n.title.includes('Security Alert'));
+      // wave f11: contract updated — in the shipped flow (commit 5596cc7
+      // "Pre release exe") the dashboard's checkEventForAlerts() raises a
+      // critical_event alert titled "Critical Security Event: <type>" via
+      // AdminNotificationManager.sendNotification; the "Security Alert:"
+      // wording only exists on sendSecurityNotification() which nothing
+      // wires into this event flow.
+      const securityNotification = notifications.find(n =>
+        n.title.includes('Critical Security Event: data_access_violation')
+      );
       expect(securityNotification).toBeDefined();
+      expect(securityNotification?.priority).toBe(NotificationPriority.CRITICAL);
 
       // Verify dashboard reflects the event
       const dashboardData = await securityDashboard.getDashboardData();

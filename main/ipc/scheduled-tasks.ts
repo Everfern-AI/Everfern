@@ -4,6 +4,7 @@
 
 import { ipcMain } from 'electron';
 import { scheduledTasksStore } from '../store/scheduled-tasks';
+import { schedulerService } from '../integrations/scheduler-service';
 
 export function setupScheduledTasksIPC() {
   ipcMain.handle('scheduled-tasks:list', async (_event, projectId?: string) => {
@@ -26,7 +27,11 @@ export function setupScheduledTasksIPC() {
 
   ipcMain.handle('scheduled-tasks:save', async (_event, task: any) => {
     try {
-      return await scheduledTasksStore.save(task);
+      const saved = await scheduledTasksStore.save(task);
+      // MP-LEAK-02: re-kick the one-shot wake-up so a new/edited task due
+      // sooner than the currently scheduled timer still fires on time.
+      schedulerService.poke();
+      return saved;
     } catch (err) {
       console.error('[IPC] Failed to save scheduled task:', err);
       throw err;
@@ -36,6 +41,7 @@ export function setupScheduledTasksIPC() {
   ipcMain.handle('scheduled-tasks:delete', async (_event, id: string) => {
     try {
       await scheduledTasksStore.delete(id);
+      schedulerService.poke();
       return { success: true };
     } catch (err) {
       console.error(`[IPC] Failed to delete scheduled task ${id}:`, err);

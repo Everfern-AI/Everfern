@@ -1,11 +1,51 @@
 import { dbOps, ensureVectorTable } from './db';
-import { getEmbeddingModel, EmbeddingConfig, getSystemEmbeddingConfig } from './embeddings';
+import { getMemoizedEmbeddingModel, getMemoizedSystemEmbeddingConfig, hashPrompt } from './embeddings-memo';
 import { ChatResponse } from './ai-client';
 import crypto from 'crypto';
 
 const SIMILARITY_THRESHOLD = 0.96;
 const CACHE_RETRY_ATTEMPTS = 3;
 const CACHE_TIMEOUT_MS = 5000;
+
+// ── Exact-hash pre-check (AI-PERF-02) ──────────────────────────────
+// Prompt-hash → response LRU. A repeated prompt short-circuits BEFORE the
+// circuit-breaker/embedding round-trip, costing zero network and zero DB.
+const EXACT_CACHE_CAP = 500;
+const exactCache = new Map<string, ChatResponse>();
+
+function noteExactHit(promptHash: string, response: ChatResponse): void {
+  if (exactCache.has(promptHash)) exactCache.delete(promptHash);
+  exactCache.set(promptHash, response);
+  if (exactCache.size > EXACT_CACHE_CAP) {
+    const oldest = exactCache.keys().next().value;
+    if (oldest !== undefined) exactCache.delete(oldest);
+  }
+}
+
+// ── Cache telemetry (AI-PERF-02) ───────────────────────────────────
+const telemetry = { exactHits: 0, semanticHits: 0, misses: 0, embeds: 0, lookups: 0 };
+const TELEMETRY_LOG_INTERVAL = 50;
+
+export function getCacheTelemetry(): { exactHits: number; semanticHits: number; misses: number; embeds: number } {
+  return {
+    exactHits: telemetry.exactHits,
+    semanticHits: telemetry.semanticHits,
+    misses: telemetry.misses,
+    embeds: telemetry.embeds,
+  };
+}
+
+export function resetCacheTelemetry(): void {
+  telemetry.exactHits = 0;
+  telemetry.semanticHits = 0;
+  telemetry.misses = 0;
+  telemetry.embeds = 0;
+  telemetry.lookups = 0;
+}
+
+export function clearExactCache(): void {
+  exactCache.clear();
+}
 
 let isCacheDisabled = false;
 let cacheHealthy = true;
@@ -83,18 +123,36 @@ async function checkCacheHealth(): Promise<boolean> {
 export async function lookupCache(prompt: string): Promise<ChatResponse | null> {
   if (isCacheDisabled || circuitBreaker.isOpen()) return null;
 
-  // Check cache health before proceeding
+  telemetry.lookups++;
+  if (telemetry.lookups % TELEMETRY_LOG_INTERVAL === 0) {
+    console.log(
+      `[Optima] Cache telemetry: ${telemetry.exactHits} exact / ${telemetry.semanticHits} semantic hits, ` +
+      `${telemetry.misses} misses, ${telemetry.embeds} embeds over ${telemetry.lookups} lookups`
+    );
+  }
+
+  // Exact-hash pre-check: a repeated prompt must not pay the embedding
+  // round-trip (nor even the health check) before we can answer.
+  const promptHash = hashPrompt(prompt);
+  const exactHit = exactCache.get(promptHash);
+  if (exactHit) {
+    telemetry.exactHits++;
+    console.log('[Optima] Semantic Cache exact-hash hit');
+    return exactHit;
+  }
+
   if (!(await checkCacheHealth())) {
     return null;
   }
 
   for (let attempt = 1; attempt <= CACHE_RETRY_ATTEMPTS; attempt++) {
     try {
-      const config = getSystemEmbeddingConfig();
-      const { embeddings, dimensions } = getEmbeddingModel(config);
+      const config = getMemoizedSystemEmbeddingConfig();
+      const { embeddings, dimensions } = getMemoizedEmbeddingModel(config);
 
       await ensureVectorTable(dimensions);
 
+      telemetry.embeds++;
       const promptVector = await withTimeout(
         embeddings.embedQuery(prompt), 
         CACHE_TIMEOUT_MS
@@ -112,11 +170,15 @@ export async function lookupCache(prompt: string): Promise<ChatResponse | null> 
       if (row) {
         const score = (1 - row.distance).toFixed(4);
         console.log('[Optima] Semantic Cache Hit! (Score: ' + score + ')');
+        telemetry.semanticHits++;
         circuitBreaker.recordSuccess();
-        return JSON.parse(row.response_json) as ChatResponse;
+        const response = JSON.parse(row.response_json) as ChatResponse;
+        noteExactHit(promptHash, response);
+        return response;
       }
       
       // No cache hit, but operation succeeded
+      telemetry.misses++;
       circuitBreaker.recordSuccess();
       return null;
       
@@ -163,8 +225,8 @@ export async function saveCache(prompt: string, response: ChatResponse) {
 
   for (let attempt = 1; attempt <= CACHE_RETRY_ATTEMPTS; attempt++) {
     try {
-      const config = getSystemEmbeddingConfig();
-      const { embeddings, dimensions } = getEmbeddingModel(config);
+      const config = getMemoizedSystemEmbeddingConfig();
+      const { embeddings, dimensions } = getMemoizedEmbeddingModel(config);
 
       await ensureVectorTable(dimensions);
 
@@ -191,6 +253,7 @@ export async function saveCache(prompt: string, response: ChatResponse) {
         await withTimeout(dbOps.run(`RELEASE SAVEPOINT ${spName}`), CACHE_TIMEOUT_MS);
         
         console.log('[Optima] Saved to Semantic Cache');
+        noteExactHit(hashPrompt(prompt), response);
         circuitBreaker.recordSuccess();
         return;
         

@@ -18,13 +18,13 @@ const MAX_CONCURRENT_TOOLS = 4;
 const MAX_RESULT_OUTPUT_SIZE = 2 * 1024 * 1024; // 2MB
 const TOOL_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
-export interface ParallelGroupResult {
+interface ParallelGroupResult {
     results: ToolCallRecord[];
     groupIndex: number;
     durationMs: number;
 }
 
-export interface ToolAnalysis {
+interface ToolAnalysis {
     name: string;
     args: Record<string, unknown>;
     id: string;
@@ -179,15 +179,47 @@ export function groupParallelTools(tools: ToolAnalysis[]): ToolAnalysis[][] {
  * Prevents extremely large outputs from consuming memory.
  */
 function truncateToolResult(result: ToolResult): ToolResult {
-    if (typeof result.output === 'string' && result.output.length > MAX_RESULT_OUTPUT_SIZE) {
-        const truncated = result.output.substring(0, MAX_RESULT_OUTPUT_SIZE);
-        return {
-            ...result,
-            output: `${truncated}\n\n[... OUTPUT TRUNCATED (exceeded ${MAX_RESULT_OUTPUT_SIZE} bytes) ...]`,
-        };
+    const outputTruncated =
+        typeof result.output === 'string' && result.output.length > MAX_RESULT_OUTPUT_SIZE
+            ? `${result.output.substring(0, MAX_RESULT_OUTPUT_SIZE)}\n\n[... OUTPUT TRUNCATED (exceeded ${MAX_RESULT_OUTPUT_SIZE} bytes) ...]`
+            : result.output;
+
+    // AG-MEM-05: defensively bound huge `screenshots` arrays embedded in
+    // result.data (e.g. navis results). If the serialized array exceeds the
+    // size cap, only the last 3 entries keep their base64 payloads; older
+    // entries are kept as metadata shells with base64 replaced by '[elided]'.
+    // Unknown data shapes pass through untouched.
+    let data = result.data;
+    if (data && typeof data === 'object' && !Array.isArray(data)) {
+        const screenshots = (data as { screenshots?: unknown }).screenshots;
+        if (Array.isArray(screenshots) && screenshots.length > 3) {
+            try {
+                if (JSON.stringify(screenshots).length > MAX_RESULT_OUTPUT_SIZE) {
+                    const keepFrom = screenshots.length - 3;
+                    const bounded = screenshots.map((shot, i) => {
+                        if (i >= keepFrom) return shot;
+                        if (shot && typeof shot === 'object' && typeof (shot as Record<string, unknown>).base64 === 'string') {
+                            return { ...(shot as Record<string, unknown>), base64: '[elided]' };
+                        }
+                        return shot;
+                    });
+                    data = { ...(data as Record<string, unknown>), screenshots: bounded };
+                }
+            } catch {
+                // JSON.stringify can throw on circular structures — pass through.
+            }
+        }
     }
 
-    return result;
+    if (outputTruncated === result.output && data === result.data) {
+        return result;
+    }
+
+    return {
+        ...result,
+        output: outputTruncated,
+        ...(data === result.data ? {} : { data }),
+    };
 }
 
 /**

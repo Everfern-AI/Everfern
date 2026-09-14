@@ -29,13 +29,9 @@ The pill-based narrative timeline feature has been successfully implemented and 
 ### Task 13: Integrate PillNarrativeTimelineComponent into UI ✅
 
 **Completed Components:**
-- `src/app/chat/hooks/usePillNarrativeTimeline.ts` - React hooks for timeline management
 - `src/app/chat/components/__tests__/PillNarrativeTimeline.integration.test.tsx` - UI integration tests (22 tests, all passing)
 
 **Key Features:**
-- `usePillNarrativeTimeline` hook for managing timeline state
-- `usePillTimelineInitialization` hook for initializing timelines
-- `usePillTimelineToolTracking` hook for tracking tool execution
 - Real-time updates from timeline manager
 - Support for task expansion/collapse
 - Pill status visualization with color coding
@@ -163,9 +159,6 @@ The pill-based narrative timeline feature has been successfully implemented and 
 - `main/agent/runner/pill-narrative/integration.ts` - Integration layer
 - `main/agent/runner/pill-narrative/performance.ts` - Performance optimizations
 - `main/agent/runner/pill-narrative/index.ts` - Public API exports
-
-### React Integration
-- `src/app/chat/hooks/usePillNarrativeTimeline.ts` - React hooks
 
 ### Tests
 - `main/agent/runner/pill-narrative/__tests__/integration.test.ts` - Integration tests

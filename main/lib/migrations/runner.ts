@@ -9,7 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import { dbOps } from '../db';
 
-export interface MigrationInfo {
+interface MigrationInfo {
   version: string;
   filename: string;
   appliedAt?: string;
@@ -39,7 +39,7 @@ function getMigrationsDir(): string {
 /**
  * Get list of all available migration files
  */
-export function getAvailableMigrations(): MigrationInfo[] {
+function getAvailableMigrations(): MigrationInfo[] {
   const migrationsDir = getMigrationsDir();
   if (!fs.existsSync(migrationsDir)) return [];
 
@@ -57,7 +57,7 @@ export function getAvailableMigrations(): MigrationInfo[] {
 /**
  * Get list of applied migrations from database
  */
-export async function getAppliedMigrations(): Promise<MigrationInfo[]> {
+async function getAppliedMigrations(): Promise<MigrationInfo[]> {
   try {
     const rows = await dbOps.all(
       'SELECT version, applied_at FROM schema_migrations ORDER BY version'
@@ -76,7 +76,7 @@ export async function getAppliedMigrations(): Promise<MigrationInfo[]> {
 /**
  * Get list of pending migrations that need to be applied
  */
-export async function getPendingMigrations(): Promise<MigrationInfo[]> {
+async function getPendingMigrations(): Promise<MigrationInfo[]> {
   const available = getAvailableMigrations();
   const applied = await getAppliedMigrations();
   const appliedVersions = new Set(applied.map(m => m.version));
@@ -85,9 +85,14 @@ export async function getPendingMigrations(): Promise<MigrationInfo[]> {
 }
 
 /**
- * Execute a single migration file
+ * Execute a single migration file.
+ *
+ * MP-CORR-09: record the applied version in `schema_migrations` after success
+ * and wrap the migration in a transaction so a mid-flight failure cannot leave
+ * half-applied DDL. Previously versions were only recorded when a SQL file
+ * self-stamped (005 doesn't), so migrations re-ran on every startup.
  */
-export async function executeMigration(migration: MigrationInfo): Promise<void> {
+async function executeMigration(migration: MigrationInfo): Promise<void> {
   const migrationsDir = getMigrationsDir();
   const migrationPath = path.join(migrationsDir, migration.filename);
   const sql = fs.readFileSync(migrationPath, 'utf-8');
@@ -95,8 +100,22 @@ export async function executeMigration(migration: MigrationInfo): Promise<void> 
   console.log(`[Migration] Applying ${migration.version}...`);
 
   try {
-    // Execute the migration SQL
-    await dbOps.exec(sql);
+    // Ensure the tracking table exists (001 creates it, but a brand-new DB
+    // applying migrations via this runner needs it too).
+    await dbOps.exec('CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at DATETIME DEFAULT CURRENT_TIMESTAMP)');
+
+    // SQLite supports transactional DDL — wrap so failure rolls back cleanly.
+    await dbOps.exec('BEGIN TRANSACTION');
+    try {
+      await dbOps.exec(sql);
+      // Stamp only after the SQL succeeds (self-stamping INSERTs in older
+      // files are OR IGNORE, so this is idempotent).
+      await dbOps.run('INSERT OR IGNORE INTO schema_migrations (version) VALUES (?)', [migration.version]);
+      await dbOps.exec('COMMIT');
+    } catch (txErr) {
+      await dbOps.exec('ROLLBACK').catch(() => {});
+      throw txErr;
+    }
     console.log(`[Migration] ✓ ${migration.version} applied successfully`);
   } catch (err) {
     console.error(`[Migration] ✗ ${migration.version} failed:`, err);
@@ -122,19 +141,4 @@ export async function runMigrations(): Promise<void> {
   }
 
   console.log('[Migration] All migrations completed');
-}
-
-/**
- * Get migration status for all migrations
- */
-export async function getMigrationStatus(): Promise<{
-  available: MigrationInfo[];
-  applied: MigrationInfo[];
-  pending: MigrationInfo[];
-}> {
-  const available = getAvailableMigrations();
-  const applied = await getAppliedMigrations();
-  const pending = await getPendingMigrations();
-
-  return { available, applied, pending };
 }

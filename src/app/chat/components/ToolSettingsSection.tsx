@@ -12,6 +12,7 @@ import {
     ArrowTopRightOnSquareIcon,
 } from '@heroicons/react/24/outline';
 import PdfOcrPanel from './PdfOcrPanel';
+import { isSecretView, secretConfigured, secretDisplay, type SecretView } from '@/lib/secret-view';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -19,9 +20,11 @@ interface ToolConfig {
     mode: 'local' | 'api';
     provider?: 'exa' | 'firecrawl';
     headless: boolean;
-    apiKey: string;
-    exaApiKey?: string;
-    firecrawlApiKey?: string;
+    // MP-SEC-11: tool-settings:get returns redacted SecretViews; the user
+    // typing a key produces a plain string. Echoes are handled main-side.
+    apiKey: string | SecretView;
+    exaApiKey?: string | SecretView;
+    firecrawlApiKey?: string | SecretView;
 }
 
 interface NavisConfig {
@@ -93,14 +96,18 @@ interface WebSearchConfigPanelProps {
 
 const WebSearchConfigPanel = ({ config, onChange }: WebSearchConfigPanelProps) => {
     const currentProvider = config.provider || 'exa';
-    const currentApiKey = currentProvider === 'firecrawl'
-        ? (config.firecrawlApiKey ?? config.apiKey ?? '')
-        : (config.exaApiKey ?? config.apiKey ?? '');
+    // MP-SEC-11: pick the field for the current provider; SecretView objects
+    // pass through untouched (main-side echo merge keeps the stored key).
+    const currentApiKey: string | SecretView | undefined = currentProvider === 'firecrawl'
+        ? (config.firecrawlApiKey ?? config.apiKey)
+        : (config.exaApiKey ?? config.apiKey);
 
     const handleProviderChange = (provider: 'exa' | 'firecrawl') => {
-        const targetApiKey = provider === 'firecrawl'
-            ? (config.firecrawlApiKey || (config.provider === 'firecrawl' ? config.apiKey : ''))
-            : (config.exaApiKey || (config.provider === 'exa' ? config.apiKey : ''));
+        // Carry over the previous provider's key only when it is a typed
+        // plain string — a SecretView echo stays where it was (main keeps
+        // the stored per-provider secret via the echo merge).
+        const prevKey = config.provider === 'firecrawl' ? config.firecrawlApiKey : config.exaApiKey;
+        const targetApiKey: string | SecretView = (typeof prevKey === 'string' && prevKey) || (isSecretView(prevKey) ? prevKey : '') || config.apiKey || '';
 
         onChange({
             ...config,
@@ -316,7 +323,7 @@ const WebSearchConfigPanel = ({ config, onChange }: WebSearchConfigPanelProps) =
                                 <Input
                                     type="password"
                                     placeholder={currentProvider === 'firecrawl' ? 'Enter Firecrawl API key (fc-...)' : 'Enter Exa API key...'}
-                                    value={currentApiKey}
+                                    value={secretDisplay(currentApiKey) || (typeof currentApiKey === 'string' ? currentApiKey : '')}
                                     onChange={e => handleKeyChange(e.target.value)}
                                     style={{ paddingLeft: 40 }}
                                 />
@@ -463,7 +470,7 @@ const ToolConfigPanel = ({ title, icon, apiLabel, config, onChange }: ToolConfig
                                 <Input
                                     type="password"
                                     placeholder="Enter API key..."
-                                    value={config.apiKey}
+                                    value={secretDisplay(config.apiKey) || (typeof config.apiKey === 'string' ? config.apiKey : '')}
                                     onChange={e => onChange({ ...config, apiKey: e.target.value })}
                                     style={{ paddingLeft: 40 }}
                                 />

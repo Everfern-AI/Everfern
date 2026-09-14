@@ -251,8 +251,13 @@ export class SecurityLogger extends EventEmitter {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
 
+    // FIX (retention boundary): the keep condition was `>= cutoffDate`,
+    // so events whose timestamp fell in the SAME millisecond as the cutoff
+    // were kept — with retentionDays=0 ("clear all"), events logged in the
+    // same ms as the cutoff survived and the removed count under-reported.
+    // Events at-or-before the cutoff are old; keep only strictly newer ones.
     const initialCount = this.events.length;
-    this.events = this.events.filter(event => event.timestamp >= cutoffDate);
+    this.events = this.events.filter(event => event.timestamp > cutoffDate);
     const removedCount = initialCount - this.events.length;
 
     if (removedCount > 0) {

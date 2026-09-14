@@ -105,12 +105,33 @@ describe('PersistentMemory', () => {
 
     expect(findMatchingSensitivePreference('hello there')).toBeNull();
 
-    const airlineMatch = findMatchingSensitivePreference('book a flight to Paris');
+    // Contract updated (wave F11) for commit 9cb2e44
+    // ("fix(agent): resolve duplicate responses, memory interception, follow-up
+    // glitches, and apply production hardening"), which tightened matching to
+    // precise phrases to avoid false positives (e.g. "ui card", "payload",
+    // "book a meeting"). Bare queries like "book a flight to Paris" or
+    // "pay for subscription" no longer match; a query must carry an explicit
+    // payment/airline-preference signal.
+
+    // False-positive guards introduced by 9cb2e44 still hold:
+    expect(findMatchingSensitivePreference('book a meeting')).toBeNull();
+    expect(findMatchingSensitivePreference('fix the ui card component')).toBeNull();
+    expect(findMatchingSensitivePreference('check the payload size')).toBeNull();
+
+    // Airline match via flight + prefer keywords (second isAirlineQuery branch)
+    const airlineMatch = findMatchingSensitivePreference('book a flight to Paris, I prefer my usual airline');
     expect(airlineMatch).not.toBeNull();
     expect(airlineMatch?.category).toBe('airline');
     expect(airlineMatch?.value).toBe('prefers Delta Airlines');
 
-    const paymentMatch = findMatchingSensitivePreference('pay for subscription');
+    // Airline match via precise phrase (first isAirlineQuery branch)
+    const airlinePhraseMatch = findMatchingSensitivePreference('use my preferred airline for this trip');
+    expect(airlinePhraseMatch).not.toBeNull();
+    expect(airlinePhraseMatch?.category).toBe('airline');
+    expect(airlinePhraseMatch?.value).toBe('prefers Delta Airlines');
+
+    // Payment match via precise payment phrase
+    const paymentMatch = findMatchingSensitivePreference('pay for my subscription with my credit card');
     expect(paymentMatch).not.toBeNull();
     expect(paymentMatch?.category).toBe('payments');
     expect(paymentMatch?.value).toBe('use Visa ending in 4242');

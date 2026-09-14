@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { ComputerUseResultCard } from '../ToolCallComponents';
+import { ComputerUseResultCard } from '../tools/ToolCallComponents';
 
 /**
  * Bug Condition Exploration Test

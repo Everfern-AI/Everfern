@@ -91,7 +91,7 @@ const TelegramConfig: React.FC<TelegramConfigProps> = ({
         textMuted: 'var(--color-text-tertiary)',
         textError: 'var(--color-error)',
         textSuccess: 'var(--color-success)',
-        textWarning: "#f59e0b",
+        textWarning: "var(--color-warning)",
         telegramBlue: "#229ED9",
         inputBg: 'var(--color-bg-surface)',
         buttonBg: 'var(--color-bg-surface)',
@@ -101,7 +101,7 @@ const TelegramConfig: React.FC<TelegramConfigProps> = ({
         primaryButtonHover: "var(--color-bg-subtle)",
         successBg: "var(--color-success-dim, rgba(34, 197, 94, 0.1))",
         errorBg: "var(--color-error-dim, rgba(239, 68, 68, 0.1))",
-        warningBg: "rgba(245, 158, 11, 0.1)",
+        warningBg: "var(--color-warning-dim)",
         infoBg: "rgba(34, 158, 217, 0.08)"
     };
 
@@ -242,8 +242,8 @@ const TelegramConfig: React.FC<TelegramConfigProps> = ({
     useEffect(() => {
         const loadProviders = async () => {
             try {
-                const providerList = await window.electronAPI.providers.getAll();
-                setProviders(providerList.map(p => ({
+                const providerList = await (window as any).electronAPI.providers.getAll();
+                setProviders(providerList.map((p: any) => ({
                     type: p.type,
                     name: p.name,
                     image: p.image,
@@ -260,8 +260,8 @@ const TelegramConfig: React.FC<TelegramConfigProps> = ({
         const loadModels = async () => {
             if (formData.provider) {
                 try {
-                    const modelList = await window.electronAPI.providers.getModels(formData.provider);
-                    setModels(modelList.map(m => ({ id: m.id, name: m.name })));
+                    const modelList = await (window as any).electronAPI.providers.getModels(formData.provider);
+                    setModels(modelList.map((m: any) => ({ id: m.id, name: m.name })));
                 } catch (error) {
                     console.error('Failed to load models:', error);
                     setModels([]);

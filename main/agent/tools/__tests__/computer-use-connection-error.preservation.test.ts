@@ -63,6 +63,13 @@ vi.mock('worker_threads', () => {
   return { Worker: WorkerMock, workerData: {}, parentPort: { postMessage: vi.fn() }, isMainThread: true };
 });
 
+// MP-SEC-15: these tests exercise the agent run loop past the permission
+// gate, so the gate must read as granted here. Fail-closed behavior is
+// covered by computer-use-permission-gate.test.ts.
+vi.mock('../../../ipc/computer-use-permission', () => ({
+  isPermissionGranted: () => true,
+}));
+
 import { createComputerUseTool } from '../computer-use';
 import type { AIClient } from '../../../lib/ai-client';
 

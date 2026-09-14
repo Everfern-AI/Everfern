@@ -14,8 +14,16 @@ vi.mock('../linux-vm-executor', () => ({
   runInLinuxVM: vi.fn()
 }));
 
-import { getPiCodingTools, __setPiCodingAgentModule } from '../pi-tools';
+// Current product contract: approved local execution runs through
+// UnifiedExecutor (the executor passed to adaptTool is wrapped in
+// withCommandTracking, so raw mocks are no longer invoked directly).
+vi.mock('../unified-executor', () => ({
+  UnifiedExecutor: { execute: vi.fn() }
+}));
+
+import { getPiCodingTools, __setPiCodingAgentModule, getLocalExecutionResolvers } from '../pi-tools';
 import * as linuxVmExecutor from '../linux-vm-executor';
+import { UnifiedExecutor } from '../unified-executor';
 
 // Mock executors
 const mockBashExecutor = vi.fn();
@@ -96,6 +104,20 @@ describe('Pi Tools VM Routing', () => {
     vi.restoreAllMocks();
   });
 
+  // Auto-approve any local-execution permission request emitted by the tool
+  // (HITL gate added after this suite was written). The product registers the
+  // resolver AFTER emitting the event, so resolve on a later tick when the
+  // resolver is guaranteed present.
+  const approveLocalExecution = (event: any) => {
+    if (event?.type === 'local_execution_request' && event?.requestId) {
+      setImmediate(() => {
+        const resolvers = getLocalExecutionResolvers();
+        const resolve = resolvers.get(event.requestId);
+        if (resolve) resolve({ approved: true, alwaysAllow: false });
+      });
+    }
+  };
+
   describe('Tool Schema', () => {
     it('should add local parameter to executePwsh tool schema', () => {
       expect(executePwshTool).toBeDefined();
@@ -141,8 +163,7 @@ describe('Pi Tools VM Routing', () => {
       expect(mockBashExecutor).not.toHaveBeenCalled();
       expect(result).toEqual({
         success: true,
-        output: 'VM output',
-        data: { target: 'vm', exitCode: 0, cwd: '' }
+        output: 'VM output'
       });
     });
 
@@ -164,34 +185,33 @@ describe('Pi Tools VM Routing', () => {
       expect(mockBashExecutor).not.toHaveBeenCalled();
       expect(result).toEqual({
         success: true,
-        output: 'VM output',
-        data: { target: 'vm', exitCode: 0, cwd: '' }
+        output: 'VM output'
       });
     });
 
     it('should route to native executor when local=true', async () => {
-      const mockNativeResult = {
-        content: [{ type: 'text', text: 'Native output' }],
-        isError: false
-      };
+      vi.mocked(UnifiedExecutor.execute).mockResolvedValue({
+        success: true,
+        output: 'Native output'
+      } as any);
 
-      mockBashExecutor.mockResolvedValue(mockNativeResult);
-
-      const result = await executePwshTool.execute({
-        command: 'echo "test"',
-        local: true,
-        reason: 'Need to access local files'
-      });
+      const result = await executePwshTool.execute(
+        {
+          command: 'echo "test"',
+          local: true,
+          reason: 'Need to access local files'
+        },
+        undefined,
+        approveLocalExecution
+      );
 
       expect(linuxVmExecutor.runInLinuxVM).not.toHaveBeenCalled();
-      expect(mockBashExecutor).toHaveBeenCalledWith(
-        expect.any(String),
-        { command: 'echo "test"', local: true, reason: 'Need to access local files' }
+      expect(UnifiedExecutor.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ command: 'echo "test"', local: true })
       );
       expect(result).toEqual({
         success: true,
-        output: 'Native output',
-        data: { target: 'main' }
+        output: expect.stringContaining('Native output')
       });
     });
   });
@@ -212,8 +232,7 @@ describe('Pi Tools VM Routing', () => {
 
       expect(result).toEqual({
         success: true,
-        output: 'Success output',
-        data: { target: 'vm', exitCode: 0, cwd: '' }
+        output: 'Success output'
       });
       expect(result.error).toBeUndefined();
     });
@@ -234,52 +253,46 @@ describe('Pi Tools VM Routing', () => {
       expect(result).toEqual({
         success: false,
         output: 'Error output',
-        error: 'Error output',
-        data: { target: 'vm', exitCode: 1, cwd: '' }
+        error: 'Error output'
       });
     });
 
     it('should return identical output structure for native success', async () => {
-      const mockNativeResult = {
-        content: [{ type: 'text', text: 'Native success' }],
-        isError: false
-      };
+      vi.mocked(UnifiedExecutor.execute).mockResolvedValue({
+        success: true,
+        output: 'Native success'
+      } as any);
 
-      mockBashExecutor.mockResolvedValue(mockNativeResult);
-
-      const result = await executePwshTool.execute({
-        command: 'echo "success"',
-        local: true,
-        reason: 'Need local execution'
-      });
+      const result = await executePwshTool.execute(
+        { command: 'echo "success"', local: true, reason: 'Need local execution' },
+        undefined,
+        approveLocalExecution
+      );
 
       expect(result).toEqual({
         success: true,
-        output: 'Native success',
-        data: { target: 'main' }
+        output: expect.stringContaining('Native success')
       });
       expect(result.error).toBeUndefined();
     });
 
     it('should return identical output structure for native failure', async () => {
-      const mockNativeResult = {
-        content: [{ type: 'text', text: 'Native error' }],
-        isError: true
-      };
+      vi.mocked(UnifiedExecutor.execute).mockResolvedValue({
+        success: false,
+        output: 'Native error',
+        exitCode: 1
+      } as any);
 
-      mockBashExecutor.mockResolvedValue(mockNativeResult);
-
-      const result = await executePwshTool.execute({
-        command: 'false',
-        local: true,
-        reason: 'Need local execution'
-      });
+      const result = await executePwshTool.execute(
+        { command: 'false', local: true, reason: 'Need local execution' },
+        undefined,
+        approveLocalExecution
+      );
 
       expect(result).toEqual({
         success: false,
-        output: 'Native error',
-        error: 'Native error',
-        data: { target: 'main' }
+        output: expect.stringContaining('Native error'),
+        error: 'Native error'
       });
     });
   });
@@ -289,11 +302,10 @@ describe('Pi Tools VM Routing', () => {
       const vmError = new Error('VM not available');
       vi.mocked(linuxVmExecutor.runInLinuxVM).mockRejectedValue(vmError);
 
-      const mockNativeResult = {
-        content: [{ type: 'text', text: 'Fallback output' }],
-        isError: false
-      };
-      mockBashExecutor.mockResolvedValue(mockNativeResult);
+      vi.mocked(UnifiedExecutor.execute).mockResolvedValue({
+        success: true,
+        output: 'Fallback output'
+      } as any);
 
       const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
@@ -302,15 +314,16 @@ describe('Pi Tools VM Routing', () => {
       });
 
       expect(linuxVmExecutor.runInLinuxVM).toHaveBeenCalledWith('echo "test"');
-      expect(mockBashExecutor).toHaveBeenCalled();
+      // echo is a read-only head, so the native fallback is permitted and the
+      // fallback warning is logged (the fallback itself shells out via
+      // child_process rather than UnifiedExecutor).
       expect(consoleSpy).toHaveBeenCalledWith(
         'Linux VM execution failed, falling back to native:',
         vmError
       );
       expect(result).toEqual({
         success: true,
-        output: 'Fallback output',
-        data: { target: 'main' }
+        output: expect.stringContaining('echo "test"')
       });
 
       consoleSpy.mockRestore();
@@ -334,8 +347,7 @@ describe('Pi Tools VM Routing', () => {
       expect(result).toEqual({
         success: false,
         output: 'Command failed with error',
-        error: 'Command failed with error',
-        data: { target: 'vm', exitCode: 127, cwd: '' }
+        error: 'Command failed with error'
       });
     });
 
@@ -355,8 +367,7 @@ describe('Pi Tools VM Routing', () => {
       expect(result).toEqual({
         success: false,
         output: 'Warning message',
-        error: 'Warning message',
-        data: { target: 'vm', exitCode: 1, cwd: '' }
+        error: 'Warning message'
       });
     });
 
@@ -397,23 +408,19 @@ describe('Pi Tools VM Routing', () => {
 
   describe('Parameter Passing', () => {
     it('should pass timeout parameter to native executor when local=true', async () => {
-      const mockNativeResult = {
-        content: [{ type: 'text', text: 'Output' }],
-        isError: false
-      };
+      vi.mocked(UnifiedExecutor.execute).mockResolvedValue({
+        success: true,
+        output: 'Output'
+      } as any);
 
-      mockBashExecutor.mockResolvedValue(mockNativeResult);
+      await executePwshTool.execute(
+        { command: 'echo "test"', timeout: 30, local: true, reason: 'Need local execution' },
+        undefined,
+        approveLocalExecution
+      );
 
-      await executePwshTool.execute({
-        command: 'echo "test"',
-        timeout: 30,
-        local: true,
-        reason: 'Need local execution'
-      });
-
-      expect(mockBashExecutor).toHaveBeenCalledWith(
-        expect.any(String),
-        { command: 'echo "test"', timeout: 30, local: true, reason: 'Need local execution' }
+      expect(UnifiedExecutor.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ command: 'echo "test"', timeout: 30000 })
       );
     });
 
@@ -473,24 +480,21 @@ describe('Pi Tools VM Routing', () => {
     });
 
     it('should allow local execution with valid reason field', async () => {
-      const mockNativeResult = {
-        content: [{ type: 'text', text: 'Local output' }],
-        isError: false
-      };
+      vi.mocked(UnifiedExecutor.execute).mockResolvedValue({
+        success: true,
+        output: 'Local output'
+      } as any);
 
-      mockBashExecutor.mockResolvedValue(mockNativeResult);
+      const result = await executePwshTool.execute(
+        { command: 'echo "test"', local: true, reason: 'Need to access local file system' },
+        undefined,
+        approveLocalExecution
+      );
 
-      const result = await executePwshTool.execute({
-        command: 'echo "test"',
-        local: true,
-        reason: 'Need to access local file system'
-      });
-
-      expect(mockBashExecutor).toHaveBeenCalled();
+      expect(UnifiedExecutor.execute).toHaveBeenCalled();
       expect(result).toEqual({
         success: true,
-        output: 'Local output',
-        data: { target: 'main' }
+        output: expect.stringContaining('Local output')
       });
     });
 
@@ -511,8 +515,7 @@ describe('Pi Tools VM Routing', () => {
       expect(linuxVmExecutor.runInLinuxVM).toHaveBeenCalled();
       expect(result).toEqual({
         success: true,
-        output: 'VM output',
-        data: { target: 'vm', exitCode: 0, cwd: '' }
+        output: 'VM output'
       });
     });
 
@@ -532,8 +535,7 @@ describe('Pi Tools VM Routing', () => {
       expect(linuxVmExecutor.runInLinuxVM).toHaveBeenCalled();
       expect(result).toEqual({
         success: true,
-        output: 'VM output',
-        data: { target: 'vm', exitCode: 0, cwd: '' }
+        output: 'VM output'
       });
     });
 
@@ -663,7 +665,7 @@ describe('Pi Tools VM Routing', () => {
 
       expect(result).toEqual({
         success: false,
-        output: "Error: Missing or invalid 'oldString' parameter for tool 'edit'",
+        output: "Error: Missing 'oldString' or 'edits' array parameter for tool 'edit'",
         error: "invalid_old_string"
       });
       expect(mockEditExecutor).not.toHaveBeenCalled();

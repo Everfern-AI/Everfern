@@ -161,7 +161,7 @@ const StepItem: React.FC<{ step: MissionStep; index: number; isLast: boolean }> 
         }}
       >
         {isCompleted ? (
-          <Check size={13} strokeWidth={2} style={{ color: '#10b981' }} />
+          <Check size={13} strokeWidth={2} style={{ color: 'var(--color-success)' }} />
         ) : isInProgress ? (
           <Loader2 size={13} strokeWidth={1.75} className="animate-spin" style={{ color: 'rgba(255, 255, 255, 0.8)' }} />
         ) : (

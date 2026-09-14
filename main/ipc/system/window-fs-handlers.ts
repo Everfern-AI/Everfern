@@ -1,6 +1,7 @@
 import { ipcMain, dialog, shell, app } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as dns from 'dns';
 import { memorySaveTool } from '../../agent/tools/memory-save';
@@ -244,32 +245,32 @@ export function registerWindowFsHandlers(): void {
       const originalFilePath = filePaths[0];
       console.log('[IPC] Processing file:', originalFilePath);
 
-      const stats = fs.statSync(originalFilePath);
+      // MP-LEAK-05: async fs on the main thread — statSync/copyFileSync of
+      // up-to-1GB attachments froze every renderer IPC round-trip.
+      const stats = await fsp.stat(originalFilePath);
       const ext = path.extname(originalFilePath).toLowerCase();
       const ONE_GB = 1073741824;
 
-      // Copy to ~/.everfern/attachments (host)
+      // Copy to ~/.everfern/attachments (host) via async stream
       const attachmentsDir = path.join(os.homedir(), '.everfern', 'attachments');
-      if (!fs.existsSync(attachmentsDir)) {
-        fs.mkdirSync(attachmentsDir, { recursive: true });
-      }
+      await fsp.mkdir(attachmentsDir, { recursive: true });
       const safeFileName = `${Date.now()}-${path.basename(originalFilePath)}`;
       const newFilePath = path.join(attachmentsDir, safeFileName);
-      fs.copyFileSync(originalFilePath, newFilePath);
+      await fsp.copyFile(originalFilePath, newFilePath);
       console.log('[IPC] File copied to:', newFilePath);
 
       // Clone to Linux VM (WSL) for fast VM-side access — skip files >1GB
       if (stats.size <= ONE_GB) {
         try {
-          const { exec } = require('child_process');
+          const { execFile } = require('child_process');
           const { promisify } = require('util');
-          const execAsync = promisify(exec);
+          const execFileAsync = promisify(execFile) as (cmd: string, args: string[], opts?: any) => Promise<{ stdout: string; stderr: string }>;
           let wslCmd = 'wsl.exe';
           try {
-            await execAsync('where wsl.exe', { timeout: 3000 });
+            await promisify(require('child_process').exec)('where wsl.exe', { timeout: 3000 });
           } catch {
             try {
-              await execAsync('wsl -e echo ok', { timeout: 5000 });
+              await promisify(require('child_process').exec)('wsl -e echo ok', { timeout: 5000 });
               wslCmd = 'wsl';
             } catch {
               throw new Error('WSL not available, skipping clone');
@@ -287,7 +288,10 @@ export function registerWindowFsHandlers(): void {
           const wslAttachmentsDir = `/everfern`;
           const wslSourcePath = toWslPath(newFilePath);
           console.log(`[IPC] Cloning to WSL: ${wslSourcePath} -> ${wslAttachmentsDir}/`);
-          await execAsync(`${wslCmd} --exec bash -c "mkdir -p ${wslAttachmentsDir} && cp '${wslSourcePath}' '${wslAttachmentsDir}/'"`, { timeout: 30000 });
+          // MP-SEC-14: argv-form invocation — no shell string interpolation, so
+          // hostile filenames (quotes, $(...), backticks) cannot inject commands.
+          await execFileAsync(wslCmd, ['--exec', 'mkdir', '-p', wslAttachmentsDir], { timeout: 15000 });
+          await execFileAsync(wslCmd, ['--exec', 'cp', wslSourcePath, `${wslAttachmentsDir}/`], { timeout: 30000 });
           console.log('[IPC] File cloned to WSL:', `${wslAttachmentsDir}/${safeFileName}`);
         } catch (cloneErr: any) {
           console.warn(`[IPC] Failed to clone file to WSL (non-fatal): ${cloneErr.message}`);
@@ -303,7 +307,7 @@ export function registerWindowFsHandlers(): void {
       if (['.png', '.jpg', '.jpeg', '.webp', '.gif'].includes(ext)) {
         mimeType = `image/${ext === '.jpg' ? 'jpeg' : ext.slice(1)}`;
         if (stats.size <= MAX_INLINE_IMAGE_BYTES) {
-          const base64 = fs.readFileSync(newFilePath).toString('base64');
+          const base64 = (await fsp.readFile(newFilePath)).toString('base64');
           const uri = `data:${mimeType};base64,${base64}`;
           console.log('[IPC] Returning inline image file, size:', stats.size);
           return { path: newFilePath, name: path.basename(originalFilePath), size: stats.size, mimeType, base64: uri, success: true };
@@ -313,13 +317,20 @@ export function registerWindowFsHandlers(): void {
       } else {
         let content = '';
         if (stats.size <= MAX_TEXT_PREVIEW_BYTES) {
-          content = fs.readFileSync(newFilePath, 'utf-8');
+          content = await fsp.readFile(newFilePath, 'utf-8');
         } else {
-          const buffer = Buffer.alloc(MAX_TEXT_PREVIEW_BYTES);
-          const fd = fs.openSync(newFilePath, 'r');
-          fs.readSync(fd, buffer, 0, MAX_TEXT_PREVIEW_BYTES, 0);
-          fs.closeSync(fd);
-          content = buffer.toString('utf-8') + '\n\n... [File preview truncated for memory safety. Full file accessible at path]';
+          // Bounded async read of the first 256KB (was sync open/read/close).
+          const fh = await fsp.open(newFilePath, 'r');
+          try {
+            const { bytesRead, buffer } = await fh.read({
+              buffer: Buffer.alloc(MAX_TEXT_PREVIEW_BYTES),
+              length: MAX_TEXT_PREVIEW_BYTES,
+              position: 0,
+            });
+            content = buffer.subarray(0, bytesRead).toString('utf-8') + '\n\n... [File preview truncated for memory safety. Full file accessible at path]';
+          } finally {
+            await fh.close();
+          }
         }
         console.log('[IPC] Returning bounded text preview, original size:', stats.size);
         return { path: newFilePath, name: path.basename(originalFilePath), size: stats.size, mimeType: 'text/plain', content, success: true };
@@ -339,7 +350,8 @@ export function registerWindowFsHandlers(): void {
     if (canceled || filePaths.length === 0) return null;
     const folderPath = filePaths[0];
     try {
-      const stats = fs.statSync(folderPath);
+      // MP-LEAK-05: async stat (was statSync on the main thread)
+      const stats = await fsp.stat(folderPath);
       if (!stats.isDirectory()) return { success: false, error: 'Selected path is not a folder.' };
       return { path: folderPath, name: path.basename(folderPath), success: true };
     } catch (err: any) {
@@ -498,7 +510,7 @@ export function registerWindowFsHandlers(): void {
               ? node.linkedFile
               : path.join(memDir, node.linkedFile);
             if (fs.existsSync(mdPath)) {
-              zip.file(path.basename(mdPath), fs.readFileSync(mdPath));
+              zip.file(path.basename(mdPath), await fsp.readFile(mdPath));
             }
           }
         }
@@ -516,7 +528,7 @@ export function registerWindowFsHandlers(): void {
         filters,
       });
       if (canceled || !filePath) return { success: false, reason: 'canceled' };
-      fs.writeFileSync(filePath, exportBuffer);
+      await fsp.writeFile(filePath, exportBuffer);
       return { success: true, filePath };
     } catch (err: any) {
       console.error('[IPC] memory:export-zip error:', err);
@@ -544,14 +556,14 @@ export function registerWindowFsHandlers(): void {
 
       if (filePath.endsWith('.zip')) {
         const JSZip = require('jszip');
-        const data = fs.readFileSync(filePath);
+        const data = await fsp.readFile(filePath);
         const zip = await JSZip.loadAsync(data);
         const jsonFile = zip.file('memory_graph.json');
         if (!jsonFile) return { success: false, error: 'No memory_graph.json found in ZIP' };
         const jsonStr = await jsonFile.async('string');
         importedGraph = JSON.parse(jsonStr);
       } else {
-        importedGraph = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+        importedGraph = JSON.parse(await fsp.readFile(filePath, 'utf-8'));
       }
 
       const current = loadMemoryGraph();

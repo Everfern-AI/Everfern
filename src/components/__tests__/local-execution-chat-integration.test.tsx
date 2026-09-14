@@ -15,7 +15,7 @@ import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
  */
 
 // Mock the LocalExecutionPermissionCard component
-vi.mock("../LocalExecutionPermissionCard", () => ({
+vi.mock("../tools/LocalExecutionPermissionCard", () => ({
   default: ({ command, shellType, reason, agentName, onDeny, onAlwaysAllow, onAllowOnce }: any) => (
     <div data-testid="local-execution-card">
       <div data-testid="card-command">{command}</div>

@@ -6,6 +6,7 @@
  */
 
 import { EventEmitter } from 'events';
+import { sleep } from '../lib/sleep';
 
 /**
  * Integration status
@@ -149,7 +150,7 @@ export class RestartCoordinator extends EventEmitter {
       }
 
       // Wait a moment for clean shutdown
-      await this.delay(1000);
+      await sleep(1000);
 
       // Start all specified integrations
       for (const platform of platforms) {
@@ -336,13 +337,6 @@ export class RestartCoordinator extends EventEmitter {
    */
   private generateOperationId(): string {
     return `restart-op-${Date.now()}-${++this.operationCounter}`;
-  }
-
-  /**
-   * Delay helper
-   */
-  private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }
 

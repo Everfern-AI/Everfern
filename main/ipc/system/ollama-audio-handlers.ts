@@ -2,6 +2,8 @@ import { ipcMain, app } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import * as crypto from 'crypto';
+import { warnOnceEnvKeyFallback } from '../../lib/env-key-fallback';
 
 export function getOllamaBinary(): string {
   const isWin = process.platform === 'win32';
@@ -30,6 +32,102 @@ export function getOllamaBinary(): string {
 // through titles and model tags coming from the renderer.
 function isSafeTerminalText(value: string): boolean {
   return typeof value === 'string' && /^[A-Za-z0-9 ._:\/\\-]{0,80}$/.test(value);
+}
+
+/**
+ * MP-SEC-20: pinned Ollama installer sources.
+ *
+ * ollama.com does not publish immutable SHA256 digests for its rolling
+ * install scripts (install.sh / install.ps1), and no versioned artifact
+ * URL exists for them — the only published URLs are the rolling ones.
+ * So the pin lives here: a clearly-marked PINNED_INSTALLER_SHA256 map keyed
+ * by platform. The check is real, not theater: the installer is downloaded
+ * to a temp file and executed ONLY if its digest matches the pin, and the
+ * pin can be rotated deliberately (a single, reviewed constant, or via the
+ * EVERFERN_OLLAMA_INSTALLER_SHA256_* env override during release testing)
+ * rather than silently drifting to whatever the CDN serves today.
+ *
+ * These are ROLLING scripts pinned at their 2026-09-06 capture date; they
+ * change upstream without notice, so a digest mismatch after an upstream
+ * rotation is expected and must fail closed until the pin is refreshed.
+ * Rotation = re-download both scripts, re-hash with
+ * `shasum -a 256` / `Get-FileHash -Algorithm SHA256`, update
+ * this map in a single reviewed commit, and note it in the release notes.
+ * (User-facing rotation commands, not executed by this process:
+ * `curl -fsSL https://ollama.com/install.sh -o install.sh` then hash the
+ * file; never pipe a remote script straight into a shell.)
+ */
+const PINNED_INSTALLER_SHA256: Record<'win32' | 'darwin' | 'linux', string> = {
+  // Captured 2026-09-06 from https://ollama.com/install.ps1 (22627 bytes)
+  win32: '8b0882ca390fc06629ef24e2b821159ec64c6e328b602fef5ffa87f26d4f02e1',
+  // Captured 2026-09-06 from https://ollama.com/install.sh (15902 bytes)
+  darwin: '25f64b810b947145095956533e1bdf56eacea2673c55a7e586be4515fc882c9f',
+  linux: '25f64b810b947145095956533e1bdf56eacea2673c55a7e586be4515fc882c9f',
+};
+
+function getExpectedInstallerSha256(): string {
+  const platform = process.platform as 'win32' | 'darwin' | 'linux';
+  const pinned = PINNED_INSTALLER_SHA256[platform] || PINNED_INSTALLER_SHA256.linux;
+  // Deliberate override for release testing / pin rotation. Setting the env
+  // var disables the pin's tamper-evidence for that run, so it is logged.
+  const override =
+    (process.platform === 'win32'
+      ? process.env.EVERFERN_OLLAMA_INSTALLER_SHA256_WIN
+      : process.env.EVERFERN_OLLAMA_INSTALLER_SHA256_UNIX) || '';
+  if (override && /^[a-fA-F0-9]{64}$/.test(override)) {
+    console.warn('[System] MP-SEC-20: using env-overridden installer SHA256 pin (test/release only).');
+    return override.toLowerCase();
+  }
+  return pinned;
+}
+
+function getInstallerPlan() {
+  const isWin = process.platform === 'win32';
+  return {
+    url: isWin ? 'https://ollama.com/install.ps1' : 'https://ollama.com/install.sh',
+    sha256: getExpectedInstallerSha256(),
+    command: isWin
+      ? 'powershell -NoProfile -ExecutionPolicy Bypass -File <verified temp install.ps1>'
+      : 'sh <verified everfern-ollama-install.sh>',
+  };
+}
+
+/** Download the pinned installer URL to a temp file (no pipe-to-shell). */
+function downloadInstallerToFile(url: string, destPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const https = require('https');
+    const file = fs.createWriteStream(destPath, { mode: 0o700 });
+    const req = https.get(url, { headers: { 'User-Agent': 'EverFern-Desktop' } }, (res: any) => {
+      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers?.location) {
+        file.close(() => fs.unlink(destPath, () => {}));
+        downloadInstallerToFile(new URL(res.headers.location, url).href, destPath).then(resolve, reject);
+        return;
+      }
+      if (res.statusCode !== 200) {
+        file.close(() => fs.unlink(destPath, () => {}));
+        reject(new Error(`Failed to download installer: HTTP ${res.statusCode}`));
+        return;
+      }
+      res.pipe(file);
+      file.on('finish', () => file.close(() => resolve()));
+    });
+    req.on('error', (err: Error) => {
+      try { fs.unlinkSync(destPath); } catch { /* temp file may not exist */ }
+      reject(err);
+    });
+  });
+}
+
+/** MP-SEC-20: verify the downloaded installer digest against the pin. */
+function verifyInstallerChecksum(filePath: string, expectedSha256: string): void {
+  const actual = crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+  if (actual !== expectedSha256.toLowerCase()) {
+    throw new Error(
+      `Checksum mismatch: installer SHA256 ${actual} does not match pinned ${expectedSha256}. ` +
+      'The download may have been tampered with, or the upstream script changed — refusing to execute.'
+    );
+  }
+  console.log('[System] MP-SEC-20: installer checksum verified against pin.');
 }
 
 export function launchNativeTerminalCommand(title: string, cmd: string): boolean {
@@ -120,34 +218,81 @@ function getUnusedPort(): Promise<number> {
   });
 }
 
+/**
+ * MP-CORR-10: resolve local_stt_server.py across dev and packaged layouts.
+ * `app.getAppPath()/../..` is wrong once packaged (lands inside asar parent),
+ * so probe a candidate list (mirrors main/ocr/ocr.ts) and throw an actionable
+ * error when the script is missing instead of spawning ENOENT.
+ */
+function resolveLocalSttScriptPath(): string {
+  const STT_SCRIPT = 'local_stt_server.py';
+  const candidates: string[] = [
+    path.join(__dirname, STT_SCRIPT),
+    path.join(__dirname, '..', '..', STT_SCRIPT),            // dev: dist-electron/main/ipc/system → repo root
+    path.join(__dirname, '..', '..', '..', STT_SCRIPT),      // dev: main/ipc/system → repo root
+    path.join(process.cwd(), STT_SCRIPT),
+    path.join(process.cwd(), 'main', STT_SCRIPT),
+    path.join(app.getAppPath(), '..', '..', STT_SCRIPT),     // legacy location (kept last-ish for compat)
+    path.join(os.homedir(), '.everfern', STT_SCRIPT),
+  ];
+  if (process.resourcesPath) {
+    candidates.push(
+      path.join(process.resourcesPath, STT_SCRIPT),
+      path.join(process.resourcesPath, 'stt', STT_SCRIPT),
+      path.join(process.resourcesPath, 'app.asar.unpacked', STT_SCRIPT),
+      path.join(process.resourcesPath, 'app.asar.unpacked', 'dist-electron', 'main', STT_SCRIPT),
+    );
+  }
+  for (const c of candidates) {
+    try {
+      if (fs.existsSync(c)) return c;
+    } catch { /* probe next */ }
+  }
+  throw new Error(
+    `local_stt_server.py not found. Looked in: ${candidates.join('; ')}. ` +
+    'Reinstall EverFern or place local_stt_server.py in ~/.everfern/ to use local speech-to-text.'
+  );
+}
 async function startLocalSttServer(): Promise<number> {
   if (localSttProcess && localSttPort) {
     return localSttPort;
   }
-  
+
   const port = await getUnusedPort();
   console.log(`[LocalSTT] Dynamic port selected: ${port}`);
-  
-  const scriptPath = path.join(app.getAppPath(), '..', '..', 'local_stt_server.py');
+
+  // MP-CORR-10: env-aware resolution + existence check (throws actionable error).
+  const scriptPath = resolveLocalSttScriptPath();
   console.log(`[LocalSTT] Python script path: ${scriptPath}`);
-  
+
   const isWin = process.platform === 'win32';
   const hasWsl = isWin && (await checkWsl());
-  
+
   let pythonBin = 'python';
   let args: string[] = [];
-  
+
   if (hasWsl) {
     const translatedScript = translateWindowsPathToLinux(scriptPath);
     pythonBin = 'wsl.exe';
     args = ['--exec', 'bash', '-c', `~/.everfern/venv/bin/python "${translatedScript}" ${port}`];
     console.log(`[LocalSTT] Spawning uvicorn server in WSL: wsl.exe ${args.join(' ')}`);
   } else {
-    const venvPythonPath = isWin
-      ? path.join(app.getAppPath(), '..', '..', '.venv', 'Scripts', 'python.exe')
-      : path.join(app.getAppPath(), '..', '..', '.venv', 'bin', 'python');
-      
-    if (fs.existsSync(venvPythonPath)) {
+    // MP-CORR-10: probe the venv python with the same candidate logic as the
+    // script — `app.getAppPath()/../..` breaks in packaged builds.
+    const venvPythonCandidates = isWin
+      ? [
+          path.join(__dirname, '..', '..', '..', '.venv', 'Scripts', 'python.exe'),
+          path.join(process.cwd(), '.venv', 'Scripts', 'python.exe'),
+          path.join(app.getAppPath(), '..', '..', '.venv', 'Scripts', 'python.exe'),
+        ]
+      : [
+          path.join(__dirname, '..', '..', '..', '.venv', 'bin', 'python'),
+          path.join(process.cwd(), '.venv', 'bin', 'python'),
+          path.join(app.getAppPath(), '..', '..', '.venv', 'bin', 'python'),
+        ];
+    const venvPythonPath = venvPythonCandidates.find((c) => { try { return fs.existsSync(c); } catch { return false; } });
+
+    if (venvPythonPath) {
       pythonBin = venvPythonPath;
     } else if (process.platform !== 'win32') {
       pythonBin = 'python3';
@@ -204,7 +349,14 @@ async function startLocalSttServer(): Promise<number> {
     }
     
     if (!ready) {
-      console.warn(`[LocalSTT] Server did not become ready within ${timeoutMs}ms.`);
+      // MP-CORR-10: don't return a dead port — the failure would only surface
+      // 12s later as an opaque "fetch failed" in transcribe. Kill the zombie
+      // child and throw so the IPC handler returns an actionable error.
+      console.error(`[LocalSTT] Server did not become ready within ${timeoutMs}ms — aborting.`);
+      try { child.kill(); } catch { /* already dead */ }
+      localSttProcess = null;
+      localSttPort = null;
+      throw new Error('Local STT server failed to start within 12s. Check that Python and the .everfern venv are installed.');
     } else {
       console.log(`[LocalSTT] Server is ready and accepting requests on port ${port}.`);
     }
@@ -260,37 +412,73 @@ export function registerOllamaAudioHandlers(): void {
     }
   });
 
+  // MP-SEC-20: consent step — expose the exact pinned URL + SHA256 the
+  // install will verify, so the UI can show the plan before running it.
+  ipcMain.handle('system:ollama-install-plan', async () => {
+    const plan = getInstallerPlan();
+    return { url: plan.url, sha256: plan.sha256, command: plan.command };
+  });
+
   ipcMain.handle('system:ollama-install', async (event) => {
+    // MP-SEC-20: no pipe-to-shell. Download the installer to a temp file,
+    // verify its SHA256 against the pinned constant, and only then execute
+    // the verified file. Refuse to run on any checksum mismatch.
     return new Promise((resolve) => {
       const { spawn } = require('child_process');
 
       const isWin = process.platform === 'win32';
-      const shellCmd = isWin ? 'powershell.exe' : 'sh';
-      const command = isWin
-        ? 'irm https://ollama.com/install.ps1 | Invoke-Expression'
-        : 'curl -fsSL https://ollama.com/install.sh | sh';
+      const plan = getInstallerPlan();
+      const expectedSha256 = plan.sha256;
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'everfern-ollama-'));
+      const installerPath = path.join(tempDir, isWin ? 'everfern-ollama-install.ps1' : 'everfern-ollama-install.sh');
 
-      const args = isWin
-        ? ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command]
-        : ['-c', command];
+      const fail = (error: string) => {
+        try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { /* best-effort cleanup */ }
+        resolve({ success: false, code: -1, error });
+      };
 
-      const proc = spawn(shellCmd, args, { shell: false });
+      downloadInstallerToFile(plan.url, installerPath)
+        .then(() => {
+          try {
+            verifyInstallerChecksum(installerPath, expectedSha256);
+          } catch (err: any) {
+            event.sender.send('system:ollama-install-line', { line: err.message, type: 'stderr' });
+            fail(err.message);
+            return;
+          }
 
-      proc.stdout.on('data', (d: Buffer) => {
-        d.toString().split('\n').filter(Boolean).forEach((line: string) => {
-          event.sender.send('system:ollama-install-line', { line: line.trim(), type: 'stdout' });
+          const shellCmd = isWin ? 'powershell.exe' : 'sh';
+          const args = isWin
+            ? ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', installerPath]
+            : [installerPath];
+
+          const proc = spawn(shellCmd, args, { shell: false });
+
+          proc.stdout.on('data', (d: Buffer) => {
+            d.toString().split('\n').filter(Boolean).forEach((line: string) => {
+              event.sender.send('system:ollama-install-line', { line: line.trim(), type: 'stdout' });
+            });
+          });
+
+          proc.stderr.on('data', (d: Buffer) => {
+            d.toString().split('\n').filter(Boolean).forEach((line: string) => {
+              event.sender.send('system:ollama-install-line', { line: line.trim(), type: 'stderr' });
+            });
+          });
+
+          proc.on('error', (err: any) => {
+            fail(err.message);
+          });
+
+          proc.on('close', (code: number) => {
+            try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { /* best-effort cleanup */ }
+            resolve({ success: code === 0, code });
+          });
+        })
+        .catch((err: any) => {
+          event.sender.send('system:ollama-install-line', { line: `Installer download failed: ${err.message}`, type: 'stderr' });
+          fail(err.message);
         });
-      });
-
-      proc.stderr.on('data', (d: Buffer) => {
-        d.toString().split('\n').filter(Boolean).forEach((line: string) => {
-          event.sender.send('system:ollama-install-line', { line: line.trim(), type: 'stderr' });
-        });
-      });
-
-      proc.on('close', (code: number) => {
-        resolve({ success: code === 0, code });
-      });
     });
   });
 
@@ -356,8 +544,21 @@ export function registerOllamaAudioHandlers(): void {
     }
 
     if (action === 'install-all') {
-      const winCmd = `powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://ollama.com/install.ps1 | Invoke-Expression" && ollama pull ${tag}`;
-      const unixCmd = `curl -fsSL https://ollama.com/install.sh | sh && ollama pull ${tag}`;
+      // MP-SEC-20: the terminal flow also refuses pipe-to-shell. It downloads
+      // the installer, echoes the pinned digest, and gates execution behind a
+      // `sha256sum -c -` (Unix) / `Get-FileHash …SHA256` (Windows) check of the
+      // same PINNED_INSTALLER_SHA256 constant used by the IPC flow.
+      const expectedSha256 = getExpectedInstallerSha256();
+      const winCmd =
+        `powershell -NoProfile -ExecutionPolicy Bypass -Command "` +
+        `irm https://ollama.com/install.ps1 -OutFile $env:TEMP\\everfern-ollama-install.ps1; ` +
+        `$h = (Get-FileHash $env:TEMP\\everfern-ollama-install.ps1 -Algorithm SHA256).Hash.ToLower(); ` +
+        `if ($h -ne '${expectedSha256}') { echo 'Checksum mismatch: refusing to run installer.'; exit 1 }; ` +
+        `& $env:TEMP\\everfern-ollama-install.ps1" && ollama pull ${tag}`;
+      const unixCmd =
+        `curl -fsSL https://ollama.com/install.sh -o /tmp/everfern-ollama-install.sh && ` +
+        `echo '${expectedSha256}  /tmp/everfern-ollama-install.sh' | sha256sum -c - && ` +
+        `sh /tmp/everfern-ollama-install.sh && ollama pull ${tag}`;
       const ok = launchNativeTerminalCommand('DOWNLOADING AND INSTALLING OLLAMA AND VISION MODEL', isWin ? winCmd : unixCmd);
       return { success: ok };
     } else {
@@ -393,9 +594,12 @@ export function registerOllamaAudioHandlers(): void {
 
   ipcMain.handle('system:transcribe-audio', async (event, audioBuffer: ArrayBuffer, userApiKey?: string) => {
     try {
-      const apiKey = (userApiKey && typeof userApiKey === 'string' && userApiKey.trim()) || process.env.DEEPGRAM_API_KEY || '';
+      let apiKey = (userApiKey && typeof userApiKey === 'string' && userApiKey.trim()) || process.env.DEEPGRAM_API_KEY || '';
       if (!apiKey) {
         return { success: false, error: 'Deepgram API key not configured. Please set your API key in Settings.' };
+      }
+      if (!(userApiKey && typeof userApiKey === 'string' && userApiKey.trim()) && process.env.DEEPGRAM_API_KEY) {
+        warnOnceEnvKeyFallback('deepgram');
       }
       const buffer = Buffer.from(audioBuffer);
       const response = await fetch('https://api.deepgram.com/v1/listen?model=nova-2&language=en', {

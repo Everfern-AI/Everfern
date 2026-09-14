@@ -37,7 +37,7 @@ const SimpleFileIcon = ({ extension }: { extension: string }) => {
                     <polyline points="21 15 16 10 5 21"></polyline>
                 </svg>
             ) : isPdf ? (
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--color-error)" strokeWidth="2">
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                     <polyline points="14 2 14 8 20 8"></polyline>
                     <path d="M9 13v-2h6v2"></path>

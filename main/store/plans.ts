@@ -5,6 +5,12 @@ import { assertSafeSegment, resolveWithin } from '../lib/path-guard';
 
 const PLAN_BASE = path.join(os.homedir(), '.everfern', 'chat', 'plan');
 
+// chatId arrives from the renderer over IPC; assertSafeSegment + resolveWithin
+// (below) confine every plan path to this base, blocking traversal ('..'),
+// absolute-path overrides, and symlink escapes from untrusted input.
+
+// Single construction point for all plan paths — chatId is validated to one
+// safe segment here, so every caller inherits the traversal guard.
 function planDir(chatId: string): string {
   return path.join(PLAN_BASE, assertSafeSegment(chatId, 'chat id'));
 }

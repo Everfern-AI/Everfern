@@ -2,8 +2,9 @@ import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { SparklesIcon, PaperAirplaneIcon, PlayIcon } from '@heroicons/react/24/outline';
 import { GraphicsCardIcon } from '@phosphor-icons/react';
-import { WaveformIcon } from './UIIcons';
-import { useTheme } from '@/components/ThemeProvider';
+import { WaveformIcon } from '@/components/common/UIIcons';
+import { useTheme } from '@/components/common/ThemeProvider';
+import { secretConfigured, type SecretView } from '@/lib/secret-view';
 
 import { CLOUD_MODEL_MAP } from '../../../../main/lib/providers';
 
@@ -307,7 +308,7 @@ const ContextTokenRing = ({
                 pointerEvents: isVisible ? 'auto' : 'none',
                 transition: 'opacity 0.15s ease, transform 0.15s ease',
                 transform: `translateX(-50%) translateY(${isVisible ? 0 : 8}px)`,
-                zIndex: 9999, marginBottom: 8,
+                zIndex: 'var(--z-dropdown)', marginBottom: 8,
                 boxShadow: tooltipShadow,
                 minWidth: 280,
                 maxWidth: 320,
@@ -574,12 +575,13 @@ const ContextTokenRing = ({
 const VoiceButton = ({ isRecording, voiceProvider, voiceDeepgramKey, voiceElevenlabsKey, audioLevels, onClick }: {
     isRecording: boolean;
     voiceProvider: string | null;
-    voiceDeepgramKey: string;
-    voiceElevenlabsKey: string;
+    // MP-SEC-11: SecretView redaction or a typed string.
+    voiceDeepgramKey: SecretView | string;
+    voiceElevenlabsKey: SecretView | string;
     audioLevels?: number[];
     onClick: () => void;
 }) => {
-    const hasVoice = !!(voiceProvider && (voiceProvider === 'everfern' || voiceProvider === 'local' || voiceProvider === 'deepgram' || voiceDeepgramKey || voiceElevenlabsKey));
+    const hasVoice = !!(voiceProvider && (voiceProvider === 'everfern' || voiceProvider === 'local' || voiceProvider === 'deepgram' || secretConfigured(voiceDeepgramKey) || secretConfigured(voiceElevenlabsKey)));
     
     return (
         <button

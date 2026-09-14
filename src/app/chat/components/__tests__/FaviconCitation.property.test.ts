@@ -14,7 +14,7 @@ import { describe, it } from 'vitest';
 import { render } from '@testing-library/react';
 import React from 'react';
 import fc from 'fast-check';
-import { getFaviconUrl, FaviconCitation } from '../FaviconCitation';
+import { getFaviconUrl, FaviconCitation } from '@/components/common/FaviconCitation';
 
 describe('Feature: web-tool-settings, Property 2: Favicon URL derivation', () => {
   it('property: getFaviconUrl returns <origin>/favicon.ico for any valid URL', () => {

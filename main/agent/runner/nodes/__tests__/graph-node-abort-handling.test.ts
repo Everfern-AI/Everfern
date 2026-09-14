@@ -2,8 +2,6 @@ import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { globalAbortManager } from '../../abort-manager';
 import { createTriageNode } from '../triage';
 import { createBrainNode } from '../brain';
-import { createValidationNode } from '../validation';
-import { createJudgeNode } from '../judge';
 import { createExecuteToolsNode } from '../execute_tools';
 
 // Mock dependencies
@@ -52,7 +50,11 @@ describe('Graph Node Abort Handling', () => {
     mockMissionTracker = {
       startStep: vi.fn(),
       completeStep: vi.fn(),
+      failStep: vi.fn(),
       setPhase: vi.fn(),
+      addStep: vi.fn(),
+      getStep: vi.fn(() => null),
+      getSteps: vi.fn(() => []),
       getTimeline: vi.fn(() => ({ isComplete: false })),
     };
 
@@ -113,44 +115,6 @@ describe('Graph Node Abort Handling', () => {
       const brainNode = createBrainNode(mockRunner, mockEventQueue, mockMissionTracker, [], shouldAbort);
 
       const result = await brainNode(mockState);
-      expect(result).toBeDefined();
-      expect(shouldAbort).toHaveBeenCalled();
-    });
-  });
-
-  describe('Validation Node Abort Handling', () => {
-    it('should abort when shouldAbort returns true', async () => {
-      const shouldAbort = vi.fn().mockReturnValue(true);
-      const validationNode = createValidationNode(mockRunner, mockMissionTracker, shouldAbort);
-
-      await expect(validationNode(mockState)).rejects.toThrow('Execution aborted by user (stop button clicked)');
-      expect(shouldAbort).toHaveBeenCalled();
-    });
-
-    it('should execute normally when shouldAbort returns false', async () => {
-      const shouldAbort = vi.fn().mockReturnValue(false);
-      const validationNode = createValidationNode(mockRunner, mockMissionTracker, shouldAbort);
-
-      const result = await validationNode(mockState);
-      expect(result).toBeDefined();
-      expect(shouldAbort).toHaveBeenCalled();
-    });
-  });
-
-  describe('Judge Node Abort Handling', () => {
-    it('should abort when shouldAbort returns true', async () => {
-      const shouldAbort = vi.fn().mockReturnValue(true);
-      const judgeNode = createJudgeNode(mockRunner, mockEventQueue, mockMissionTracker, shouldAbort);
-
-      await expect(judgeNode(mockState)).rejects.toThrow('Execution aborted by user (stop button clicked)');
-      expect(shouldAbort).toHaveBeenCalled();
-    });
-
-    it('should execute normally when shouldAbort returns false', async () => {
-      const shouldAbort = vi.fn().mockReturnValue(false);
-      const judgeNode = createJudgeNode(mockRunner, mockEventQueue, mockMissionTracker, shouldAbort);
-
-      const result = await judgeNode(mockState);
       expect(result).toBeDefined();
       expect(shouldAbort).toHaveBeenCalled();
     });
@@ -218,8 +182,6 @@ describe('Graph Node Abort Handling', () => {
 
       const triageNode = createTriageNode(mockRunner, mockEventQueue, mockMissionTracker, shouldAbort);
       const brainNode = createBrainNode(mockRunner, mockEventQueue, mockMissionTracker, [], shouldAbort);
-      const validationNode = createValidationNode(mockRunner, mockMissionTracker, shouldAbort);
-      const judgeNode = createJudgeNode(mockRunner, mockEventQueue, mockMissionTracker, shouldAbort);
       const executeToolsNode = createExecuteToolsNode(
         mockRunner,
         [],
@@ -237,8 +199,6 @@ describe('Graph Node Abort Handling', () => {
 
       await expect(triageNode(mockState)).rejects.toThrow(expectedError);
       await expect(brainNode(mockState)).rejects.toThrow(expectedError);
-      await expect(validationNode(mockState)).rejects.toThrow(expectedError);
-      await expect(judgeNode(mockState)).rejects.toThrow(expectedError);
       await expect(executeToolsNode(mockState)).rejects.toThrow(expectedError);
     });
 

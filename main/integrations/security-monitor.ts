@@ -138,17 +138,6 @@ export interface SecurityAlertConfig {
 }
 
 /**
- * Security monitor events
- */
-export interface SecurityMonitorEvents {
-  'security-event': (event: SecurityEvent) => void;
-  'critical-alert': (event: SecurityEvent) => void;
-  'user-blocked': (userId: string, reason: string) => void;
-  'metrics-updated': (metrics: SecurityMetrics) => void;
-  'error': (error: Error) => void;
-}
-
-/**
  * Security event monitoring and logging system
  */
 export class SecurityMonitor extends EventEmitter {
@@ -160,6 +149,7 @@ export class SecurityMonitor extends EventEmitter {
   private metricsCache: SecurityMetrics | null = null;
   private metricsCacheExpiry: number = 0;
   private notificationCounts: Map<string, number[]> = new Map();
+  private cleanupTimer: NodeJS.Timeout | null = null;
 
   constructor(alertConfig: SecurityAlertConfig) {
     super();
@@ -211,7 +201,13 @@ export class SecurityMonitor extends EventEmitter {
     }
 
     // Check for auto-block conditions
-    if (userId && this.shouldAutoBlock(userId, type)) {
+    // FIX (infinite async recursion): blockUser() itself logs a
+    // privilege_escalation_attempt event for the same userId; without an
+    // "already blocked" guard, that inner event re-enters shouldAutoBlock
+    // (the injection/auth-failure counts are unchanged), which re-triggers
+    // blockUser, which logs again — forever. A single trigger could append
+    // security events unboundedly (observed: a 10MB daily security log).
+    if (userId && !this.blockedUsers.has(userId) && this.shouldAutoBlock(userId, type)) {
       await this.blockUser(userId, `Auto-blocked due to ${type}`);
     }
 
@@ -548,6 +544,13 @@ export class SecurityMonitor extends EventEmitter {
    */
   private async writeEventToLog(event: SecurityEvent): Promise<void> {
     try {
+      // FIX (first-event race): initializeLogDirectory() is fire-and-forget
+      // in the constructor, so an event arriving before that mkdir settles
+      // hit appendFile with a missing directory (ENOENT), which was then
+      // re-emitted as an unhandled 'error' event and crashed the caller.
+      // mkdir recursive is idempotent; ensure the directory before append.
+      await fs.mkdir(this.logDirectory, { recursive: true });
+
       const logDate = event.timestamp.toISOString().split('T')[0];
       const logFile = path.join(this.logDirectory, `security-${logDate}.log`);
 
@@ -733,16 +736,20 @@ export class SecurityMonitor extends EventEmitter {
    * Determine event type from validation result
    */
   private determineEventTypeFromValidation(result: ValidationResult): SecurityEventType {
-    if (result.errors.some(e => e.includes('injection'))) {
+    // f11 fix: match case-insensitively — the shipped InputValidator emits
+    // 'Rate limit exceeded' (capital R, input-validator.ts:194), so the
+    // previous case-sensitive check never matched and real rate-limit
+    // events were misclassified as suspicious_activity.
+    if (result.errors.some(e => e.toLowerCase().includes('injection'))) {
       return 'injection_attack_detected';
     }
-    if (result.errors.some(e => e.includes('rate limit'))) {
+    if (result.errors.some(e => e.toLowerCase().includes('rate limit'))) {
       return 'rate_limit_exceeded';
     }
-    if (result.errors.some(e => e.includes('file'))) {
+    if (result.errors.some(e => e.toLowerCase().includes('file'))) {
       return 'file_upload_blocked';
     }
-    if (result.warnings.some(w => w.includes('URL'))) {
+    if (result.warnings.some(w => w.toLowerCase().includes('url'))) {
       return 'malicious_url_detected';
     }
     return 'suspicious_activity';
@@ -801,11 +808,22 @@ export class SecurityMonitor extends EventEmitter {
    * Start periodic cleanup
    */
   private startPeriodicCleanup(): void {
+    // MP-LEAK-01: store handle so stop() can clear it.
     // Clean up old events every hour
-    setInterval(() => {
+    this.cleanupTimer = setInterval(() => {
       this.cleanupOldEvents();
       this.cleanupNotificationCounts();
     }, 60 * 60 * 1000);
+  }
+
+  /**
+   * Stop the monitor and clear its periodic cleanup timer (MP-LEAK-01).
+   */
+  stop(): void {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
+    }
   }
 
   /**
@@ -843,7 +861,7 @@ export class SecurityMonitor extends EventEmitter {
 /**
  * Default security alert configuration
  */
-export const defaultSecurityAlertConfig: SecurityAlertConfig = {
+const defaultSecurityAlertConfig: SecurityAlertConfig = {
   enableEmailNotifications: false,
   adminEmails: [],
   minNotificationSeverity: 'medium',
@@ -874,8 +892,9 @@ export function getSecurityMonitor(config?: SecurityAlertConfig): SecurityMonito
 }
 
 /**
- * Create a security monitor instance
+ * Stop the global security monitor (clears its cleanup timer).
+ * Called from the quit path (MP-LEAK-01).
  */
-export function createSecurityMonitor(config: SecurityAlertConfig): SecurityMonitor {
-  return new SecurityMonitor(config);
+export function stopGlobalSecurityMonitor(): void {
+  globalSecurityMonitor?.stop();
 }

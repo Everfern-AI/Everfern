@@ -319,7 +319,7 @@ def run_paddleocr(pages, engine, device):
     return lines, None
 
 
-def render_mode(pdf_path, out_dir, max_pages=30):
+def render_mode(pdf_path, out_dir, max_pages=30, max_dim=2000):
     try:
         import pymupdf as fitz
     except ImportError:
@@ -333,8 +333,8 @@ def render_mode(pdf_path, out_dir, max_pages=30):
             page = doc[i]
             zoom = 200.0 / 72.0
             pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False)
-            if pix.width > 2000 or pix.height > 2000:
-                factor = min(2000.0 / pix.width, 2000.0 / pix.height)
+            if pix.width > max_dim or pix.height > max_dim:
+                factor = min(float(max_dim) / pix.width, float(max_dim) / pix.height)
                 pix = page.get_pixmap(matrix=fitz.Matrix(zoom * factor, zoom * factor), alpha=False)
             fname = os.path.join(out_dir, f"page_{i + 1:04d}.png")
             pix.save(fname)
@@ -355,7 +355,12 @@ def main():
             _error("render requires: render <pdf> <outDir> <maxPages>")
             return
         try:
-            render_mode(sys.argv[2], sys.argv[3], int(sys.argv[4]) if len(sys.argv) > 4 else 30)
+            render_mode(
+                sys.argv[2],
+                sys.argv[3],
+                int(sys.argv[4]) if len(sys.argv) > 4 else 30,
+                int(sys.argv[5]) if len(sys.argv) > 5 else 2000,
+            )
         except Exception as e:
             _error(f"render_mode: {e}")
         return

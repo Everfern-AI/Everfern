@@ -87,6 +87,9 @@ export class InputValidator {
   private webhookConfig: WebhookConfig;
   private rateLimitTrackers = new Map<string, RateLimitTracker>();
   private securityMonitor: SecurityMonitor;
+  // MP-LEAK-01: cleanup interval tracked so stop() can clear it (was a bare
+  // setInterval that kept running for the whole process lifetime).
+  private cleanupTimer: NodeJS.Timeout | null = null;
 
   // Security patterns for injection detection
   private readonly SQL_INJECTION_PATTERNS = [
@@ -142,7 +145,18 @@ export class InputValidator {
     this.securityMonitor = getSecurityMonitor();
 
     // Clean up rate limit trackers periodically
-    setInterval(() => this.cleanupRateLimitTrackers(), 60000); // Every minute
+    this.cleanupTimer = setInterval(() => this.cleanupRateLimitTrackers(), 60000); // Every minute
+  }
+
+  /**
+   * Stop the validator: clear the rate-limit cleanup interval (MP-LEAK-01).
+   * Called from BotIntegrationManager.shutdown().
+   */
+  stop(): void {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
+    }
   }
 
   /**

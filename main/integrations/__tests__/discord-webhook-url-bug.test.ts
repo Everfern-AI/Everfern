@@ -39,7 +39,8 @@ describe('Discord Configuration Schema - Bug Condition Exploration', () => {
 
   it('should NOT include webhookUrl field in DiscordConfig component interface', () => {
     // Read the DiscordConfig.tsx file
-    const discordConfigPath = path.join(__dirname, '../../../src/components/DiscordConfig.tsx');
+    // (moved to src/components/integrations/ in 8cb0691 — path updated)
+    const discordConfigPath = path.join(__dirname, '../../../src/components/integrations/DiscordConfig.tsx');
     const discordConfigContent = fs.readFileSync(discordConfigPath, 'utf-8');
 
     // Check if DiscordConfigProps interface includes webhookUrl

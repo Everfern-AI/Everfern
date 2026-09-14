@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { assertSafeSegment, resolveWithin } from '../lib/path-guard';
 
-export interface SiteMeta {
+interface SiteMeta {
   id: string; // filename or foldername
   chatId: string;
   name: string;
@@ -13,6 +13,11 @@ export interface SiteMeta {
 }
 
 const SITES_DIR = path.join(os.homedir(), '.everfern', 'sites');
+
+// All chatIds/filenames arrive from the renderer over IPC and are untrusted:
+// assertSafeSegment + resolveWithin confine every resulting path to
+// SITES_DIR (blocking '../' traversal, absolute overrides, and symlink
+// escapes), so a malicious renderer can never touch files outside the sandbox.
 
 /**
  * Helper to check if file/dir exists asynchronously
@@ -110,6 +115,8 @@ export async function deleteSite(chatId: string, filename?: string): Promise<{ s
       const stats = await fs.promises.stat(p);
       if (stats.isDirectory()) {
         // MP-SEC-02: only direct children of the sites root may be recursively removed
+        // (realpath on both sides: a symlinked root or child must compare by
+        // its physical location, so foreign dirs can't masquerade as children)
         if (fs.realpathSync(path.dirname(p)) !== fs.realpathSync(SITES_DIR)) {
           return { success: false };
         }

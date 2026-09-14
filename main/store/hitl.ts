@@ -7,6 +7,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { assertSafeSegment } from '../lib/path-guard';
 
 export interface HitlRequest {
   id: string;
@@ -30,7 +31,7 @@ export interface HitlResponse {
   response: string;
 }
 
-export interface HitlRecord {
+interface HitlRecord {
   request: HitlRequest;
   response?: HitlResponse;
   status: 'pending' | 'approved' | 'rejected';
@@ -45,7 +46,8 @@ const getHitlDir = (): string => {
 };
 
 const getConversationHitlDir = (conversationId: string): string => {
-  const dir = path.join(getHitlDir(), conversationId);
+  const safeId = assertSafeSegment(conversationId, 'conversationId');
+  const dir = path.join(getHitlDir(), safeId);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
@@ -58,7 +60,7 @@ const getConversationHitlDir = (conversationId: string): string => {
 export function saveHitlRequest(request: HitlRequest): void {
   try {
     const dir = getConversationHitlDir(request.conversationId);
-    const filePath = path.join(dir, `${request.id}.json`);
+    const filePath = path.join(dir, `${assertSafeSegment(request.id, 'requestId')}.json`);
     
     const record: HitlRecord = {
       request,
@@ -78,7 +80,7 @@ export function saveHitlRequest(request: HitlRequest): void {
 export function saveHitlResponse(response: HitlResponse): void {
   try {
     const dir = getConversationHitlDir(response.conversationId);
-    const filePath = path.join(dir, `${response.requestId}.json`);
+    const filePath = path.join(dir, `${assertSafeSegment(response.requestId, 'requestId')}.json`);
     
     // Load existing record
     let record: HitlRecord;
@@ -117,7 +119,7 @@ export function saveHitlResponse(response: HitlResponse): void {
 export function getHitlRecord(conversationId: string, requestId: string): HitlRecord | null {
   try {
     const dir = getConversationHitlDir(conversationId);
-    const filePath = path.join(dir, `${requestId}.json`);
+    const filePath = path.join(dir, `${assertSafeSegment(requestId, 'requestId')}.json`);
     
     if (!fs.existsSync(filePath)) {
       return null;
@@ -161,7 +163,7 @@ export function listHitlRecords(conversationId: string): HitlRecord[] {
 /**
  * Get HITL statistics for a conversation
  */
-export function getHitlStats(conversationId: string): {
+function getHitlStats(conversationId: string): {
   total: number;
   pending: number;
   approved: number;
@@ -175,58 +177,4 @@ export function getHitlStats(conversationId: string): {
     approved: records.filter(r => r.status === 'approved').length,
     rejected: records.filter(r => r.status === 'rejected').length,
   };
-}
-
-/**
- * Delete all HITL records for a conversation
- */
-export function deleteConversationHitl(conversationId: string): void {
-  try {
-    const dir = getConversationHitlDir(conversationId);
-    if (fs.existsSync(dir)) {
-      fs.rmSync(dir, { recursive: true, force: true });
-      console.log(`[HITL Storage] Deleted all records for conversation: ${conversationId}`);
-    }
-  } catch (err) {
-    console.error('[HITL Storage] Failed to delete conversation records:', err);
-  }
-}
-
-/**
- * Export HITL records to a summary file
- */
-export function exportHitlSummary(conversationId: string): string {
-  const records = listHitlRecords(conversationId);
-  const stats = getHitlStats(conversationId);
-  
-  let summary = `# HITL Approval Summary\n\n`;
-  summary += `**Conversation ID:** ${conversationId}\n`;
-  summary += `**Generated:** ${new Date().toISOString()}\n\n`;
-  summary += `## Statistics\n\n`;
-  summary += `- Total Requests: ${stats.total}\n`;
-  summary += `- Approved: ${stats.approved}\n`;
-  summary += `- Rejected: ${stats.rejected}\n`;
-  summary += `- Pending: ${stats.pending}\n\n`;
-  summary += `## Detailed Records\n\n`;
-  
-  for (const record of records) {
-    summary += `### Request ${record.request.id}\n\n`;
-    summary += `**Timestamp:** ${record.request.timestamp}\n`;
-    summary += `**Status:** ${record.status}\n`;
-    summary += `**Question:** ${record.request.question}\n`;
-    summary += `**Reasoning:** ${record.request.details.reasoning}\n`;
-    summary += `**Tools:** ${record.request.details.summary}\n\n`;
-    
-    if (record.response) {
-      summary += `**Response Timestamp:** ${record.response.timestamp}\n`;
-      summary += `**Decision:** ${record.response.approved ? 'APPROVED' : 'REJECTED'}\n`;
-      summary += `**Response:** ${record.response.response}\n\n`;
-    } else {
-      summary += `**Response:** Pending\n\n`;
-    }
-    
-    summary += `---\n\n`;
-  }
-  
-  return summary;
 }

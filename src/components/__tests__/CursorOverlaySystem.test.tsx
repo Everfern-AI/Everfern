@@ -2,12 +2,25 @@ import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { CursorOverlaySystem, useCursorOverlayState } from '../CursorOverlaySystem';
+import { CursorOverlaySystem, useCursorOverlayState } from '@/app/chat/components/CursorOverlaySystem';
 
-// Mock framer-motion to avoid animation issues in tests
+// Mock framer-motion to avoid animation issues in tests.
+// Projects motion x/y animate values into style left/top so positioning
+// assertions can observe the cursor target coordinates synchronously.
 vi.mock('framer-motion', () => ({
   motion: {
-    div: ({ children, ...props }: any) => <div {...props}>{children}</div>,
+    div: ({ children, animate, style, ...props }: any) => (
+      <div
+        {...props}
+        style={{
+          ...style,
+          left: typeof animate?.x === 'number' ? `${animate.x}px` : style?.left,
+          top: typeof animate?.y === 'number' ? `${animate.y}px` : style?.top,
+        }}
+      >
+        {children}
+      </div>
+    ),
   },
   AnimatePresence: ({ children }: any) => <>{children}</>,
 }));
@@ -47,10 +60,10 @@ describe('CursorOverlaySystem', () => {
       const { rerender } = render(<CursorOverlaySystem {...defaultProps} />);
       const cursorElement = screen.getByTestId('cursor-position');
 
-      // Initial position: 100/1920 = 5.208%, 200/1080 = 18.518%
+      // Current implementation positions via motion x/y transforms (pixels).
       const style = cursorElement.style;
-      expect(style.left).toContain('%');
-      expect(style.top).toContain('%');
+      expect(style.left).toContain('px');
+      expect(style.top).toContain('px');
 
       // Update coordinate
       rerender(
@@ -194,10 +207,9 @@ describe('CursorOverlaySystem', () => {
       // Fast-forward time to allow animation
       vi.advanceTimersByTime(100);
 
-      await waitFor(() => {
-        const cursorElement = screen.getByTestId('cursor-position');
-        expect(cursorElement).toBeInTheDocument();
-      });
+      // Fake timers starve waitFor's polling interval — assert synchronously.
+      const cursorElement = screen.getByTestId('cursor-position');
+      expect(cursorElement).toBeInTheDocument();
     });
 
     it('should handle rapid coordinate changes', async () => {
@@ -221,10 +233,9 @@ describe('CursorOverlaySystem', () => {
         vi.advanceTimersByTime(16); // ~60fps
       });
 
-      await waitFor(() => {
-        const cursorElement = screen.getByTestId('cursor-position');
-        expect(cursorElement).toBeInTheDocument();
-      });
+      // Fake timers starve waitFor's polling interval — assert synchronously.
+      const cursorElement = screen.getByTestId('cursor-position');
+      expect(cursorElement).toBeInTheDocument();
     });
   });
 
@@ -241,9 +252,8 @@ describe('CursorOverlaySystem', () => {
       // Fast-forward through animation duration (400ms)
       vi.advanceTimersByTime(400);
 
-      await waitFor(() => {
-        expect(screen.getByTestId('cursor-overlay')).toBeInTheDocument();
-      });
+      // Fake timers starve waitFor's polling interval — assert synchronously.
+      expect(screen.getByTestId('cursor-overlay')).toBeInTheDocument();
 
       vi.useRealTimers();
     });

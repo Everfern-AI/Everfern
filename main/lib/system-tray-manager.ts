@@ -11,16 +11,30 @@ import { Tray, Menu, BrowserWindow, app, nativeImage } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 
-export interface SystemTrayConfig {
+interface SystemTrayConfig {
   showOnStart?: boolean;
   minimizeToTray?: boolean;
 }
 
+// MP-LEAK-03: guard so repeated setupWindowEvents() calls never stack
+// duplicate app-level before-quit listeners across tray recreations.
+let systemTrayBeforeQuitRegistered = false;
+
 export class SystemTrayManager {
+  // Platform matrix (MP-LIFE-02): close→hide-to-tray on ALL platforms (intentional:
+  // tray is the restore path); window-all-closed quits on non-darwin (main.ts) — on
+  // Windows/Linux the hidden-to-tray window keeps the app alive and the tray Quit item
+  // is the quit path; on darwin dock activate re-shows (main.ts activate handler).
   private tray: Tray | null = null;
   private mainWindow: BrowserWindow | null = null;
   private config: SystemTrayConfig;
   private isQuitting = false;
+  // MP-XPLAT-06: memoized tray icon path — probing is expensive (dirs × icons
+  // of fs.existsSync) and was re-done on every hideToTray balloon.
+  private cachedTrayIconPath: string | null = null;
+  // MP-LIFE-02: balloon notifications are Windows-only and shown ONCE per
+  // session (a balloon per hide spammed the user on every hide-to-tray).
+  private balloonShownOnce = false;
 
   constructor(config: SystemTrayConfig = {}) {
     this.config = {
@@ -106,9 +120,17 @@ export class SystemTrayManager {
       this.mainWindow.hide();
       console.log('[SystemTray] Main window hidden to tray');
 
-      // Show notification on first hide (optional)
-      if (this.tray && this.config.showOnStart) {
-        this.tray.displayBalloon({
+      // MP-LIFE-02: balloon notifications are a Windows-only affordance and
+      // only informative the FIRST time — show once per session, never spam.
+      if (
+        process.platform === 'win32' &&
+        this.tray &&
+        this.config.showOnStart &&
+        !this.balloonShownOnce &&
+        typeof (this.tray as any).displayBalloon === 'function'
+      ) {
+        this.balloonShownOnce = true;
+        (this.tray as any).displayBalloon({
           title: 'EverFern',
           content: 'EverFern is running in the background. Click the tray icon to restore.',
           icon: this.createTrayIcon(this.getTrayIconPath())
@@ -204,8 +226,16 @@ export class SystemTrayManager {
 
   /**
    * Get the appropriate tray icon path for the current platform
+   *
+   * MP-XPLAT-06: result is memoized (cachedTrayIconPath) — the probe walks
+   * several candidate dirs × (tray-icon.png + platform icon) with
+   * fs.existsSync; one probe per manager instance is enough.
    */
   private getTrayIconPath(): string {
+    if (this.cachedTrayIconPath !== null) {
+      return this.cachedTrayIconPath;
+    }
+
     const appPath = typeof app?.getAppPath === 'function' ? app.getAppPath() : '';
     const resPath = process.resourcesPath || '';
 
@@ -238,17 +268,21 @@ export class SystemTrayManager {
       const trayPath = path.join(dir, 'tray-icon.png');
       if (fs.existsSync(trayPath)) {
         console.log(`[SystemTray] Using tray icon: ${trayPath}`);
+        this.cachedTrayIconPath = trayPath;
         return trayPath;
       }
       const platformIconPath = path.join(dir, iconName);
       if (fs.existsSync(platformIconPath)) {
         console.log(`[SystemTray] Using platform icon: ${platformIconPath}`);
+        this.cachedTrayIconPath = platformIconPath;
         return platformIconPath;
       }
     }
 
     console.warn('[SystemTray] No suitable tray icon found, using default');
-    return path.join(appPath || process.cwd(), 'public', 'images', 'logos', iconName);
+    const fallback = path.join(appPath || process.cwd(), 'public', 'images', 'logos', iconName);
+    this.cachedTrayIconPath = fallback;
+    return fallback;
   }
 
   /**
@@ -356,9 +390,14 @@ export class SystemTrayManager {
     if (!this.mainWindow) return;
 
     if (app && typeof app.on === 'function') {
-      app.on('before-quit', () => {
-        this.isQuitting = true;
-      });
+      // MP-LEAK-03: setupWindowEvents can run more than once (tray recreate);
+      // register the before-quit listener only once so listenerCount stays stable.
+      if (!systemTrayBeforeQuitRegistered) {
+        systemTrayBeforeQuitRegistered = true;
+        app.on('before-quit', () => {
+          this.isQuitting = true;
+        });
+      }
     }
 
     // Update tray menu when window visibility changes

@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom';
 import { vi } from 'vitest';
-import { ShimmerProgressComponent, ResearchState, SourceInfo } from '../ShimmerProgressComponent';
+import { ShimmerProgressComponent, ResearchState, SourceInfo } from '@/app/chat/components/ShimmerProgressComponent';
 
 // Mock the Loader component to avoid SVG getTotalLength issues in JSDOM
 vi.mock('@/components/ui/animated-loading-svg-text-shimmer', () => ({

@@ -54,6 +54,27 @@ const KEY_ALIASES: Record<string, string> = {
   End: 'End',
 };
 
+// ── AG-CORR-06: held-mouse registry ─────────────────────────────────────────
+// Sessions whose Playwright mouse button is currently DOWN without a
+// guaranteed matching up() (hold_element with holdTimeMs=0). The orchestrator
+// finally block calls releaseAllHeldMice() at turn end so a persistent HITL
+// session never keeps a stuck mouse button down.
+const sessionsWithHeldMouse = new Set<BrowserSession>();
+
+/**
+ * AG-CORR-06: release every held mouse button recorded by hold_element
+ * (holdTimeMs=0) across all sessions. Guarded per session; sessions whose
+ * release succeeds (or whose page is already gone) are unregistered.
+ */
+export async function releaseAllHeldMice(): Promise<void> {
+  for (const session of Array.from(sessionsWithHeldMouse)) {
+    try {
+      await session.releaseHeldMouse();
+    } catch { /* best-effort — never block turn teardown */ }
+    sessionsWithHeldMouse.delete(session);
+  }
+}
+
 /** Normalises a raw key string, handling aliases and combo modifiers like "Ctrl+A". */
 function normalizeKey(key: string): string {
   // Handle combos: "Ctrl+A", "Meta+Shift+Z", etc.
@@ -70,6 +91,39 @@ function normalizeKey(key: string): string {
     .join('+');
 }
 
+/**
+ * Known captcha widget container selectors (AG-SAF-08). Generic programmatic
+ * captcha interaction is only permitted inside one of these containers.
+ */
+export const KNOWN_CAPTCHA_WIDGET_SELECTORS: string[] = [
+  'iframe[src*="recaptcha" i]',
+  'iframe[src*="hcaptcha" i]',
+  'iframe[src*="challenges.cloudflare.com" i]',
+  '.g-recaptcha',
+  '.h-recaptcha',
+  '[data-sitekey]',
+  '.cf-turnstile',
+  '.captcha',
+];
+
+/**
+ * Decide whether a page exposes a known captcha widget (AG-SAF-08).
+ * `matchedSelectors` are the allowlist selectors that matched on the page.
+ * Returns false for empty/null/undefined input.
+ */
+export function isKnownCaptchaPage(matchedSelectors: string[] | null | undefined): boolean {
+  if (!matchedSelectors || !Array.isArray(matchedSelectors) || matchedSelectors.length === 0) {
+    return false;
+  }
+  return matchedSelectors.some(sel =>
+    typeof sel === 'string' && KNOWN_CAPTCHA_WIDGET_SELECTORS.includes(sel)
+  );
+}
+
+/**
+ * Union of every browser action Navis can execute (grouped by phase in NAVIS.md);
+ * each member is dispatched in executeAction's switch.
+ */
 export type ActionName =
   | 'go_to_url'
   | 'go_back'
@@ -112,6 +166,10 @@ export type ActionName =
   | 'unfocus_form'
   | 'take_screenshot';
 
+/**
+ * Standard outcome for every action: `stateChanged` tells the agent loop
+ * whether the page snapshot must be re-captured before the next decision.
+ */
 export interface ActionResult {
   success: boolean;
   message: string;
@@ -119,6 +177,8 @@ export interface ActionResult {
   data?: unknown;
 }
 
+// Valid ARIA role names accepted by Playwright's getByRole — metadata roles are
+// checked against this set so junk scraped values can't throw at locator-build time.
 const PLAYWRIGHT_ROLES = new Set([
   'alert',
   'alertdialog',
@@ -204,11 +264,14 @@ const PLAYWRIGHT_ROLES = new Set([
   'treeitem',
 ]);
 
+// Escapes backslashes and quotes so metadata-derived values (id/name/testId)
+// can be interpolated into CSS attribute selectors without breaking them.
 function cssAttr(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
 async function existingLocator(locator: any, method: string): Promise<{ locator: any; method: string } | null> {
+  // .first() avoids Playwright strict-mode errors when a strategy's selector matches several nodes.
   const first = locator.first();
   if (await first.count().catch(() => 0) > 0) {
     return { locator: first, method };
@@ -221,6 +284,11 @@ function metadataLabel(meta: RefMetadata | null, ref: string): string {
 }
 
 // ── Multi-Strategy Element Finder ───────────────────────────────
+/**
+ * Resolves a capture-time ref back to a live locator via 8 ordered strategies
+ * (data-ref first, nth-index last) so elements survive SPA rerenders. Throws if all fail.
+ * @param opts.resolveClickableAncestor re-target clicks at a clickable ancestor of the matched node.
+ */
 export async function findElement(
   page: Page,
   ref: string,
@@ -346,6 +414,8 @@ export async function findElement(
                 const id = current.id;
                 if (id) return `#${CSS.escape(id)}`;
                 
+                // Random per-call value so concurrent ancestor marks can't collide,
+                // and the unique attr gives Node a plain CSS selector back.
                 const attr = 'data-navis-click-ancestor';
                 const val = 'c-' + Math.random().toString(36).slice(2, 9);
                 current.setAttribute(attr, val);
@@ -377,6 +447,7 @@ async function scrollIntoViewForAction(locator: any): Promise<void> {
 }
 
 async function waitForFastPageSettle(page: Page): Promise<void> {
+  // domcontentloaded can hang indefinitely on live pages, so the race caps the settle wait at 180ms.
   await Promise.race([
     page.waitForLoadState('domcontentloaded', { timeout: 900 }).catch(() => null),
     new Promise(resolve => setTimeout(resolve, 180)),
@@ -384,9 +455,12 @@ async function waitForFastPageSettle(page: Page): Promise<void> {
 }
 
 function sleep(ms: number): Promise<void> {
+  // Single shared sleep helper — used to bound race windows in change-watching
+  // rather than sprinkling ad-hoc setTimeout promises across every action.
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// Prefixes scheme-less URLs: local hosts get http, everything else https.
 function normalizeNavUrl(raw: string): string {
   const trimmed = String(raw || '').trim();
   if (!trimmed) return '';
@@ -404,15 +478,22 @@ function normalizeNavUrl(raw: string): string {
   return `${isLocal ? 'http' : 'https'}://${trimmed}`;
 }
 
+// Returns the role only if it's a real Playwright role: invalid scraped role
+// strings must degrade to undefined rather than reaching getByRole and throwing.
 function toRole(value?: string): string | undefined {
   const role = String(value || '').toLowerCase().trim();
   return PLAYWRIGHT_ROLES.has(role) ? role : undefined;
 }
 
 function normalizeTypedText(value: unknown): string {
+  // CRLF → LF before comparison: Playwright's typed input reports \n even when
+  // the caller passed \r\n, so verification would otherwise always mismatch.
   return String(value ?? '').replace(/\r\n/g, '\n');
 }
 
+// Scores up to 30 matched nodes in-page (visibility, enabled state, viewport,
+// text match, size) and returns the best one, so ambiguous text targets resolve
+// to the most plausible element instead of Playwright's first match.
 async function existingVisibleLocator(
   locator: any,
   method: string,
@@ -521,6 +602,8 @@ type BrowserChangeWatcher = {
   domChanged: Promise<boolean>;
 };
 
+// Starts three concurrent change watchers (popup, URL, DOM) BEFORE acting, so
+// whichever page change fires first during the action can be observed.
 function startBrowserChangeWatch(page: Page, timeout = 2200): BrowserChangeWatcher {
   const beforeUrl = page.url();
   return {
@@ -536,6 +619,8 @@ function startBrowserChangeWatch(page: Page, timeout = 2200): BrowserChangeWatch
         resolve(changed);
       };
 
+      // Navis's own annotations/overlay mutate the DOM too — ignore those so
+      // marking elements never counts as a "page changed" signal.
       const isNavisMutation = (mutation: MutationRecord) => {
         const target = mutation.target as Element | null;
         if (!target || target.nodeType !== Node.ELEMENT_NODE) return false;
@@ -570,6 +655,8 @@ async function finishBrowserChangeWatch(
   step?: number,
   maxSteps?: number,
 ): Promise<{ changed: boolean; newPage?: Page; message?: string }> {
+  // First change signal wins; the 550ms sleep bounds the grace window so a
+  // no-op action doesn't stall the step waiting for a change that never comes.
   const outcome = await Promise.race([
     watcher.popup.then(popup => popup ? ({ type: 'popup' as const, popup }) : null),
     watcher.urlChanged.then(changed => changed ? ({ type: 'url' as const }) : null),
@@ -605,6 +692,9 @@ async function finishBrowserChangeWatch(
   return { changed: false };
 }
 
+// Finds an element a human would recognise by visible text/label: role-based,
+// label/placeholder/title, and text-filtered lookups in order, then a fuzzy
+// in-page DOM scan that marks the best match with a unique attribute.
 async function findHumanTarget(
   page: Page,
   target: string,
@@ -717,6 +807,9 @@ async function findHumanTarget(
   throw new Error(`Could not find browser target "${text || opts.href}"`);
 }
 
+// Last-resort click: replays the full pointer/mouse event sequence in-page for
+// SPAs that swallow Playwright's trusted mouse events but do react to
+// dispatched DOM events.
 async function dispatchDomClick(locator: any): Promise<boolean> {
   return Boolean(await locator.evaluate((el: HTMLElement) => {
     try {
@@ -762,6 +855,8 @@ async function dispatchDomClick(locator: any): Promise<boolean> {
   }).catch(() => false));
 }
 
+// Fallback click via raw mouse events at the element's center — works when
+// locator.click() is blocked by overlays but the coordinates are still valid.
 async function clickAtLocatorCenter(page: Page, locator: any): Promise<boolean> {
   const box = await locator.boundingBox().catch(() => null);
   if (!box) return false;
@@ -774,7 +869,12 @@ async function clickAtLocatorCenter(page: Page, locator: any): Promise<boolean> 
   return true;
 }
 
-async function installLocatorClickProbe(locator: any): Promise<string | null> {
+/**
+ * Installs a one-shot click listener on the element and returns the probe token,
+ * or null if the page context is gone. `performReliableClick` uses the probe to
+ * distinguish "click dispatched" from "click actually received by the page".
+ */
+export async function installLocatorClickProbe(locator: any): Promise<string | null> {
   const token = `navis-click-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const installed = await locator.evaluate((el: HTMLElement, probeToken: string) => {
     try {
@@ -792,14 +892,39 @@ async function installLocatorClickProbe(locator: any): Promise<string | null> {
   return installed ? token : null;
 }
 
-async function locatorClickProbeFired(locator: any, token: string | null): Promise<boolean> {
+/**
+ * Reads whether the probe's click listener fired. Returns true when the token
+ * is null/lookup fails so a missing probe never blocks the click path.
+ */
+export async function locatorClickProbeFired(locator: any, token: string | null): Promise<boolean> {
   if (!token) return true;
   return Boolean(await locator.evaluate((_el: HTMLElement, probeToken: string) => {
-    return Boolean((window as any).__navisElementClickProbe?.[probeToken]);
+    // AG-MEM-08: read AND delete in one round-trip so probe tokens never
+    // accumulate on window for the lifetime of the page.
+    const fired = Boolean((window as any).__navisElementClickProbe?.[probeToken]);
+    try { delete (window as any).__navisElementClickProbe?.[probeToken]; } catch {}
+    return fired;
   }, token).catch(() => true));
 }
 
-async function performReliableClick(page: Page, locator: any): Promise<{ ok: boolean; method: string }> {
+/** AG-MEM-08: best-effort removal of every probe token installed during one click. */
+async function cleanupProbeTokens(locator: any, tokens: (string | null)[]): Promise<void> {
+  const live = tokens.filter((t): t is string => Boolean(t));
+  if (live.length === 0) return;
+  await locator.evaluate((_el: HTMLElement, probeTokens: string[]) => {
+    const w = window as any;
+    for (const t of probeTokens) {
+      try { delete w.__navisElementClickProbe?.[t]; } catch {}
+    }
+  }, live).catch(() => {});
+}
+
+/**
+ * Clicks a locator via escalating methods (Playwright → force → mouse → DOM events),
+ * verifying each attempt with a click probe so a silently-swallowed click triggers
+ * the next fallback. Always cleans up its probe tokens (AG-MEM-08).
+ */
+export async function performReliableClick(page: Page, locator: any): Promise<{ ok: boolean; method: string }> {
   const attempts: Array<{ method: string; run: () => Promise<boolean> }> = [
     {
       method: 'playwright',
@@ -819,16 +944,29 @@ async function performReliableClick(page: Page, locator: any): Promise<{ ok: boo
     },
   ];
 
+  const tokens: (string | null)[] = [];
   for (const attempt of attempts) {
+    // A fresh probe per attempt: each method must prove its own click landed,
+    // so a previous attempt's listener can't satisfy the next one's check.
     const probe = await installLocatorClickProbe(locator);
+    tokens.push(probe);
     const ok = await attempt.run().catch(() => false);
-    if (ok && await locatorClickProbeFired(locator, probe)) return { ok: true, method: attempt.method };
+    if (ok && await locatorClickProbeFired(locator, probe)) {
+      // Early exit path must also clean up — earlier attempts left live tokens behind.
+      await cleanupProbeTokens(locator, tokens);
+      return { ok: true, method: attempt.method };
+    }
   }
 
+  // Failure path cleanup: every installed token is removed even when no attempt succeeded.
+  await cleanupProbeTokens(locator, tokens);
   return { ok: false, method: 'none' };
 }
 
 async function readLocatorEditableValue(locator: any): Promise<string | null> {
+  // Handles the three editable shapes uniformly — real input/textarea/select
+  // (`.value`), contenteditable hosts (`.textContent`), and non-standard
+  // elements that only expose a `value` attribute.
   const value = await locator.evaluate((el: HTMLElement) => {
     const node = el as HTMLInputElement & HTMLTextAreaElement & HTMLSelectElement;
     if ('value' in node) return String(node.value ?? '');
@@ -860,6 +998,9 @@ async function domSetEditableValue(locator: any, text: string): Promise<boolean>
       const protoSelect = window.HTMLSelectElement?.prototype;
       const node = el as HTMLInputElement & HTMLTextAreaElement & HTMLSelectElement;
 
+      // Call the prototype's native value setter directly: React/Vue override
+      // the property with their own setter that ignores programmatic writes, so
+      // plain `node.value = x` silently fails on controlled inputs.
       const setNativeValue = (target: any, value: string) => {
         const proto =
           target instanceof HTMLInputElement ? protoInput :
@@ -897,6 +1038,9 @@ async function domSetEditableValue(locator: any, text: string): Promise<boolean>
   }, text).catch(() => false));
 }
 
+// Types text via 3 escalating strategies (sequential press → keyboard clear
+// with triple-click fallback → direct DOM value), verifying the field's value
+// after each attempt so controlled React inputs are caught before falling through.
 async function performReliableType(page: Page, locator: any, text: string): Promise<{ ok: boolean; method: string; value?: string | null }> {
   const expected = normalizeTypedText(text);
   const verify = async (method: string) => {
@@ -1128,6 +1272,10 @@ async function validateElement(locator: any, action: string, logger?: NavisLogge
   }
 }
 
+/**
+ * Main dispatcher: routes an ActionName to its executor, converting any throw
+ * into a failed ActionResult so the agent loop always gets a structured outcome.
+ */
 export async function executeAction(
   actionName: ActionName,
   args: Record<string, unknown>,
@@ -1264,6 +1412,9 @@ async function executeGoToUrl(args: { url: string }, page: Page, logger?: NavisL
   invalidateElementSnapshotCache(page);
 
   // Use a more robust goto that doesn't hang on domcontentloaded
+  // Retry with `commit`: fires at the earliest navigation moment, so even a
+  // hung domcontentloaded can't strand the agent — worst case we land on a
+  // half-loaded page and let per-action settle logic handle it.
   try {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 12000 });
   } catch (err: any) {
@@ -1333,6 +1484,8 @@ async function executeSmartClick(
   step?: number,
   maxSteps?: number,
 ): Promise<ActionResult> {
+  // Priority chain by explicitness: url short-circuits (navigation makes every
+  // other targeting mode moot), then explicit ref, then coordinates, then fuzzy text.
   if (args.url) return executeGoToUrl({ url: args.url }, page, logger, step, maxSteps);
   if (args.ref) return executeClickElement({ ref: args.ref }, page, session, logger, step, maxSteps);
   if (args.x !== undefined && args.y !== undefined) return executeBrowserClick({ x: args.x, y: args.y }, page, session, logger, step, maxSteps);
@@ -1478,6 +1631,8 @@ async function executeScrollUp(page: Page, logger?: NavisLogger, step?: number, 
 }
 
 async function executeWait(args: { ms?: number }, logger?: NavisLogger, step?: number, maxSteps?: number): Promise<ActionResult> {
+  // Hard-capped at 3s: the agent loop has a fixed step budget, so an AI that
+  // asks for a 30s nap must not burn multiple decision steps on sleeping.
   const ms = Math.min(args.ms ?? 300, 3000);
   await new Promise((resolve) => setTimeout(resolve, ms));
   logger?.wait(step, maxSteps, `${ms}ms`);
@@ -1666,6 +1821,11 @@ async function executeCloseTab(page: Page, session: BrowserSession, logger?: Nav
   return { success: true, message: 'Tab closed', stateChanged: true };
 }
 
+/**
+ * Attempts to clear a captcha: AI visual solver first (if an aiClient is given),
+ * then slider heuristics and a container-restricted generic click pass (AG-SAF-08).
+ * Never throws — always returns a structured outcome for the agent loop.
+ */
 async function executeSolveCaptcha(page: Page, session: BrowserSession, logger?: NavisLogger, step?: number, maxSteps?: number, aiClient?: AIClient): Promise<ActionResult> {
   logger?.tabChange(step, maxSteps, 'solving captcha...');
   await session.setOverlayStatus('Solving captcha...');
@@ -1750,6 +1910,8 @@ async function executeSolveCaptcha(page: Page, session: BrowserSession, logger?:
       await page.mouse.down();
       await new Promise(resolve => setTimeout(resolve, 200));
 
+      // Sine-curve jitter + random offsets/delays imitate a human drag;
+      // constant-speed drags are trivially detected as automation.
       const slideDistance = 280;
       const dragSteps = 25;
       for (let i = 1; i <= dragSteps; i++) {
@@ -1769,57 +1931,83 @@ async function executeSolveCaptcha(page: Page, session: BrowserSession, logger?:
     }
   }
 
-  const solved = await page.evaluate(() => {
+  // AG-SAF-08: the generic programmatic captcha interaction is restricted to
+  // KNOWN captcha widget containers. Anything confirm-shaped outside a known
+  // widget is left alone; pages without a known widget skip generic
+  // interaction entirely.
+  const solveOutcome = await page.evaluate((widgetSelectors: string[]) => {
     const title = document.title.toLowerCase();
     const bodyText = document.body?.innerText?.toLowerCase() || '';
 
+    const isInsideKnownContainer = (el: Element): boolean => {
+      for (const sel of widgetSelectors) {
+        try {
+          if (el.closest(sel)) return true;
+        } catch { /* invalid selector — skip */ }
+      }
+      return false;
+    };
+
     if (title.includes('hcaptcha') || bodyText.includes('hcaptcha')) {
       const checkbox = document.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
-      if (checkbox) { checkbox.click(); return true; }
+      if (checkbox && isInsideKnownContainer(checkbox)) { checkbox.click(); return { clicked: true, matchedSelectors: [] }; }
       const label = document.querySelector('label[for]');
-      if (label) { (label as HTMLElement).click(); return true; }
+      if (label && isInsideKnownContainer(label)) { (label as HTMLElement).click(); return { clicked: true, matchedSelectors: [] }; }
     }
 
     if (title.includes('cloudflare') || bodyText.includes('cloudflare') || bodyText.includes('verifying')) {
       const checkbox = document.querySelector('#challenge-stage input[type="checkbox"]') as HTMLInputElement | null;
-      if (checkbox) { checkbox.click(); return true; }
+      if (checkbox && isInsideKnownContainer(checkbox)) { checkbox.click(); return { clicked: true, matchedSelectors: [] }; }
       const cfBtn = document.querySelector('.cf-solve input, .cf-button, .turnstile-input') as HTMLElement | null;
-      if (cfBtn) { cfBtn.click(); return true; }
+      if (cfBtn && isInsideKnownContainer(cfBtn)) { cfBtn.click(); return { clicked: true, matchedSelectors: [] }; }
     }
 
     if (bodyText.includes('confirm you') || bodyText.includes('verify you') || bodyText.includes('security check')) {
       const buttons = document.querySelectorAll('button, [role="button"], input[type="submit"]');
       for (const btn of Array.from(buttons)) {
         const el = btn as HTMLElement;
+        if (!isInsideKnownContainer(el)) continue;
         const text = el.textContent?.toLowerCase() || '';
         if (text.includes('confirm') || text.includes('verify') || text.includes('continue') || text.includes('proceed')) {
-          el.click(); return true;
+          el.click(); return { clicked: true, matchedSelectors: [] };
         }
       }
       const links = document.querySelectorAll('a');
       for (const link of Array.from(links)) {
         const el = link as HTMLElement;
+        if (!isInsideKnownContainer(el)) continue;
         const text = el.textContent?.toLowerCase() || '';
         if (text.includes('confirm') || text.includes('verify') || text.includes('continue')) {
-          el.click(); return true;
+          el.click(); return { clicked: true, matchedSelectors: [] };
         }
       }
     }
 
+    const matchedSelectors: string[] = [];
+    for (const sel of widgetSelectors) {
+      try {
+        if (document.querySelector(sel)) matchedSelectors.push(sel);
+      } catch { /* invalid selector — skip */ }
+    }
+
+    // Checkbox fallback: only checkboxes INSIDE a known captcha container.
     const checkboxes = document.querySelectorAll('input[type="checkbox"]');
     for (const cb of Array.from(checkboxes)) {
       const el = cb as HTMLInputElement;
-      if (!el.checked) { el.click(); return true; }
+      if (!el.checked && isInsideKnownContainer(el)) { el.click(); return { clicked: true, matchedSelectors }; }
     }
 
-    return false;
-  });
+    return { clicked: false, matchedSelectors };
+  }, KNOWN_CAPTCHA_WIDGET_SELECTORS);
 
-  if (solved) {
+  if (solveOutcome?.clicked) {
     await new Promise(resolve => setTimeout(resolve, 2000));
     invalidateElementSnapshotCache(page);
     logger?.tabChange(step, maxSteps, 'captcha solved, waiting for redirect...');
     return { success: true, message: 'Captcha solved, waiting for page to proceed', stateChanged: true };
+  }
+  if (!isKnownCaptchaPage(solveOutcome?.matchedSelectors)) {
+    console.log('[Navis] solve_captcha: no known captcha widget found - skipping generic interaction');
   }
 
   await new Promise(resolve => setTimeout(resolve, 1500));
@@ -1836,6 +2024,12 @@ async function executeSolveCaptcha(page: Page, session: BrowserSession, logger?:
   return { success: true, message: 'Page no longer shows captcha challenge', stateChanged: true };
 }
 
+/**
+ * Multimodal harness for the AI captcha solver: screenshots the page,
+ * gathers deduped candidate elements, asks the vision model to pick the
+ * interactive target, and executes the returned click/drag.
+ * Returns { attempted } so the caller can distinguish "model tried" from "no candidates".
+ */
 async function tryAiSolveCaptcha(
   page: Page,
   aiClient: AIClient,
@@ -1852,12 +2046,35 @@ async function tryAiSolveCaptcha(
 
     const candidates = await page.evaluate(() => {
       const list: any[] = [];
+      // Spatial bucket grid dedupe: many nested/overlapping elements produce
+      // near-identical bounding boxes; a 5px grid with ±1 bucket neighbor
+      // lookup removes them so the AI prompt isn't flooded with duplicates.
+      const buckets = new Map<string, Array<{ x: number; y: number; width: number }>>();
+      const bucketKey = (x: number, y: number) => `${Math.round(x / 5)},${Math.round(y / 5)}`;
+      const isNear = (a: { x: number; y: number; width: number }, x: number, y: number, width: number) =>
+        Math.abs(a.x - x) < 5 && Math.abs(a.y - y) < 5 && Math.abs(a.width - width) < 5;
       const elements = document.querySelectorAll('iframe, input, button, a, [role="button"], .slider-handle, .slider-button, [class*="slider"], [class*="handle"], [data-ref]');
       elements.forEach((el: any) => {
         const rect = el.getBoundingClientRect();
         if (rect.width > 3 && rect.height > 3 && rect.top >= 0 && rect.left >= 0) {
-          const isDup = list.some(item => Math.abs(item.x - rect.left) < 5 && Math.abs(item.y - rect.top) < 5 && Math.abs(item.width - rect.width) < 5);
+          const gx = Math.round(rect.left / 5);
+          const gy = Math.round(rect.top / 5);
+          let isDup = false;
+          // Check the 3x3 bucket neighborhood only — a wider scan would be O(n²)
+          // over every candidate; ±1 bucket (~±5px) already covers the isNear tolerance.
+          for (let dx = -1; dx <= 1 && !isDup; dx++) {
+            for (let dy = -1; dy <= 1 && !isDup; dy++) {
+              const bucket = buckets.get(`${gx + dx},${gy + dy}`);
+              if (bucket) {
+                for (const entry of bucket) {
+                  if (isNear(entry, rect.left, rect.top, rect.width)) { isDup = true; break; }
+                }
+              }
+            }
+          }
           if (!isDup) {
+            // Only after surviving dedupe is the element registered in a bucket,
+            // so later siblings overlapping it are correctly filtered out.
             list.push({
               ref: el.getAttribute('data-ref') || el.getAttribute('aria-ref') || '',
               tag: el.tagName,
@@ -1870,11 +2087,22 @@ async function tryAiSolveCaptcha(
               width: Math.round(rect.width),
               height: Math.round(rect.height)
             });
+            const key = bucketKey(rect.left, rect.top);
+            const bucket = buckets.get(key);
+            if (bucket) {
+              bucket.push({ x: rect.left, y: rect.top, width: rect.width });
+            } else {
+              buckets.set(key, [{ x: rect.left, y: rect.top, width: rect.width }]);
+            }
           }
         }
       });
+      // Bucket registration uses raw rect coords while bucketKey rounds — a rect
+      // straddling a grid line is still findable via its 3x3 neighbor scan.
       return list.slice(0, 50);
     }).catch(() => []);
+    // Cap candidates at 50 to keep the AI prompt (and token cost) bounded on
+    // element-dense pages; the dedupe pass above keeps the most useful 50.
 
     console.log(`[Navis AI Captcha] Found ${candidates.length} candidate elements for visual captcha solving.`);
 
@@ -1922,6 +2150,7 @@ Respond ONLY with a valid JSON object matching this schema:
     const rawContent = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
     console.log('[Navis AI Captcha] AI Response:', rawContent);
 
+    // Extract the outermost {...} block — models often wrap JSON in prose or fences.
     const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       console.warn('[Navis AI Captcha] No valid JSON found in AI response');
@@ -1940,6 +2169,8 @@ Respond ONLY with a valid JSON object matching this schema:
     let dragStartY = result.dragStartY;
 
     if (result.matchedCandidateIndex !== null && result.matchedCandidateIndex !== undefined) {
+      // Prefer candidate-derived center over the AI's raw clickX/clickY: DOM
+      // coordinates are more trustworthy than model-estimated pixel positions.
       const idx = Number(result.matchedCandidateIndex);
       if (idx >= 0 && idx < candidates.length) {
         const c = candidates[idx];
@@ -1961,6 +2192,8 @@ Respond ONLY with a valid JSON object matching this schema:
         console.warn('[Navis AI Captcha] Slider coordinates missing.');
         return { success: false, attempted: true };
       }
+      // Identical humanisation rationale as the programmatic solver above —
+      // detector models score trajectories, not endpoints.
       logger?.tabChange(step, maxSteps, 'AI dragging slider handle...');
       await page.mouse.move(dragStartX, dragStartY);
       await new Promise(r => setTimeout(r, 300));
@@ -1969,6 +2202,8 @@ Respond ONLY with a valid JSON object matching this schema:
 
       const slideDistance = result.dragDistance || 280;
       const dragSteps = 30;
+      // Sine jitter + random offsets + variable per-step delay mimic human-like
+      // drag trajectories; constant-speed drags are trivially flagged as bots.
       for (let i = 1; i <= dragSteps; i++) {
         const pct = i / dragSteps;
         const currentX = dragStartX + (slideDistance * pct);
@@ -2010,6 +2245,10 @@ function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max) + '…' : s;
 }
 
+/**
+ * Dispatches to VisionGroundingHybrid: screenshot + DOM grounding to click a
+ * natural-language target description. Gated by the hybridClick config flag.
+ */
 async function executeHybridClick(
   args: { targetDescription: string; aiClient: AIClient },
   page: Page,
@@ -2091,6 +2330,8 @@ async function executeBrowserClick(
   try {
     let { x, y } = args;
 
+    // Coordinates arrive on a 0-1000 normalized grid regardless of viewport
+    // size (vision models can't know the real resolution) — rescale here.
     // Scale coordinates from normalized 0-1000 to actual viewport dimensions
     const viewport = page.viewportSize();
     if (viewport) {
@@ -2129,14 +2370,24 @@ async function executeBrowserClick(
     let change = await finishBrowserChangeWatch(watcher, page, session, logger, step, maxSteps);
     let method = 'mouse';
 
-    const clickFired = await page.evaluate((token) => Boolean((window as any).__navisClickProbe?.[token]), clickProbe).catch(() => true);
+    // AG-MEM-08: read AND delete in one round-trip so probe tokens never
+    // accumulate on window for the lifetime of the page.
+    const clickFired = await page.evaluate((token: string) => {
+      const w = window as any;
+      const fired = Boolean(w.__navisClickProbe?.[token]);
+      try { delete w.__navisClickProbe?.[token]; } catch {}
+      return fired;
+    }, clickProbe).catch(() => true);
     if (!clickFired) {
       const fallbackWatcher = startBrowserChangeWatch(page);
       const domClicked = await dispatchDomClickAtPoint(page, x, y);
       const fallbackChange = await finishBrowserChangeWatch(fallbackWatcher, page, session, logger, step, maxSteps);
       if (domClicked) {
         method = 'dom-at-point';
-        change = fallbackChange.changed || fallbackChange.message ? fallbackChange : change;
+        // AG-CORR-18: parenthesize — `a || b ? x : y` parses as `(a || b) ? x : y`,
+        // so a fallback change with `changed` falsy but `message` set silently
+        // replaced a non-empty primary change with the empty fallback object.
+        change = fallbackChange && (fallbackChange.changed || fallbackChange.message) ? fallbackChange : change;
       }
     }
 
@@ -2346,16 +2597,23 @@ async function executeHoldElement(
       session.moveCursor(targetX, targetY).catch(() => {});
       await page.mouse.move(targetX, targetY);
       await page.mouse.down();
-      
+      // AG-CORR-06: record the held button so orchestrator turn-end/finally
+      // can release it even if we never reach a mouse.up() below.
+      session.heldMouseButtons.add('left');
+      sessionsWithHeldMouse.add(session);
+
       const holdTime = args.holdTimeMs || 0;
       if (holdTime > 0) {
         await new Promise(r => setTimeout(r, holdTime));
         await page.mouse.up();
+        // AG-CORR-06: released on schedule — drop the held tracking.
+        session.heldMouseButtons.delete('left');
+        if (session.heldMouseButtons.size === 0) sessionsWithHeldMouse.delete(session);
         invalidateElementSnapshotCache(page);
         logger?.elementClick(step, maxSteps, name, `hold_element (${holdTime}ms)`, { x: targetX, y: targetY });
         return { success: true, message: `Held ${name} for ${holdTime}ms`, stateChanged: true };
       }
-      
+
       invalidateElementSnapshotCache(page);
       logger?.elementClick(step, maxSteps, name, 'hold_element (down)', { x: targetX, y: targetY });
       return { success: true, message: `Holding ${name} down`, stateChanged: true };
@@ -2403,11 +2661,36 @@ async function executeDragElement(
       session.moveCursor(sx, sy).catch(() => {});
       await page.mouse.move(sx, sy);
       await page.mouse.down();
-      await new Promise(r => setTimeout(r, 40));
-      
-      session.moveCursor(tx, ty).catch(() => {});
-      await page.mouse.move(tx, ty, { steps: 10 });
-      await page.mouse.up();
+      // AG-CORR-06: if any intermediate move throws, the catch below leaves
+      // the button DOWN forever — track it so releaseAllHeldMice() can fix.
+      session.heldMouseButtons.add('left');
+      sessionsWithHeldMouse.add(session);
+      try {
+        await new Promise(r => setTimeout(r, 40));
+
+        session.moveCursor(tx, ty).catch(() => {});
+        // Interpolated moves: drag-to-sort libraries listen for intermediate
+        // mousemove events, which a single jump-to-target never fires.
+        await page.mouse.move(tx, ty, { steps: 10 });
+        await page.mouse.up();
+        // AG-CORR-06: released on schedule — drop the held tracking.
+        session.heldMouseButtons.delete('left');
+      } catch (dragErr) {
+        // AG-CORR-06: intermediate step failed — try to release immediately;
+        // if the page is dead the finally-block releaseAllHeldMice() retries.
+        try {
+          await page.mouse.up();
+          session.heldMouseButtons.delete('left');
+        } catch {
+          session.heldMouseButtons.add('left');
+          sessionsWithHeldMouse.add(session);
+        }
+        throw dragErr;
+      } finally {
+        // AG-CORR-06: released (or release attempted) — drop held tracking
+        // only when no button is still recorded for this session.
+        if (session.heldMouseButtons.size === 0) sessionsWithHeldMouse.delete(session);
+      }
       invalidateElementSnapshotCache(page);
 
       logger?.elementClick(step, maxSteps, sourceName, `drag to ${targetName}`, { x: tx, y: ty });

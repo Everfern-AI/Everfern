@@ -5,7 +5,7 @@
  * the Telegram Bot API via node-telegram-bot-api.
  */
 
-import TelegramBot from 'node-telegram-bot-api';
+import type TelegramBot from 'node-telegram-bot-api';
 import { promises as fs } from 'fs';
 import path from 'path';
 import {
@@ -19,6 +19,15 @@ import {
   PlatformAuthError,
   PlatformRateLimitError
 } from './platform-interface';
+
+type TelegramBotModule = typeof import('node-telegram-bot-api');
+let telegramBotModule: TelegramBotModule | null = null;
+function getTelegramBotModule(): TelegramBotModule {
+  if (!telegramBotModule) {
+    telegramBotModule = require('node-telegram-bot-api') as TelegramBotModule;
+  }
+  return telegramBotModule;
+}
 
 /**
  * Telegram-specific configuration
@@ -74,7 +83,8 @@ export class TelegramPlatform extends MessagePlatform {
     try {
       // Create bot instance with polling disabled initially
       // We'll explicitly delete webhook and start polling later
-      this.bot = new TelegramBot(telegramConfig.config.botToken, {
+      const TelegramBotModule = getTelegramBotModule();
+      this.bot = new TelegramBotModule(telegramConfig.config.botToken, {
         polling: false
       });
 

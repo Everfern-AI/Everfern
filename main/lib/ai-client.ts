@@ -26,6 +26,77 @@ export function normalizeLocalUrl(url?: string): string | undefined {
     .replace(/^http:\/\/localhost(:\d+)?/i, 'http://127.0.0.1$1');
 }
 
+// ── Credential Redaction for Logs (AI-CORR-04) ─────────────────────
+
+/**
+ * AI-CORR-04: Redact a credential header value for logging.
+ * Returns ONLY a scheme hint plus the last 4 characters — never a usable
+ * token fragment. "Bearer sk-abc123xyz789" → "Bearer …z789".
+ */
+export function redactCredentialForLog(value: string | undefined | null): string {
+  if (typeof value !== 'string' || value.length === 0) return '(empty)';
+  // AI-CORR-04: the scheme allowlist is display-only — unrecognized schemes
+  // still collapse to the last-4 tail, so it can never weaken redaction.
+  const schemeMatch = value.match(/^(Bearer|Basic|ApiKey)\s+/i);
+  const scheme = schemeMatch ? `${schemeMatch[1]} ` : '';
+  const tail = value.slice(-4);
+  return `${scheme}…${tail}`;
+}
+
+/**
+ * AI-CORR-04: copy a headers record for logging with credential values
+ * (Authorization, x-api-key, x-goog-api-key) collapsed to scheme + last4.
+ * Returns a shallow copy — the original stays intact for the actual request.
+ */
+function redactHeadersForLog(headers: Record<string, string>): Record<string, string> {
+  const out = { ...headers };
+  for (const key of Object.keys(out)) {
+    const lower = key.toLowerCase();
+    if (lower === 'authorization' || lower === 'x-api-key' || lower === 'x-goog-api-key') {
+      out[key] = redactCredentialForLog(out[key]);
+    }
+  }
+  return out;
+}
+
+// ── SSE Line Parsing (AI-CORR-01) ───────────────────────────────────
+
+/**
+ * AI-CORR-01: Parse one raw SSE data line into a JSON object.
+ * Returns `undefined` for blank lines, non-data lines, [DONE] sentinels and
+ * malformed JSON. Callers count malformed lines via the client's
+ * sseParseErrors counter (rate-limited warn logging lives in
+ * AIClient._noteSSEParseError).
+ */
+export function parseSSELine(line: string): Record<string, any> | undefined {
+  const t = line.trim();
+  if (!t || !t.startsWith('data: ')) return undefined;
+  const payload = t.slice(6);
+  if (payload === '[DONE]') return undefined;
+  try {
+    const parsed = JSON.parse(payload);
+    return parsed && typeof parsed === 'object' ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * AI-CORR-01: parse one newline-delimited JSON stream line (Ollama native).
+ * Returns undefined for blank or malformed lines — callers count malformed
+ * lines via AIClient._noteSSEParseError.
+ */
+export function parseNDJSONLine(line: string): Record<string, any> | undefined {
+  const t = line.trim();
+  if (!t) return undefined;
+  try {
+    const parsed = JSON.parse(t);
+    return parsed && typeof parsed === 'object' ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 // ── Safe JSON Parsing ───────────────────────────────────────────────
 
 /**
@@ -34,6 +105,19 @@ export function normalizeLocalUrl(url?: string): string | undefined {
  * - Truncated JSON
  * - Single quotes instead of double quotes
  */
+/**
+ * XI.C: classify provider errors at the AIClient boundary.
+ * OVERFLOW = HTTP 400 whose body matches context-window exhaustion patterns.
+ * This rewrites the surfaced message only — no retry behavior change
+ * (_fetchWithRetry never retries 4xx except 429; OVERFLOW stays non-retryable).
+ */
+export function classifyProviderError(status: number, body: string): string | null {
+  if (status === 400 && /context length|context window|context_length|maximum context|too long|too many tokens|input too long|exceeds?.*(?:context|token)|token limit|prompt is too long/i.test(body)) {
+    return `[OVERFLOW] Context window exceeded (HTTP 400). The conversation is too long for this model — compact or start a new session. Original: ${body.slice(0, 300)}`;
+  }
+  return null;
+}
+
 function safeParseJSON(input: string | Record<string, any>, fallback: any = {}): any {
   if (typeof input !== 'string') return input || fallback;
   if (!input.trim()) return fallback;
@@ -66,23 +150,124 @@ function safeParseJSON(input: string | Record<string, any>, fallback: any = {}):
   }
 }
 
+// ── LP-05: Per-Attempt Fetch Timeouts ────────────────────────────────
+
+// LP-05: local daemons get 15s per non-stream attempt (was 300s, which turned a
+// dead local server into ~47s of dead air ×7 prompt-processings). Cloud keeps 60s.
+const LOCAL_FETCH_TIMEOUT_MS = 15000;
+const CLOUD_FETCH_TIMEOUT_MS = 60000;
+
+// ── LP-12: Prompt Token Estimation (deterministic, dependency-free) ──
+
+/**
+ * LP-12: deterministic char/4 token estimate over chat messages. Counts only
+ * text content (string or text parts of content arrays) plus role tags —
+ * image payloads are excluded so base64 blobs never inflate the estimate.
+ */
+export function estimatePromptTokens(messages: any[] | undefined | null): number {
+  let chars = 0;
+  for (const m of messages ?? []) {
+    if (!m || typeof m !== 'object') continue;
+    if (typeof m.role === 'string') chars += m.role.length;
+    const c = (m as any).content;
+    if (typeof c === 'string') {
+      chars += c.length;
+    } else if (Array.isArray(c)) {
+      for (const part of c) {
+        if (part && typeof part === 'object' && typeof (part as any).text === 'string') {
+          chars += (part as any).text.length;
+        }
+      }
+    }
+  }
+  return Math.ceil(chars / 4);
+}
+
+// ── LP-04: Prompt-Embedded Tool Calls (tools-incapable local models) ─
+
+/** LP-04: process-lifetime cache of local per-model tools-capability probes (key `${baseUrl}|${model}`). */
+const localToolsCapabilityCache = new Map<string, boolean>();
+
+/**
+ * LP-04: extract a prompt-embedded tool call from model output — the fenced
+ * (or bare) {"tool":"name","arguments":{...}} JSON contract injected when a
+ * local model lacks native tool support. Returns null when the model answered
+ * with prose, chose "none", or emitted unparseable JSON (callers then keep
+ * the existing nudge behavior for that case).
+ */
+export function extractEmbeddedToolCall(content: string): { name: string; arguments: Record<string, unknown> } | null {
+  if (typeof content !== 'string' || !content.trim()) return null;
+  // Strip <think> blocks so reasoning prose never masquerades as the answer.
+  const clean = content.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<\/?think>/gi, '');
+  const candidates: string[] = [];
+  const fenceRe = /```(?:json|JSON)?\s*([\s\S]*?)```/g;
+  let m: RegExpExecArray | null;
+  while ((m = fenceRe.exec(clean)) !== null) candidates.push(m[1]);
+  candidates.push(clean); // unfenced fallback
+  for (const raw of candidates) {
+    const t = raw.trim();
+    if (!t) continue;
+    let obj: any;
+    try {
+      obj = JSON.parse(t);
+    } catch {
+      // Trailing prose around a JSON object: extract the first balanced {...}.
+      const first = t.indexOf('{');
+      const last = t.lastIndexOf('}');
+      if (first === -1 || last <= first) continue;
+      try {
+        obj = JSON.parse(t.slice(first, last + 1));
+      } catch {
+        continue;
+      }
+    }
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) continue;
+    const name = typeof obj.tool === 'string' ? obj.tool.trim() : '';
+    // LP-04: explicit "none" = model decided no tool is needed.
+    if (!name || name.toLowerCase() === 'none') return null;
+    if (typeof obj.arguments !== 'object' || obj.arguments === null || Array.isArray(obj.arguments)) continue;
+    return { name, arguments: obj.arguments as Record<string, unknown> };
+  }
+  return null;
+}
+
 // ── Client Pool for Connection Reuse ────────────────────────────────
 
+/**
+ * One pooled client plus its checkout bookkeeping. `inUse` tracks checkout
+ * so get() never hands a client to two callers and cleanup() skips it.
+ */
 interface ClientPoolEntry {
   client: AIClient;
   lastUsed: number;
   inUse: boolean;
 }
 
+/**
+ * Per-key client pool (provider/baseUrl/model) reusing warm connections so
+ * requests skip repeated TLS/connection setup. Bounded by maxPoolSize, with
+ * untracked one-off clients for overflow (see get()).
+ */
 class AIClientPool {
   private pool = new Map<string, ClientPoolEntry[]>();
+  // Overflow beyond this cap gets untracked one-off clients (see get()), so
+  // a concurrency burst can't permanently grow the pool's open connections.
   private maxPoolSize = 5;
   private maxIdleTime = 300000; // 5 minutes
 
+  // Key omits apiKey: clients are reused across credential changes for the
+  // same provider/baseUrl/model — the API key is set per-request anyway.
+  // Volatile per-request knobs (temperature/maxTokens/etc.) are likewise
+  // excluded — they ride on each call, so keying on them would fragment the pool.
   private getPoolKey(config: AIClientConfig): string {
     return `${config.provider}:${config.baseUrl}:${config.model}`;
   }
 
+  /**
+   * Acquire a pooled client for this config, marking it in-use. Creates a new
+   * pooled entry while under maxPoolSize; beyond that returns an unpooled
+   * temporary client (release() on it is a harmless no-op).
+   */
   get(config: AIClientConfig): AIClient {
     const key = this.getPoolKey(config);
     const entries = this.pool.get(key) || [];
@@ -109,9 +294,16 @@ class AIClientPool {
     }
 
     // Pool full, create temporary client
+    // Never block on exhaustion: proceeding with an untracked one-off client
+    // beats queueing — pooling is a perf optimization, not a correctness gate.
     return new AIClient(config);
   }
 
+  /**
+   * Mark a checked-out client available again and stamp lastUsed so idle
+   * eviction restarts its clock. Unknown clients (unpooled one-offs) are
+   * silently ignored.
+   */
   release(client: AIClient, config: AIClientConfig): void {
     const key = this.getPoolKey(config);
     const entries = this.pool.get(key) || [];
@@ -122,6 +314,10 @@ class AIClientPool {
     }
   }
 
+  /**
+   * Drop pool entries that are idle beyond maxIdleTime. Runs on a 2-minute
+   * interval (see globalClientPool below) so idle sockets don't linger.
+   */
   cleanup(): void {
     const now = Date.now();
     for (const [key, entries] of this.pool.entries()) {
@@ -144,8 +340,10 @@ setInterval(() => globalClientPool.cleanup(), 120000);
 
 // ── Types ────────────────────────────────────────────────────────────
 
+/** Supported AI provider IDs. See DEFAULT_URLS/DEFAULT_MODELS for per-provider defaults. */
 export type ProviderType = 'openai' | 'anthropic' | 'deepseek' | 'minimax' | 'ollama' | 'ollama-cloud' | 'lmstudio' | 'everfern' | 'gemini' | 'nvidia' | 'openrouter';
 
+/** Constructor config for AIClient. apiKey/baseUrl/model default per provider; per-request knobs ride on each chat/stream call. */
 export interface AIClientConfig {
   provider: ProviderType;
   apiKey?: string;
@@ -166,6 +364,7 @@ export interface AIClientConfig {
   };
 }
 
+/** One message in a chat conversation: role plus text or image content parts. */
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string | Array<
@@ -184,6 +383,7 @@ export interface ChatMessage {
   missionTimeline?: any;
 }
 
+/** Parameters for chat()/streamChat(): messages, generation knobs, tooling, and stream callbacks. */
 export interface ChatRequest {
   messages: ChatMessage[];
   model?: string;
@@ -208,6 +408,7 @@ export interface ChatRequest {
   agent?: string;
 }
 
+/** Result of a completed (non-streaming) chat call. */
 export interface ChatResponse {
   id: string;
   content: string | Array<
@@ -225,6 +426,7 @@ export interface ChatResponse {
   safetyDecision?: 'NOMINAL' | 'OFF-NOMINAL';
 }
 
+/** One delta yielded by streamChat(): text delta, tool-call deltas, or the final done sentinel. */
 export interface StreamChunk {
   id: string;
   delta: string;
@@ -233,7 +435,8 @@ export interface StreamChunk {
   toolCalls?: any[]; // Incremental tool call deltas
 }
 
-export interface TokenUsage {
+/** Token accounting and (optional) per-field cost breakdown for one request. */
+interface TokenUsage {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
@@ -244,12 +447,14 @@ export interface TokenUsage {
   totalCost?: number;
 }
 
+/** Tool advertised to the model; `parameters` is a JSON Schema object. */
 export interface ToolDefinition {
   name: string;
   description: string;
   parameters: Record<string, unknown>; // JSON Schema
 }
 
+/** A tool invocation requested by the model; `id` links the follow-up role:'tool' message. */
 export interface ToolCall {
   id: string;
   name: string;
@@ -258,6 +463,7 @@ export interface ToolCall {
 
 // ── Provider Base URLs ───────────────────────────────────────────────
 
+/** Default API base URL per provider (cloud endpoints or local daemon ports). */
 const DEFAULT_URLS: Record<ProviderType, string> = {
   openai: 'https://api.openai.com/v1',
   anthropic: 'https://api.anthropic.com',
@@ -272,6 +478,7 @@ const DEFAULT_URLS: Record<ProviderType, string> = {
   openrouter: 'https://openrouter.ai/api/v1',
 };
 
+/** Default model ID per provider, used when config.model is omitted. */
 const DEFAULT_MODELS: Record<ProviderType, string> = {
   openai: 'gpt-5.5',
   anthropic: 'claude-sonnet-4-6',
@@ -286,6 +493,7 @@ const DEFAULT_MODELS: Record<ProviderType, string> = {
   openrouter: 'openai/gpt-5.2',
 };
 
+/** Browser/computer-use tool descriptors injected by _maybeInjectComputerUseTools for Gemini/GPT-5 pass-through models on EverFern/OpenRouter. */
 const GEMINI_COMPUTER_USE_TOOLS = [
   {
     name: "open_web_browser",
@@ -410,6 +618,12 @@ const GEMINI_COMPUTER_USE_TOOLS = [
 
 // ── AIClient ─────────────────────────────────────────────────────────
 
+/**
+ * Convert OpenAI-style tool definitions to Ollama-native format, sanitizing
+ * each JSON Schema (drops $schema/$id/examples, hoists boolean `required`,
+ * collapses union types) so Ollama's strict parser accepts it. Exported for
+ * tests.
+ */
 export function _formatOllamaTools(tools: any[]): any[] {
     const sanitizeSchemaNode = (node: any, depth: number = 0): any => {
       if (!node || typeof node !== 'object' || Array.isArray(node)) {
@@ -515,9 +729,23 @@ export function _formatOllamaTools(tools: any[]): any[] {
     });
   }
 
+/**
+ * Unified multi-provider AI client: one chat()/streamChat() interface over
+ * OpenAI-compatible, Ollama-native, Anthropic Messages, and Gemini APIs.
+ * Construct directly or use the pooled factory exports below.
+ */
 export class AIClient {
   private config: Required<Omit<AIClientConfig, 'vlm' | 'customModel' | 'ollamaNumCtx'>> & { vlm?: AIClientConfig['vlm']; customModel?: string; ollamaNumCtx?: number };
   private openaiClient?: OpenAI; // For NVIDIA NIM and DeepSeek
+
+  /** AI-CORR-01: total malformed SSE lines skipped across this client's lifetime. */
+  private sseParseErrors = 0;
+
+  /** LP-07: set once the local default-model sentinel has been resolved (or ruled out). */
+  private localModelResolved = false;
+
+  /** LP-07: process-lifetime cache of resolved local default model ids, keyed by baseUrl. */
+  private static resolvedLocalDefaultModels = new Map<string, string>();
 
   constructor(config: AIClientConfig) {
     let finalApiKey = (config.apiKey ?? '').trim();
@@ -552,13 +780,25 @@ export class AIClient {
       ? 'qwen3-vl:235b-cloud'
       : config.model;
 
-    console.log(`[AIClient] Constructor: provider=${config.provider}, model=${normalizedModel}, baseUrl=${finalBaseUrl}, apiKey=${finalApiKey ? '***' : '(empty)'}`);
+    // LP-07: local model ids can arrive prefixed ('lmstudio:x'/'ollama:x') from
+    // persisted settings or provider adapters; cloud ids never carry these
+    // prefixes, so stripping is gated on the local providers only.
+    let finalModel = normalizedModel;
+    if (config.provider === 'ollama' || config.provider === 'lmstudio') {
+      const stripped = finalModel?.replace(/^(ollama|lmstudio):/i, '');
+      if (stripped !== finalModel) {
+        console.log(`[AIClient] LP-07: stripped model-id prefix: '${finalModel}' → '${stripped}'`);
+        finalModel = stripped;
+      }
+    }
+
+    console.log(`[AIClient] Constructor: provider=${config.provider}, model=${finalModel}, baseUrl=${finalBaseUrl}, apiKey=${finalApiKey ? '***' : '(empty)'}`);
 
     this.config = {
       provider: config.provider,
       apiKey: finalApiKey,
       baseUrl: finalBaseUrl,
-      model: normalizedModel ?? DEFAULT_MODELS[config.provider],
+      model: finalModel ?? DEFAULT_MODELS[config.provider],
       customModel: config.customModel,
       temperature: config.temperature ?? (config.provider === 'nvidia' ? 0.1 : 0.7),
       maxTokens: config.maxTokens ?? (config.provider === 'nvidia' ? 16383 : config.provider === 'openrouter' ? 8192 : 4096),
@@ -581,7 +821,11 @@ export class AIClient {
         apiKey: this.config.apiKey || 'dummy-key',
         baseURL: normalizeLocalUrl(this.config.baseUrl),
         timeout: 120000,
-        maxRetries: 3,
+        // Single retry layer: the app-level retryWithBackoff/_fetchWithRetry
+        // (capped at 3, Retry-After aware) owns all retries. SDK maxRetries
+        // must stay 0 — any SDK-level retries stack multiplicatively with the
+        // app layer (audit XI.C: 3x3 = up to 12 attempts per request).
+        maxRetries: 0,
         dangerouslyAllowBrowser: true,
         defaultHeaders: headers,
         // Disable keep-alive to avoid Node 22 undici "invalid keep-alive header" errors
@@ -611,7 +855,8 @@ export class AIClient {
 
           console.log(`[AIClient Fetch] Request headers: ${Object.keys(plainHeaders).join(', ')}`);
           if (plainHeaders['Authorization']) {
-            console.log(`[AIClient Fetch] Authorization header value starts with: ${plainHeaders['Authorization'].slice(0, 18)}... (total length: ${plainHeaders['Authorization'].length})`);
+            // AI-CORR-04: log only "Bearer …last4" — never the first 18 chars of the token.
+            console.log(`[AIClient Fetch] Authorization header present: ${redactCredentialForLog(plainHeaders['Authorization'])} (total length: ${plainHeaders['Authorization'].length})`);
           } else {
             console.warn('[AIClient Fetch] WARNING: No Authorization header found!');
           }
@@ -651,6 +896,26 @@ export class AIClient {
     return this.config.apiKey ?? '';
   }
 
+  /**
+   * AI-CORR-01: number of malformed SSE lines skipped by this client —
+   * exposed for health telemetry.
+   */
+  get sseParseErrorCount(): number {
+    return this.sseParseErrors;
+  }
+
+  /**
+   * AI-CORR-01: record a malformed SSE line — increments the counter and
+   * rate-limits console.warn to at most one log per 10 errors so a burst of
+   * garbage never spams the log. The offending line is truncated to 120 chars.
+   */
+  private _noteSSEParseError(rawLine: string): void {
+    this.sseParseErrors++;
+    if (this.sseParseErrors === 1 || this.sseParseErrors % 10 === 0) {
+      console.warn('[AIClient] SSE parse error (line skipped):', rawLine.slice(0, 120));
+    }
+  }
+
   setModel(model: string) {
     this.config.model = model;
   }
@@ -666,6 +931,12 @@ export class AIClient {
     };
   }
 
+  /**
+   * Whether this client's model can accept image content. False when a
+   * decoupled vlm is configured (vision is handled by that VLM instead);
+   * otherwise true for known vision-capable providers or model names
+   * matching vision keywords (vision, -vl, llava, gpt, claude, gemini, ...).
+   */
   supportsVision(): boolean {
     if (this.config.vlm) return false;
     if (this.config.provider === 'everfern') return true;
@@ -679,6 +950,12 @@ export class AIClient {
     return false;
   }
 
+  /**
+   * Whether requests target a local daemon: ollama/lmstudio providers, a
+   * loopback/mDNS baseUrl (localhost, 127.0.0.1, ::1, .local, .lan), or an
+   * RFC1918 private subnet. Drives the longer local timeout and the
+   * fail-fast/no-retry behavior in _fetchWithRetry and list-model calls.
+   */
   isLocal(): boolean {
     const provider = this.config.provider;
     if (provider === 'ollama' || provider === 'lmstudio') {
@@ -797,9 +1074,23 @@ export class AIClient {
     }
   }
 
+  /**
+   * Unified non-streaming chat entry point. Routes per provider — EverFern
+   * Cloud pass-through/vision paths, OpenAI-SDK providers (NVIDIA NIM,
+   * DeepSeek, OpenRouter, MiniMax, Ollama Cloud), Anthropic Messages,
+   * Ollama native, and Gemini computer-use — defaulting to the
+   * OpenAI-compatible HTTP path.
+   */
   async chat(request: ChatRequest): Promise<ChatResponse> {
     console.log(`[AIClient] chat() called: provider=${this.config.provider}, model=${request.model ?? this.config.model}, hasOnStreamChunk=${!!request.onStreamChunk}, messages=${request.messages.length}`);
     this.assertProviderAuthReady();
+    // LP-07: resolve the local default-model sentinel centrally before the
+    // first send; a per-request 'local-model' (or missing) id falls back to the
+    // resolved config model so the sentinel never reaches a strict server.
+    await this._ensureLocalModelResolved();
+    if (request.model === 'local-model' || request.model === '' || request.model === undefined) {
+      request = { ...request, model: this.config.model };
+    }
     // For EverFern Cloud, route vision requests using direct HTTP (not OpenAI SDK)
     if (this.config.provider === 'everfern') {
       const modelName = request.model ?? this.config.model;
@@ -826,6 +1117,13 @@ export class AIClient {
             // If empty content returned, treat as a soft failure and fall back
             const content = typeof result.content === 'string' ? result.content : '';
             if (!content.trim() && result.finishReason !== 'tool_calls') {
+              // AI-CORR-01: zero-bytes-delivered guard — if any chunks were
+              // already emitted via onStreamChunk, re-sending would duplicate
+              // the reply. Propagate the result as-is instead of failing over.
+              if (producedContent && request.onStreamChunk) {
+                console.warn(`[EverFern Gemini] Primary model ${modelName} returned empty content after chunks were already delivered — not falling back to avoid duplicated reply`);
+                return result;
+              }
               console.warn(`[EverFern Gemini] Primary model ${modelName} returned empty content — falling back to ${FALLBACK_MODEL}`);
               const fallbackRequest = { ...request, model: FALLBACK_MODEL };
               return this._openAISDKChat(fallbackRequest);
@@ -1017,8 +1315,19 @@ export class AIClient {
     }
   }
 
+  /**
+   * Streaming variant of chat(): async-generates StreamChunk deltas (text,
+   * tool-call fragments, or the final done sentinel) as they arrive, with
+   * the same per-provider routing as chat().
+   */
   async *streamChat(request: ChatRequest): AsyncGenerator<StreamChunk, void, unknown> {
     this.assertProviderAuthReady();
+    // LP-07: resolve the local default-model sentinel before the first send
+    // (mirrors chat()); per-request 'local-model' falls back to the resolved id.
+    await this._ensureLocalModelResolved();
+    if (request.model === 'local-model' || request.model === '' || request.model === undefined) {
+      request = { ...request, model: this.config.model };
+    }
     const modelName = request.model ?? this.config.model;
     const isGeminiModel = modelName.toLowerCase().includes('gemini');
 
@@ -1469,6 +1778,9 @@ export class AIClient {
     }
 
     // Helper function for retrying with exponential backoff
+    // Retry policy: 5xx/timeout/reset errors plus (opt-in) SDK JSON parse
+    // failures — a truncated non-stream response can parse as JSON garbage,
+    // hence retryOnJsonError for the non-streaming path.
     const retryWithBackoff = async <T>(
       fn: () => Promise<T>,
       maxRetries = 3,
@@ -1581,6 +1893,8 @@ export class AIClient {
         const stream = await retryWithBackoff(() =>
           this.openaiClient!.chat.completions.create({
             ...options,
+            // AI-CORR-02: thread the caller's abort signal into the SDK request
+            ...(req.abortSignal && { signal: req.abortSignal }),
             stream: true,
             stream_options: { include_usage: true }
           }) as unknown as Promise<AsyncIterable<any>>
@@ -1595,6 +1909,11 @@ export class AIClient {
         let finalUsage: any = undefined;
 
         for await (const chunk of stream) {
+          // AI-CORR-02: honor caller abort mid-stream — exit cleanly with an
+          // AbortError-named rejection so runner cleanup is uniform.
+          if (req.abortSignal?.aborted) {
+            throw new DOMException('Stream aborted by user', 'AbortError');
+          }
           if (chunk.id) responseId = chunk.id;
           if (chunk.usage) {
             finalUsage = chunk.usage;
@@ -1675,7 +1994,11 @@ export class AIClient {
       } else {
         // Non-streaming mode — retry on JSON parse errors too
         const response = await retryWithBackoff(() =>
-          this.openaiClient!.chat.completions.create(options) as Promise<any>,
+          this.openaiClient!.chat.completions.create({
+            ...options,
+            // AI-CORR-02: thread the caller's abort signal into the SDK request
+            ...(req.abortSignal && { signal: req.abortSignal }),
+          }) as Promise<any>,
           3, 1000, true // true = retry on JSON parse errors
         );
         const choice = response.choices?.[0];
@@ -1786,6 +2109,8 @@ export class AIClient {
 
     try {
       // Helper function for retrying with exponential backoff
+      // Only the create() call is wrapped — once chunks are yielded, a retry
+      // can't replay the partial output already handed to the consumer.
       const retryWithBackoff = async <T>(
         fn: () => Promise<T>,
         maxRetries = 3,
@@ -1812,12 +2137,21 @@ export class AIClient {
       };
 
       const stream = await retryWithBackoff(() =>
-        this.openaiClient!.chat.completions.create(options) as unknown as Promise<AsyncIterable<any>>
+        this.openaiClient!.chat.completions.create({
+          ...options,
+          // AI-CORR-02: thread the caller's abort signal into the SDK request
+          ...(req.abortSignal && { signal: req.abortSignal }),
+        }) as unknown as Promise<AsyncIterable<any>>
       );
       let id = `${this.config.provider}-${Date.now()}`;
       const thinkState = { inThinking: false };
 
       for await (const chunk of stream) {
+        // AI-CORR-02: honor caller abort mid-stream — exit cleanly with an
+        // AbortError-named rejection so runner cleanup is uniform.
+        if (req.abortSignal?.aborted) {
+          throw new DOMException('Stream aborted by user', 'AbortError');
+        }
         if (chunk.id) id = chunk.id;
         const delta = chunk.choices?.[0]?.delta;
 
@@ -1866,6 +2200,149 @@ export class AIClient {
     }
   }
 
+  /**
+   * LP-07: resolve the 'local-model' sentinel (or an empty model id) to the
+   * first model id the local daemon reports, before the first send. Cached
+   * per baseUrl for the process lifetime so repeated clients skip re-probing.
+   * If the daemon reports no models, fails with the actionable LP-02-style
+   * error instead of sending the literal 'local-model' to strict servers.
+   * No-op for non-local providers and already-concrete model ids.
+   */
+  private async _ensureLocalModelResolved(): Promise<void> {
+    if (this.localModelResolved) return;
+    if (this.config.provider !== 'lmstudio' && this.config.provider !== 'ollama') {
+      this.localModelResolved = true;
+      return;
+    }
+    const current = this.config.model ?? '';
+    if (current && current !== 'local-model') {
+      this.localModelResolved = true;
+      return;
+    }
+    // LP-07: mark resolved up-front so a throwing listModels probe can never
+    // re-enter (listModels does not call chat, but the guard is cheap).
+    this.localModelResolved = true;
+
+    const providerLabel = this.config.provider === 'ollama' ? 'Ollama' : 'LM Studio';
+    const cached = AIClient.resolvedLocalDefaultModels.get(this.config.baseUrl);
+    if (cached) {
+      this.config.model = cached;
+      return;
+    }
+    try {
+      const models = await this.listModels();
+      if (models.length > 0) {
+        AIClient.resolvedLocalDefaultModels.set(this.config.baseUrl, models[0]);
+        this.config.model = models[0];
+        console.log(`[AIClient] LP-07: resolved local default model to '${models[0]}' (was '${current || '(empty)'}')`);
+        return;
+      }
+      // LP-07: empty model list — surface an actionable error, never send the
+      // 'local-model' sentinel verbatim (rejected unless the daemon JIT-loads).
+      throw new Error(
+        `${providerLabel} reports no models loaded at ${this.config.baseUrl}. Load a model in ${providerLabel} (or pick one in Settings → Local AI), then retry.`
+      );
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('reports no models loaded')) throw err;
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `${providerLabel} could not list models at ${this.config.baseUrl} (${detail}). Start the server or fix Settings → Base URL, then retry.`
+      );
+    }
+  }
+
+  /**
+   * LP-04: cached per-model tools-capability probe for local OpenAI-compat
+   * servers (LM Studio /v1/models exposes `capabilities.tools`). Absent
+   * capabilities or a failed probe are treated as supported (= current
+   * behavior, no regression); only an explicit false/0 is definitive and
+   * cached for the process lifetime. Ollama native is skipped (/api/tags
+   * exposes no capabilities field).
+   */
+  private async _localModelSupportsTools(model: string): Promise<boolean> {
+    const key = `${this.config.baseUrl}|${model}`;
+    const cached = localToolsCapabilityCache.get(key);
+    if (cached !== undefined) return cached;
+    try {
+      const res = await this._fetchWithRetry(
+        `${normalizeLocalUrl(this.config.baseUrl) ?? this.config.baseUrl}/models`,
+        { headers: this._oaiHeaders },
+        0
+      );
+      if (!res.ok) return true; // inconclusive → current behavior (tools + nudges)
+      const data: any = await res.json();
+      const rawModels = Array.isArray(data?.data) ? data.data : Array.isArray(data?.models) ? data.models : [];
+      const entry = rawModels.find((mm: any) => mm?.id === model || mm?.name === model);
+      const caps = entry?.capabilities;
+      if (!caps || typeof caps !== 'object') return true; // absent → assume supported, uncached (re-probe later)
+      const toolsCap = caps.tools;
+      if (toolsCap !== false && toolsCap !== 0) return true; // definitive support — cache below
+      const supported = !(toolsCap === false || toolsCap === 0);
+      localToolsCapabilityCache.set(key, supported);
+      console.warn(`[AIClient] LP-04: model '${model}' reports no native tool support — using prompt-embedded tool JSON instead of the nudge loop.`);
+      return supported;
+    } catch {
+      return true; // probe unreachable → current behavior (tools + nudges)
+    }
+  }
+
+  /** LP-04: instruction appended to the system message when tools are embedded in the prompt. */
+  private _embeddedToolsInstruction(tools: ToolDefinition[]): string {
+    const roster = tools
+      .map(t => `- ${t.name}: ${t.description} (arguments JSON schema: ${JSON.stringify(t.parameters)})`)
+      .join('\n');
+    return [
+      'This server does not support native tool-calling. The available tools are listed below.',
+      'When you decide to call a tool, reply with ONLY a single fenced JSON code block in exactly this format:',
+      '```json',
+      '{"tool": "<tool name>", "arguments": {<arguments object matching the tool schema>}}',
+      '```',
+      'If no tool is needed, answer normally in plain text (or reply {"tool":"none","arguments":{}}). Do not narrate tool usage in prose.',
+      'Available tools:',
+      roster,
+    ].join('\n');
+  }
+
+  /**
+   * LP-04: append the embedded-tools instruction to the system message (or
+   * prepend a fresh system message when none exists). Mutates the messages
+   * array in place — the request body holds the same reference.
+   */
+  private _injectEmbeddedToolsInstruction(messages: any[], tools: ToolDefinition[]): void {
+    const instruction = this._embeddedToolsInstruction(tools);
+    const sysIdx = messages.findIndex(mm => mm?.role === 'system');
+    if (sysIdx !== -1) {
+      const sys = messages[sysIdx];
+      if (typeof sys.content === 'string') {
+        sys.content = sys.content + '\n\n' + instruction;
+      } else if (Array.isArray(sys.content)) {
+        sys.content = [...sys.content, { type: 'text', text: instruction }];
+      } else {
+        sys.content = instruction;
+      }
+    } else {
+      messages.unshift({ role: 'system', content: instruction });
+    }
+  }
+
+  /**
+   * LP-12: adaptive num_ctx — configurable via config.ollamaNumCtx, otherwise
+   * clamp(ceil(estTokens×1.5), 2048, 16384) so 8 GB GPUs avoid forced KV spill.
+   * Warns when the estimated prompt exceeds the effective context (Ollama
+   * silently left-truncates long prompts otherwise).
+   */
+  private _adaptiveOllamaNumCtx(messages: any[]): number {
+    const estTokens = estimatePromptTokens(messages);
+    const numCtx = this.config.ollamaNumCtx ?? Math.min(16384, Math.max(2048, Math.ceil(estTokens * 1.5)));
+    if (estTokens > numCtx) {
+      console.warn(
+        `[Ollama] LP-12: prompt-token estimate ${estTokens} exceeds num_ctx ${numCtx} — Ollama will left-truncate the prompt silently. Reduce context or raise ollamaNumCtx.`
+      );
+    }
+    return numCtx;
+  }
+
+  /** List model IDs exposed by the provider (per-provider endpoint/format). */
   async listModels(): Promise<string[]> {
     switch (this.config.provider) {
       case 'ollama': return this._ollamaListModels();
@@ -1874,6 +2351,7 @@ export class AIClient {
     }
   }
 
+  /** Connectivity probe via listModels(): reports ok plus round-trip latencyMs (and a reason when no models respond). */
   async healthCheck(): Promise<{ ok: boolean; latencyMs?: number; error?: string; reason?: string }> {
     const start = Date.now();
     try {
@@ -1887,28 +2365,105 @@ export class AIClient {
     }
   }
 
-  private async _fetchWithRetry(url: string, options: RequestInit, maxRetries = 6): Promise<Response> {
+  /**
+   * AI-CORR-02: builds a composite abort signal that fires when EITHER the
+   * per-attempt timeout controller aborts (existing behavior) OR the caller's
+   * request abortSignal aborts. Returns undefined when no caller signal exists,
+   * keeping the pre-existing timeout-only behavior byte-for-byte.
+   * Node 20.3+/Electron's Node 22 provide AbortSignal.any; if it is somehow
+   * unavailable we mirror the caller's abort onto the timeout controller.
+   */
+  /**
+   * XI.C: parse a 429 response's Retry-After header (seconds or HTTP date)
+   * into milliseconds; null when absent/unparseable. Mirrors the value
+   * semantics of retry-logic.ts extractRateLimitWaitTime but reads directly
+   * from the Response object in the fetch retry loop.
+   */
+  private _parseRetryAfterHeader(res: Response): number | null {
+    try {
+      const v = res.headers?.get?.('retry-after');
+      if (!v) return null;
+      const asNum = Number(v);
+      if (Number.isFinite(asNum) && asNum >= 0) return Math.round(asNum * 1000);
+      const asDate = Date.parse(v);
+      if (!Number.isNaN(asDate)) return Math.max(0, asDate - Date.now());
+    } catch { /* headers unavailable */ }
+    return null;
+  }
+
+  private _composeAbortSignals(timeoutController: AbortController, abortSignal?: AbortSignal): AbortSignal | undefined {
+    if (!abortSignal) return undefined;
+    const timeoutSignal = timeoutController.signal;
+    if (typeof (AbortSignal as any).any === 'function') {
+      return (AbortSignal as any).any([timeoutSignal, abortSignal]);
+    }
+    if (abortSignal.aborted) {
+      return abortSignal;
+    }
+    // No AbortSignal.any — compose a fresh controller mirroring BOTH sources
+    // (the internal fetch timeout and the caller's user abort).
+    const composite = new AbortController();
+    const relay = (reason?: any) => {
+      if (!composite.signal.aborted) composite.abort(reason);
+    };
+    if (timeoutSignal.aborted) {
+      relay(timeoutSignal.reason);
+    } else {
+      timeoutSignal.addEventListener('abort', () => relay(timeoutSignal.reason), { once: true });
+    }
+    abortSignal.addEventListener('abort', () => relay(abortSignal.reason), { once: true });
+    return composite.signal;
+  }
+
+  /**
+   * AI-CORR-02: fetch wrapper with bounded retries and exponential backoff
+   * (1s doubling + jitter). Retries 429/5xx responses and network errors, but
+   * NEVER a user abort, and skips retries entirely for offline local daemons.
+   * `abortSignal` (when provided) both fail-fasts the loop and aborts the
+   * in-flight fetch via a composite signal with the per-attempt timeout.
+   */
+  private async _fetchWithRetry(url: string, options: RequestInit, maxRetries = 3, abortSignal?: AbortSignal): Promise<Response> {
     // Normalize loopback hosts (::1/localhost → 127.0.0.1) so Node fetch doesn't dial IPv6 first
     const requestUrl = normalizeLocalUrl(url) ?? url;
+    // LP-05: local requests never spend more than 1 retry — the audit's 6×
+    // 5xx retry loop was ≈47s dead air plus 7× prompt processing on a local
+    // model. Cloud keeps the caller-supplied matrix untouched.
+    const isLocalRequest = this.isLocal() || requestUrl.includes('localhost') || requestUrl.includes('127.0.0.1');
+    const effectiveMaxRetries = isLocalRequest ? Math.min(maxRetries, 1) : maxRetries;
+    maxRetries = effectiveMaxRetries;
     let lastError: Error | null = null;
     let delay = 1000; // Start with 1s instead of 2s for faster initial retry
 
     for (let i = 0; i <= maxRetries; i++) {
       try {
+        // AI-CORR-02: user-requested abort is never retried — fail fast with a
+        // DOMException AbortError so runner cleanup is uniform.
+        if (abortSignal?.aborted) {
+          throw new DOMException('Request aborted by user', 'AbortError');
+        }
+
         if (requestUrl.includes('nvidia') || i > 0) {
           console.log(`[AIClient] Fetching: ${requestUrl} (Attempt ${i + 1}/${maxRetries + 1})`);
         }
 
-        // Create a new AbortController for each attempt with timeout
-        // Increase timeout to 5 minutes (300000ms) for local providers to prevent cold-start failures
+        // Fresh controller per attempt so a timeout on attempt N can't poison
+        // attempt N+1 (the timer/signal are attempt-scoped by design).
         const controller = new AbortController();
-        const isLocal = this.isLocal() || requestUrl.includes('localhost') || requestUrl.includes('127.0.0.1');
-        const timeoutMs = isLocal ? 300000 : 60000;
+        // LP-05: 15s per local non-stream attempt (was 300s). Whole-request
+        // timeouts would kill healthy local STREAMING generations, so
+        // bodies declaring "stream":true keep the cloud-style 60s ceiling.
+        const isStreamBody = typeof options.body === 'string' && options.body.includes('"stream":true');
+        const timeoutMs = isLocalRequest
+          ? (isStreamBody ? CLOUD_FETCH_TIMEOUT_MS : LOCAL_FETCH_TIMEOUT_MS)
+          : CLOUD_FETCH_TIMEOUT_MS;
         const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
+        // AI-CORR-02: thread the caller's abortSignal through to fetch — the
+        // composite fires on either the internal timeout or the user abort.
+        const compositeSignal = this._composeAbortSignals(controller, abortSignal);
         const enhancedOptions: RequestInit = {
           ...options,
-          signal: controller.signal,
+          signal: compositeSignal ?? controller.signal,
           headers: {
             ...options.headers,
             'User-Agent': 'EverFern/1.0'
@@ -1923,9 +2478,25 @@ export class AIClient {
           clearTimeout(timeoutId);
 
           if (res.status === 429 || (res.status >= 500 && res.status <= 599)) {
+            // LP-05: local 5xx (incl. context-overflow errors) is a hard fault —
+            // the request payload won't heal by resending it to a local daemon.
+            if (isLocalRequest && res.status >= 500) {
+              console.warn(`[AIClient] LP-05: local server error ${res.status} on ${requestUrl} — failing fast (no retry).`);
+              return res;
+            }
             if (i < maxRetries) {
-              const jitter = Math.random() * 500;
-              const waitTime = delay + jitter;
+              // XI.C: honor Retry-After on 429 instead of plain exponential
+              // backoff — a provider-declared reset time beats guessing.
+              let waitTime = delay + Math.random() * 500;
+              if (res.status === 429) {
+                const retryAfterMs = this._parseRetryAfterHeader(res);
+                if (retryAfterMs != null) {
+                  // Cap honored value at 60s so a hostile header can't stall
+                  // the conversation beyond one bounded wait.
+                  waitTime = Math.min(retryAfterMs, 60_000);
+                  console.log(`[AIClient] 429 Retry-After honored: waiting ${Math.round(waitTime)}ms`);
+                }
+              }
               console.warn(`[AIClient] Received ${res.status}. ${res.status === 429 ? 'Rate limit hit — backing off.' : 'Server error.'} Retrying in ${Math.round(waitTime)}ms... (Attempt ${i + 1}/${maxRetries})`);
               await new Promise(r => setTimeout(r, waitTime));
               delay *= 2;
@@ -1940,6 +2511,15 @@ export class AIClient {
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
 
+        // AI-CORR-02: caller-requested abort — never retried; rethrow a
+        // uniformly-named AbortError so runner cleanup treats it as user stop.
+        if (abortSignal?.aborted) {
+          if (lastError.name === 'AbortError') throw lastError;
+          const abortErr = new DOMException('Request aborted by user', 'AbortError');
+          if (lastError.stack) abortErr.stack = lastError.stack;
+          throw abortErr;
+        }
+
         // If local daemon (Ollama 11434, LM Studio 1234, local server) is offline, fail fast immediately without noisy retries
         const isLocalEndpoint = requestUrl.includes('11434') || requestUrl.includes('1234') || requestUrl.includes('localhost') || requestUrl.includes('127.0.0.1');
         if (isLocalEndpoint && (lastError.message.includes('fetch failed') || (lastError as any).cause?.code === 'ECONNREFUSED' || lastError.message.includes('ECONNREFUSED'))) {
@@ -1950,7 +2530,13 @@ export class AIClient {
 
         // Check if it's an abort error (timeout)
         if (lastError.name === 'AbortError') {
-          console.warn(`[AIClient] Request timeout after 30s. Retrying...`);
+          // LP-05: derive the logged timeout from the same constants that arm
+          // it — was a stale hardcoded "30s" that matched no actual ceiling.
+          const isStreamBody = typeof options.body === 'string' && options.body.includes('"stream":true');
+          const timeoutMs = isLocalRequest
+            ? (isStreamBody ? CLOUD_FETCH_TIMEOUT_MS : LOCAL_FETCH_TIMEOUT_MS)
+            : CLOUD_FETCH_TIMEOUT_MS;
+          console.warn(`[AIClient] Request timeout after ${Math.round(timeoutMs / 1000)}s. Retrying... (attempt ${i + 1}/${maxRetries + 1})`);
           // Log Ollama-specific timeout info
           if (requestUrl.includes('/api/chat')) {
             console.log(`[Ollama] Timeout on ${requestUrl} - No response received within timeout window`);
@@ -2023,7 +2609,6 @@ export class AIClient {
       stream: isStreaming,
       ...(isStreaming && { stream_options: { include_usage: true } }),
       ...(req.agent && { agent: req.agent }),
-      ...(req.tools?.length && { tools_used: req.tools.map(t => t.name) }),
     };
 
     this._maybeInjectComputerUseTools(body, req);
@@ -2054,17 +2639,33 @@ export class AIClient {
         body['reasoning_effort'] = 'medium';
       }
     }
+    // LP-04: track whether tools were embedded in the prompt because the local
+    // model lacks native tool support (the nudge loop is then bypassed by
+    // converting the model's embedded-JSON answer into synthetic tool calls).
+    let toolsEmbedded = false;
     if (req.tools?.length) {
-      body['tools'] = req.tools.map(t => {
-        if (t && (t as any).type === 'function' && (t as any).function) {
-          return t;
-        }
-        return {
-          type: 'function',
-          function: { name: t.name, description: t.description, parameters: t.parameters },
-        };
-      });
-      body['tool_choice'] = 'auto';
+      // LP-04: local compat models probed tools-incapable get the tools array
+      // stripped and re-embedded in the system prompt as a JSON contract;
+      // cloud and probes-without-capabilities keep native tools + nudges.
+      let toolsAllowed = true;
+      if (this.isLocal()) {
+        toolsAllowed = await this._localModelSupportsTools(req.model ?? this.config.model);
+      }
+      if (toolsAllowed) {
+        body['tools'] = req.tools.map(t => {
+          if (t && (t as any).type === 'function' && (t as any).function) {
+            return t;
+          }
+          return {
+            type: 'function',
+            function: { name: t.name, description: t.description, parameters: t.parameters },
+          };
+        });
+        body['tool_choice'] = 'auto';
+      } else {
+        toolsEmbedded = true;
+        this._injectEmbeddedToolsInstruction(processedMessages, req.tools);
+      }
     }
     if (req.responseFormat === 'json' && (this.config.provider === 'openai' || this.config.provider === 'deepseek')) {
       // OpenAI: use json_schema if provided for structured output, fallback to json_object
@@ -2106,15 +2707,16 @@ export class AIClient {
       headers['Accept'] = 'application/json';
     }
 
+    // AI-CORR-04: never emit raw auth headers to the debug log ring/window.
     DebugEmitter.emit('log', 'API Call POST /chat/completions', {
       url: `${this.config.baseUrl}/chat/completions`,
-      headers,
+      headers: redactHeadersForLog(headers),
       body
     });
 
     const res = await this._fetchWithRetry(`${this.config.baseUrl}/chat/completions`, {
       method: 'POST', headers, body: JSON.stringify(body),
-    });
+    }, 6, req.abortSignal);
 
     DebugEmitter.emit('log', 'API Response status', {
       status: res.status,
@@ -2131,6 +2733,10 @@ export class AIClient {
           isFormatError = true;
         }
       } catch { }
+
+      // XI.C: classify context-window overflow before generic 400 surfacing
+      const overflowMsg = classifyProviderError(res.status, txt);
+      if (overflowMsg) throw new Error(overflowMsg);
 
       // If Nvidia rejects an image payload (e.g. text-only model receives screenshot)
       if (this.config.provider === 'nvidia' && (res.status === 400 || res.status === 422 || isFormatError)) {
@@ -2159,11 +2765,23 @@ export class AIClient {
         });
       }
       const choice = data.choices?.[0];
-      const toolCalls = choice?.message?.tool_calls?.map((tc: any) => ({
+      let toolCalls = choice?.message?.tool_calls?.map((tc: any) => ({
         id: tc.id,
         name: tc.function.name,
         arguments: safeParseJSON(tc.function.arguments),
       }));
+      // LP-04: tools-incapable local model — convert the embedded-JSON answer
+      // into a synthetic tool call so the runner loop proceeds instead of nudging.
+      if (toolsEmbedded && !toolCalls?.length) {
+        const embedded = extractEmbeddedToolCall(choice?.message?.content ?? '');
+        if (embedded) {
+          toolCalls = [{
+            id: `embedded-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            name: embedded.name,
+            arguments: embedded.arguments as Record<string, unknown>,
+          }];
+        }
+      }
       return {
         id: data.id ?? `${this.config.provider}-${Date.now()}`,
         content: choice?.message?.content ?? '',
@@ -2198,6 +2816,12 @@ export class AIClient {
     let finalUsage: any = undefined;
 
     while (true) {
+      // AI-CORR-02: honor caller abort mid-stream — exit cleanly with an
+      // AbortError-named rejection so runner cleanup is uniform.
+      if (req.abortSignal?.aborted) {
+        try { await reader.cancel(); } catch { /* reader already closed */ }
+        throw new DOMException('Stream aborted by user', 'AbortError');
+      }
       const { done, value } = await reader.read();
       if (done) break;
       buf += dec.decode(value, { stream: true });
@@ -2215,8 +2839,14 @@ export class AIClient {
           }
           break;
         }
+        // AI-CORR-01: parse via the shared helper so malformed SSE lines are
+        // counted (rate-limited warn) instead of silently swallowed.
+        const d = parseSSELine(line);
+        if (d === undefined) {
+          this._noteSSEParseError(line);
+          continue;
+        }
         try {
-          const d = JSON.parse(payload);
           if (d.id) responseId = d.id;
           if (d.usage) {
             finalUsage = d.usage;
@@ -2278,6 +2908,20 @@ export class AIClient {
       };
     });
 
+    // LP-04: when tools were embedded in the prompt (tools-incapable local
+    // model), convert the fenced {"tool":...,"arguments":{...}} answer into a
+    // synthetic tool call so the runner loop proceeds instead of nudging.
+    if (toolsEmbedded && toolCalls.length === 0) {
+      const embedded = extractEmbeddedToolCall(fullContent);
+      if (embedded) {
+        toolCalls.push({
+          id: `embedded-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          name: embedded.name,
+          arguments: embedded.arguments,
+        });
+      }
+    }
+
     return {
       id: responseId,
       content: fullContent,
@@ -2313,7 +2957,6 @@ export class AIClient {
       max_tokens: req.maxTokens ?? this.config.maxTokens,
       stream: true,
       ...(req.agent && { agent: req.agent }),
-      ...(req.tools?.length && { tools_used: req.tools.map(t => t.name) }),
     };
 
     this._maybeInjectComputerUseTools(streamBody, req);
@@ -2349,17 +2992,29 @@ export class AIClient {
       }
     }
     // Include tools in the streaming request so models can trigger tool calls
+    // LP-04: local tools-incapable models get the prompt-embedded JSON
+    // contract instead (mirrors the non-streaming path).
+    let toolsEmbedded = false;
     if (req.tools?.length) {
-      streamBody['tools'] = req.tools.map(t => {
-        if (t && (t as any).type === 'function' && (t as any).function) {
-          return t;
-        }
-        return {
-          type: 'function',
-          function: { name: t.name, description: t.description, parameters: t.parameters },
-        };
-      });
-      streamBody['tool_choice'] = 'auto';
+      let toolsAllowed = true;
+      if (this.isLocal()) {
+        toolsAllowed = await this._localModelSupportsTools(req.model ?? this.config.model);
+      }
+      if (toolsAllowed) {
+        streamBody['tools'] = req.tools.map(t => {
+          if (t && (t as any).type === 'function' && (t as any).function) {
+            return t;
+          }
+          return {
+            type: 'function',
+            function: { name: t.name, description: t.description, parameters: t.parameters },
+          };
+        });
+        streamBody['tool_choice'] = 'auto';
+      } else {
+        toolsEmbedded = true;
+        this._injectEmbeddedToolsInstruction(messages, req.tools);
+      }
     }
 
     // Handle JSON response formats in stream
@@ -2392,9 +3047,10 @@ export class AIClient {
     headers['Accept-Encoding'] = 'identity'; // Prevent Node.js undici fetch from buffering gzip chunks
     headers['Connection'] = 'keep-alive';
 
+    // AI-CORR-04: never emit raw auth headers to the debug log ring/window.
     DebugEmitter.emit('log', 'API Call POST /chat/completions (Stream)', {
       url: `${this.config.baseUrl}/chat/completions`,
-      headers,
+      headers: redactHeadersForLog(headers),
       body: streamBody
     });
 
@@ -2414,6 +3070,9 @@ export class AIClient {
         const json = JSON.parse(txt);
         if (json.error) errorMsg = json.error.message || json.error;
       } catch { }
+      // XI.C: classify context-window overflow before generic 400 surfacing
+      const overflowMsg = classifyProviderError(res.status, txt);
+      if (overflowMsg) throw new Error(overflowMsg);
       if (res.status === 401) {
         throw new Error(errorMsg && errorMsg !== res.statusText ? errorMsg : '401 Unauthorized: Please sign in to your EverFern Cloud account.');
       }
@@ -2432,8 +3091,18 @@ export class AIClient {
     let id = `${this.config.provider}-${Date.now()}`;
     let isFirstChunk = true;
     let isReasoning = false;
+    // LP-04: accumulate the streamed answer so an embedded-JSON tool call can
+    // be converted into a synthetic toolCalls chunk at stream end.
+    let fullContent = '';
+    let sawToolCall = false;
 
     while (true) {
+      // AI-CORR-02: honor caller abort mid-stream — exit cleanly with an
+      // AbortError-named rejection so runner cleanup is uniform.
+      if (req.abortSignal?.aborted) {
+        try { await reader.cancel(); } catch { /* reader already closed */ }
+        throw new DOMException('Stream aborted by user', 'AbortError');
+      }
       const { done, value } = await reader.read();
       if (done) break;
       if (isFirstChunk) {
@@ -2449,12 +3118,37 @@ export class AIClient {
         if (!t || !t.startsWith('data: ')) continue;
         const payload = t.slice(6);
         if (payload === '[DONE]') {
-          if (isReasoning) yield { id, delta: '</think>', done: false };
+          if (isReasoning) yield { id, delta: '```', done: false };
+          // LP-04: convert the prompt-embedded tool JSON (tools-incapable
+          // local model) into a synthetic toolCalls chunk before the sentinel.
+          if (toolsEmbedded && !sawToolCall) {
+            const embedded = extractEmbeddedToolCall(fullContent);
+            if (embedded) {
+              yield {
+                id,
+                delta: '',
+                toolCalls: [{
+                  index: 0,
+                  id: `embedded-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                  type: 'function',
+                  function: { name: embedded.name, arguments: JSON.stringify(embedded.arguments) },
+                }],
+                done: false,
+                model: this.config.model,
+              };
+            }
+          }
           yield { id, delta: '', done: true };
           return;
         }
+        // AI-CORR-01: parse via the shared helper so malformed SSE lines are
+        // counted (rate-limited warn) instead of silently swallowed.
+        const d = parseSSELine(line);
+        if (d === undefined) {
+          this._noteSSEParseError(line);
+          continue;
+        }
         try {
-          const d = JSON.parse(payload);
           if (d.actual_model && isFirstChunk) {
             DebugEmitter.emit('log', `EverFern Cloud Model (Stream): ${d.actual_model}`, {
               requestedModel: req.model ?? this.config.model,
@@ -2485,12 +3179,36 @@ export class AIClient {
             done: false,
             model: d.model
           };
+          // LP-04: track accumulated content / native tool-call presence for
+          // the end-of-stream embedded-tool-call conversion.
+          fullContent += deltaContent;
+          if (delta?.tool_calls) sawToolCall = true;
         } catch { /* skip malformed */ }
       }
     }
 
     if (isReasoning) {
-      yield { id, delta: '</think>', done: false };
+      yield { id, delta: '```', done: false };
+    }
+
+    // LP-04: stream ended without [DONE] — still convert an embedded tool
+    // call (tools-incapable local model) into a synthetic toolCalls chunk.
+    if (toolsEmbedded && !sawToolCall) {
+      const embedded = extractEmbeddedToolCall(fullContent);
+      if (embedded) {
+        yield {
+          id,
+          delta: '',
+          toolCalls: [{
+            index: 0,
+            id: `embedded-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            type: 'function',
+            function: { name: embedded.name, arguments: JSON.stringify(embedded.arguments) },
+          }],
+          done: false,
+          model: this.config.model,
+        };
+      }
     }
   }
 
@@ -2518,7 +3236,7 @@ export class AIClient {
 
   private async _googleGeminiChat(req: ChatRequest): Promise<ChatResponse> {
     const model = req.model ?? this.config.model;
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${this.config.apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
     const stripAdditionalProperties = (schema: any): any => {
       if (!schema || typeof schema !== 'object') return schema;
@@ -2633,12 +3351,14 @@ export class AIClient {
         'x-goog-api-key': this.config.apiKey || ''
       },
       body: JSON.stringify(body),
-    });
+    }, 6, req.abortSignal);
     console.log(`[AIClient] Gemini Native Response received in ${Date.now() - startTime}ms. Status: ${res.status}`);
 
     if (!res.ok) {
       const txt = await res.text();
       console.error(`[AIClient] Gemini Native Error: ${txt}`);
+      const geminiOverflow = classifyProviderError(res.status, txt);
+      if (geminiOverflow) throw new Error(geminiOverflow);
       throw new Error(`[gemini-native] HTTP ${res.status}: ${txt}`);
     }
 
@@ -2798,9 +3518,11 @@ export class AIClient {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
-    });
+    }, 6, req.abortSignal);
     if (!res.ok) {
       const txt = await res.text();
+      const anthropicOverflow = classifyProviderError(res.status, txt);
+      if (anthropicOverflow) throw new Error(anthropicOverflow);
       throw new Error(`[anthropic] HTTP ${res.status}: ${txt}`);
     }
 
@@ -2839,6 +3561,12 @@ export class AIClient {
     const thinkState = { inThinking: false };
 
     while (true) {
+      // AI-CORR-02: honor caller abort mid-stream — exit cleanly with an
+      // AbortError-named rejection so runner cleanup is uniform.
+      if (req.abortSignal?.aborted) {
+        try { await reader.cancel(); } catch { /* reader already closed */ }
+        throw new DOMException('Stream aborted by user', 'AbortError');
+      }
       const { done, value } = await reader.read();
       if (done) break;
       buf += dec.decode(value, { stream: true });
@@ -2848,8 +3576,14 @@ export class AIClient {
       for (const line of lines) {
         const t = line.trim();
         if (!t || !t.startsWith('data: ')) continue;
+        // AI-CORR-01: parse via the shared helper so malformed SSE lines are
+        // counted (rate-limited warn) instead of silently swallowed.
+        const d = parseSSELine(line);
+        if (d === undefined) {
+          this._noteSSEParseError(line);
+          continue;
+        }
         try {
-          const d = JSON.parse(t.slice(6));
           if (d.type === 'message_start') {
             responseId = d.message?.id ?? responseId;
           }
@@ -2952,8 +3686,14 @@ export class AIClient {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
-    });
-    if (!res.ok) throw new Error(`[anthropic] Stream HTTP ${res.status}`);
+    }, 6, req.abortSignal);
+    if (!res.ok) {
+      // XI.C: read body for overflow classification before the generic stream error
+      const txt = await res.text();
+      const anthropicStreamOverflow = classifyProviderError(res.status, txt);
+      if (anthropicStreamOverflow) throw new Error(anthropicStreamOverflow);
+      throw new Error(`[anthropic] Stream HTTP ${res.status}`);
+    }
 
     const reader = res.body?.getReader();
     if (!reader) throw new Error('No response body');
@@ -2964,6 +3704,12 @@ export class AIClient {
     const thinkState = { inThinking: false };
 
     while (true) {
+      // AI-CORR-02: honor caller abort mid-stream — exit cleanly with an
+      // AbortError-named rejection so runner cleanup is uniform.
+      if (req.abortSignal?.aborted) {
+        try { await reader.cancel(); } catch { /* reader already closed */ }
+        throw new DOMException('Stream aborted by user', 'AbortError');
+      }
       const { done, value } = await reader.read();
       if (done) break;
       buf += dec.decode(value, { stream: true });
@@ -2973,8 +3719,14 @@ export class AIClient {
       for (const line of lines) {
         const t = line.trim();
         if (!t || !t.startsWith('data: ')) continue;
+        // AI-CORR-01: parse via the shared helper so malformed SSE lines are
+        // counted (rate-limited warn) instead of silently swallowed.
+        const d = parseSSELine(line);
+        if (d === undefined) {
+          this._noteSSEParseError(line);
+          continue;
+        }
         try {
-          const d = JSON.parse(t.slice(6));
           if (d.type === 'message_start') id = d.message?.id ?? id;
           if (d.type === 'content_block_delta') {
             if (d.delta?.type === 'thinking_delta') {
@@ -3006,11 +3758,21 @@ export class AIClient {
   }
 
   private async _anthropicListModels(): Promise<string[]> {
-    // Anthropic doesn't expose a /models endpoint; return known models
-    return [
-      'claude-opus-4-5', 'claude-sonnet-4-20250514',
-      'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022',
-    ];
+    // XI.C: probe the live /v1/models endpoint (it exists — the old static
+    // list reported unauthorized/quota-dead keys as healthy). Fail-fast (0
+    // retries) like other list-model calls; any error ⇒ [] so healthCheck
+    // correctly reports not-ok.
+    try {
+      const res = await this._fetchWithRetry(`${this.config.baseUrl}/v1/models`, {
+        headers: {
+          'x-api-key': this.config.apiKey ?? '',
+          'anthropic-version': '2023-06-01',
+        },
+      }, 0);
+      if (!res.ok) return [];
+      const data = await res.json();
+      return (data.data || []).map((m: any) => m.id as string);
+    } catch { return []; }
   }
 
   // ── Ollama Native API ────────────────────────────────────────────
@@ -3085,6 +3847,9 @@ export class AIClient {
       }
     }
 
+    // LP-12: adaptive num_ctx — configurable, else clamp(ceil(est×1.5), 2048, 16384),
+    // warning when the prompt estimate exceeds the effective context window.
+    const numCtx = this._adaptiveOllamaNumCtx(messages);
     const body: Record<string, unknown> = {
       model: req.model ?? this.config.model,
       messages,
@@ -3092,7 +3857,7 @@ export class AIClient {
       keep_alive: '30m',
       options: {
         temperature: req.temperature ?? this.config.temperature ?? 0.2,
-        num_ctx: this.config.ollamaNumCtx ?? 16384,
+        num_ctx: numCtx,
         num_predict: 4096,
       },
     };
@@ -3114,7 +3879,7 @@ export class AIClient {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
-      });
+      }, 6, req.abortSignal);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       console.error(`[Ollama] Chat request failed:`, {
@@ -3139,6 +3904,8 @@ export class AIClient {
         body: txt.substring(0, 500),
         error: errorMsg
       });
+      const ollamaOverflow = classifyProviderError(res.status, txt);
+      if (ollamaOverflow) throw new Error(ollamaOverflow);
       throw new Error(`[ollama] HTTP ${res.status}: ${errorMsg}`);
     }
 
@@ -3179,6 +3946,12 @@ export class AIClient {
     const thinkState = { inThinking: false };
 
     while (true) {
+      // AI-CORR-02: honor caller abort mid-stream — exit cleanly with an
+      // AbortError-named rejection so runner cleanup is uniform.
+      if (req.abortSignal?.aborted) {
+        try { await reader.cancel(); } catch { /* reader already closed */ }
+        throw new DOMException('Stream aborted by user', 'AbortError');
+      }
       const { done, value } = await reader.read();
       if (done) break;
 
@@ -3231,7 +4004,12 @@ export class AIClient {
           if (d.prompt_eval_count) promptTokens = d.prompt_eval_count;
           if (d.eval_count) completionTokens = d.eval_count;
         } catch (e) {
-          console.error('[AIClient] Failed to parse Ollama stream line:', line, e);
+          // AI-CORR-01: keep counting (rate-limited warn) instead of a
+          // full-error dump per line — the counter drives health telemetry.
+          this._noteSSEParseError(line);
+          if (this.sseParseErrors <= 3) {
+            console.error('[AIClient] Failed to parse Ollama stream line:', line.slice(0, 120), e);
+          }
         }
       }
     }
@@ -3261,14 +4039,17 @@ export class AIClient {
   }
 
   private async *_ollamaStream(req: ChatRequest): AsyncGenerator<StreamChunk, void, unknown> {
+    // LP-12: adaptive num_ctx for the streaming body too (see _ollamaChat).
+    const messages = this._mapOllamaMessages(req.messages);
+    const numCtx = this._adaptiveOllamaNumCtx(messages);
     const body: Record<string, unknown> = {
       model: req.model ?? this.config.model,
-      messages: this._mapOllamaMessages(req.messages),
+      messages,
       stream: true,
       keep_alive: '30m',
       options: {
         temperature: req.temperature ?? this.config.temperature ?? 0.2,
-        num_ctx: this.config.ollamaNumCtx ?? 16384,
+        num_ctx: numCtx,
         num_predict: 4096,
       },
     };
@@ -3282,7 +4063,7 @@ export class AIClient {
       method: 'POST',
       headers: { ...this._ollamaHeaders, 'Accept': 'text/event-stream' },
       body: JSON.stringify(body),
-    });
+    }, 6, req.abortSignal);
     if (!res.ok) {
       const txt = await res.text();
       let errorMsg = res.statusText;
@@ -3290,6 +4071,8 @@ export class AIClient {
         const json = JSON.parse(txt);
         if (json.error) errorMsg = json.error.message || json.error;
       } catch { }
+      const ollamaStreamOverflow = classifyProviderError(res.status, txt);
+      if (ollamaStreamOverflow) throw new Error(ollamaStreamOverflow);
       throw new Error(`[ollama] Stream HTTP ${res.status}: ${errorMsg}`);
     }
 
@@ -3302,6 +4085,12 @@ export class AIClient {
     const thinkState = { inThinking: false };
 
     while (true) {
+      // AI-CORR-02: honor caller abort mid-stream — exit cleanly with an
+      // AbortError-named rejection so runner cleanup is uniform.
+      if (req.abortSignal?.aborted) {
+        try { await reader.cancel(); } catch { /* reader already closed */ }
+        throw new DOMException('Stream aborted by user', 'AbortError');
+      }
       const { done, value } = await reader.read();
       if (done) break;
       buffer += dec.decode(value, { stream: true });
@@ -3310,8 +4099,14 @@ export class AIClient {
 
       for (const line of lines) {
         if (!line.trim()) continue;
+        // AI-CORR-01: parse via the shared helper so malformed NDJSON lines
+        // are counted (rate-limited warn) instead of silently swallowed.
+        const d = parseNDJSONLine(line);
+        if (d === undefined) {
+          this._noteSSEParseError(line);
+          continue;
+        }
         try {
-          const d = JSON.parse(line);
           if (d.message?.tool_calls) {
             for (let i = 0; i < d.message.tool_calls.length; i++) {
               const tc = d.message.tool_calls[i];
@@ -3348,7 +4143,7 @@ export class AIClient {
             model: d.model
           };
           if (d.done) return;
-        } catch { /* skip incomplete / non-json chunk */ }
+        } catch { /* handler error — skip chunk */ }
       }
     }
   }
@@ -3436,7 +4231,9 @@ export class AIClient {
 // ── Factory Functions for Client Pooling ────────────────────────────
 
 /**
- * Get a pooled AI client instance for better performance
+ * Get a pooled AI client instance for better performance.
+ * Falls back to an unpooled temporary client once the per-key pool is full;
+ * callers must still call releasePooledAIClient (a no-op for temporaries).
  */
 export function getPooledAIClient(config: AIClientConfig): AIClient {
   return globalClientPool.get(config);
@@ -3447,18 +4244,4 @@ export function getPooledAIClient(config: AIClientConfig): AIClient {
  */
 export function releasePooledAIClient(client: AIClient, config: AIClientConfig): void {
   globalClientPool.release(client, config);
-}
-
-/**
- * Create a client with automatic pooling management
- */
-export function createManagedAIClient(config: AIClientConfig): {
-  client: AIClient;
-  release: () => void;
-} {
-  const client = getPooledAIClient(config);
-  return {
-    client,
-    release: () => releasePooledAIClient(client, config)
-  };
 }

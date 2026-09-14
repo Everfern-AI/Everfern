@@ -68,7 +68,7 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
           backgroundColor: "var(--color-bg-surface)",
           border: "1px solid var(--color-border)",
           borderRadius: 16,
-          boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
+          boxShadow: "var(--shadow-sm)",
           overflow: "hidden",
         }}
       >
@@ -213,7 +213,7 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
               display: "flex",
               alignItems: "center",
               gap: 6,
-              color: "#d97706",
+              color: "var(--color-warning)",
               fontSize: 12,
               fontFamily: "var(--font-sans)",
             }}
@@ -231,7 +231,7 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
               />
             </svg>
-            <span style={{ fontStyle: "italic", color: "#a16207" }}>{responded ? "Response sent…" : "Waiting for your reply…"}</span>
+            <span style={{ fontStyle: "italic", color: "var(--color-warning)" }}>{responded ? "Response sent…" : "Waiting for your reply…"}</span>
           </div>
 
           {/* Deny */}
@@ -273,7 +273,7 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
           <button
             onClick={() => handleResponse(onAlwaysAllow)}
             onKeyDown={handleKeyDown}
-            aria-label="Always allow local execution"
+            aria-label="Always allow local execution for this session"
             disabled={responded}
             style={{
               padding: "7px 16px",
@@ -336,6 +336,20 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
           >
             Allow once
           </button>
+        </div>
+
+        {/* Always-allow scope disclosure */}
+        <div
+          style={{
+            padding: "0 20px 12px",
+            textAlign: "right",
+            fontSize: 11,
+            color: "var(--color-text-tertiary, var(--color-text-secondary))",
+            fontFamily: "var(--font-sans)",
+            backgroundColor: "var(--color-bg-surface)",
+          }}
+        >
+          “Always allow” applies to all commands in this chat until you switch conversations
         </div>
       </div>
 

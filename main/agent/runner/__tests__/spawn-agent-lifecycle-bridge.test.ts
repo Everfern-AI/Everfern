@@ -22,7 +22,9 @@ describe('spawn_agent lifecycle bridge', () => {
   });
 
   it('relies on the generic IPC event mapping to deliver acp:subagent-event', () => {
-    const ipc = readRepoFile('main/ipc/agent.ts');
+    // wave f11: main/ipc/agent.ts module split into main/ipc/agent/ directory;
+    // generic IPC event mapping now lives in stream-handlers.ts
+    const ipc = readRepoFile('main/ipc/agent/stream-handlers.ts');
     const preload = readRepoFile('preload/preload.ts');
 
     expect(ipc).toContain("safeSend(`acp:${streamEvent.type.replace(/_/g, '-')}`, streamEvent)");

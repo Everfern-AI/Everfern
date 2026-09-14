@@ -44,16 +44,16 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
         <div style={{
           padding: '12px 16px',
           borderRadius: 8,
-          backgroundColor: '#fef2f2',
-          border: '1px solid #fecaca',
-          color: '#991b1b',
+          backgroundColor: 'var(--color-error-dim)',
+          border: '1px solid var(--color-error)',
+          color: 'var(--color-error)',
           fontSize: 13,
           lineHeight: 1.5,
         }}>
           <div style={{ fontWeight: 600, marginBottom: 4 }}>
             Something went wrong
           </div>
-          <div style={{ fontSize: 12, color: '#dc2626' }}>
+          <div style={{ fontSize: 12, color: 'var(--color-error)' }}>
             {this.state.error?.message || 'An unexpected error occurred'}
           </div>
         </div>

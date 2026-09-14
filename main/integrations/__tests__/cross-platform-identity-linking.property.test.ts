@@ -7,8 +7,9 @@
  * Validates Requirements: 7.1 - Cross-Platform Identity Linking
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, afterAll } from 'vitest';
 import fc from 'fast-check';
+import * as fs from 'fs/promises';
 import { UserAuthenticationService, createUserAuthenticationService } from '../user-auth';
 import { IdentityLinkingService, createIdentityLinkingService } from '../identity-linking';
 import { UserPermissionManager, createUserPermissionManager } from '../user-permissions';
@@ -20,6 +21,22 @@ const platformUserIdArbitrary = fc.string({ minLength: 3, maxLength: 15 });
 const usernameArbitrary = fc.string({ minLength: 3, maxLength: 20 });
 const displayNameArbitrary = fc.string({ minLength: 1, maxLength: 50 });
 
+// wave f11: the suite previously used FIXED /tmp/test-auth, /tmp/test-identity,
+// /tmp/test-permissions dirs. These services persist every registered user as
+// a json file, so stale users from prior runs polluted every later run —
+// e.g. regenerating 'telegram:   ' collided with a user created hours ago and
+// registerUser returned 'User already registered on this platform', breaking
+// all 7 properties nondeterministically. Use a per-process unique base dir and
+// clean it up after the suite.
+const RUN_ID = `${process.pid}-${Date.now()}`;
+const AUTH_DIR = `/tmp/everfern-test-homes/identity-linking/${RUN_ID}/auth`;
+const IDENTITY_DIR = `/tmp/everfern-test-homes/identity-linking/${RUN_ID}/identity`;
+const PERMISSIONS_DIR = `/tmp/everfern-test-homes/identity-linking/${RUN_ID}/permissions`;
+
+afterAll(async () => {
+  await fs.rm(`/tmp/everfern-test-homes/identity-linking/${RUN_ID}`, { recursive: true, force: true }).catch(() => {});
+});
+
 describe('Property Test: Cross-Platform Identity Linking', () => {
   let authService: UserAuthenticationService;
   let identityService: IdentityLinkingService;
@@ -27,17 +44,17 @@ describe('Property Test: Cross-Platform Identity Linking', () => {
 
   beforeEach(async () => {
     authService = createUserAuthenticationService({
-      baseDir: '/tmp/test-auth',
+      baseDir: AUTH_DIR,
       requireEmailVerification: false
     });
 
     identityService = createIdentityLinkingService(authService, {
-      baseDir: '/tmp/test-identity',
+      baseDir: IDENTITY_DIR,
       requireVerification: false // Disable for testing
     });
 
     permissionManager = createUserPermissionManager(authService, {
-      baseDir: '/tmp/test-permissions'
+      baseDir: PERMISSIONS_DIR
     });
 
     await authService.initialize();
@@ -58,7 +75,7 @@ describe('Property Test: Cross-Platform Identity Linking', () => {
    * No two users should share the same platform identity.
    */
   it('should maintain identity uniqueness across platforms', () => {
-    fc.assert(fc.property(
+    fc.assert(fc.asyncProperty(
       fc.array(fc.record({
         platform: platformArbitrary,
         platformUserId: platformUserIdArbitrary,
@@ -117,7 +134,7 @@ describe('Property Test: Cross-Platform Identity Linking', () => {
    * user account and maintain consistent user information.
    */
   it('should maintain cross-platform consistency for linked identities', () => {
-    fc.assert(fc.property(
+    fc.assert(fc.asyncProperty(
       fc.record({
         userId: userIdArbitrary,
         displayName: displayNameArbitrary,
@@ -187,7 +204,7 @@ describe('Property Test: Cross-Platform Identity Linking', () => {
    * the system should detect the conflict and handle it appropriately.
    */
   it('should detect and handle identity conflicts correctly', () => {
-    fc.assert(fc.property(
+    fc.assert(fc.asyncProperty(
       fc.record({
         platform: platformArbitrary,
         platformUserId: platformUserIdArbitrary,
@@ -262,7 +279,7 @@ describe('Property Test: Cross-Platform Identity Linking', () => {
    * and secure across all platforms.
    */
   it('should maintain consistent verification process across platforms', () => {
-    fc.assert(fc.property(
+    fc.assert(fc.asyncProperty(
       fc.record({
         userId: userIdArbitrary,
         identities: fc.array(fc.record({
@@ -275,7 +292,7 @@ describe('Property Test: Cross-Platform Identity Linking', () => {
       async (userData) => {
         // Create identity service with verification enabled
         const verifyingIdentityService = createIdentityLinkingService(authService, {
-          baseDir: '/tmp/test-identity-verify',
+          baseDir: `${IDENTITY_DIR}-verify`,
           requireVerification: true,
           verificationCodeLength: 6,
           maxVerificationAttempts: 3
@@ -362,7 +379,7 @@ describe('Property Test: Cross-Platform Identity Linking', () => {
    * and not affect other linked identities.
    */
   it('should maintain consistency when unlinking identities', () => {
-    fc.assert(fc.property(
+    fc.assert(fc.asyncProperty(
       fc.record({
         userId: userIdArbitrary,
         identities: fc.array(fc.record({
@@ -450,7 +467,7 @@ describe('Property Test: Cross-Platform Identity Linking', () => {
    * identity is used for authentication.
    */
   it('should maintain consistent permissions across linked identities', () => {
-    fc.assert(fc.property(
+    fc.assert(fc.asyncProperty(
       fc.record({
         userId: userIdArbitrary,
         identities: fc.array(fc.record({
@@ -543,7 +560,7 @@ describe('Property Test: Cross-Platform Identity Linking', () => {
    * creating inconsistent state or duplicate links.
    */
   it('should handle concurrent identity linking safely', () => {
-    fc.assert(fc.property(
+    fc.assert(fc.asyncProperty(
       fc.record({
         platform: platformArbitrary,
         platformUserId: platformUserIdArbitrary,

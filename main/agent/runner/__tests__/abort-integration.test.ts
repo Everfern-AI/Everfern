@@ -3,6 +3,19 @@ import { globalAbortManager } from '../abort-manager';
 import { createTriageNode } from '../nodes/triage';
 import { createBrainNode } from '../nodes/brain';
 
+// The sibling graph-node-abort-handling suite mocks agent-runtime the same
+// way: these tests exercise the abort plumbing around the nodes, not the
+// (DB/client-heavy) step body itself. Without this mock the "not aborted"
+// cases drive the REAL runAgentStep against a bare mockRunner and fail on
+// its internals (telemetry.metrics, shouldCaptureScreenshot, getClient…).
+vi.mock('../services/agent-runtime', () => ({
+  runAgentStep: vi.fn().mockResolvedValue({
+    messages: [{ role: 'assistant', content: 'Test response' }],
+    pendingToolCalls: [],
+    iterations: 1,
+  }),
+}));
+
 describe('AbortSignalManager Integration', () => {
   let mockRunner: any;
   let mockEventQueue: any[];
@@ -15,6 +28,7 @@ describe('AbortSignalManager Integration', () => {
     mockMissionTracker = {
       startStep: vi.fn(),
       completeStep: vi.fn(),
+      failStep: vi.fn(),
       setPhase: vi.fn(),
       addStep: vi.fn(),
       getStep: vi.fn(() => null),
@@ -29,6 +43,7 @@ describe('AbortSignalManager Integration', () => {
         info: vi.fn(),
         action: vi.fn(),
         transition: vi.fn(),
+        metrics: vi.fn(),
       },
       _buildToolDefinitions: vi.fn(() => []),
       client: {

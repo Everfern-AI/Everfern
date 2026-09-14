@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { SubagentPhase, SubagentCoordination } from '../app/chat/components/SubagentPanel';
 
 export interface SubagentEvent {
@@ -30,6 +30,11 @@ export function useSubagentTracking(conversationId: string | null) {
 
   const phaseMapRef = useRef<Map<string, SubagentPhase>>(new Map());
 
+  // Keep conversationId fresh for the stable handleStreamEvent callback below
+  // (mirrors useDebateStream) so events route to the active chat after switches.
+  const conversationIdRef = useRef<string | null>(conversationId ?? null);
+  useEffect(() => { conversationIdRef.current = conversationId ?? null; }, [conversationId]);
+
   /**
    * Handle incoming stream events from backend
    */
@@ -38,7 +43,7 @@ export function useSubagentTracking(conversationId: string | null) {
       return;
     }
 
-    if (event.conversationId && conversationId && event.conversationId !== conversationId) {
+    if (event.conversationId && conversationIdRef.current && event.conversationId !== conversationIdRef.current) {
       return;
     }
 

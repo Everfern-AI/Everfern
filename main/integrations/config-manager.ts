@@ -75,7 +75,7 @@ export interface IntegrationConfig {
 /**
  * Configuration validation result
  */
-export interface ConfigValidationResult {
+interface ConfigValidationResult {
   valid: boolean;
   errors: string[];
   warnings: string[];
@@ -84,7 +84,7 @@ export interface ConfigValidationResult {
 /**
  * Configuration backup metadata
  */
-export interface ConfigBackupMetadata {
+interface ConfigBackupMetadata {
   timestamp: string;
   version: string;
   description?: string;
@@ -126,7 +126,7 @@ export interface ConfigDiff {
 /**
  * Configuration backup with metadata
  */
-export interface ConfigBackup {
+interface ConfigBackup {
   metadata: ConfigBackupMetadata;
   config: IntegrationConfig;
 }
@@ -145,25 +145,6 @@ interface EncryptedCredential {
 }
 
 /**
- * Configuration manager events
- */
-export interface ConfigManagerEvents {
-  'config-loaded': (config: IntegrationConfig) => void;
-  'config-saved': (config: IntegrationConfig) => void;
-  'config-validated': (result: ConfigValidationResult) => void;
-  'config-backup-created': (backupPath: string, metadata: ConfigBackupMetadata) => void;
-  'config-restored': (backupPath: string, metadata: ConfigBackupMetadata) => void;
-  'config-loading-failed': (error: Error, fallbackUsed: boolean) => void;
-  'credential-stored': (platform: string) => void;
-  'credential-retrieved': (platform: string) => void;
-  'config-changed': (notification: ConfigChangeNotification) => void;
-  'config-change-detected': (diff: ConfigDiff) => void;
-  'integration-restart-required': (platform: string, reason: string) => void;
-  'external-config-changed': (filePath: string) => void;
-  'error': (error: Error) => void;
-}
-
-/**
  * Main configuration manager class
  */
 export class ConfigManager extends EventEmitter {
@@ -175,6 +156,8 @@ export class ConfigManager extends EventEmitter {
   private isInitialized = false;
   private configVersion = '1.0.0';
   private configWatcher: FSWatcher | null = null;
+  // f11: monotonic suffix so consecutive same-millisecond backups are unique
+  private backupIdCounter = 0;
   private integrationsWatcher: FSWatcher | null = null;
   private watcherDebounceTimeout: NodeJS.Timeout | null = null;
   private lastConfigSnapshot: string | null = null;
@@ -301,7 +284,17 @@ export class ConfigManager extends EventEmitter {
 
       // Read and decrypt token
       const encryptedData = await fs.readFile(tokenPath, 'utf-8');
-      const encrypted: EncryptedCredential = JSON.parse(encryptedData);
+      let encrypted: EncryptedCredential;
+      try {
+        encrypted = JSON.parse(encryptedData);
+      } catch {
+        // f11 fix: a corrupted key file previously hit the outer catch,
+        // which does this.emit('error', ...) — EventEmitter RETHROWS
+        // unhandled 'error' events synchronously, so callers never got
+        // the promised null. Treat a corrupt file as "no token stored".
+        console.error(`Corrupted bot token file for ${platform} — ignoring`);
+        return null;
+      }
 
       const token = await this.decryptCredential(encrypted);
 
@@ -552,7 +545,13 @@ export class ConfigManager extends EventEmitter {
   async createBackup(description?: string): Promise<string> {
     try {
       const timestamp = new Date().toISOString();
-      const backupId = `backup-${timestamp.replace(/[:.]/g, '-')}`;
+      // f11 fix: append a per-process monotonic counter to the backup id —
+      // toISOString has millisecond resolution, so rapid consecutive backups
+      // (e.g. the createBackup/createBackup/createBackup contract test, or a
+      // burst of save operations) collided on the same file name and
+      // silently overwrote each other.
+      this.backupIdCounter = (this.backupIdCounter || 0) + 1;
+      const backupId = `backup-${timestamp.replace(/[:.]/g, '-')}-${this.backupIdCounter}`;
 
       // Get current configuration for backup
       const configForBackup = JSON.parse(JSON.stringify(this.config));
@@ -709,11 +708,32 @@ export class ConfigManager extends EventEmitter {
       const backupsToDelete = backups.slice(keepCount);
 
       for (const backup of backupsToDelete) {
-        const backupFileName = `backup-${backup.timestamp.replace(/[:.]/g, '-')}.json`;
-        const backupPath = path.join(this.backupsDir, backupFileName);
+        // f11: backup file names now carry a monotonic suffix — the
+        // metadata alone doesn't record it, so resolve the actual file by
+        // matching the timestamp prefix against the directory listing.
+        // Accept BOTH the suffixed name and the legacy unsuffixed name
+        // (pre-f11 on-disk backups have no suffix).
+        const tsPrefix = `backup-${backup.timestamp.replace(/[:.]/g, '-')}`;
+        const legacyName = `${tsPrefix}.json`;
+        let backupPath: string | null = null;
+        try {
+          const allFiles = await fs.readdir(this.backupsDir);
+          const match = allFiles.find(
+            f => f.startsWith(`${tsPrefix}-`) && f.endsWith('.json')
+          );
+          if (match) {
+            backupPath = path.join(this.backupsDir, match);
+          } else if (allFiles.includes(legacyName)) {
+            backupPath = path.join(this.backupsDir, legacyName);
+          }
+        } catch {
+          // fall through — directory read failure surfaces in deleteBackup
+        }
 
         try {
-          await this.deleteBackup(backupPath);
+          if (backupPath) {
+            await this.deleteBackup(backupPath);
+          }
         } catch (error) {
           console.warn(`Failed to delete old backup ${backupPath}:`, error);
         }
@@ -744,6 +764,17 @@ export class ConfigManager extends EventEmitter {
   async disableChangeNotifications(): Promise<void> {
     await this.cleanupFileWatchers();
     console.log('Configuration change notifications disabled');
+  }
+
+  /**
+   * Stop the config manager: close file watchers and clear the debounce
+   * timer (MP-LEAK-01). Called from the integration-service stop chain.
+   */
+  async stop(): Promise<void> {
+    if (!this.isInitialized) return;
+    await this.cleanupFileWatchers();
+    this.isInitialized = false;
+    console.log('ConfigManager stopped');
   }
 
   /**
@@ -782,6 +813,13 @@ export class ConfigManager extends EventEmitter {
               !Array.isArray(oldValue) && !Array.isArray(newValue)) {
             // Recursively compare nested objects
             compareObjects(oldValue, newValue, currentPath);
+          } else if (Array.isArray(oldValue) && Array.isArray(newValue) &&
+                     JSON.stringify(oldValue) === JSON.stringify(newValue)) {
+            // f11 fix: deep-equal arrays are not changes — the previous
+            // strict `!==` reference comparison flagged every array (e.g.
+            // two distinct `[]` instances) as "modified", producing
+            // phantom diffs (8 bogus changes for identical configs).
+            continue;
           } else {
             changes.push({
               path: currentPath,
@@ -1417,7 +1455,7 @@ export class ConfigManager extends EventEmitter {
 /**
  * Create a configuration manager instance
  */
-export function createConfigManager(): ConfigManager {
+function createConfigManager(): ConfigManager {
   return new ConfigManager();
 }
 
@@ -1425,13 +1463,3 @@ export function createConfigManager(): ConfigManager {
  * Global configuration manager instance
  */
 let globalConfigManager: ConfigManager | null = null;
-
-/**
- * Get or create global configuration manager
- */
-export function getConfigManager(): ConfigManager {
-  if (!globalConfigManager) {
-    globalConfigManager = createConfigManager();
-  }
-  return globalConfigManager;
-}

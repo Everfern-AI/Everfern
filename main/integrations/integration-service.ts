@@ -50,7 +50,7 @@ export interface IntegrationServiceConfig {
   };
 }
 
-export interface ServiceStatus {
+interface ServiceStatus {
   name: string;
   status: 'stopped' | 'starting' | 'running' | 'error';
   error?: string;
@@ -192,9 +192,14 @@ export class IntegrationService extends EventEmitter {
 
   /**
    * Stop all services
+   *
+   * MP-LEAK-01 (deep-audit): the production lifecycle only runs initialize()
+   * (main.ts) — start() is never called — so gating on isStarted made this
+   * entire teardown (including every MP-LEAK-01 cleanup-timer clear) dead
+   * code. Gate on isInitialized instead; stop() is idempotent.
    */
   async stop(): Promise<void> {
-    if (!this.isStarted) {
+    if (!this.isInitialized) {
       return;
     }
 
@@ -227,6 +232,7 @@ export class IntegrationService extends EventEmitter {
       }
 
       this.isStarted = false;
+      this.isInitialized = false;
       this.emit('stopped');
 
       console.log('[IntegrationService] All services stopped successfully');

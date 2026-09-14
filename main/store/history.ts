@@ -11,6 +11,7 @@ import * as os from 'os';
 import type { Conversation, ConversationSummary, ChatMessage } from '../acp/types';
 import { dbOps } from '../lib/db';
 import { getSystemEmbeddingConfig, getEmbeddingModel } from '../lib/embeddings';
+import { getMemoizedSystemEmbeddingConfig, getMemoizedEmbeddingModel } from '../lib/embeddings-memo';
 
 const LEGACY_CONVERSATIONS_DIR = path.join(os.homedir(), '.everfern', 'store', 'conversations');
 const LEGACY_TIMELINE_DIR = path.join(os.homedir(), '.everfern', 'store', 'timeline');
@@ -26,6 +27,10 @@ export function parseJsonField<T>(raw: unknown, fallback: T, label: string): T {
   }
 }
 
+/**
+ * SQLite-backed conversation history store: CRUD plus legacy-JSON migration
+ * and fire-and-forget vector indexing. A save mutex serializes writes.
+ */
 export class ChatHistoryStore {
   private migrated = false;
   private saveMutex = false;
@@ -35,28 +40,43 @@ export class ChatHistoryStore {
     // Migration is handled asynchronously via init()
   }
 
+  /**
+   * Acquire the single-writer save lock, queueing behind any in-flight save.
+   * Rejects (and self-removes from the queue) if the timeout elapses first.
+   */
   private async acquireSaveLock(timeoutMs = 10000): Promise<void> {
     if (!this.saveMutex) {
       this.saveMutex = true;
       return Promise.resolve();
     }
-    return new Promise(resolve => {
+    // MP-CORR-03: a timed-out waiter must NOT proceed — the current holder may
+    // still be mid-SAVEPOINT `save_conv`; concurrent saves would interleave and
+    // the waiter's finally-block would release the lock on the holder's behalf.
+    // Fail the operation instead; callers already treat save() failure as a
+    // retryable autosave error ({ success: false }).
+    return new Promise<void>((resolve, reject) => {
       let timer: NodeJS.Timeout | null = null;
       const callback = () => {
         if (timer) clearTimeout(timer);
         resolve();
       };
       timer = setTimeout(() => {
+        // Splice the timed-out waiter out of the queue: a dead waiter left in
+        // place would consume the next lock grant (resolving an already-rejected
+        // promise is a no-op) and stall every later save behind it.
         const idx = this.saveQueue.indexOf(callback);
         if (idx !== -1) this.saveQueue.splice(idx, 1);
-        console.warn('[History] Save lock acquisition timed out after', timeoutMs, 'ms; proceeding defensively.');
-        resolve();
+        console.warn('[History] Save lock acquisition timed out after', timeoutMs, 'ms; failing this save to avoid nested-savepoint corruption.');
+        reject(new Error(`Save lock acquisition timed out after ${timeoutMs}ms`));
       }, timeoutMs);
       this.saveQueue.push(callback);
     });
   }
 
   private releaseSaveLock() {
+    // The mutex stays held while waiters remain queued — each release hands
+    // the lock directly to the next waiter instead of unlocking, so a new
+    // arrival can never sneak past the queue.
     if (this.saveQueue.length > 0) {
       const next = this.saveQueue.shift();
       next?.();
@@ -65,6 +85,10 @@ export class ChatHistoryStore {
     }
   }
 
+  /**
+   * One-time lazy bootstrap: runs the legacy-JSON migration on first use.
+   * Idempotent — later calls are a no-op once `migrated` is set.
+   */
   async init() {
     if (this.migrated) return;
     await this.migrateLegacyData();
@@ -75,14 +99,22 @@ export class ChatHistoryStore {
    * Asynchronously generates an embedding for a message and stores it in the vector DB.
    * This is a fire-and-forget method that doesn't block UI saves.
    */
-  private async indexMessage(id: string, content: string, maxRetries = 3): Promise<void> {
-    if (!content || typeof content !== 'string' || content.trim().length === 0) return;
+  /**
+   * Index a single message into the vector store.
+   * MP-CORR-16: returns {ok, error} instead of swallowing failures, so
+   * backfillVectors can report honest counts and apply a single retry policy.
+   */
+  private async indexMessage(id: string, content: string, maxRetries = 3): Promise<{ ok: boolean; error?: string }> {
+    // Empty content reports success so backfill counts don't include phantom
+    // failures for messages that were never indexable.
+    if (!content || typeof content !== 'string' || content.trim().length === 0) return { ok: true };
 
     let attempt = 0;
+    let lastError = '';
     while (attempt < maxRetries) {
       try {
-        const config = getSystemEmbeddingConfig();
-        const model = getEmbeddingModel(config);
+        const config = getMemoizedSystemEmbeddingConfig();
+        const model = getMemoizedEmbeddingModel(config);
 
         const embedding = await model.embeddings.embedQuery(content);
 
@@ -95,21 +127,26 @@ export class ChatHistoryStore {
             [id, `[${embedding.join(',')}]`]
           );
         }
-        return; // Success, exit loop
+        return { ok: true }; // Success, exit loop
       } catch (err: any) {
         attempt++;
-        const errMsg = String(err).toLowerCase();
+        lastError = err instanceof Error ? err.message : String(err);
+        const errMsg = lastError.toLowerCase();
 
+        // Retry only rate-limit style failures — transient by definition.
+        // Other errors (auth, malformed input) would fail identically on every
+        // attempt, so fail fast and let the caller surface the error.
         if ((errMsg.includes('rate limit') || errMsg.includes('429') || errMsg.includes('too many requests')) && attempt < maxRetries) {
           const delayMs = attempt * 15000; // 15s, 30s
           console.warn(`[History] Rate limit hit for message ${id}. Retrying in ${delayMs / 1000}s...`);
           await new Promise(resolve => setTimeout(resolve, delayMs));
         } else {
           console.error(`[History] Failed to index message ${id} for vector search:`, err);
-          return; // Unrecoverable error or max retries reached
+          return { ok: false, error: lastError }; // Unrecoverable error or max retries reached
         }
       }
     }
+    return { ok: false, error: lastError };
   }
 
   /**
@@ -208,6 +245,9 @@ export class ChatHistoryStore {
   async listByProject(projectId: string): Promise<ConversationSummary[]> {
     await this.init();
     try {
+      // projectId is overloaded: callers may pass a project id, name, or
+      // filesystem path — the subquery resolves all three forms so every
+      // caller flavor finds its project.
       const rows = await dbOps.all(`
         SELECT c.*, p.name as projectName, COUNT(m.id) as messageCount
         FROM conversations c
@@ -248,6 +288,8 @@ export class ChatHistoryStore {
       if (!row) return { success: false, isPinned: false, error: 'Conversation not found' };
 
       const newPinned = row.is_pinned === 1 ? 0 : 1;
+      // Pin and bookmark are written in lockstep here so the unified-pair
+      // invariant (see save()) holds on this path too.
       await dbOps.run('UPDATE conversations SET is_pinned = ?, is_bookmarked = ?, updated_at = ? WHERE id = ?', [
         newPinned,
         newPinned,
@@ -350,6 +392,9 @@ export class ChatHistoryStore {
           role: row.role as any,
           content: row.content,
           thought: row.thought,
+          // reasoning_content is migration-added (ALTER TABLE in db.ts):
+          // rows written before that migration only have `thought`, so fall
+          // back to it rather than losing the reasoning text entirely.
           reasoning_content: row.reasoning_content || row.thought,
           toolCalls,
           missionTimeline: parseJsonField<any>(row.mission_timeline, undefined, 'mission_timeline'),
@@ -387,11 +432,22 @@ export class ChatHistoryStore {
    */
   async save(conversation: Conversation): Promise<{ success: boolean; error?: string }> {
     // Ensure DB is ready
+    // Re-entrancy guard: `migrated` flips only after migrateLegacyData()
+    // finishes, so a save() reaching init() mid-migration would recurse back
+    // into the migration loop ('temp-migration' is the exempt sentinel id).
     if (!this.migrated && conversation.id !== 'temp-migration') {
        await this.init();
     }
 
-    await this.acquireSaveLock();
+    try {
+      await this.acquireSaveLock();
+    } catch (lockErr: any) {
+      // MP-CORR-03: lock timeout — fail cleanly instead of corrupting the
+      // in-flight savepoint. Data stays intact; autosave will retry.
+      const msg = lockErr instanceof Error ? lockErr.message : String(lockErr);
+      console.warn('[History] Skipping save — save lock unavailable:', msg);
+      return { success: false, error: msg };
+    }
 
     let transactionStarted = false;
     const indexTasks: Array<{ id: string; content: string }> = [];
@@ -401,6 +457,8 @@ export class ChatHistoryStore {
       transactionStarted = true;
 
       // 1. Upsert Conversation
+      // Pin and bookmark are stored as a unified pair: each flag falls back to
+      // the other so the two columns never disagree (read paths OR-combine them).
       const isPinnedVal = conversation.isPinned ? 1 : (conversation.isBookmarked ? 1 : null);
       const isBookmarkedVal = conversation.isBookmarked ? 1 : (conversation.isPinned ? 1 : null);
       const isUnreadVal = conversation.isUnread !== undefined ? (conversation.isUnread ? 1 : 0) : null;
@@ -450,6 +508,9 @@ export class ChatHistoryStore {
           }));
         }
 
+        // INSERT OR REPLACE rewrites the whole row, so the subquery re-reads
+        // the original created_at first — otherwise a save whose in-memory
+        // message lacks createdAt would re-stamp it with now() on every autosave.
         await dbOps.run(
           `INSERT OR REPLACE INTO messages
            (id, conversation_id, role, content, thought, reasoning_content, tool_calls, mission_timeline, has_timeline, order_index, thinking_duration, stopped, attachments, created_at)
@@ -501,6 +562,8 @@ export class ChatHistoryStore {
           );
         }
       } else if ((conversation as any).isFullSave === true) {
+        // No messages in a FULL save means an intentionally emptied history:
+        // wipe all rows so the DB matches the (empty) snapshot exactly.
         await dbOps.run(
           'DELETE FROM messages WHERE conversation_id = ?',
           [conversation.id]
@@ -514,6 +577,9 @@ export class ChatHistoryStore {
       const msg = err instanceof Error ? err.message : String(err);
       if (transactionStarted) {
         try {
+          // ROLLBACK TO SAVEPOINT (not full ROLLBACK) so an enclosing
+          // transaction survives; the swallowed 'no transaction' errors below
+          // cover failures that already auto-rolled-back for us.
           await dbOps.run('ROLLBACK TO SAVEPOINT save_conv');
         } catch (rollbackErr) {
           const rollMsg = rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr);
@@ -559,6 +625,8 @@ export class ChatHistoryStore {
       const model = getEmbeddingModel(config);
       const embedding = await model.embeddings.embedQuery(query);
 
+      // Over-fetch 3x (k = limit * 3): GROUP BY collapses matched messages to
+      // one row per conversation before the final slice to `limit`.
       const rows = await dbOps.all(`
         SELECT c.id, c.title, c.provider, c.model, c.project_id as projectId, p.name as projectName, c.created_at as createdAt, c.updated_at as updatedAt
         FROM chat_messages_vec v
@@ -600,39 +668,32 @@ export class ChatHistoryStore {
         WHERE v.id IS NULL AND (m.role = 'user' OR m.role = 'assistant')
       `);
 
+      // MP-CORR-16: indexMessage owns the single retry policy (internal
+      // rate-limit backoff). Count only rows it reports as indexed so the
+      // reported count reflects reality instead of inflated success.
       let count = 0;
+      let failed = 0;
+      let lastError: string | undefined;
       for (const row of unindexedRows) {
         const textContent = typeof row.content === 'string' ? row.content : JSON.stringify(row.content);
 
-        let retries = 0;
-        let success = false;
-
-        while (!success && retries < 3) {
-          try {
-            await this.indexMessage(row.id, textContent);
-            success = true;
-          } catch (e: any) {
-            const errorMsg = String(e).toLowerCase();
-            if (errorMsg.includes('rate limit') || errorMsg.includes('429') || errorMsg.includes('too many requests')) {
-              console.warn(`[History] Rate limit hit on message ${row.id}. Waiting 15 seconds before retry...`);
-              await new Promise(r => setTimeout(r, 15000));
-              retries++;
-            } else {
-              console.error(`[History] Unrecoverable error indexing message ${row.id}:`, e);
-              break; // Skip this message on non-rate-limit errors
-            }
-          }
-        }
-
-        if (success) {
+        const result = await this.indexMessage(row.id, textContent);
+        if (result.ok) {
           count++;
+        } else {
+          failed++;
+          lastError = result.error;
         }
 
         // Add a standard 2 second delay between requests to respect RPM limits (30 req/min)
         await new Promise(r => setTimeout(r, 2000));
       }
-      console.log(`[History] Vector backfill completed. Indexed ${count} messages.`);
-      return { success: true, count };
+      console.log(`[History] Vector backfill completed. Indexed ${count} of ${unindexedRows.length} messages (${failed} failed).`);
+      return {
+        success: failed === 0,
+        count,
+        error: failed > 0 ? `${failed} message(s) failed to index${lastError ? `: ${lastError}` : ''}` : undefined,
+      };
     } catch (err) {
       console.error('[History] Vector backfill failed:', err);
       return { success: false, count: 0, error: String(err) };

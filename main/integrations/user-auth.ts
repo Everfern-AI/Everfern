@@ -75,7 +75,7 @@ export interface UserAccount {
 /**
  * Authentication result
  */
-export interface AuthenticationResult {
+interface AuthenticationResult {
   /** Whether authentication succeeded */
   success: boolean;
   /** User account (if successful) */
@@ -91,7 +91,7 @@ export interface AuthenticationResult {
 /**
  * User registration data
  */
-export interface UserRegistrationData {
+interface UserRegistrationData {
   /** Platform where user is registering */
   platform: string;
   /** Platform-specific user ID */
@@ -111,7 +111,7 @@ export interface UserRegistrationData {
 /**
  * Permission check result
  */
-export interface PermissionCheckResult {
+interface PermissionCheckResult {
   /** Whether permission is granted */
   granted: boolean;
   /** Reason for denial (if not granted) */
@@ -125,7 +125,7 @@ export interface PermissionCheckResult {
 /**
  * Authentication service configuration
  */
-export interface AuthConfig {
+interface AuthConfig {
   /** Base directory for user data storage */
   baseDir: string;
   /** Session timeout in milliseconds */
@@ -183,6 +183,7 @@ export class UserAuthenticationService extends EventEmitter {
   private platformUserMap = new Map<string, string>(); // platform:platformId -> userId
   private failedAttempts = new Map<string, { count: number; lastAttempt: Date }>();
   private securityEvents: SecurityEvent[] = [];
+  private cleanupTimer: NodeJS.Timeout | null = null;
   private isInitialized = false;
 
   constructor(config: Partial<AuthConfig> = {}) {
@@ -254,6 +255,12 @@ export class UserAuthenticationService extends EventEmitter {
     }
 
     try {
+      // Clear session cleanup timer (MP-LEAK-01)
+      if (this.cleanupTimer) {
+        clearInterval(this.cleanupTimer);
+        this.cleanupTimer = null;
+      }
+
       // Save all user data
       await this.saveAllUsers();
 
@@ -508,8 +515,8 @@ export class UserAuthenticationService extends EventEmitter {
   }
 
   /**
-   * Link a platform identity to an existing user
-   */
+    * Link a platform identity to an existing user
+    */
   async linkPlatformIdentity(
     userId: string,
     platform: string,
@@ -553,6 +560,24 @@ export class UserAuthenticationService extends EventEmitter {
     } catch (error) {
       console.error('Error linking platform identity:', error);
       return false;
+    }
+  }
+
+  /**
+   * Remove the platform→user lookup entry for an identity that was just
+   * unlinked from its user.
+   *
+   * f11 fix: IdentityLinkingService.unlinkPlatformIdentity removed the
+   * identity from the user's platformIdentities map but left the
+   * platformUserMap entry behind — the unlinked identity still resolved
+   * to the user via getUserByPlatformId and blocked future use of that
+   * platform id (registerUser / linkPlatformIdentity both reject when the
+   * map still has an owner).
+   */
+  unlinkPlatformIdentityLookup(userId: string, platform: string, platformId: string): void {
+    const key = `${platform}:${platformId}`;
+    if (this.platformUserMap.get(key) === userId) {
+      this.platformUserMap.delete(key);
     }
   }
 
@@ -866,7 +891,8 @@ export class UserAuthenticationService extends EventEmitter {
    * Start cleanup timer for expired sessions
    */
   private startCleanupTimer(): void {
-    setInterval(async () => {
+    // MP-LEAK-01: store handle so shutdown() can clear it.
+    this.cleanupTimer = setInterval(async () => {
       try {
         await this.cleanupExpiredSessions();
       } catch (error) {
