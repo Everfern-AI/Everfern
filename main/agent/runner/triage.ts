@@ -128,6 +128,18 @@ export function classifyIntentHeuristic(userInput: string, history: any[] = []):
 }
 
 export function classifyIntentFallback(userInput: string, history: any[] = []): IntentClassification {
+  const normalized = userInput.toLowerCase().trim();
+  const explicitWebSearch = /\b(?:search(?:\s+(?:the\s+)?(?:web|internet))?\s+for|look\s+up|find\s+me|google(?:\s+for)?)\b/.test(normalized);
+  const listResearch = /\bcompile\b[^.!?]*\blist\b|\bcomprehensive\s+list\b|\bfind\s+(?:me\s+)?(?:the\s+)?(?:top|best)\b|\btop\s+\d+(?:\s*-\s*\d+)?\b/.test(normalized);
+
+  if (explicitWebSearch || listResearch) {
+    return {
+      intent: 'research',
+      confidence: 0.85,
+      reasoning: 'Request requires finding, comparing, or compiling information'
+    };
+  }
+
   return {
     intent: 'task',
     confidence: 0.5,

@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { PlanArtifact } from './PlanArtifact';
 import ToolCallCodePane from '@/components/tools/ToolCallCodePane';
+import { useTheme } from '@/components/ThemeProvider';
 
 /* ============================================================
    CU-UI-01 XSS HARDENING
@@ -897,8 +898,15 @@ function JsonViewer({ data, maxHeight = 300 }: { data: any; maxHeight?: number }
 
 function NavisReportViewer({ report, isRunning }: { report: string; isRunning: boolean }) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const { theme } = useTheme();
   const [displayedReport, setDisplayedReport] = useState(report);
-  const [readerTheme, setReaderTheme] = useState<'light' | 'dark'>('dark');
+  const [readerTheme, setReaderTheme] = useState<'light' | 'dark'>(theme ?? 'light');
+
+  useEffect(() => {
+    if (theme) {
+      setReaderTheme(theme);
+    }
+  }, [theme]);
 
   useEffect(() => {
     setDisplayedReport(report);
@@ -907,22 +915,23 @@ function NavisReportViewer({ report, isRunning }: { report: string; isRunning: b
     }
   }, [report, isRunning]);
 
-  const themeColors = readerTheme === 'light' ? {
-    bg: '#fcfbfa',
-    text: '#2d312e',
-    textMuted: '#686c69',
-    border: '#e7e5e0',
-    codeBg: '#f5f3ee',
-    headerColor: '#1d211e',
+  const isLight = readerTheme === 'light';
+  const themeColors = isLight ? {
+    bg: 'var(--color-bg-surface, #ffffff)',
+    text: 'var(--color-text-primary, #111111)',
+    textMuted: 'var(--color-text-secondary, #4a4846)',
+    border: 'var(--color-border, #e8e6d9)',
+    codeBg: 'var(--color-bg-subtle, #f4f4f4)',
+    headerColor: 'var(--color-text-primary, #111111)',
     accent: '#d97706',
-    accentFaint: '#fef3c7',
+    accentFaint: 'rgba(217, 119, 6, 0.1)',
   } : {
-    bg: '#141413',
-    text: '#e2e2dc',
-    textMuted: '#8b8b83',
-    border: '#2c2b29',
-    codeBg: '#1e1e1c',
-    headerColor: '#f5f5f0',
+    bg: 'var(--color-bg-surface, #181714)',
+    text: 'var(--color-text-primary, #e5e4df)',
+    textMuted: 'var(--color-text-secondary, #96948d)',
+    border: 'var(--color-border, #333029)',
+    codeBg: 'var(--color-bg-subtle, #22201b)',
+    headerColor: 'var(--color-text-primary, #e5e4df)',
     accent: '#f59e0b',
     accentFaint: 'rgba(245, 158, 11, 0.1)',
   };
@@ -1068,6 +1077,11 @@ function NavisReportViewer({ report, isRunning }: { report: string; isRunning: b
             <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: themeColors.accentFaint, border: `1px solid ${themeColors.accent}40`, borderRadius: 20, padding: '2px 8px' }}>
               <Loader2 size={10} color={themeColors.accent} style={{ animation: 'spin 1s linear infinite' }} />
               <span style={{ fontSize: 10, color: themeColors.accent, fontFamily: T.sans, fontWeight: 600 }}>Writing...</span>
+            </div>
+          ) : (displayedReport && (displayedReport.includes('Unable to reach') || displayedReport.includes('ECONNREFUSED') || displayedReport.includes('Error:') || displayedReport.includes('Failed to'))) ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(239,68,68,0.08)', border: `1px solid rgba(239,68,68,0.3)`, borderRadius: 20, padding: '2px 8px' }}>
+              <AlertCircle size={10} color={T.error || '#ef4444'} />
+              <span style={{ fontSize: 10, color: T.error || '#ef4444', fontFamily: T.sans, fontWeight: 600 }}>Failed</span>
             </div>
           ) : (
             <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(34,197,94,0.08)', border: `1px solid rgba(34,197,94,0.3)`, borderRadius: 20, padding: '2px 8px' }}>
@@ -1223,6 +1237,11 @@ export function ToolCallDetailPane({
     return { title, steps, content };
   }, [isPlan, toolCall.result]);
 
+  const isRunning =
+    (toolCall.status as string) === 'running' ||
+    toolCall.status === 'executing' ||
+    toolCall.status === 'pending';
+
   useEffect(() => {
     let isMounted = true;
     if (!isNavis || !toolCall) return;
@@ -1295,7 +1314,8 @@ export function ToolCallDetailPane({
           content = await api.projects.readFile(projectPath, filename);
         }
 
-        if (content === null && isNavis && toolCall.id) {
+        // Fallback to global findings.md ONLY when finished (not running) and tool-call-specific file was not found
+        if (content === null && isNavis && toolCall.id && !isRunning) {
           try {
             const everfernPath = await api.projects.getEverfernPath();
             if (everfernPath) {
@@ -1312,13 +1332,13 @@ export function ToolCallDetailPane({
         if (isMounted) {
           if (content !== null) {
             setFindingsContent(content);
-          } else {
+          } else if (!isRunning) {
             setFindingsContent('Could not find findings.md for this task.');
           }
         }
       } catch (err) {
         console.error('Error reading findings.md in ToolCallDetailPane:', err);
-        if (isMounted) {
+        if (isMounted && !isRunning) {
           setFindingsContent('Could not find findings.md for this task.');
         }
       }
@@ -1326,17 +1346,16 @@ export function ToolCallDetailPane({
 
     readFindings();
 
-    const isRunning = toolCall.status === 'executing' || toolCall.status === 'pending';
     let intervalId: any;
     if (isRunning) {
-      intervalId = setInterval(readFindings, 250);
+      intervalId = setInterval(readFindings, 500);
     }
 
     return () => {
       isMounted = false;
       if (intervalId) clearInterval(intervalId);
     };
-  }, [isNavis, toolCall]);
+  }, [isNavis, toolCall, isRunning]);
 
   const getToolIcon = () => {
     if (isPlan) return <List size={18} />;
@@ -1551,7 +1570,7 @@ export function ToolCallDetailPane({
                 <motion.div key="findings" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ flex: 1, minHeight: 0, height: '100%' }}>
                   <NavisReportViewer
                     report={findingsContent}
-                    isRunning={toolCall.status === 'executing' || toolCall.status === 'pending'}
+                    isRunning={isRunning}
                   />
                 </motion.div>
               )}

@@ -38,7 +38,12 @@ ASYNC WORKFLOW: For long-running commands (builds, servers, installs), set a sho
         error: 'missing_parameter'
       };
     }
-    const cwd = (args.cwd as string) || AGENT_DEFAULT_CWD;
+    let defaultCwd = AGENT_DEFAULT_CWD;
+    try {
+      const { getPiToolsWorkspaceDir } = require('../pi-tools');
+      defaultCwd = getPiToolsWorkspaceDir() || AGENT_DEFAULT_CWD;
+    } catch {}
+    const cwd = (args.cwd as string) || defaultCwd;
     const id = (args.id as string) || toolCallId || `term_${Date.now()}`;
     const normalizeTimeoutMs = (value: unknown): number | undefined => {
       const n = Number(value);

@@ -188,14 +188,35 @@ function summarizeToolArgs(toolName: string, args: Record<string, unknown>): str
   return previewValue(args);
 }
 
+// Workspace root management — defaults to user home directory (os.homedir()), NEVER process.cwd()
+let currentWorkspaceDir: string = os.homedir();
+
+export function setPiToolsWorkspaceDir(dir: string | undefined | null): void {
+  if (dir && typeof dir === 'string' && dir.trim()) {
+    currentWorkspaceDir = dir.trim();
+  } else {
+    currentWorkspaceDir = os.homedir();
+  }
+}
+
+export function getPiToolsWorkspaceDir(): string {
+  // Hard guard: Never allow EverFern's application source directory to be treated as root
+  const efCwd = process.cwd();
+  if (currentWorkspaceDir && currentWorkspaceDir.toLowerCase() === efCwd.toLowerCase()) {
+    return os.homedir();
+  }
+  return currentWorkspaceDir || os.homedir();
+}
+
 function getHostExecutionContext(cwd?: string): string {
   const home = os.homedir();
+  const effectiveCwd = cwd || getPiToolsWorkspaceDir();
   const downloads = path.join(home, 'Downloads');
   const desktop = path.join(home, 'Desktop');
   return [
     'Host execution context:',
     `- Platform: ${process.platform} ${os.release()}`,
-    `- Current working directory: ${cwd || process.cwd()}`,
+    `- Current working directory: ${effectiveCwd}`,
     `- User profile/home: ${home}`,
     `- Downloads: ${downloads}`,
     `- Desktop: ${desktop}`,
@@ -292,8 +313,8 @@ async function executeHostGrep(
   }
 
   const searchPath = typeof args.path === 'string' && args.path.trim()
-    ? path.resolve(args.path)
-    : process.cwd();
+    ? path.resolve(getPiToolsWorkspaceDir(), args.path)
+    : getPiToolsWorkspaceDir();
   if (!(await existsAsync(searchPath))) {
     return { success: false, output: `Error: grep path does not exist\nPath: ${searchPath}`, error: 'path_not_found' };
   }
@@ -795,7 +816,7 @@ function adaptTool(
             // Always use native exec (main host VM) in production
             return await withCommandTracking(command, async () => {
               try {
-                const cwd = (args.cwd as string) || (args.Cwd as string) || process.cwd();
+                const cwd = (args.cwd as string) || (args.Cwd as string) || getPiToolsWorkspaceDir();
                 
                 const execResult = await UnifiedExecutor.execute({
                   command,
@@ -840,13 +861,14 @@ function adaptTool(
                   };
                 }
               } catch (execError: any) {
-                const cleanOutput = stripAnsi(`Error: command failed\n${getHostExecutionContext(process.cwd())}\nCommand: ${command}\nOutput:\n${execError.message || String(execError)}`);
+                const fallbackCwd = (args.cwd as string) || (args.Cwd as string) || getPiToolsWorkspaceDir();
+                const cleanOutput = stripAnsi(`Error: command failed\n${getHostExecutionContext(fallbackCwd)}\nCommand: ${command}\nOutput:\n${execError.message || String(execError)}`);
                 return {
                   success: false,
                   output: cleanOutput,
                   error: stripAnsi(execError.message || String(execError)),
                   data: {
-                    cwd: process.cwd(),
+                    cwd: fallbackCwd,
                     homeDir: os.homedir(),
                     downloadsDir: path.join(os.homedir(), 'Downloads'),
                     shell: process.platform === 'win32' ? 'powershell.exe' : '/bin/bash',
@@ -952,7 +974,7 @@ function adaptTool(
                 };
 
                 const shell = process.platform === 'win32' ? resolvePowerShellExecutable() : '/bin/bash';
-                const cwd = (args.cwd as string) || (args.Cwd as string) || process.cwd();
+                const cwd = (args.cwd as string) || (args.Cwd as string) || getPiToolsWorkspaceDir();
 
                 const { stdout, stderr } = await execAsync(command, { shell, timeout, cwd });
 
@@ -973,9 +995,10 @@ function adaptTool(
                   },
                 };
               } catch (execError: any) {
+                const fallbackCwd = (args.cwd as string) || (args.Cwd as string) || getPiToolsWorkspaceDir();
                 const combined = [execError.stdout, execError.stderr, execError.message].filter(Boolean).join('\n');
                 const output = combined.trim() || '(Command failed with no output)';
-                const cleanOutput = stripAnsi(`Error: command failed\n${getHostExecutionContext(process.cwd())}\nCommand: ${command}\nOutput:\n${output}`);
+                const cleanOutput = stripAnsi(`Error: command failed\n${getHostExecutionContext(fallbackCwd)}\nCommand: ${command}\nOutput:\n${output}`);
                 const hintedOutput = appendPythonHintIfImportError(cleanOutput, 'main');
 
                 return {
@@ -983,7 +1006,7 @@ function adaptTool(
                   output: hintedOutput,
                   error: stripAnsi(output),
                   data: {
-                    cwd: process.cwd(),
+                    cwd: fallbackCwd,
                     homeDir: os.homedir(),
                     downloadsDir: path.join(os.homedir(), 'Downloads'),
                     shell: process.platform === 'win32' ? 'powershell.exe' : '/bin/bash',
@@ -1318,8 +1341,8 @@ function adaptTool(
 
         if (name === 'ls') {
           const listPath = typeof args.path === 'string' && args.path.trim()
-            ? path.resolve(args.path)
-            : process.cwd();
+            ? path.resolve(getPiToolsWorkspaceDir(), args.path)
+            : getPiToolsWorkspaceDir();
           
           const rawFiles = stripAnsi(outputText)
             .split(/\r?\n/)
@@ -1370,8 +1393,8 @@ function adaptTool(
                 ? args.search
                 : '';
           const searchPath = typeof args.path === 'string' && args.path.trim()
-            ? path.resolve(args.path)
-            : process.cwd();
+            ? path.resolve(getPiToolsWorkspaceDir(), args.path)
+            : getPiToolsWorkspaceDir();
           const noMatches = cleanOutput.length === 0 || /\b(no matches|no results|0 matches)\b/i.test(cleanOutput);
 
           if (noMatches) {
@@ -1681,7 +1704,7 @@ async function withCommandTracking(
   }
 
   const { taskId, stepNumber } = currentAgentContext;
-  const workDir = cwd || process.cwd();
+  const workDir = cwd || getPiToolsWorkspaceDir();
 
   // ── Pre-execution: Capture file state for destructive commands ──
   let capturedSnapshotIds: string[] = [];
@@ -1823,7 +1846,9 @@ export const multiFileEditTool: AgentTool = {
 
     for (const item of files) {
       if (!item || typeof item.path !== 'string') continue;
-      const res = await editToolObj.execute(item, onUpdate, emitEvent, toolCallId);
+      const targetRoot = getPiToolsWorkspaceDir();
+      const resolvedPath = path.isAbsolute(item.path) ? item.path : path.resolve(targetRoot, item.path);
+      const res = await editToolObj.execute({ ...item, path: resolvedPath }, onUpdate, emitEvent, toolCallId);
       if (res.success) {
         successCount++;
         results.push(`✅ ${item.path}: Success`);
@@ -1879,10 +1904,12 @@ export const multiReplaceFileContentTool: AgentTool = {
     required: ['TargetFile']
   },
   execute: async (args: Record<string, unknown>, onUpdate?: (msg: string) => void, emitEvent?: (event: any) => void, toolCallId?: string): Promise<ToolResult> => {
-    const filePath = (args.TargetFile || args.path || args.filePath || args.file) as string;
-    if (!filePath) {
+    const rawFilePath = (args.TargetFile || args.path || args.filePath || args.file) as string;
+    if (!rawFilePath) {
       return { success: false, output: 'Error: TargetFile path parameter is required', error: 'missing_path' };
     }
+    const targetRoot = getPiToolsWorkspaceDir();
+    const filePath = path.isAbsolute(rawFilePath) ? rawFilePath : path.resolve(targetRoot, rawFilePath);
 
     const rawChunks = (args.ReplacementChunks || args.edits || args.chunks || args.replacements) as any[];
     if (!Array.isArray(rawChunks) || rawChunks.length === 0) {
@@ -1930,20 +1957,36 @@ export async function getPiCodingTools(): Promise<AgentTool[]> {
   const editExecutorWithTracking = (toolCallId: string, params: any) =>
     withRollbackTracking('edit', params, m.editTool.execute, toolCallId);
 
+  const resolvePathArg = (p: any): any => {
+    if (typeof p !== 'string' || !p.trim()) return p;
+    const targetRoot = getPiToolsWorkspaceDir();
+    return path.isAbsolute(p) ? p : path.resolve(targetRoot, p);
+  };
+
+  const withWorkspacePaths = (fn: (id: string, params: any) => Promise<any>) => {
+    return (toolCallId: string, params: any) => {
+      const cloned = { ...params };
+      if (cloned.path) cloned.path = resolvePathArg(cloned.path);
+      if (cloned.file_path) cloned.file_path = resolvePathArg(cloned.file_path);
+      if (cloned.dir) cloned.dir = resolvePathArg(cloned.dir);
+      return fn(toolCallId, cloned);
+    };
+  };
+
   loadedCodingTools = [
-    adaptTool(m.readToolDefinition, withReadCache(m.readTool.execute)),
-    adaptTool(m.writeToolDefinition, writeExecutorWithTracking),
-    adaptTool(m.editToolDefinition, editExecutorWithTracking),
-    adaptTool(m.findToolDefinition, m.findTool.execute),
-    adaptTool(m.grepToolDefinition, m.grepTool.execute),
-    adaptTool(m.lsToolDefinition, m.lsTool.execute),
+    adaptTool(m.readToolDefinition, withWorkspacePaths(withReadCache(m.readTool.execute))),
+    adaptTool(m.writeToolDefinition, withWorkspacePaths(writeExecutorWithTracking)),
+    adaptTool(m.editToolDefinition, withWorkspacePaths(editExecutorWithTracking)),
+    adaptTool(m.findToolDefinition, withWorkspacePaths(m.findTool.execute)),
+    adaptTool(m.grepToolDefinition, withWorkspacePaths(m.grepTool.execute)),
+    adaptTool(m.lsToolDefinition, withWorkspacePaths(m.lsTool.execute)),
     adaptTool(
       m.bashToolDefinition,
       (toolCallId: string, params: any) =>
         withCommandTracking(
           params.command || params.script || '',
           () => m.bashTool.execute(toolCallId, params),
-          params.cwd || params.workdir
+          params.cwd || params.workdir || getPiToolsWorkspaceDir()
         ),
       'executePwsh'
     ),

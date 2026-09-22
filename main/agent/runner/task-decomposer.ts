@@ -158,9 +158,15 @@ Task: "${userInput.slice(0, 500)}"
 Tools: ${toolList}${strategyContext ? strategyContext : ''}
 
 COMPUTER USE & MULTI-STEP ROUTING RULES:
-- If a task is a simple desktop action (e.g., "open Spotify", "play music", "open a specific app"), output a SINGLE step using the "computer_use" tool.
+- If a task is a direct desktop GUI action (e.g., "make brave default browser", "open Spotify and play jazz", "open notepad", "change display resolution"):
+  * Output a SINGLE step using the "computer_use" tool.
+  * For the step description and agentPrompt, use the USER'S EXACT ORIGINAL PROMPT verbatim.
+  * NEVER hallucinate or invent rigid step-by-step navigation recipes (e.g., DO NOT write "Open Windows Settings, navigate to Apps > Default apps, locate browser, click X, accept dialog Y..."). Rigid navigation recipes confuse the vision model if the UI layout, OS version, or language differs!
+- If "computer_use" is used for checking, testing, or verifying (e.g. for coding, build, or UI verification):
+  * Write a concise ONE-LINER prompt stating ONLY the end-goal of what to accomplish (e.g. "Verify the app window is open and the login form is visible").
+  * Do NOT write multi-sentence navigation instructions.
 - If a task involves multiple distinct objectives, sequential workflows, or mixed activities (e.g., "open VS Code, build a tic-tac-toe app, and test it", or "open browser, download a file, and edit it in editor"), DO NOT collapse it into a single computer_use step. Instead, break it down into multiple logical steps.
-- Use "computer_use" specifically for GUI-level actions (e.g., opening a specific application, clicking around, or UI inspection), and appropriate developer tools (like file edit/write, terminal execute, etc.) for coding, building, testing, or running commands.
+- Use "computer_use" specifically for native GUI-level actions (e.g., opening a specific application, clicking around, or UI inspection), and appropriate developer tools (like file edit/write, terminal execute, etc.) for coding, building, testing, or running commands.
 
 WEB / BOOKING ROUTING RULES:
 - Browser-based tasks are research, not desktop automation. This includes opening booking platforms, pulling live prices, comparing flights/hotels/tickets/listings, Gmail/webmail, Google Docs/Drive, SaaS dashboards, website forms, checkout, reservations, and any URL/browser tab workflow.
@@ -186,9 +192,11 @@ Respond with ONLY the JSON object.`;
         try {
             const response = await client.chat({
                 messages: [{ role: 'user', content: prompt }],
+                model: 'openai/gpt-5.6-luna',
                 temperature: attempt === 1 ? 0 : 0.1,
                 maxTokens: 2000,
-            }) as any;
+                agent: 'decomposer',
+            } as any) as any;
 
             const rawContent = (typeof response.content === 'string' ? response.content : JSON.stringify(response.content || '')).trim();
             const jsonStr = extractJSONObject(rawContent);

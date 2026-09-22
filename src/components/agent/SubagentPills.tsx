@@ -170,6 +170,9 @@ export function SubagentPills({ phases = [], isActive }: SubagentPillsProps) {
 
           return (
             <motion.button
+              type="button"
+              aria-pressed={isSelected}
+              aria-label={item.label + " sub-agent"}
               key={item.agent}
               onClick={() => handlePillClick(item.agent)}
               whileHover={{ scale: 1.02 }}

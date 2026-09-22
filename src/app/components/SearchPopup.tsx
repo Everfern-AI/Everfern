@@ -150,6 +150,9 @@ export default function SearchPopup({
                         transition={{ type: 'spring', damping: 24, stiffness: 320 }}
                         onClick={(e: React.MouseEvent) => e.stopPropagation()}
                         className="glossy"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label="Search chats"
                         style={{
                             position: 'relative',
                             backgroundColor: 'var(--color-bg-surface, #ffffff)',
@@ -189,6 +192,7 @@ export default function SearchPopup({
                                     <input
                                         ref={searchInputRef}
                                         type="text"
+                                        aria-label="Search chats"
                                         placeholder="Search chats..."
                                         value={searchValue}
                                         onChange={(e) => setSearchValue(e.target.value)}
@@ -210,10 +214,12 @@ export default function SearchPopup({
                                     />
                                 </div>
                                 <button
+                                    type="button"
+                                    aria-label="Close search"
                                     onClick={onClose}
                                     style={{
-                                        width: 32,
-                                        height: 32,
+                                        width: 40,
+                                        height: 40,
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: 'center',

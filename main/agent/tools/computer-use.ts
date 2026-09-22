@@ -7,12 +7,80 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import * as crypto from "crypto";
 
 import type { AgentTool, ToolResult as AgentToolResult } from "../runner/types";
 import { AIClient, ChatMessage } from "../../lib/ai-client";
 import { globalAbortManager } from "../runner/abort-manager";
 import DesktopOverlay from "./desktop-overlay";
 import { checkToolPermission } from "./permission-checker";
+
+// ── Pruning & Caching Constants & Types ─────────────────────────────────────
+
+export const PRUNED_SCREENSHOT_PLACEHOLDER = "[Screenshot pruned to conserve context]";
+
+export interface TaskRunMetrics {
+  totalInputTokens: number;
+  cachedTokensRead: number;
+  totalOutputTokens: number;
+  totalReasoningTokens: number;
+  cacheHitRatePct: number;
+  stepCount: number;
+  success: boolean;
+  estimatedCostUsd: number;
+}
+
+export function pruneHistoricalScreenshots(
+  messages: ChatMessage[],
+  keepLastN: number = 2
+): { prunedCount: number; oldestActiveIndex: number } {
+  const imageIndices: { msgIndex: number; partIndex: number }[] = [];
+  for (let mIdx = 0; mIdx < messages.length; mIdx++) {
+    const msg = messages[mIdx];
+    if (Array.isArray(msg.content)) {
+      for (let pIdx = 0; pIdx < msg.content.length; pIdx++) {
+        const part = msg.content[pIdx];
+        if (part && part.type === "image_url") {
+          imageIndices.push({ msgIndex: mIdx, partIndex: pIdx });
+        }
+      }
+    }
+  }
+
+  const totalImages = imageIndices.length;
+  const prunedCount = Math.max(0, totalImages - keepLastN);
+  let oldestActiveIndex = -1;
+
+  if (prunedCount > 0) {
+    for (let i = 0; i < prunedCount; i++) {
+      const { msgIndex, partIndex } = imageIndices[i];
+      const msg = messages[msgIndex];
+      if (Array.isArray(msg.content)) {
+        msg.content[partIndex] = {
+          type: "text",
+          text: PRUNED_SCREENSHOT_PLACEHOLDER
+        };
+      }
+    }
+  }
+
+  if (totalImages > 0 && prunedCount < totalImages) {
+    oldestActiveIndex = imageIndices[prunedCount].msgIndex;
+  }
+
+  return { prunedCount, oldestActiveIndex };
+}
+
+export function computeScreenHash(base64: string): string {
+  if (!base64) return "";
+  return crypto.createHash("sha256").update(base64.slice(0, 50000)).digest("hex");
+}
+
+const IRREVERSIBLE_REGEX = /\b(submit|send|delete|pay|purchase|remove|drop|format|terminate|order)\b/i;
+export function isIrreversibleAction(actionName: string, args: Record<string, any>): boolean {
+  const textToCheck = `${actionName} ${JSON.stringify(args || {})}`;
+  return IRREVERSIBLE_REGEX.test(textToCheck);
+}
 
 // ── Optional native deps ─────────────────────────────────────────────────────
 
@@ -83,6 +151,7 @@ const COMPUTER_USE_TOOL_SPEC = {
             "release",
             "drag",
             "wait",
+            "zoom",
             "terminate",
             "answer",
           ],
@@ -100,7 +169,7 @@ const COMPUTER_USE_TOOL_SPEC = {
         coordinate: {
           type: "array",
           items: { type: "number" },
-          description: "Target coordinate [x, y] for mouse actions.",
+          description: "Target coordinate [x, y] for mouse actions or center coordinate for action=zoom.",
         },
         start_coordinate: {
           type: "array",
@@ -110,6 +179,10 @@ const COMPUTER_USE_TOOL_SPEC = {
         pixels: {
           type: "number",
           description: "Scroll amount for action=scroll or action=hscroll.",
+        },
+        size: {
+          type: "number",
+          description: "Region box size in logical pixels for action=zoom (default 300).",
         },
         hold_time: {
           type: "number",
@@ -129,127 +202,235 @@ const COMPUTER_USE_TOOL_SPEC = {
   },
 };
 
-const GEMINI_SYSTEM_PROMPT = `You are operating a Windows computer.
-* To provide an answer to the user, *do not use any tools* and output your answer on a separate line. IMPORTANT: Do not add any formatting or additional punctuation/text, just output the answer by itself after two empty lines.
-* Make sure you scroll down to see everything before deciding something isn't available.
-* You can open an app from anywhere. The icon doesn't have to currently be on screen.
-* Unless explicitly told otherwise, make sure to save any changes you make.
-* If text is cut off or incomplete, scroll or click into the element to get the full text before providing an answer.
-* IMPORTANT: Complete the given task EXACTLY as stated. DO NOT make any assumptions that completing a similar task is correct. If you can't find what you're looking for, SCROLL to find it.
-* MANDATORY: In your reasoning, describe your action as a complete, natural English sentence (e.g. "Opening the Windows Start menu to search for Spotify", "Analyzing the screen to locate the search input", "Typing the application name into the search bar", "Clicking on the target result") instead of raw action codes or single-word commands like "Press" or "Key".
-* To open an application (e.g. Spotify, Discord, Chrome, VS Code), use the Start Menu (hotkey 'win', type the app name, press Enter) or execute commands. NEVER refuse or ask the user "Would you like me to...". Always execute the action.
-* If you want to edit some text, ONLY USE THE 'type_text_at' tool.
-* The given task may already be completed. If so, there is no need to do anything.`;
+// ── Simple Computer Use Prompts (styled after qwen.py) ─────────────────────────
 
-// Compact prompt for GPT-5.4 — saves ~200 tokens per turn vs the full Gemini prompt
-const GPT5_SYSTEM_PROMPT = `You are a Windows desktop automation agent. Use the provided tools to complete the task.
+export const DEFAULT_COMPUTER_USE_SYSTEM_PROMPT = `You are a computer-use agent controlling a Windows desktop through screenshots.
+Each turn you receive the current screenshot. Use the computer_use tool to perform the next action.
+
+Coordinates are NORMALIZED 0-1000 on both axes relative to the screenshot:
+(0,0) is top-left, (1000,1000) is bottom-right. Always aim for the CENTER of the target element.
+
+Actions:
+- left_click [x, y]
+- double_click [x, y]
+- right_click [x, y]
+- type "text" (types into focused field)
+- key ["ctrl", "l"] (or ["win"], ["enter"], etc.)
+- scroll (pixels: positive=up, negative=down)
+- wait (time: seconds)
+- zoom [x, y] (inspect small UI details at 1:1 physical resolution)
+- terminate (status: "success"|"failure")
+
 Rules:
-- In your reasoning, describe your action as a complete, natural English sentence (e.g. "Opening the Windows Start menu to search for the application", "Analyzing the screen to find the play button") instead of raw action codes or single-word "Press" commands.
-- Use scroll_document/scroll_at if content may be below the fold before concluding something is missing.
-- Open apps using the Start menu (key: win, type app name, press Enter) if not visible on screen. NEVER ask the user "Would you like me to try executing...". Always perform the action.
-- Save changes unless explicitly told not to.
-- Do nothing if the task is already complete.
-- To answer the user, output ONLY the answer text (no tools, no formatting).`;
+- One action per turn. If the previous action seems to have had no effect, try a different approach instead of repeating it.
+- Never claim done without visible proof on screen.
+- To open an app not visible on screen, press the Windows key (key "win"), type the app name, and press Enter.`;
 
-const CLAUDE_COMPUTER_USE_PROMPT = `You are a Windows desktop automation agent powered by Claude. Use the computer_use tool or actions to operate the computer.
-Rules:
-- In your reasoning, describe your action as a complete, natural English sentence.
-- Consult the screenshot coordinates carefully before clicking, typing, or moving the cursor.
-- To open an application, use the Start Menu (key 'win', type the app name, press Enter).
-- If content may be below the visible view, scroll before concluding it is absent.
-- When the task is complete, stop taking actions and provide your final response to the user.`;
+export const GEMINI_SYSTEM_PROMPT = DEFAULT_COMPUTER_USE_SYSTEM_PROMPT;
+export const GPT5_SYSTEM_PROMPT = DEFAULT_COMPUTER_USE_SYSTEM_PROMPT;
+export const CLAUDE_COMPUTER_USE_PROMPT = DEFAULT_COMPUTER_USE_SYSTEM_PROMPT;
 
-const SYSTEM_PROMPT = `You are a GUI automation agent. You control a desktop by outputting structured actions.
+export const SYSTEM_PROMPT = `You are a computer-use agent controlling a Windows desktop through screenshots.
+Each turn you receive the current screenshot. Reply with EXACTLY ONE JSON object and nothing else
+(no markdown fences, no commentary).
 
-## CRITICAL OUTPUT FORMAT — YOU MUST FOLLOW THIS EXACTLY
+Coordinates are NORMALIZED 0-1000 on both axes relative to the screenshot:
+(0,0) is the top-left corner, (1000,1000) is the bottom-right corner.
+Always aim for the CENTER of the target element.
 
-Your response MUST use this exact structure, nothing else:
+Schema: {"thought": "<one short sentence>", "action": "<action>", ...params}
 
-\`\`\`
-Thought: <Step-by-step reasoning: 1. Analyze current screen state and previous action result. 2. Identify the goal. 3. Decide on the best next action.>
-Action: <single action call from the Action Space below>
-\`\`\`
+Actions:
+- {"action":"click","x":int,"y":int}
+- {"action":"double_click","x":int,"y":int}
+- {"action":"right_click","x":int,"y":int}
+- {"action":"type","text":"..."}            types into the currently focused field
+- {"action":"key","keys":["ctrl","l"]}      one key like ["enter"] or a combo
+- {"action":"scroll","x":int,"y":int,"amount":int}   positive = up, negative = down
+- {"action":"wait","seconds":number}
+- {"action":"zoom","x":int,"y":int,"size":number}
+- {"action":"done","summary":"..."}         ONLY when the screen shows proof the task is complete
+- {"action":"fail","reason":"..."}          only if the task is impossible
 
-## Action Space (copy syntax exactly, no paraphrasing)
+Rules: one action per turn. If the previous action seems to have had no effect, try a different
+approach instead of repeating it. Never claim done without visible proof on screen.`;
 
-click(start_box='<|box_start|>(x1,y1)<|box_end|>')
-left_double(start_box='<|box_start|>(x1,y1)<|box_end|>')
-right_single(start_box='<|box_start|>(x1,y1)<|box_end|>')
-drag(start_box='<|box_start|>(x1,y1)<|box_end|>', end_box='<|box_start|>(x3,y3)<|box_end|>')
-hotkey(key='ctrl c')
-type(content='text here\\n')
-scroll(start_box='<|box_start|>(x1,y1)<|box_end|>', direction='down')
-wait()
-finished()
-call_user()
+export const FORMAT_CORRECTION = `Your reply was not a valid JSON action object.
+Reply with EXACTLY ONE JSON object and nothing else, e.g.:
+{"thought": "Clicking the search button", "action": "click", "x": 500, "y": 500}`;
 
-## Coordinate System
-- Coordinates are on a 1000×1000 normalized grid
-- (0,0) is top-left, (1000,1000) is bottom-right
-- Look at the screenshot carefully to find the exact pixel location of UI elements
-- x increases left→right, y increases top→bottom
-- The current cursor position is marked with a prominent red crosshair on the screenshot.
-
-## Advanced Reasoning & Rules (Frontier Vision)
-- ONE action per response only.
-- DO NOT hallucinate elements. If an element is not visible, use search, scrolling, or the Start Menu to find it.
-- NEVER repeat the exact same action or click the exact same coordinates if the previous attempt failed to change the screen state. If you are stuck, try a different approach, wait, or use keyboard shortcuts.
-- TRANSIENT UI STATES (MICRO-ANIMATIONS): Some actions (like clicking 'Copy') trigger a very fast animation (e.g., a checkmark) that vanishes before your next screenshot. If you just clicked a button and the screen looks identical, DO NOT assume it failed. ASSUME IT SUCCEEDED and proceed to the next step. Do not click it repeatedly.
-- Always verify if the previous action succeeded by checking the current screen state (keeping transient states in mind).
-- Use ONLY the action functions listed above — never describe actions in plain English.
-- Coordinates must be inside <|box_start|>...<|box_end|> tags.
-- To click a taskbar icon at the bottom of the screen, use y values close to 1000.
-- To open applications not visible, use hotkey(key='win') to open Start Menu, then type the app name.
-
-## Examples of CORRECT output:
-\`\`\`
-Thought: The previous click on the text box didn't focus it. I'll try double-clicking it now.
-Action: left_double(start_box='<|box_start|>(500,400)<|box_end|>')
-\`\`\`
-
-\`\`\`
-Thought: VSCode is not visible; I will open the Start Menu to search for it.
-Action: hotkey(key='win')
-\`\`\`
-
-\`\`\`
-Thought: I will type "code" to search for VSCode in the Start Menu.
-Action: type(content='code\\n')
-\`\`\`
-
-## WRONG — never do this:
-\`\`\`
-Action: Click on the taskbar icon for VSCode to open it.
-Action: Open VSCode by pressing Win key
-\`\`\``;
-
-const FORMAT_CORRECTION = `Your previous response contained a plain-English action description instead of a structured action call. You MUST use the exact function syntax from the Action Space.
-
-For example, instead of:
-  Action: Click on the taskbar icon for VSCode to open it.
-
-Write:
-  Action: click(start_box='<|box_start|>(50,980)<|box_end|>')
-
-Or if you cannot see the element, use:
-  Action: hotkey(key='win')
-  (then in the next step type the application name)
-
-Now output ONLY:
-Thought: <why you are taking this action>
-Action: <structured action call>`;
-
-function stripThinking(text: string): string {
+export function stripThinking(text: string): string {
   let clean = text.replace(/<think>[\s\S]*?<\/think>/gi, "");
   clean = clean.replace(/<\/?think>/gi, "");
   return clean.trim();
 }
 
-function parseOutput(raw: string): { thought: string; actions: string[] } {
+export function parseJsonAction(raw: string): { action: any | null; error: string | null } {
+  raw = stripThinking(raw);
+  const cleaned = raw.replace(/```(?:json)?/gi, "").trim();
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) {
+    return { action: null, error: "Your reply was not a JSON object. Reply with exactly one JSON action." };
+  }
+  let obj: any;
+  try {
+    obj = JSON.parse(cleaned.slice(start, end + 1));
+  } catch (e: any) {
+    return { action: null, error: `Invalid JSON (${e.message || e}). Reply with exactly one valid JSON action.` };
+  }
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+    return { action: null, error: "Reply with exactly one valid JSON object action." };
+  }
+  const kind = String(obj.action || "").toLowerCase().trim();
+  const validActions = new Set([
+    "click", "double_click", "right_click", "type", "key",
+    "scroll", "wait", "zoom", "done", "fail"
+  ]);
+  if (!validActions.has(kind)) {
+    return { action: null, error: `Unknown action ${JSON.stringify(kind)}. Valid actions: ${Array.from(validActions).sort().join(", ")}.` };
+  }
+  if (["click", "double_click", "right_click", "zoom"].includes(kind)) {
+    const x = Number(obj.x);
+    const y = Number(obj.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      return { action: null, error: "This action needs numeric x and y." };
+    }
+    if (x < 0 || x > 1000 || y < 0 || y > 1000) {
+      return { action: null, error: "x and y must be normalized 0-1000, not pixels." };
+    }
+    obj.x = Math.round(x);
+    obj.y = Math.round(y);
+  }
+  if (kind === "type") {
+    if (typeof obj.text !== "string") {
+      if (typeof obj.content === "string") {
+        obj.text = obj.content;
+      } else {
+        return { action: null, error: "type needs a string 'text'." };
+      }
+    }
+  }
+  if (kind === "key") {
+    const rawKeys = obj.keys ?? obj.key;
+    const keys = Array.isArray(rawKeys) ? rawKeys : (rawKeys ? String(rawKeys).split("+") : null);
+    if (!Array.isArray(keys) || keys.length === 0 || !keys.every((k: any) => typeof k === "string")) {
+      return { action: null, error: "key needs a non-empty list of key names, e.g. [\"ctrl\",\"l\"]." };
+    }
+    // Normalize key aliases (matches qwen.py KEY_ALIASES)
+    const KEY_ALIASES: Record<string, string> = {
+      windows: "win", super: "win", meta: "win", cmd: "command",
+      return: "enter", escape: "esc", control: "ctrl", del: "delete",
+    };
+    obj.keys = keys.map((k: string) => {
+      const lower = k.trim().toLowerCase();
+      return KEY_ALIASES[lower] ?? lower;
+    });
+  }
+  obj.action = kind;
+  return { action: obj, error: null };
+}
+
+export function buildQwenMessages(
+  history: { obs_text: string; image: string | null; reply: string }[],
+  obsText: string,
+  currentImage: string,
+  keepLastScreenshots: number = 2
+): ChatMessage[] {
+  const messages: ChatMessage[] = [
+    { role: "system", content: SYSTEM_PROMPT }
+  ];
+  const keepFrom = history.length - (keepLastScreenshots - 1);
+  for (let i = 0; i < history.length; i++) {
+    const h = history[i];
+    if (i >= keepFrom && h.image) {
+      messages.push({
+        role: "user",
+        content: [
+          { type: "text", text: h.obs_text },
+          { type: "image_url", image_url: { url: h.image } }
+        ]
+      });
+    } else {
+      messages.push({
+        role: "user",
+        content: [
+          { type: "text", text: h.obs_text + "\n" + PRUNED_SCREENSHOT_PLACEHOLDER }
+        ]
+      });
+    }
+    messages.push({
+      role: "assistant",
+      content: h.reply
+    });
+  }
+  messages.push({
+    role: "user",
+    content: [
+      { type: "text", text: obsText },
+      { type: "image_url", image_url: { url: currentImage } }
+    ]
+  });
+  return messages;
+}
+
+export function parseOutput(raw: string): { thought: string; actions: string[] } {
   let thought = "";
   const actions: string[] = [];
 
   raw = stripThinking(raw);
+
+  // 1. Try clean JSON parse (qwen.py style)
+  const cleaned = raw.replace(/```(?:json)?/gi, "").trim();
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start !== -1 && end !== -1 && end > start) {
+    try {
+      const obj = JSON.parse(cleaned.slice(start, end + 1));
+      if (obj && typeof obj === "object" && obj.action) {
+        thought = typeof obj.thought === "string" ? obj.thought : "";
+        const kind = String(obj.action).toLowerCase();
+        let actionStr: string | null = null;
+        if (kind === "click" || kind === "left_click") {
+          const x = Math.round(Number(obj.x ?? 500));
+          const y = Math.round(Number(obj.y ?? 500));
+          actionStr = `click(${x},${y})`;
+        } else if (kind === "double_click" || kind === "left_double") {
+          const x = Math.round(Number(obj.x ?? 500));
+          const y = Math.round(Number(obj.y ?? 500));
+          actionStr = `double_click(${x},${y})`;
+        } else if (kind === "right_click" || kind === "right_single") {
+          const x = Math.round(Number(obj.x ?? 500));
+          const y = Math.round(Number(obj.y ?? 500));
+          actionStr = `right_click(${x},${y})`;
+        } else if (kind === "type") {
+          const txt = String(obj.text ?? obj.content ?? "");
+          actionStr = `type("${txt.replace(/"/g, '\\"')}")`;
+        } else if (kind === "key") {
+          const keys = Array.isArray(obj.keys) ? obj.keys : (obj.key ? String(obj.key).split("+") : ["enter"]);
+          actionStr = `press(${keys.join("+")})`;
+        } else if (kind === "scroll") {
+          const amt = Number(obj.amount ?? obj.pixels ?? -3);
+          actionStr = amt > 0 || obj.direction === "up" ? "scroll(up)" : "scroll(down)";
+        } else if (kind === "wait") {
+          const sec = Number(obj.seconds ?? obj.time ?? 1);
+          actionStr = `wait(${sec})`;
+        } else if (kind === "zoom") {
+          const x = Math.round(Number(obj.x ?? 500));
+          const y = Math.round(Number(obj.y ?? 500));
+          actionStr = `zoom(${x},${y})`;
+        } else if (kind === "done" || kind === "finished" || kind === "fail" || kind === "terminate") {
+          actionStr = "finished()";
+        }
+
+        if (actionStr) {
+          return { thought, actions: [actionStr] };
+        }
+      }
+    } catch {}
+  }
+
+  // 2. Fallback to legacy Thought: / Action: syntax
   raw = raw.replace(/^```[a-z]*\n?/gmi, "");
   raw = raw.replace(/```$/gmi, "");
 
@@ -271,7 +452,7 @@ function parseOutput(raw: string): { thought: string; actions: string[] } {
     }
   }
 
-  // Fallback: if actions is empty but the raw response contains a structured action, parse it directly
+  // Fallback: direct structured action line
   if (actions.length === 0) {
     const lines = raw.split("\n");
     for (const line of lines) {
@@ -287,8 +468,8 @@ function parseOutput(raw: string): { thought: string; actions: string[] } {
 }
 
 const KNOWN_ACTION_PREFIXES = [
-  "click(", "left_double(", "right_single(", "drag(",
-  "hotkey(", "type(", "scroll(", "wait(", "finished(", "call_user("
+  "click(", "left_double(", "right_single(", "double_click(", "drag(",
+  "hotkey(", "press(", "type(", "scroll(", "wait(", "zoom(", "finished(", "call_user(", "done("
 ];
 
 function isStructuredAction(line: string): boolean {
@@ -410,7 +591,7 @@ class ToolResult {
 
     const content: any[] = [];
     if (lines.length) content.push({ type: "text", text: lines.join("\n") });
-    if (screenshot)   content.push({ type: "image_url", image_url: { url: screenshot, detail: "low" } });
+    if (screenshot)   content.push({ type: "image_url", image_url: { url: screenshot, detail: "high" } });
     if (!content.length) content.push({ type: "text", text: "tool call completed." });
     return content;
   }
@@ -490,6 +671,7 @@ class ComputerUseTool {
       release:         p => this.releaseAction(p),
       drag:            p => this.dragAction(p),
       wait:            p => this.waitAction(p),
+      zoom:            p => this.zoomAction(p),
       answer:          p => this.answer(p),
       terminate:       p => this.terminate(p),
     };
@@ -500,8 +682,8 @@ class ComputerUseTool {
     const result = await handler(params);
     result._action = action;
 
-    // answer / terminate don't get a screenshot (matches Python)
-    if (action === "answer" || action === "terminate") {
+    // answer / terminate / zoom don't get full screenshot attachment (zoom has its own crop)
+    if (action === "answer" || action === "terminate" || action === "zoom") {
       return new ToolResult(result);
     }
     return new ToolResult(await this.attachScreenshot(result));
@@ -1033,7 +1215,7 @@ class ComputerUseTool {
 
   // ── OS automation ────────────────────────────────────────────────────────────
 
-  private moveMouse(x: number, y: number): void {
+  public moveMouse(x: number, y: number): void {
     if (!robot) {
       console.warn("[Move] robotjs unavailable");
       return;
@@ -1054,7 +1236,7 @@ class ComputerUseTool {
     }
   }
 
-  private click(x?: number, y?: number, button: "left" | "right" | "middle" = "left"): void {
+  public click(x?: number, y?: number, button: "left" | "right" | "middle" = "left"): void {
     if (!robot) {
       console.warn("[Click] robotjs unavailable");
       return;
@@ -1078,7 +1260,7 @@ class ComputerUseTool {
     }
   }
 
-  private doubleClickAt(x: number, y: number): void {
+  public doubleClickAt(x: number, y: number): void {
     if (!robot) {
       console.warn("[DoubleClick] robotjs unavailable");
       return;
@@ -1094,7 +1276,7 @@ class ComputerUseTool {
     }
   }
 
-  private pressKeys(keys: string[]): void {
+  public pressKeys(keys: string[]): void {
     if (!robot) {
       console.warn("[PressKeys] robotjs unavailable");
       return;
@@ -1147,12 +1329,17 @@ class ComputerUseTool {
   // ── Screenshot (inline, no worker thread) ────────────────────────────────────
   // Mirrors Python's _attach_screenshot: capture → draw cursor circle → resize → JPEG
 
+  // ── Screenshot (inline, no worker thread) ────────────────────────────────────
+  // Mirrors Python's _attach_screenshot: capture → draw cursor circle → resize → JPEG/WebP
+
   private async attachScreenshot(payload: Record<string, any>): Promise<Record<string, any>> {
     const imgPath = path.join(this.screenshotDir, `${nowTs()}.png`);
 
     // 1. Capture via Electron native API
     let rawBuffer: Buffer;
     let monLeft = 0, monTop = 0;
+    let scaleFactor = 1;
+    let logicalW = 1920, logicalH = 1080;
 
     try {
       const { screen, desktopCapturer } = require("electron");
@@ -1160,10 +1347,12 @@ class ComputerUseTool {
       const d = displays[this.monitorIndex - 1] ?? screen.getPrimaryDisplay();
       monLeft = d.bounds.x;
       monTop  = d.bounds.y;
+      logicalW = d.bounds.width;
+      logicalH = d.bounds.height;
       
-      const scaleFactor = d.scaleFactor || 1;
-      const physicalWidth = Math.floor(d.size.width * scaleFactor);
-      const physicalHeight = Math.floor(d.size.height * scaleFactor);
+      scaleFactor = d.scaleFactor || 1;
+      const physicalWidth = Math.floor(logicalW * scaleFactor);
+      const physicalHeight = Math.floor(logicalH * scaleFactor);
 
       const sources = await desktopCapturer.getSources({
         types: ['screen'],
@@ -1186,102 +1375,171 @@ class ComputerUseTool {
       return { ...payload, status: "error", detail: "Screenshot failed." };
     }
 
-    // 2. Get dimensions from PNG header
+    // 2. Get physical dimensions from PNG header
     const { width: rawW, height: rawH } = this.pngDimensions(rawBuffer);
 
-    // 3. Cursor position
-    const cursor = robot ? robot.getMousePos() : { x: 0, y: 0 };
+    // 3. Downscale to IMAGE_MAX_WIDTH (1280) matching qwen.py for optimal vision recognition
+    const IMAGE_MAX_WIDTH = 1280;
+    const downscaleRatio = rawW > IMAGE_MAX_WIDTH ? IMAGE_MAX_WIDTH / rawW : 1.0;
+    const newW = Math.round(rawW * downscaleRatio);
+    const newH = Math.round(rawH * downscaleRatio);
 
-    // 4. Draw cursor circle (matches Python: red outer ring + yellow inner dot)
-    const relX = cursor.x - monLeft;
-    const relY = cursor.y - monTop;
-    const radius = 18;
+    // 4. Cursor position (in logical DIPs from robotjs)
+    const cursor = robot ? robot.getMousePos() : { x: 0, y: 0 };
 
     let encoded: string;
     if (sharp) {
       try {
-        const svgCircle = `
-          <svg width="${rawW}" height="${rawH}" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="${relX}" cy="${relY}" r="${radius}"
-                    fill="none" stroke="red" stroke-width="4"/>
-            <circle cx="${relX}" cy="${relY}" r="4" fill="yellow"/>
-          </svg>`;
-        const webp = await sharp(rawBuffer)
-          .composite([{ input: Buffer.from(svgCircle), top: 0, left: 0 }])
-          .webp({ quality: 75 })
+        let sharpPipeline = sharp(rawBuffer);
+        if (downscaleRatio < 1.0) {
+          sharpPipeline = sharpPipeline.resize(newW, newH, { fit: 'inside' });
+        }
+        // Use PNG for lossless text clarity (identical to qwen.py encode_image)
+        const pngBuf = await sharpPipeline
+          .png({ compressionLevel: 6 })
           .toBuffer();
-        encoded = webp.toString("base64");
+        encoded = pngBuf.toString("base64");
       } catch (e) {
-        console.warn("[ComputerUse] sharp composite failed, skipping cursor circle:", e);
+        console.warn("[ComputerUse] sharp resize failed, using raw buffer:", e);
         encoded = rawBuffer.toString("base64");
       }
     } else {
       encoded = rawBuffer.toString("base64");
     }
 
-    // 5. Compute display-scale dims for viewport
-    const newW = rawW;
-    const newH = rawH;
-
-    console.log(`[Screenshot] ${imgPath} cursor=(${cursor.x}, ${cursor.y})`);
+    console.log(`[Screenshot] ${imgPath} phys=(${rawW}x${rawH}) img=(${newW}x${newH}) scaleFactor=${scaleFactor} cursorDIP=(${cursor.x}, ${cursor.y})`);
 
     this.lastViewport = {
-      monitor_left:   monLeft,
-      monitor_top:    monTop,
-      display_width:  rawW,
-      display_height: rawH,
-      image_width:    newW,
-      image_height:   newH,
-      raw_width:      rawW,
-      raw_height:     rawH,
+      monitor_left:    monLeft,           // DIP
+      monitor_top:     monTop,            // DIP
+      logical_width:   logicalW,          // DIP
+      logical_height:  logicalH,          // DIP
+      scale_factor:    scaleFactor,
+      physical_width:  rawW,              // Physical
+      physical_height: rawH,              // Physical
+      display_width:   logicalW,          // Logical DIP width for robotjs
+      display_height:  logicalH,          // Logical DIP height for robotjs
+      image_width:     newW,              // Downscaled image width sent to model
+      image_height:    newH,              // Downscaled image height sent to model
+      raw_width:       rawW,
+      raw_height:      rawH,
+      downscale_ratio: downscaleRatio,
     };
 
     return {
       ...payload,
-      screenshot:      `data:image/webp;base64,${encoded}`,
+      screenshot:      `data:image/png;base64,${encoded}`,
       screenshot_path: imgPath,
       cursor,
-      display:         { width: rawW, height: rawH },
+      display:         { width: logicalW, height: logicalH },
       downscaled_size: { width: newW, height: newH },
     };
   }
 
-  // ── Coordinate transform (identical logic to Python) ─────────────────────────
+  // ── Coordinate transform (DIP-aware with downscale mapping) ───────────────────
+
+  /**
+   * Normalized 0-1000 coordinates -> real click coordinates (logical DIPs for robotjs).
+   * Exact TypeScript port of norm_to_screen from qwen.py.
+   */
+  public normToScreen(xn: number, yn: number): [number, number] {
+    const vp   = this.lastViewport;
+    const left = vp?.monitor_left ?? 0;
+    const top  = vp?.monitor_top  ?? 0;
+    const lw   = vp?.logical_width  ?? (robot ? robot.getScreenSize().width : 1920);
+    const lh   = vp?.logical_height ?? (robot ? robot.getScreenSize().height : 1080);
+
+    const x = left + Math.round((xn / 1000) * (lw - 1));
+    const y = top  + Math.round((yn / 1000) * (lh - 1));
+    return [x, y];
+  }
 
   private absoluteXy(coordinate?: [number, number] | null): [number, number] {
     const [x, y] = ensureXy(coordinate);
     const vp     = this.lastViewport;
-    const left   = vp.monitor_left  ?? 0;
-    const top    = vp.monitor_top   ?? 0;
-    const dw     = vp.display_width  ?? 0;
-    const dh     = vp.display_height ?? 0;
-    const iw     = vp.image_width;
-    const ih     = vp.image_height;
+    const left   = vp.monitor_left   ?? 0;
+    const top    = vp.monitor_top    ?? 0;
+    const lw     = vp.logical_width  ?? vp.display_width ?? 1920;
+    const lh     = vp.logical_height ?? vp.display_height ?? 1080;
+    const iw     = vp.image_width    || lw;
+    const ih     = vp.image_height   || lh;
 
     const isNormalized = this.client && ["everfern", "openrouter", "ollama-cloud", "gemini"].includes(this.client.provider);
 
-    if (!dw || !dh) {
-      console.warn("[Coord] Viewport not initialized - using offset-only fallback");
+    if (isNormalized && x <= 1000 && y <= 1000) {
+      // Normalized 0–1000 coordinates -> map to logical DIP
+      const absX = left + Math.round((x / 1000) * lw);
+      const absY = top  + Math.round((y / 1000) * lh);
+      console.log(`[Coord] norm=(${x},${y}) logical=(${lw}x${lh}) offset=(${left},${top}) → abs DIP=(${absX},${absY})`);
+      return [absX, absY];
     }
 
-    if (dw && dh) {
-      if (isNormalized && x <= 1000 && y <= 1000) {
-        // Normalised 0–1000 coords (UI-TARS raw output via OpenRouter)
-        const absX = left + Math.floor((x / 1000) * dw);
-        const absY = top  + Math.floor((y / 1000) * dh);
-        console.log(`[Coord] rel=(${x},${y}) display=(${dw}x${dh}) offset=(${left},${top}) → abs=(${absX},${absY})`);
-        return [absX, absY];
-      }
-      if (iw && ih) {
-        // Pixel coords scaled from image to display
-        const absX = left + Math.round(x * dw / iw);
-        const absY = top  + Math.round(y * dh / ih);
-        console.log(`[Coord] px=(${x},${y}) scale=(${(dw/iw).toFixed(2)},${(dh/ih).toFixed(2)}) → abs=(${absX},${absY})`);
-        return [absX, absY];
-      }
+    if (iw && ih) {
+      // Pixel coordinates in downscaled image space (iw x ih) -> map to logical DIP
+      const absX = left + Math.round((x / iw) * lw);
+      const absY = top  + Math.round((y / ih) * lh);
+      console.log(`[Coord] px=(${x},${y}) in (${iw}x${ih}) scale=(${(lw/iw).toFixed(2)},${(lh/ih).toFixed(2)}) → abs DIP=(${absX},${absY})`);
+      return [absX, absY];
     }
+
     console.log(`[Coord] No viewport/scale, using offset only: (${left + x}, ${top + y})`);
     return [left + x, top + y];
+  }
+
+  // ── Zoom / Crop Action ───────────────────────────────────────────────────────
+
+  private async zoomAction(params: any): Promise<Record<string, any>> {
+    const coord = params.coordinate || [500, 500];
+    const sizeDIP = typeof params.size === 'number' ? params.size : 300;
+    const vp = this.lastViewport;
+    const [targetDIPX, targetDIPY] = this.absoluteXy(coord);
+    const scaleFactor = vp.scale_factor || 1;
+    const monLeft = vp.monitor_left || 0;
+    const monTop = vp.monitor_top || 0;
+
+    const centerPhysX = Math.round((targetDIPX - monLeft) * scaleFactor);
+    const centerPhysY = Math.round((targetDIPY - monTop) * scaleFactor);
+    const cropSizePhys = Math.round(sizeDIP * scaleFactor);
+
+    const physW = vp.physical_width || 1920;
+    const physH = vp.physical_height || 1080;
+
+    const left = Math.max(0, Math.min(physW - cropSizePhys, Math.round(centerPhysX - cropSizePhys / 2)));
+    const top = Math.max(0, Math.min(physH - cropSizePhys, Math.round(centerPhysY - cropSizePhys / 2)));
+    const width = Math.min(cropSizePhys, physW - left);
+    const height = Math.min(cropSizePhys, physH - top);
+
+    let rawBuffer: Buffer;
+    try {
+      const { screen, desktopCapturer } = require("electron");
+      const displays = screen.getAllDisplays();
+      const sources = await desktopCapturer.getSources({
+        types: ['screen'],
+        thumbnailSize: { width: physW, height: physH }
+      });
+      const source = sources[this.monitorIndex - 1] || sources[0];
+      rawBuffer = source.thumbnail.toPNG();
+    } catch (e: any) {
+      return { status: "error", detail: `Zoom capture failed: ${e.message || e}` };
+    }
+
+    let croppedBase64 = "";
+    if (sharp) {
+      const croppedBuffer = await sharp(rawBuffer)
+        .extract({ left, top, width, height })
+        .webp({ quality: 90 })
+        .toBuffer();
+      croppedBase64 = croppedBuffer.toString("base64");
+    } else {
+      croppedBase64 = rawBuffer.toString("base64");
+    }
+
+    return {
+      status: "ok",
+      detail: `Zoomed 1:1 view around logical (${targetDIPX}, ${targetDIPY}), box [${left}, ${top}, ${width}, ${height}] physical.`,
+      screenshot: `data:image/webp;base64,${croppedBase64}`,
+      zoom_box: { left, top, width, height }
+    };
   }
 
   // ── PNG header reader ─────────────────────────────────────────────────────────
@@ -1311,7 +1569,7 @@ class ComputerUseAgent {
   private lastY: number | null = null;
   private history: string[] = [];
 
-  private REASONER_MODEL = "openai/gpt-5.6-luna";
+  private REASONER_MODEL = "openai/gpt-5.6-luna-pro";
   private ACTION_MODEL = "bytedance/ui-tars-1.5-7b";
 
   private planSteps: { description: string; status: 'pending' | 'in_progress' | 'completed' | 'failed' }[] = [];
@@ -1421,6 +1679,7 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
     private maxTurns     = 200,
     private historyWindow = 12,
     private toolCallId   = "",
+    private fallbackClient?: AIClient,
   ) {
     this.historyWindow = Math.max(1, historyWindow);
     this.messages  = [{ role: "system", content: SYSTEM_PROMPT }];
@@ -1464,11 +1723,12 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
   async run(
     onUpdate?:   (msg: string) => void,
     onProgress?: (event: SubAgentProgressEvent) => void,
-  ): Promise<{ finalAnswer: string; lastScreenshot?: string }> {
+  ): Promise<{ finalAnswer: string; lastScreenshot?: string; metrics?: TaskRunMetrics }> {
 
-    const isGemini = this.client.provider === "gemini" || this.model.toLowerCase().includes("gemini");
-    const isOpenAI = this.client.provider === "openai" || this.model.toLowerCase().includes("gpt") || this.model.toLowerCase().includes("openai") || this.model.toLowerCase().includes("o1") || this.model.toLowerCase().includes("o3") || this.model.toLowerCase().includes("computer-use");
-    const isAnthropic = this.client.provider === "anthropic" || this.model.toLowerCase().includes("claude") || this.model.toLowerCase().includes("anthropic");
+    const isEverfernOrOpenRouter = ["everfern", "openrouter", "ollama-cloud"].includes(this.client.provider);
+    const isGemini = !isEverfernOrOpenRouter && (this.client.provider === "gemini" || this.model.toLowerCase().includes("gemini"));
+    const isOpenAI = !isEverfernOrOpenRouter && (this.client.provider === "openai" || this.model.toLowerCase().includes("gpt") || this.model.toLowerCase().includes("openai") || this.model.toLowerCase().includes("o1") || this.model.toLowerCase().includes("o3") || this.model.toLowerCase().includes("computer-use"));
+    const isAnthropic = !isEverfernOrOpenRouter && (this.client.provider === "anthropic" || this.model.toLowerCase().includes("claude") || this.model.toLowerCase().includes("anthropic"));
     const isGpt5 = isOpenAI;
     const useToolCallRunner = isGemini || isOpenAI || isAnthropic;
 
@@ -1516,29 +1776,85 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
         role: "user",
         content: [
           { type: "text" as const, text: `Task: ${this.task}` },
-          { type: "image_url" as const, image_url: { url: firstImg } }
+          { type: "image_url" as const, image_url: { url: firstImg, detail: "high" } }
         ]
       });
 
       let consecutiveErrors = 0;
+      let unchangedStreak = 0;
+      let prevShotHash: string | null = computeScreenHash(firstImg);
+      let lastActionFailed = false;
+      let lastActionName: string | null = null;
+      let currentEffort: "low" | "medium" | "high" = "high"; // Step 1 starts at high for initial planning
+
+      const taskMetrics: TaskRunMetrics = {
+        totalInputTokens: 0,
+        cachedTokensRead: 0,
+        totalOutputTokens: 0,
+        totalReasoningTokens: 0,
+        cacheHitRatePct: 0,
+        stepCount: 0,
+        success: false,
+        estimatedCostUsd: 0,
+      };
+
       while (step <= this.maxTurns) {
-        if (this.aborted || globalAbortManager.streamAborted) break;
+        if (this.aborted || globalAbortManager.streamAborted || this.terminated || this.finalAnswer) break;
         step++;
 
         console.log(`\n[${agentName} Agent] Step ${step}/${this.maxTurns}`);
         onUpdate?.(`Turn ${step}/${this.maxTurns}...`);
+
+        // 1. Prune historical screenshots: retain only last 2 active screenshots
+        const { prunedCount, oldestActiveIndex } = pruneHistoricalScreenshots(this.messages, 2);
+        if (prunedCount > 0) {
+          console.log(`[${agentName} Agent] Pruned ${prunedCount} older screenshot(s) to constant placeholder`);
+        }
+
+        // 2. Coordinate prefix caching: advance Anthropic cache breakpoint to right before active window
+        if (isAnthropic && oldestActiveIndex > 0) {
+          for (const m of this.messages) {
+            if ((m as any).cache_control) {
+              delete (m as any).cache_control;
+            }
+          }
+          (this.messages[oldestActiveIndex - 1] as any).cache_control = { type: "ephemeral" };
+        }
+
+        // 3. Reasoning effort hysteresis: High on step 1 or recovery, Low for routine steps
+        const isHardStep = step === 1 || consecutiveErrors > 0 || unchangedStreak >= 2 || lastActionFailed;
+        if (isHardStep) {
+          currentEffort = "high";
+        } else if (currentEffort === "high" && unchangedStreak === 0 && consecutiveErrors === 0 && !lastActionFailed) {
+          currentEffort = "low";
+        }
 
         let chatResponse;
         try {
           chatResponse = await this.client.chat({
             messages: this.messages,
             model: this.model,
-            temperature: 0.1,
+            temperature: currentEffort === "high" && isAnthropic ? 1.0 : 0.1,
+            reasoningEffort: currentEffort,
             ...(maxTokensPerTurn ? { maxTokens: maxTokensPerTurn } : {}),
           });
           consecutiveErrors = 0;
+          if (chatResponse.usage) {
+            taskMetrics.totalInputTokens += chatResponse.usage.promptTokens || 0;
+            taskMetrics.totalOutputTokens += chatResponse.usage.completionTokens || 0;
+            taskMetrics.cachedTokensRead += chatResponse.usage.cachedPromptTokens || 0;
+            taskMetrics.totalReasoningTokens += chatResponse.usage.reasoningTokens || 0;
+          }
         } catch (err: any) {
           console.error(`[${agentName} Agent] API error:`, err);
+          if (this.fallbackClient && this.fallbackClient !== this.client) {
+            console.log(`[${agentName} Agent] Primary VLM client failed with connection error, falling back to runner client...`);
+            this.client = this.fallbackClient;
+            this.model = this.fallbackClient.model || this.model;
+            this.fallbackClient = undefined;
+            consecutiveErrors = 0;
+            continue;
+          }
           consecutiveErrors++;
           if (consecutiveErrors >= 3) {
             this.finalAnswer = `Unable to reach VLM provider. Please verify that the API endpoint is running and reachable. Error: ${err.message || err}`;
@@ -1580,9 +1896,20 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
           break;
         }
 
+        // Detect completion in model text even when tool calls are present.
+        // If the model says "task is done/complete" but still issued a redundant
+        // verification click, execute the tool calls but exit after (don't loop).
+        const DONE_TEXT = /\b(?:task\s+(?:is\s+)?(?:now\s+)?(?:complete|done|finished|accomplished)|(?:successfully|already)\s+(?:completed|changed|set|verified))\b/i;
+        if (content && DONE_TEXT.test(content)) {
+          console.log(`[${agentName} Agent] Model text indicates completion — will exit after executing remaining tool calls.`);
+          this.finalAnswer = content;
+          // Don't break yet — execute the tool calls below, then the while-loop
+          // guard at the top of the next iteration will see finalAnswer and exit.
+        }
+
         // Check safety decision / user confirmation requirement
         const safetyDecision = chatResponse.safetyDecision as any;
-        const requiresConfirmation = safetyDecision && (
+        let requiresConfirmation = safetyDecision && (
           safetyDecision === 'require_confirmation' ||
           safetyDecision === 'OFF-NOMINAL' ||
           (typeof safetyDecision === 'object' && (
@@ -1590,6 +1917,22 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
             safetyDecision.decision === 'OFF-NOMINAL'
           ))
         );
+
+        // Check for irreversible actions among requested tool calls
+        let hasIrreversibleAction = false;
+        for (const tc of toolCalls) {
+          const fname = tc.name;
+          const args = (tc.arguments || {}) as Record<string, any>;
+          if (isIrreversibleAction(fname, args)) {
+            hasIrreversibleAction = true;
+            currentEffort = "high"; // escalate reasoning effort
+            console.warn(`[${agentName} Agent] Detected irreversible action: ${fname}. Escalating reasoning effort & requiring confirmation.`);
+            break;
+          }
+        }
+        if (hasIrreversibleAction) {
+          requiresConfirmation = true;
+        }
 
         let userConfirmed = true;
         if (requiresConfirmation) {
@@ -1600,7 +1943,7 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
             const win = BrowserWindow.getAllWindows()[0];
             const explanation = typeof safetyDecision === 'object' && (safetyDecision as any).explanation
               ? `\n\nExplanation: ${(safetyDecision as any).explanation}`
-              : "";
+              : hasIrreversibleAction ? "\n\nExplanation: An irreversible action (submit/delete/pay/modify) was requested." : "";
             const dialogResponse = await dialog.showMessageBox(win || undefined, {
               type: "warning",
               title: "EverFern Security Authorization",
@@ -1640,9 +1983,12 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
             try {
               const fname = tc.name;
               const args = (tc.arguments || {}) as Record<string, any>;
+              lastActionName = fname;
 
             if (fname === "computer_use" || fname === "computer" || fname === "computer_20241022") {
               await this.tool.call(args);
+            } else if (fname === "zoom") {
+              actionResult = await this.tool.call({ action: "zoom", ...args });
             } else if (fname === "open_web_browser") {
               // noop
             } else if (fname === "wait_5_seconds") {
@@ -1757,6 +2103,8 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
               }
             } else if (fname === "terminate" || fname === "finished" || fname === "done") {
               this.terminated = args.status || "success";
+              this.finalAnswer = args.summary || args.text || content || "Task completed.";
+              break;
             } else {
               console.warn(`Warning: Unimplemented or custom function ${fname}`);
               actionResult = { status: "error", error: `Unimplemented function ${fname}` };
@@ -1767,13 +2115,18 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
           }
         }
 
+        lastActionFailed = actionResult.status === "error";
+
         if (requiresConfirmation && userConfirmed) {
           actionResult.safety_acknowledgement = true;
         }
 
         results.push({ name: tc.name, result: actionResult });
         await sleep(1);
+        if (this.terminated) break;
       }
+
+      if (this.terminated) break;
 
         const newImg = await this.getScreenshotBase64();
         onProgress?.({
@@ -1788,6 +2141,19 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
           },
           navisReport: this.getPlanMarkdown()
         } as any);
+
+        // Screen state hashing for silent failure detection
+        const currShotHash = computeScreenHash(newImg);
+        const screenUnchanged = prevShotHash !== null && prevShotHash === currShotHash;
+        prevShotHash = currShotHash;
+
+        const isPotentiallyStateChanging = lastActionName && !["zoom", "wait", "mouse_move", "hover_at"].includes(lastActionName);
+        if (screenUnchanged && isPotentiallyStateChanging) {
+          unchangedStreak++;
+          console.warn(`[${agentName} Agent] Screen state unchanged after ${lastActionName} (streak: ${unchangedStreak})`);
+        } else {
+          unchangedStreak = 0;
+        }
 
         const toolParts = results.map((r, i) => {
           const tcId = toolCalls[i]?.id || ('tc-' + step + '-' + i);
@@ -1804,7 +2170,10 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
         if (toolParts.length > 0) {
           const lastPart = toolParts[toolParts.length - 1];
           if (Array.isArray(lastPart.content)) {
-            (lastPart.content as any[]).push({ type: "image_url", image_url: { url: newImg } });
+            (lastPart.content as any[]).push({
+              type: "image_url",
+              image_url: { url: newImg, detail: "high" }
+            });
           }
         }
 
@@ -1815,30 +2184,62 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
         await sleep(1);
       }
 
+      taskMetrics.stepCount = step;
+      taskMetrics.success = this.terminated === "success" || !this.terminated;
+      if (taskMetrics.totalInputTokens > 0) {
+        taskMetrics.cacheHitRatePct = parseFloat(
+          ((taskMetrics.cachedTokensRead / taskMetrics.totalInputTokens) * 100).toFixed(1)
+        );
+      }
+      const nonCachedInput = Math.max(0, taskMetrics.totalInputTokens - taskMetrics.cachedTokensRead);
+      const estCost = (nonCachedInput * 3.0 + taskMetrics.cachedTokensRead * 0.30 + taskMetrics.totalOutputTokens * 15.0) / 1_000_000;
+      taskMetrics.estimatedCostUsd = parseFloat(estCost.toFixed(6));
+
+      console.log(`\n[${agentName} Agent] === Task Run Metrics ===`);
+      console.log(`  Steps executed: ${taskMetrics.stepCount}`);
+      console.log(`  Total input tokens: ${taskMetrics.totalInputTokens}`);
+      console.log(`  Cached tokens read: ${taskMetrics.cachedTokensRead} (${taskMetrics.cacheHitRatePct}% hit rate)`);
+      console.log(`  Total output tokens: ${taskMetrics.totalOutputTokens}`);
+      console.log(`  Total reasoning tokens: ${taskMetrics.totalReasoningTokens}`);
+      console.log(`  Estimated task cost: $${taskMetrics.estimatedCostUsd}`);
+      console.log(`===============================\n`);
+
       return {
         finalAnswer: this.finalAnswer || `Task ended: ${this.terminated || "unknown"}`,
         lastScreenshot: this.lastScreenshot,
+        metrics: taskMetrics,
       };
     }
 
-    const isTars = ["everfern", "openrouter", "ollama-cloud"].includes(this.client.provider);
+    const isJsonRunner = ["everfern", "openrouter", "ollama-cloud"].includes(this.client.provider) || !useToolCallRunner;
 
-    if (isTars) {
+    if (isJsonRunner) {
+      const agentName = this.client.provider === "everfern" ? "Everfern" : this.client.provider === "openrouter" ? "OpenRouter" : "ComputerUse";
       let step = 0;
-      const history: any[] = [];
-      let noActionRetries = 0;
-      let badFormatCount = 0;
-      let lastActionSig: string | null = null;
-      let stuckCount = 0;
+      const history: { obs_text: string; image: string | null; reply: string }[] = [];
+      let feedback = "";
+      const KEEP_LAST_SCREENSHOTS = 2;
+      const ACTION_DELAY = 1.5;
+      let prevShotHash: string | null = null;
+      let unchangedStreak = 0;
+      let lastActionKind: string | null = null;
 
-      const MAX_BAD_FORMAT = 3;
-      const MAX_STUCK = 3;
+      const taskMetrics: TaskRunMetrics = {
+        totalInputTokens: 0,
+        cachedTokensRead: 0,
+        totalOutputTokens: 0,
+        totalReasoningTokens: 0,
+        cacheHitRatePct: 0,
+        stepCount: 0,
+        success: false,
+        estimatedCostUsd: 0,
+      };
 
-      while (step <= this.maxTurns) {
-        if (this.aborted || globalAbortManager.streamAborted) break;
+      while (step < this.maxTurns) {
+        if (this.aborted || globalAbortManager.streamAborted || this.terminated || this.finalAnswer) break;
         step++;
 
-        console.log(`\n[UI-TARS Agent] Step ${step}/${this.maxTurns}`);
+        console.log(`\n[${agentName} Agent] Step ${step}/${this.maxTurns}`);
         onUpdate?.(`Turn ${step}/${this.maxTurns}...`);
 
         const img = await this.getScreenshotBase64();
@@ -1849,268 +2250,165 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
           stepNumber: step,
           screenshot: {
             base64: img?.split(",")?.[1] || "",
-            width: 1920,
-            height: 1080
+            width: this.tool.lastViewport?.image_width || 1280,
+            height: this.tool.lastViewport?.image_height || 720
           }
         } as any);
 
-        const histLines: string[] = [];
-        const startIdx = Math.max(0, history.length - 6);
-        for (let i = startIdx; i < history.length; i++) {
-          const h = history[i];
-          histLines.push(`Step ${i + 1}:`);
-          histLines.push(`  Thought: ${h.thought}`);
-          histLines.push(`  Action : ${h.actions && h.actions.length ? h.actions.join("; ") : "(none)"}`);
+        let obsText = (step === 1 ? `Task: ${this.task}\n` : "");
+        if (feedback) {
+          obsText += `Result of your previous action: ${feedback}\n`;
         }
-        const historyText = histLines.join("\n") || "No actions taken yet.";
+        obsText += `Step ${step}. Current screenshot:`;
 
-        const cursor = robot ? robot.getMousePos() : { x: 0, y: 0 };
-        const vp = this.tool.lastViewport;
-        const dw = vp.display_width || 1920;
-        const dh = vp.display_height || 1080;
-        const norm_x = Math.round((cursor.x / dw) * 1000);
-        const norm_y = Math.round((cursor.y / dh) * 1000);
+        const messages = buildQwenMessages(history, obsText, img, KEEP_LAST_SCREENSHOTS);
 
-        const isFinalTurn = step > this.maxTurns;
-        let finalTurnPrompt = "";
-        if (isFinalTurn) {
-          console.log(`[ComputerUse] 🚨 Max turns (${this.maxTurns}) reached. FORCING FINAL ANSWER STEP.`);
-          finalTurnPrompt = `\n\n[URGENT: FINAL TURN]: You have reached the maximum turn limit. DO NOT take any more actions. Instead, provide the FINAL ANSWER to the user now. Use the 'finished()' action.`;
-        }
-
-        const userText = `Task: ${this.task}\n\n` +
-          `Current Cursor Position: (${norm_x}, ${norm_y}) normalized\n\n` +
-          `Action History:\n${historyText}\n\n` +
-          `Current Screenshot:${finalTurnPrompt}`;
-
-        // Use the VLM model alias; fall back if model is a plain chat alias like "fern-1"/"everfern-1"
         const CHAT_ONLY_ALIASES = new Set(["fern-1", "everfern-1", "fern"]);
         const modelName = this.client.provider === "everfern"
           ? (this.model && !CHAT_ONLY_ALIASES.has(this.model) ? this.model : "everfern-tars-v1")
-          : (this.model || "everfern-tars-v1");
+          : (this.model || "openai/gpt-5.6-luna-pro");
 
-        console.log("[ComputerUse] Querying UI-TARS model...");
+        // Determine reasoning effort: escalate on unchanged screen or recovery
+        const isHardStep = step === 1 || unchangedStreak >= 2;
+        const currentEffort: "low" | "medium" | "high" = isHardStep ? "high" : "medium";
+
+        console.log(`[ComputerUse] Querying ${agentName} model (${modelName}) effort=${currentEffort}...`);
         let rawResponse = "";
         let chatResponse: any = null;
-        try {
-          chatResponse = await this.client.chat({
-            messages: [
-              { role: "system", content: SYSTEM_PROMPT },
-              {
-                role: "user",
-                content: [
-                  { type: "text", text: userText },
-                  { type: "image_url", image_url: { url: img } }
-                ]
-              }
-            ],
-            model: modelName,
-            temperature: 0.1,
-            maxTokens: 2048,
-          });
-          rawResponse = (chatResponse.content as string) || "";
-        } catch (err: any) {
-          console.error("[ComputerUse] API error:", err);
-          if (step === this.maxTurns) break;
-          await sleep(3);
+
+        // Retry with exponential backoff (matches qwen.py call_model)
+        let lastErr: string | null = null;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            chatResponse = await this.client.chat({
+              messages,
+              model: modelName,
+              temperature: 0,
+              maxTokens: 2048,
+              reasoningEffort: currentEffort,
+            });
+            rawResponse = (chatResponse.content as string) || "";
+            if (chatResponse.usage) {
+              const promptTokens = chatResponse.usage.prompt_tokens || chatResponse.usage.promptTokens || 0;
+              const completionTokens = chatResponse.usage.completion_tokens || chatResponse.usage.completionTokens || 0;
+              taskMetrics.totalInputTokens += promptTokens;
+              taskMetrics.totalOutputTokens += completionTokens;
+            }
+            lastErr = null;
+            break;
+          } catch (err: any) {
+            lastErr = err.message || String(err);
+            console.error(`[ComputerUse] API error (attempt ${attempt + 1}/3):`, lastErr);
+            if (attempt < 2) {
+              const backoff = 2 * (attempt + 1);
+              console.log(`[ComputerUse] Retrying in ${backoff}s...`);
+              await sleep(backoff);
+            }
+          }
+        }
+
+        if (lastErr) {
+          console.error("[ComputerUse] All 3 API attempts failed:", lastErr);
+          if (this.fallbackClient && this.fallbackClient !== this.client) {
+            console.log("[ComputerUse] Primary client failed, falling back to runner client...");
+            this.client = this.fallbackClient;
+            this.model = this.fallbackClient.model || this.model;
+            this.fallbackClient = undefined;
+            continue;
+          }
+          feedback = `API error: ${lastErr}`;
+          await sleep(2);
           continue;
         }
 
         console.log(`\n[RAW OUTPUT]\n${rawResponse}\n`);
 
-        let cleanResponse = stripThinking(rawResponse);
-        const trimmedLower = cleanResponse.toLowerCase().trim();
-        if (trimmedLower === "done" || trimmedLower === "done()" || trimmedLower === "finished" || trimmedLower === "finished()") {
-          console.log("\n[TASK COMPLETE — done/finished received]");
-          this.finalAnswer = "Task finished successfully";
-          break;
-        }
-        let { thought, actions } = parseOutput(cleanResponse);
+        const cleanResponse = stripThinking(rawResponse);
+        const { action, error: parseError } = parseJsonAction(cleanResponse);
 
-        const responseToolCalls = (chatResponse as any).toolCalls || [];
-        if (responseToolCalls.length > 0) {
-          for (const tc of responseToolCalls) {
-            if (tc.name === "computer_use" && tc.arguments) {
-              const tcArgs = typeof tc.arguments === "string" ? JSON.parse(tc.arguments) : tc.arguments;
-              if (tcArgs.action === "execute_actions" && Array.isArray(tcArgs.actions)) {
-                actions = tcArgs.actions;
-                break;
-              }
-            }
+        if (parseError) {
+          console.warn(`[ComputerUse] Parse error: ${parseError}`);
+          feedback = parseError;
+          history.push({ obs_text: obsText, image: img, reply: rawResponse });
+          const keepFrom = Math.max(0, history.length - (KEEP_LAST_SCREENSHOTS - 1));
+          for (let i = 0; i < keepFrom; i++) {
+            history[i].image = null;
           }
+          continue;
         }
 
-        console.log(`[THOUGHT] ${thought}`);
-        console.log(`[ACTIONS] ${actions}`);
-
-        if (thought) {
+        if (action.thought) {
+          console.log(`[THOUGHT] ${action.thought}`);
           onProgress?.({
             type: "reasoning",
             toolCallId: this.toolCallId,
             timestamp: new Date().toISOString(),
             stepNumber: step,
-            content: thought
+            content: action.thought
           });
         }
+        console.log(`[ACTION] ${JSON.stringify(action)}`);
 
-        if (actions.length > 0 && !isStructuredAction(actions[0])) {
-          badFormatCount++;
-          console.log(`[FORMAT ERROR #${badFormatCount}] Model returned natural language action.`);
-
-          if (badFormatCount >= MAX_BAD_FORMAT) {
-            console.log("[ABORT] Model repeatedly ignored format instructions. Exiting.");
-            break;
-          }
-
-          const correctionText = `Task: ${this.task}\n\n` +
-            `Current Cursor Position: (${norm_x}, ${norm_y}) normalized\n\n` +
-            `Action History:\n${historyText}\n\n` +
-            `${FORMAT_CORRECTION}`;
-
-          console.log("[ComputerUse] Sending format correction prompt...");
-          try {
-            const correctionResponse = await this.client.chat({
-              messages: [
-                { role: "system", content: SYSTEM_PROMPT },
-                {
-                  role: "user",
-                  content: [
-                    { type: "text", text: correctionText }
-                  ]
-                }
-              ],
-              model: modelName,
-              temperature: 0.1,
-              maxTokens: 512,
-            });
-            const raw2 = (correctionResponse.content as string) || "";
-            console.log(`[CORRECTION RAW]\n${raw2}\n`);
-            const parsedCorr = parseOutput(stripThinking(raw2));
-            thought = parsedCorr.thought;
-            actions = parsedCorr.actions;
-
-            const corrToolCalls = (correctionResponse as any).toolCalls || [];
-            if (corrToolCalls.length > 0) {
-              for (const tc of corrToolCalls) {
-                if (tc.name === "computer_use" && tc.arguments) {
-                  const tcArgs = typeof tc.arguments === "string" ? JSON.parse(tc.arguments) : tc.arguments;
-                  if (tcArgs.action === "execute_actions" && Array.isArray(tcArgs.actions)) {
-                    actions = tcArgs.actions;
-                    break;
-                  }
-                }
-              }
-            }
-
-            console.log(`[CORRECTED THOUGHT] ${thought}`);
-            console.log(`[CORRECTED ACTIONS] ${actions}`);
-          } catch (err) {
-            console.error(`[ERROR] Correction API call failed: ${err}`);
-            await sleep(2);
-            continue;
-          }
-
-          if (actions.length === 0 || !isStructuredAction(actions[0])) {
-            console.log("[WARN] Correction also failed — skipping step.");
-            history.push({ thought, actions: [], screenshot: img });
-            await sleep(1);
-            continue;
-          } else {
-            badFormatCount = 0;
-          }
-        } else {
-          badFormatCount = 0;
-        }
-
-        if (actions.length === 0) {
-          console.log("[WARN] No actions parsed — skipping step.");
-          history.push({ thought, actions: [], screenshot: img });
-          await sleep(1);
-          continue;
-        }
-
-        let done = false;
-        const dispatched: string[] = [];
-        let lastActionWasWin = false;
-
-        for (const act of actions) {
-          console.log(`  [EXEC] ${act}`);
-          onUpdate?.(`Executing ${act}...`);
-
-          onProgress?.({
-            type: "action",
-            toolCallId: this.toolCallId,
-            timestamp: new Date().toISOString(),
-            stepNumber: step,
-            action: { type: act, params: {}, description: act },
-          });
-
-          const result = await this.dispatchAction(act);
-          if (result === "__bad_format__") {
-            break;
-          }
-          dispatched.push(act);
-          if (result === "__done__") {
-            done = true;
-            break;
-          }
-
-          // Action-aware sleep: slow UI transitions need more time
-          const actLower = act.toLowerCase();
-          if (/hotkey.*key=.*win/i.test(act) || /hotkey.*key=.*super/i.test(act)) {
-            // Start Menu takes 600-900ms to animate open
-            await sleep(1.5);
-            lastActionWasWin = true;
-          } else if (/hotkey/i.test(act)) {
-            await sleep(0.8);
-            lastActionWasWin = false;
-          } else if (/left_double|double_click/i.test(act)) {
-            // App launch via double-click can be slow
-            await sleep(1.5);
-            lastActionWasWin = false;
-          } else {
-            await sleep(0.3);
-            lastActionWasWin = false;
-          }
-        }
-
-        history.push({ thought, actions: dispatched, screenshot: img });
-
-        if (done) {
-          console.log("\n[TASK COMPLETE — finished() called]");
-          this.finalAnswer = "Task finished successfully via finished()";
+        if (action.action === "done") {
+          console.log(`\n[TASK COMPLETE — done received: ${action.summary || ""}]`);
+          this.finalAnswer = action.summary || "Task finished successfully";
+          taskMetrics.success = true;
           break;
         }
 
-        const sig = actions.join("|");
-        if (sig === lastActionSig) {
-          stuckCount++;
-        } else {
-          stuckCount = 0;
+        if (action.action === "fail") {
+          console.log(`\n[TASK FAILED — fail received: ${action.reason || ""}]`);
+          this.finalAnswer = action.reason || "Task failed";
+          this.terminated = "failure";
+          break;
         }
-        lastActionSig = sig;
 
-        if (stuckCount >= MAX_STUCK) {
-          console.log(`\n[STUCK] Same actions repeated ${MAX_STUCK}x — trying recovery (click desktop + wait)...`);
-          stuckCount = 0;
-          lastActionSig = null; // reset so next different action isn't double-counted
-          // Click center of screen to dismiss any stuck menu, then wait for screen to settle
-          if (robot) {
-            const pos = robot.getMousePos();
-            robot.moveMouse(500, 500); // center
-            robot.mouseClick();
-            robot.moveMouse(pos.x, pos.y); // restore
+        onUpdate?.(`Executing ${action.action}...`);
+        onProgress?.({
+          type: "action",
+          toolCallId: this.toolCallId,
+          timestamp: new Date().toISOString(),
+          stepNumber: step,
+          action: { type: action.action, params: action, description: `${action.action}` }
+        });
+
+        lastActionKind = action.action;
+        feedback = await this.executeSingleAction(action);
+        console.log(`  [RESULT] ${feedback}`);
+
+        await sleep(ACTION_DELAY);
+
+        // Screen hash detection for silent failure (ported from tool-call runner)
+        const postImg = await this.getScreenshotBase64();
+        const currShotHash = computeScreenHash(postImg);
+        const isPotentiallyStateChanging = lastActionKind && !["wait", "zoom"].includes(lastActionKind);
+        if (prevShotHash !== null && prevShotHash === currShotHash && isPotentiallyStateChanging) {
+          unchangedStreak++;
+          console.warn(`[${agentName} Agent] Screen unchanged after ${lastActionKind} (streak: ${unchangedStreak})`);
+          if (unchangedStreak >= 3) {
+            feedback += " WARNING: Screen has not changed after your last 3 actions. Try a completely different approach.";
           }
-          await sleep(2);
+        } else {
+          unchangedStreak = 0;
         }
+        prevShotHash = currShotHash;
 
-        // Give the screen extra time to settle between steps
-        await sleep(lastActionWasWin ? 0.5 : 1);
+        history.push({ obs_text: obsText, image: img, reply: rawResponse });
+        const keepFrom = Math.max(0, history.length - (KEEP_LAST_SCREENSHOTS - 1));
+        for (let i = 0; i < keepFrom; i++) {
+          history[i].image = null;
+        }
+      }
+
+      taskMetrics.stepCount = step;
+      if (this.finalAnswer && !this.terminated) {
+        taskMetrics.success = true;
       }
 
       return {
-        finalAnswer: this.finalAnswer ?? `Task ended: ${this.terminated ?? "unknown"}`,
+        finalAnswer: this.finalAnswer || `Task ended: ${this.terminated || "max turns reached"}`,
         lastScreenshot: this.lastScreenshot,
+        metrics: taskMetrics,
       };
     } else {
       // Original execution loop
@@ -2120,7 +2418,7 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
       let consecutiveErrors = 0;
 
       while (step <= this.maxTurns) {
-        if (this.aborted || globalAbortManager.streamAborted) break;
+        if (this.aborted || globalAbortManager.streamAborted || this.terminated || this.finalAnswer) break;
         step++;
 
         console.log(`\n[Dumb-Agent] Step ${step}/${this.maxTurns}`);
@@ -2209,6 +2507,14 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
           consecutiveErrors = 0;
         } catch (err: any) {
           console.error("[Dumb-Agent] API error:", err);
+          if (this.fallbackClient && this.fallbackClient !== this.client) {
+            console.log("[Dumb-Agent] Primary VLM client failed with connection error, falling back to runner client...");
+            this.client = this.fallbackClient;
+            this.model = this.fallbackClient.model || this.model;
+            this.fallbackClient = undefined;
+            consecutiveErrors = 0;
+            continue;
+          }
           consecutiveErrors++;
           if (consecutiveErrors >= 3) {
             this.finalAnswer = `Unable to reach VLM provider. Please verify that the API endpoint is running and reachable. Error: ${err.message || err}`;
@@ -2294,6 +2600,65 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
     }
   }
 
+  private async executeSingleAction(action: any): Promise<string> {
+    const kind = action.action;
+    try {
+      if (kind === "click" || kind === "double_click" || kind === "right_click") {
+        const [x, y] = this.tool.normToScreen(action.x, action.y);
+        console.log(`[Action] ${kind} at norm=(${action.x},${action.y}) -> screen=(${x},${y})`);
+        this.tool.moveMouse(x, y);
+        if (kind === "double_click") {
+          this.tool.doubleClickAt(x, y);
+        } else if (kind === "right_click") {
+          this.tool.click(x, y, "right");
+        } else {
+          this.tool.click(x, y, "left");
+        }
+        return `${kind} executed at screen pixel (${x},${y}).`;
+      }
+      if (kind === "type") {
+        if (robot) {
+          robot.typeString(action.text);
+        }
+        if (this.tool.overlay) {
+          this.tool.overlay.setStatus(`Typed: "${String(action.text).substring(0, 30)}"`);
+        }
+        return `Typed ${action.text.length} characters.`;
+      }
+      if (kind === "key") {
+        const keys = Array.isArray(action.keys) ? action.keys : [String(action.keys)];
+        this.tool.pressKeys(keys);
+        return `Pressed ${keys.join("+")}.`;
+      }
+      if (kind === "scroll") {
+        if (action.x != null && action.y != null) {
+          const [x, y] = this.tool.normToScreen(action.x, action.y);
+          this.tool.moveMouse(x, y);
+        }
+        // qwen.py convention: positive = up, negative = down
+        // robotjs convention: positive = down, negative = up
+        // Invert sign to match qwen.py/pyautogui convention
+        const amt = Number(action.amount ?? -3);
+        if (robot) {
+          robot.scrollMouse(0, -amt * 100);
+        }
+        return "Scrolled.";
+      }
+      if (kind === "wait") {
+        const sec = Math.min(Number(action.seconds ?? 1), 10);
+        await sleep(sec);
+        return "Waited.";
+      }
+      if (kind === "zoom") {
+        await this.tool.call({ action: "zoom", coordinate: [action.x, action.y] });
+        return `Zoomed in at (${action.x}, ${action.y}).`;
+      }
+    } catch (e: any) {
+      return `ERROR executing ${kind}: ${e.message || e}`;
+    }
+    return "No-op.";
+  }
+
   private isBrainHandProvider(): boolean {
     return false;
   }
@@ -2353,7 +2718,21 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
     if (!raw || !raw.trim()) return [];
     raw = raw.trim();
 
-    // Try JSON parse
+    // 1. Try clean JSON extraction (qwen.py style, stripping markdown ```json fences if present)
+    const cleaned = raw.replace(/```(?:json)?/gi, "").trim();
+    const start = cleaned.indexOf("{");
+    const end = cleaned.lastIndexOf("}");
+    if (start !== -1 && end !== -1 && end > start) {
+      try {
+        const parsed = JSON.parse(cleaned.slice(start, end + 1));
+        const action = this.actionObjectToString(parsed);
+        if (action) {
+          return [action];
+        }
+      } catch {}
+    }
+
+    // Direct JSON parse for arrays or objects
     try {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
@@ -2394,6 +2773,7 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
       /^type\s*\(\s*[^)]+\s*\)$/i,
       /^scroll\s*\(\s*[^)]+\s*\)$/i,
       /^wait\s*\(\s*[^)]+\s*\)$/i,
+      /^zoom\s*\(\s*[^)]+\s*\)$/i,
       /^hold_[acdemsw]$/i,
       /^release_[acdemsw]$/i,
       /^left_click\s*\(\s*\)$/i,
@@ -2437,23 +2817,32 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
     if (!action) return null;
 
     const coordinate = Array.isArray(value.coordinate) ? value.coordinate : null;
-    if (coordinate && coordinate.length >= 2) {
-      const x = Number(coordinate[0]);
-      const y = Number(coordinate[1]);
-      if (Number.isFinite(x) && Number.isFinite(y)) {
-        if (action.includes("double")) return `double_click(${Math.round(x)},${Math.round(y)})`;
-        if (action.includes("right")) return `right_click(${Math.round(x)},${Math.round(y)})`;
-        if (action.includes("move")) return `move(${Math.round(x)},${Math.round(y)})`;
-        if (action.includes("drag")) return `drag(${Math.round(x)},${Math.round(y)})`;
-        return `click(${Math.round(x)},${Math.round(y)})`;
-      }
+    const x = Number(value.x ?? (coordinate ? coordinate[0] : NaN));
+    const y = Number(value.y ?? (coordinate ? coordinate[1] : NaN));
+
+    if (Number.isFinite(x) && Number.isFinite(y)) {
+      const rx = Math.round(x);
+      const ry = Math.round(y);
+      if (action.includes("double")) return `double_click(${rx},${ry})`;
+      if (action.includes("right")) return `right_click(${rx},${ry})`;
+      if (action.includes("move")) return `move(${rx},${ry})`;
+      if (action.includes("drag")) return `drag(${rx},${ry})`;
+      if (action === "zoom") return `zoom(${rx},${ry})`;
+      return `click(${rx},${ry})`;
     }
 
-    if (action === "type" && typeof value.text === "string") return `type("${value.text.replace(/"/g, '\\"')}")`;
-    if (action === "answer" && typeof value.text === "string") return `done()`;
-    if (action === "wait") return `wait(${Number(value.time) || 1})`;
-    if (action === "key" && Array.isArray(value.keys)) return value.keys.join("+");
-    if (action === "terminate") return `done()`;
+    if (action === "type") return `type("${String(value.text ?? value.content ?? "").replace(/"/g, '\\"')}")`;
+    if (action === "answer") return `done()`;
+    if (action === "wait") return `wait(${Number(value.seconds ?? value.time) || 1})`;
+    if (action === "key") {
+      const keys = Array.isArray(value.keys) ? value.keys : (value.key ? String(value.key).split("+") : ["enter"]);
+      return `press(${keys.join("+")})`;
+    }
+    if (action === "scroll") {
+      const amt = Number(value.amount ?? value.pixels ?? -3);
+      return amt > 0 || value.direction === "up" ? "scroll(up)" : "scroll(down)";
+    }
+    if (action === "done" || action === "terminate" || action === "fail" || action === "finished") return `done()`;
     return null;
   }
 
@@ -2699,7 +3088,7 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
 
     const has = (pat: string | RegExp, s: string) => new RegExp(pat, "i").test(s);
 
-    const coords = has(/^(?:click|move|drag|double[_\s]?click|right[_\s]?click|left[_\s]?click)\s*\(/, text) ? parseXy(text) : null;
+    const coords = has(/^(?:click|move|drag|double[_\s]?click|right[_\s]?click|left[_\s]?click|zoom)\s*\(/, text) ? parseXy(text) : null;
 
     // Shortcut detection
     const shortcutMatch = text.match(/^(alt|ctrl|shift|meta)\s+(tab|enter|esc|f\d+|space|right|left|up|down|\w)$/i) ||
@@ -2715,7 +3104,9 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
 
     if (coords) {
       const [x, y] = coords;
-      if (has(/double/i, text)) {
+      if (has(/zoom/i, text)) {
+        await this.tool.call({ action: "zoom", coordinate: [x, y] });
+      } else if (has(/double/i, text)) {
         await this.tool.call({ action: "double_click", coordinate: [x, y] });
       } else if (has(/drag/i, text)) {
         await this.tool.call({ action: "left_click_drag", coordinate: [x, y] });
@@ -2836,11 +3227,25 @@ export function createComputerUseTool(
   const screenshotDir = path.join(home, ".everfern", "screenshots");
   const tool          = new ComputerUseTool(screenshotDir);
 
+  const mappedProvider = vlm?.model
+    ? ((vlm.engine === "cloud" && vlm.provider === "ollama" ? "ollama-cloud" :
+        vlm.engine === "cloud" && vlm.provider === "everfern" ? "everfern" :
+        vlm.provider) as any)
+    : undefined;
+
+  let apiKey = vlm?.apiKey;
+  if (!apiKey && mappedProvider && originalClient?.getFullConfig) {
+    const origConfig = originalClient.getFullConfig() as any;
+    apiKey = origConfig?.keys?.[`vlm-${mappedProvider}`] ||
+             origConfig?.keys?.[mappedProvider] ||
+             (origConfig?.provider === mappedProvider ? origConfig?.apiKey : undefined);
+  }
+
   const client = vlm?.model
     ? new AIClient({
-        provider: (vlm.engine === "cloud" && vlm.provider === "ollama" ? "ollama-cloud" : vlm.provider) as any,
-        apiKey:   vlm.apiKey,
-        baseUrl:  vlm.baseUrl,
+        provider: mappedProvider,
+        apiKey:   apiKey,
+        baseUrl:  (mappedProvider === 'everfern' || mappedProvider === 'openrouter') ? undefined : vlm.baseUrl,
         model:    vlm.model,
       })
     : originalClient;
@@ -2848,13 +3253,14 @@ export function createComputerUseTool(
   const model = vlm?.model ?? originalClient.model ?? "unknown";
   tool.client = client;
 
-  return createToolWithClient(client, tool, model);
+  return createToolWithClient(client, tool, model, originalClient !== client ? originalClient : undefined);
 }
 
 function createToolWithClient(
   client: AIClient,
   tool: ComputerUseTool,
   model: string,
+  fallbackClient?: AIClient,
 ): AgentTool & { abort(): void } {
   return {
     name:        "computer_use",
@@ -2918,16 +3324,28 @@ function createToolWithClient(
         tool.overlay.setStatus(`Task: ${task}`);
       }
 
-      const agent = new ComputerUseAgent(client, tool, model, task, 0, 200, 12, toolCallId ?? "");
+      const agent = new ComputerUseAgent(client, tool, model, task, 0, 200, 12, toolCallId ?? "", fallbackClient);
       activeAgent = agent;
 
       try {
-        const { finalAnswer, lastScreenshot } = await agent.run(
+        const { finalAnswer, lastScreenshot, metrics } = await agent.run(
           msg => onUpdate?.(msg),
           event => emitEvent?.({ type: "subagent-progress", toolCallId: toolCallId ?? "", timestamp: new Date().toISOString(), data: event }),
         );
         const b64 = lastScreenshot?.split(",")?.[1] || "";
-        return { success: true, output: finalAnswer, base64Image: b64, data: { task, finalAnswer, screenshot: b64 } };
+        const isError = !finalAnswer ||
+          finalAnswer.startsWith("Unable to reach VLM provider") ||
+          finalAnswer.toLowerCase().includes("econnrefused") ||
+          agent.terminated === "error" ||
+          agent.terminated === "aborted";
+
+        return {
+          success: !isError,
+          output: finalAnswer,
+          error: isError ? finalAnswer : undefined,
+          base64Image: b64,
+          data: { task, finalAnswer, screenshot: b64, metrics }
+        };
       } finally {
         console.log("[ComputerUse] Task finished, cleaning up activeAgent and overlay");
         if (activeAgent === agent) activeAgent = null;

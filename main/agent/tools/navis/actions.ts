@@ -819,10 +819,30 @@ async function performReliableClick(page: Page, locator: any): Promise<{ ok: boo
     },
   ];
 
+  const urlBefore = page.url();
   for (const attempt of attempts) {
     const probe = await installLocatorClickProbe(locator);
     const ok = await attempt.run().catch(() => false);
-    if (ok && await locatorClickProbeFired(locator, probe)) return { ok: true, method: attempt.method };
+    if (ok) {
+      const probeFired = await locatorClickProbeFired(locator, probe);
+      if (probeFired) return { ok: true, method: attempt.method };
+
+      // If probe did not record (e.g. navigation started, or element unmounted/closed modal),
+      // verify whether state changed before performing redundant fallback clicks.
+      const urlAfter = page.url();
+      if (urlAfter !== urlBefore) {
+        return { ok: true, method: `${attempt.method}-navigated` };
+      }
+      const isDetached = await locator.evaluate((el: HTMLElement) => !el.isConnected).catch(() => true);
+      if (isDetached) {
+        return { ok: true, method: `${attempt.method}-detached` };
+      }
+      // If the primary Playwright click completed without error, it already verified actionability
+      // and performed the click. Only fall back if the run itself threw an exception.
+      if (attempt.method === 'playwright') {
+        return { ok: true, method: attempt.method };
+      }
+    }
   }
 
   return { ok: false, method: 'none' };

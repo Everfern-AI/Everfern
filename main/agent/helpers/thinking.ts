@@ -167,10 +167,10 @@ export function getThinkLevelFromString(level: string): ThinkLevel {
 export function scrubReasoningTags(text: string): string {
     if (!text) return '';
     return text
-        .replace(/<(?:think|thought|reasoning|reflection)>[\s\S]*?<\/(?:think|thought|reasoning|reflection)>/gi, '')
-        .replace(/\[(?:Thinking|Reasoning)\][\s\S]*?\[\/(?:Thinking|Reasoning)\]/gi, '')
-        .replace(/<(?:think|thought|reasoning|reflection)>[\s\S]*$/gi, '')
-        .replace(/\[(?:Thinking|Reasoning)\][\s\S]*$/gi, '')
+        .replace(/<(?:think|thought|thinking|reasoning|reflection)>[\s\S]*?<\/(?:think|thought|thinking|reasoning|reflection)>/gi, '')
+        .replace(/\[(?:Thinking|Reasoning|Thought)\][\s\S]*?\[\/(?:Thinking|Reasoning|Thought)\]/gi, '')
+        .replace(/<(?:think|thought|thinking|reasoning|reflection)>[\s\S]*$/gi, '')
+        .replace(/\[(?:Thinking|Reasoning|Thought)\][\s\S]*$/gi, '')
         .replace(/^\s*(?:Thinking Process|Reasoning Process|Chain-of-thought|Internal Thought):[^\n]*\n?/gim, '')
         .trim();
 }
@@ -182,8 +182,8 @@ export function scrubReasoningTags(text: string): string {
 export class StreamingThoughtFilter {
     private isThinking = false;
     private buffer = '';
-    private readonly startTags = ['<think>', '<thought>', '<reasoning>', '<reflection>', '[Thinking]', '[Reasoning]'];
-    private readonly endTags = ['</think>', '</thought>', '</reasoning>', '</reflection>', '[/Thinking]', '[/Reasoning]'];
+    private readonly startTags = ['<think>', '<thought>', '<thinking>', '<reasoning>', '<reflection>', '[Thinking]', '[Reasoning]', '[Thought]'];
+    private readonly endTags = ['</think>', '</thought>', '</thinking>', '</reasoning>', '</reflection>', '[/Thinking]', '[/Reasoning]', '[/Thought]'];
 
     process(chunk: string, emitChunk: (c: string) => void, emitThought: (t: string) => void) {
         this.buffer += chunk;

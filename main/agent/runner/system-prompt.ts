@@ -207,9 +207,25 @@ export async function resolvePromptPlaceholders(
   let activeProject: any = null;
   if (targetProjectId) {
     activeProject = await projectsStore.get(targetProjectId);
+    if (!activeProject) {
+      const allProjects = await projectsStore.list();
+      activeProject = allProjects.find((p: any) => p.id === targetProjectId || p.path === targetProjectId || (p.path && p.path.toLowerCase() === targetProjectId.toLowerCase())) || null;
+    }
     if (activeProject) {
       projectPath = hostPathToLinux(activeProject.path.replace(/\\/g, '/'));
+    } else if (fs.existsSync(targetProjectId) && fs.statSync(targetProjectId).isDirectory()) {
+      activeProject = {
+        id: targetProjectId,
+        name: path.basename(targetProjectId),
+        path: targetProjectId
+      };
+      projectPath = hostPathToLinux(targetProjectId.replace(/\\/g, '/'));
     }
+  }
+
+  // If no project, set projectPath to user home
+  if (!projectPath) {
+    projectPath = hostPathToLinux(osHomedir().replace(/\\/g, '/'));
   }
 
   // Call sync helper to perform replacements
@@ -252,10 +268,21 @@ You are currently working in the context of a specific project.
 - **Project Path**: ${activeProject.path}
 ${activeProject.instructions ? `- **Project Instructions**: ${activeProject.instructions}` : ''}
 
-When the user asks you to perform tasks, assume they are related to this project unless specified otherwise.
-Always prioritize the project path for file operations.
+CRITICAL RULES:
+1. When the user asks you to perform tasks (like finding bugs, writing code, running tests), they are referring to THIS project: "${activeProject.path}".
+2. Always prioritize the project path for file operations, terminal commands, and search.
+3. NEVER search, inspect, or execute commands in EverFern's own application source folder. All tool calls and relative paths MUST be anchored in "${activeProject.path}".
 `;
     finalPrompt += "\n" + projectContext;
+  } else {
+    const defaultContext = `
+## WORKSPACE ROOT
+No project is currently active. The default workspace root is the user profile path: "${osHomedir()}".
+CRITICAL RULES:
+1. NEVER search or execute commands in EverFern's own application source directory.
+2. If the user asks you to inspect or fix an application without specifying where it is, ask them to clarify the application folder or choose a project.
+`;
+    finalPrompt += "\n" + defaultContext;
   }
 
   // Inject Fern Persona, User Tone & Custom Instructions

@@ -464,9 +464,13 @@ export const createBrainNode = (
     try {
       const findingsPath = path.join(os.homedir(), '.everfern', 'findings.md');
       if (fs.existsSync(findingsPath)) {
-        const findingsContent = fs.readFileSync(findingsPath, 'utf-8').trim();
+        let findingsContent = fs.readFileSync(findingsPath, 'utf-8').trim();
         if (findingsContent && findingsContent.length > 0) {
-          systemPrompt += `\n\n# RECENT RESEARCH FINDINGS\nBelow are findings from tools (navis, web_search) already executed during this session. Do NOT repeat the same URLs or searches unless new information is needed:\n${findingsContent}\n`;
+          // Keep only the most recent research findings to avoid token bloat and cross-session contamination
+          if (findingsContent.length > 3000) {
+            findingsContent = '...\n' + findingsContent.slice(-3000);
+          }
+          systemPrompt += `\n\n# RECENT RESEARCH FINDINGS\nBelow are recent research findings from tools (navis, web_search, computer_use):\n${findingsContent}\n`;
           console.log('[Brain] 📄 Injected findings.md context into system prompt');
         }
       }
@@ -725,13 +729,13 @@ export const createBrainNode = (
 
     // Check if the target specialist (or task) has already completed in the current run
     if (routingDecision) {
-      const isCodingDone = routingDecision.decision === 'route_coding' && state.codingComplete && state.returningFromSpecialist === 'coding_specialist';
-      const isWebExplorerDone = routingDecision.decision === 'route_web_explorer' && state.webExplorerComplete && state.returningFromSpecialist === 'web_explorer';
-      const isDataAnalystDone = routingDecision.decision === 'route_data_analyst' && state.dataAnalysisComplete && state.returningFromSpecialist === 'data_analyst';
-      const isDeepResearchDone = routingDecision.decision === 'route_deep_research' && state.deepResearchComplete && state.returningFromSpecialist === 'deep_research';
+      const isCodingDone = routingDecision.decision === 'route_coding' && state.codingComplete;
+      const isWebExplorerDone = routingDecision.decision === 'route_web_explorer' && state.webExplorerComplete;
+      const isDataAnalystDone = routingDecision.decision === 'route_data_analyst' && state.dataAnalysisComplete;
+      const isDeepResearchDone = routingDecision.decision === 'route_deep_research' && state.deepResearchComplete;
       const isComputerUseDone = ((routingDecision.decision as any) === 'route_computer_use' || 
                                  (routingDecision.decision === 'continue_brain' && state.currentIntent === 'automate')) && 
-                                state.computerUseComplete && state.returningFromSpecialist === 'computer_use';
+                                state.computerUseComplete;
 
       if (isCodingDone || isWebExplorerDone || isDataAnalystDone || isDeepResearchDone || isComputerUseDone) {
         runner.telemetry.info(`[Brain] Override routing decision to complete_task because target specialist/task (${routingDecision.decision}) has already completed`);

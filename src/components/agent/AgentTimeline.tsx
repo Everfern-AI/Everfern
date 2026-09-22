@@ -6,6 +6,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import type { SubAgentProgressEvent } from "../common/types";
 import type { MissionTimeline as MissionTimelineType } from "./MissionTimeline";
 import { InlineDebateProgress } from "./InlineDebateProgress";
+import { ReasoningBlock } from "./ReasoningComponents";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 export interface ToolCallDisplay {
@@ -58,7 +59,7 @@ export interface AgentTimelineProps {
 
 export interface TimelineStepItem {
   id: string;
-  kind: "terminal" | "code" | "skill" | "globe" | "search" | "doc" | "verify" | "generic";
+  kind: "terminal" | "code" | "skill" | "globe" | "search" | "doc" | "verify" | "generic" | "computer";
   verb: string;
   text: string;
   subtext?: string;
@@ -179,6 +180,26 @@ function SearchBadge({ isDark }: { isDark: boolean }) {
   );
 }
 
+function ComputerBadge({ isDark }: { isDark: boolean }) {
+  return (
+    <svg
+      width="17"
+      height="17"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={isDark ? "rgba(255, 255, 255, 0.65)" : "rgba(0, 0, 0, 0.65)"}
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ flexShrink: 0 }}
+    >
+      <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+      <line x1="8" y1="21" x2="16" y2="21" />
+      <line x1="12" y1="17" x2="12" y2="21" />
+    </svg>
+  );
+}
+
 function PresentedDocBadge({ isDark }: { isDark: boolean }) {
   return (
     <div
@@ -293,7 +314,33 @@ function formatStepFromToolCall(tc: ToolCallDisplay): TimelineStepItem {
     };
   }
 
-  // 5. Terminal / Commands
+  // 5. Computer Use / Desktop automation
+  if (name.includes("computer_use") || name.includes("computer") || name.includes("desktop")) {
+    const rawTask = String(args.task || args.instruction || args.goal || tc.label || "Computer task");
+    const cleanTask = rawTask.length > 70 ? `${rawTask.slice(0, 68)}…` : rawTask;
+    return {
+      id: tc.id,
+      kind: "computer",
+      verb: "Computer use",
+      text: cleanTask || "Computer use",
+      toolCall: tc,
+    };
+  }
+
+  // 6. Navis / Browser automation
+  if (name.includes("navis")) {
+    const rawGoal = String(args.goal || args.task || args.url || tc.label || "Navigate web");
+    const cleanGoal = rawGoal.length > 70 ? `${rawGoal.slice(0, 68)}…` : rawGoal;
+    return {
+      id: tc.id,
+      kind: "globe",
+      verb: "Navis",
+      text: cleanGoal || "Navis browser",
+      toolCall: tc,
+    };
+  }
+
+  // 7. Terminal / Commands
   if (name.includes("command") || name.includes("bash") || name.includes("terminal") || name.includes("exec") || name.includes("run")) {
     const cmd = String(args.CommandLine || args.command || "").trim();
     if (/reportlab|venv|mkdir|pip\s+list/i.test(cmd)) {
@@ -397,9 +444,13 @@ function generateSummaryLine(steps: TimelineStepItem[]): string {
   let edited = 0;
   let read = 0;
   let presented = 0;
+  let computer = 0;
+  let browser = 0;
 
   for (const s of execSteps) {
-    if (s.kind === "terminal") commands++;
+    if (s.kind === "computer") computer++;
+    else if (s.kind === "globe" || s.verb.toLowerCase() === "navis") browser++;
+    else if (s.kind === "terminal") commands++;
     else if (s.kind === "code" && s.verb.toLowerCase() === "create") created++;
     else if (s.kind === "code" && s.verb.toLowerCase() === "edit") edited++;
     else if (s.kind === "doc" && s.verb.toLowerCase() === "read") read++;
@@ -408,6 +459,12 @@ function generateSummaryLine(steps: TimelineStepItem[]): string {
   }
 
   const parts: string[] = [];
+  if (computer > 0) {
+    parts.push(`Computer use (${computer} ${computer === 1 ? "task" : "tasks"})`);
+  }
+  if (browser > 0) {
+    parts.push(`Browsed web (${browser} ${browser === 1 ? "task" : "tasks"})`);
+  }
   if (commands > 0) {
     parts.push(`Ran ${commands} ${commands === 1 ? "command" : "commands"}`);
   }
@@ -419,6 +476,9 @@ function generateSummaryLine(steps: TimelineStepItem[]): string {
   }
   if (read > 0) {
     parts.push(`read ${read === 1 ? "a file" : `${read} files`}`);
+  }
+  if (presented > 0) {
+    parts.push(`presented ${presented === 1 ? "a file" : `${presented} files`}`);
   }
 
   return parts.join(", ");
@@ -733,12 +793,13 @@ export const AgentTimeline = React.memo(({
     return "";
   }, [skillSteps]);
 
-  if (steps.length === 0 && !isLive && !isDebating) {
+  if (steps.length === 0 && !isLive && !isDebating && !thought?.trim() && !reasoningContent?.trim()) {
     return null;
   }
 
   const renderBadge = (kind: TimelineStepItem["kind"]) => {
     switch (kind) {
+      case "computer": return <ComputerBadge isDark={isDark} />;
       case "terminal": return <TerminalBadge isDark={isDark} />;
       case "code": return <CodeBadge isDark={isDark} />;
       case "skill": return <SkillBadge isDark={isDark} />;
@@ -835,6 +896,13 @@ export const AgentTimeline = React.memo(({
         >
           {mainHeading}
         </h3>
+      )}
+
+      {/* ── 3.5. Thinking / Reasoning Area ── */}
+      {(reasoningContent?.trim() || thought?.trim()) && (
+        <div style={{ marginBottom: 12 }}>
+          <ReasoningBlock content={(reasoningContent || thought || '').trim()} streaming={!!isLive} />
+        </div>
       )}
 
       {/* ── 4. Summary Action Line + Collapsible Execution Tree ── */}

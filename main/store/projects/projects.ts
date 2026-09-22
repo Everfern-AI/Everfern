@@ -40,12 +40,22 @@ export class ProjectsStore {
   }
 
   /**
-   * Get a project by ID.
+   * Get a project by ID or Path.
    */
-  async get(id: string): Promise<Project | null> {
+  async get(idOrPath: string): Promise<Project | null> {
     try {
-      const row = await dbOps.get('SELECT * FROM projects WHERE id = ?', [id]);
-      if (!row) return null;
+      if (!idOrPath) return null;
+      let row = await dbOps.get('SELECT * FROM projects WHERE id = ?', [idOrPath]);
+      if (!row) {
+        row = await dbOps.get('SELECT * FROM projects WHERE path = ?', [idOrPath]);
+      }
+      if (!row) {
+        const normalized = idOrPath.replace(/[\\/]+$/, '').toLowerCase();
+        const all = await this.list();
+        const matched = all.find(p => p.id === idOrPath || (p.path && p.path.replace(/[\\/]+$/, '').toLowerCase() === normalized));
+        if (matched) return matched;
+        return null;
+      }
 
       return {
         id: row.id,
@@ -58,7 +68,7 @@ export class ProjectsStore {
         updatedAt: row.updated_at,
       };
     } catch (err) {
-      console.error(`[Projects] Failed to get project ${id}:`, err);
+      console.error(`[Projects] Failed to get project ${idOrPath}:`, err);
       return null;
     }
   }

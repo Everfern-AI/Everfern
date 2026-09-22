@@ -80,6 +80,8 @@ export function registerStreamHandlers(): void {
           provider: request.providerType as any,
           model: requestedModel,
           apiKey,
+          vlm: (config?.vlm || undefined) as any,
+          keys: config?.keys,
         });
       } else if (requestedModel) {
         client.setModel(requestedModel);
@@ -104,6 +106,7 @@ export function registerStreamHandlers(): void {
     model?: string,
     conversationId?: string,
     projectId?: string,
+    projectPath?: string,
     providerType?: string,
     apiKey?: string,
     assistantMessageId?: string,
@@ -131,6 +134,8 @@ export function registerStreamHandlers(): void {
           model: requestedModel,
           apiKey,
           baseUrl,
+          vlm: (config?.vlm || undefined) as any,
+          keys: config?.keys,
         });
         activeConfigForRequest = {
           ...(activeConfigForRequest || {}),
@@ -329,7 +334,7 @@ export function registerStreamHandlers(): void {
         }
       };
 
-      for await (const streamEvent of runner.runStream(userInput, history, requestedModel, request.conversationId, undefined, request.projectId, false, request.assistantMessageId, false, !!request.operatorMode, request.reasoningEffort)) {
+      for await (const streamEvent of runner.runStream(userInput, history, requestedModel, request.conversationId, undefined, request.projectPath || request.projectId, false, request.assistantMessageId, false, !!request.operatorMode, request.reasoningEffort)) {
         (globalThis as any).lastStreamEvent = streamEvent;
         if (globalAbortManager.streamAborted) {
           flushBuffers();

@@ -456,8 +456,12 @@ export async function runAgentStep(
     try {
       const findingsPath = path.join(os.homedir(), '.everfern', 'findings.md');
       if (fs.existsSync(findingsPath)) {
-        const findingsContent = fs.readFileSync(findingsPath, 'utf-8').trim();
+        let findingsContent = fs.readFileSync(findingsPath, 'utf-8').trim();
         if (findingsContent && findingsContent.length > 0) {
+          // Keep only the most recent research findings to avoid token bloat and cross-session contamination
+          if (findingsContent.length > 3000) {
+            findingsContent = '...\n' + findingsContent.slice(-3000);
+          }
           let systemMsg = normalizedMessages.find(m => m.role === 'system');
           if (!systemMsg) {
             systemMsg = { role: 'system', content: '' };
@@ -465,7 +469,7 @@ export async function runAgentStep(
           }
           if (typeof systemMsg.content === 'string') {
             if (!systemMsg.content.includes('RECENT RESEARCH FINDINGS')) {
-              systemMsg.content += `\n\n# RECENT RESEARCH FINDINGS\nBelow are findings from tools (navis, web_search) already executed during this session. Do NOT repeat the same URLs or searches unless new information is needed:\n${findingsContent}\n`;
+              systemMsg.content += `\n\n# RECENT RESEARCH FINDINGS\nBelow are recent research findings from tools (navis, web_search, computer_use):\n${findingsContent}\n`;
               console.log(`[AgentRuntime] 📄 Injected findings.md context into ${nodeName} system prompt`);
             }
           }

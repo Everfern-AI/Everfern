@@ -217,10 +217,16 @@ REMEMBER:
         'Fallback coding implementation'
       );
 
+      const fallbackCalledTaskComplete = (result.pendingToolCalls || []).some(
+        (tc: any) => (tc.name || tc.toolName || tc.function?.name || '') === 'task_complete'
+      );
+
       return {
         ...result,
         returningFromSpecialist: null,
-        codingComplete: true,
+        // Recovery is not completion. Keep the coding loop alive until the
+        // fallback agent explicitly emits the same structural completion signal.
+        codingComplete: fallbackCalledTaskComplete,
         codingSpecialistSelfLoopCount: loopCount,
       };
     }

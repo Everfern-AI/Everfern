@@ -59,7 +59,7 @@ function buildActionPayload(event: NavisEvent): { type: string; params: Record<s
   }
 }
 
-function writeFindingsFile(task: string, output: string, workspaceDir?: string, toolCallId?: string) {
+function writeFindingsFile(task: string, output: string, workspaceDir?: string, toolCallId?: string, isError = false) {
   try {
     const today = new Date();
     const formattedDate = today.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -72,6 +72,10 @@ function writeFindingsFile(task: string, output: string, workspaceDir?: string, 
       fs.mkdirSync(findingsDir, { recursive: true });
     }
 
+    const title = `# Everfern Web Research Findings\n`;
+    const entryHeader = `## [${formattedDate}] Research: ${taskTitle}`;
+    const entryBody = `* **Full Task**: ${cleanTask}\n* **Agent Status**: ${isError ? 'Failed' : 'Completed'}\n\n### Findings\n${output}\n\n---\n`;
+
     // 1. Update/write the general findings.md (kept for general agent context injection)
     const findingsPath = path.join(findingsDir, 'findings.md');
     try {
@@ -80,15 +84,11 @@ function writeFindingsFile(task: string, output: string, workspaceDir?: string, 
         existingContent = fs.readFileSync(findingsPath, 'utf8');
       }
 
-      const title = `# Everfern Web Research Findings\n`;
       let bodyWithoutTitle = existingContent.trim();
       const titleMatchStr = '# Everfern Web Research Findings';
       if (bodyWithoutTitle.startsWith(titleMatchStr)) {
         bodyWithoutTitle = bodyWithoutTitle.slice(titleMatchStr.length).trim();
       }
-
-      const entryHeader = `## [${formattedDate}] Research: ${taskTitle}`;
-      const entryBody = `* **Full Task**: ${cleanTask}\n* **Agent Status**: Completed\n\n### Findings\n${output}\n\n---\n`;
 
       const updatedContent = `${title}\n${entryHeader}\n${entryBody}\n\n${bodyWithoutTitle}`.trim() + '\n';
       fs.writeFileSync(findingsPath, updatedContent, 'utf8');
@@ -100,12 +100,16 @@ function writeFindingsFile(task: string, output: string, workspaceDir?: string, 
     // 2. Create/write tool-call-specific findings file (findings_${toolCallId}.md)
     if (toolCallId) {
       const specificFindingsPath = path.join(findingsDir, `findings_${toolCallId}.md`);
-      const title = `# Everfern Web Research Findings\n`;
-      const entryHeader = `## [${formattedDate}] Research: ${taskTitle}`;
-      const entryBody = `* **Full Task**: ${cleanTask}\n* **Agent Status**: Completed\n\n### Findings\n${output}\n\n---\n`;
       const specificContent = `${title}\n${entryHeader}\n${entryBody}\n`.trim() + '\n';
       fs.writeFileSync(specificFindingsPath, specificContent, 'utf8');
       console.log(`[Navis Tool] Successfully wrote specific findings to ${specificFindingsPath}`);
+
+      if (workspaceDir && fs.existsSync(workspaceDir)) {
+        try {
+          const wsSpecificPath = path.join(workspaceDir, `findings_${toolCallId}.md`);
+          fs.writeFileSync(wsSpecificPath, specificContent, 'utf8');
+        } catch {}
+      }
     }
   } catch (e) {
     console.error('[Navis Tool] Failed to write findings.md:', e);
@@ -397,6 +401,7 @@ export function createNavisTool(orchestrator: NavisOrchestrator, runner?: any): 
               if (!extensionResult.connected) {
                 const executionTime = Date.now() - toolStartTime;
                 console.log(`[Navis Tool] Extension not connected after ${executionTime}ms; stopping instead of profile-browser fallback.`);
+                writeFindingsFile(task, `Navis stopped: ${extensionResult.message}`, workspaceDir, toolCallId, true);
                 return {
                   success: false,
                   output: extensionResult.message,
@@ -438,7 +443,7 @@ export function createNavisTool(orchestrator: NavisOrchestrator, runner?: any): 
               if (extensionResult.success || !extensionResult.output.includes('[EXTENSION_FALLBACK_REQUIRED]')) {
                 const executionTime = Date.now() - toolStartTime;
                 console.log(`[Navis Tool] ✅ extension-first run completed in ${executionTime}ms`);
-                writeFindingsFile(task, extensionResult.output, workspaceDir, toolCallId);
+                writeFindingsFile(task, extensionResult.output, workspaceDir, toolCallId, !extensionResult.success);
                 return {
                   success: extensionResult.success,
                   output: extensionResult.output,
@@ -447,7 +452,7 @@ export function createNavisTool(orchestrator: NavisOrchestrator, runner?: any): 
               }
 
               onUpdate?.('Extension-first path could not complete this action. Install/update the Navis extension or switch Navis to isolated browser mode.');
-              writeFindingsFile(task, extensionResult.output.replace('[EXTENSION_FALLBACK_REQUIRED]', 'Navis extension-first stopped:'), workspaceDir, toolCallId);
+              writeFindingsFile(task, extensionResult.output.replace('[EXTENSION_FALLBACK_REQUIRED]', 'Navis extension-first stopped:'), workspaceDir, toolCallId, true);
               return {
                 success: false,
                 output: extensionResult.output.replace('[EXTENSION_FALLBACK_REQUIRED]', 'Navis extension-first stopped:'),
@@ -455,6 +460,7 @@ export function createNavisTool(orchestrator: NavisOrchestrator, runner?: any): 
               };
             } else {
               const extensionResult = await prepareNavisMainProfileExtension(navisSettings.selectedBrowserId || 'chrome', safeArgs.startUrl);
+              writeFindingsFile(task, `Navis stopped: ${extensionResult.message}`, workspaceDir, toolCallId, true);
               return {
                 success: false,
                 output: extensionResult.message,
@@ -503,7 +509,7 @@ export function createNavisTool(orchestrator: NavisOrchestrator, runner?: any): 
           const executionTime = Date.now() - toolStartTime;
           console.error(`[Navis Tool] ❌ NAVIS TOOL EXECUTION FAILED (${executionTime}ms):`, toolErr);
           logger.error(`[Navis Tool] ❌ NAVIS TOOL EXECUTION FAILED (${executionTime}ms): ${toolErr instanceof Error ? toolErr.message : String(toolErr)}`);
-
+          writeFindingsFile(task, `Navis execution failed: ${toolErr instanceof Error ? toolErr.message : String(toolErr)}`, workspaceDir, toolCallId, true);
           throw toolErr;
         } finally {
           bridgeServer.setSession(null);

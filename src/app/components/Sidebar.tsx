@@ -44,6 +44,7 @@ interface SidebarProps {
     onProjectsClick?: () => void;
     onAnalyticsClick?: () => void;
     onScheduledTasksClick?: () => void;
+    onCodeClick?: () => void;
     titlebarInset?: number;
     showSearch?: boolean;
     onSearchClose?: () => void;
@@ -75,6 +76,7 @@ export default function Sidebar({
     onIntegrationClick, 
     onProjectsClick, 
     onScheduledTasksClick, 
+    onCodeClick,
     onAnalyticsClick, 
     titlebarInset = 0, 
     showSearch, 
@@ -737,6 +739,7 @@ export default function Sidebar({
                                         else if (item.label === "Integrations" && onIntegrationClick) onIntegrationClick();
                                         else if (item.label === "Projects" && onProjectsClick) onProjectsClick();
                                         else if (item.label === "Scheduled Tasks" && onScheduledTasksClick) onScheduledTasksClick();
+                                        else if (item.label === "Code" && onCodeClick) onCodeClick();
                                         else if (item.label === "Analytics" && onAnalyticsClick) onAnalyticsClick();
                                     }}
                                     title={!isOpen ? item.label : undefined}

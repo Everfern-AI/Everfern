@@ -55,6 +55,57 @@ export function buildNavisTaskFromState(state: GraphStateType, originalArgs?: Re
   ].filter(Boolean).join('\n\n');
 }
 
+/**
+ * Sanitizes and optimizes a computer_use task prompt so the vision model receives
+ * either the user's original prompt (for direct desktop automation) or a concise one-liner goal.
+ *
+ * Prevents over-prescribed step-by-step navigation recipes (e.g. "navigate to Apps > Default apps...")
+ * that confuse the vision model when UI layout, OS version, or locale differs.
+ */
+export function sanitizeComputerUseTask(params: {
+  currentTask: string;
+  userText: string;
+  currentIntent?: string;
+  isDirectComputerUse?: boolean;
+}): string {
+  const { currentTask, userText, currentIntent, isDirectComputerUse } = params;
+  const cleanUserText = (userText || '').trim();
+  const cleanCurrentTask = (currentTask || '').trim();
+
+  // 1. Direct computer use / automation intent:
+  // If the intent is automate, or the user's prompt is a direct desktop command,
+  // pass the user's original request directly to the computer use agent!
+  const isDirect = isDirectComputerUse ?? (
+    currentIntent === 'automate' ||
+    (cleanUserText.length > 0 && !['coding', 'build', 'fix'].includes(currentIntent || ''))
+  );
+
+  if (isDirect && cleanUserText.length > 0) {
+    return cleanUserText;
+  }
+
+  // 2. Checking / coding / verification tasks:
+  // Ensure the prompt is a concise one-liner telling the AI what to accomplish
+  if (!cleanCurrentTask) {
+    return cleanUserText || 'Accomplish the requested desktop action.';
+  }
+
+  // If the AI generated a convoluted multi-sentence recipe (> 100 chars with multiple sentences/periods):
+  if (cleanCurrentTask.length > 100 || cleanCurrentTask.includes('\n') || (cleanCurrentTask.match(/[.?!]\s+[A-Z]/g) || []).length >= 1) {
+    // Extract the first concise sentence (up to 120 chars)
+    const sentences = cleanCurrentTask.split(/(?<=[.?!])\s+/);
+    if (sentences.length > 0 && sentences[0].length >= 10 && sentences[0].length <= 120) {
+      return sentences[0].trim();
+    }
+    // If the original user text was short and clear, fall back to it
+    if (cleanUserText.length > 0 && cleanUserText.length <= 120) {
+      return cleanUserText;
+    }
+  }
+
+  return cleanCurrentTask;
+}
+
 export function redirectComputerUseCallsToNavis(
   calls: PendingToolCall[],
   state: GraphStateType
@@ -72,6 +123,32 @@ export function redirectComputerUseCallsToNavis(
       userText,
       planText,
     })) {
+      // Optimize computer_use task prompt
+      if (call.name === 'computer_use') {
+        // If it's a specific atomic action like left_click, type, etc., don't inject task
+        if (args.action && args.action !== 'execute_actions' && args.action !== 'task') {
+          return call;
+        }
+        const rawTask = String(args.task || args.goal || args.text || '');
+        if (rawTask || userText) {
+          const optimizedTask = sanitizeComputerUseTask({
+            currentTask: rawTask,
+            userText,
+            currentIntent: state.currentIntent,
+          });
+          return {
+            ...call,
+            arguments: {
+              ...args,
+              task: optimizedTask,
+            },
+            args: {
+              ...args,
+              task: optimizedTask,
+            },
+          };
+        }
+      }
       return call;
     }
 

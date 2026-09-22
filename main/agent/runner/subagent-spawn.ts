@@ -105,6 +105,52 @@ export interface SubagentRunner {
     ): AsyncGenerator<any, void, unknown>;
 }
 
+function formatToolDescription(toolName: string, args: Record<string, any> = {}): string {
+    const target = args.path || args.filePath || args.targetFile || args.file || '';
+    switch (toolName) {
+        case 'read_file':
+        case 'read':
+        case 'view_file':
+            return target ? `Reading ${target}` : 'Reading file';
+        case 'write_file':
+        case 'write':
+        case 'write_to_file':
+            return target ? `Writing ${target}` : 'Writing file';
+        case 'edit_file':
+        case 'replace_file_content':
+        case 'edit':
+            return target ? `Editing ${target}` : 'Editing file';
+        case 'grep':
+        case 'grep_search':
+            return args.query || args.pattern
+                ? `Searching for "${args.query || args.pattern}"${target ? ` in ${target}` : ''}`
+                : 'Searching codebase';
+        case 'find':
+        case 'file_search':
+        case 'list_dir':
+            return target ? `Listing contents of ${target}` : 'Listing files';
+        case 'executePwsh':
+        case 'terminal_execute':
+        case 'bash':
+        case 'run_command':
+            const cmd = (args.command || args.commandLine || '').trim();
+            return cmd ? `Running: ${cmd.length > 70 ? cmd.slice(0, 67) + '...' : cmd}` : 'Running command';
+        case 'python':
+        case 'python_executor':
+            return 'Executing Python script';
+        case 'web_search':
+            return args.query || args.q ? `Searching web for "${args.query || args.q}"` : 'Searching the web';
+        case 'web_fetch':
+        case 'read_url_content':
+            return args.url ? `Fetching web page ${args.url}` : 'Fetching web page';
+        case 'navis':
+        case 'computer_use':
+            return args.action ? `Browser action: ${args.action}` : 'Browser automation';
+        default:
+            return `Executing tool: ${toolName}`;
+    }
+}
+
 class SubagentSpawner {
     private maxGlobalDepth: number = 20; // Effectively unlimited for user needs, but prevents true infinite loops
     private activeAgents: number = 0;
@@ -299,6 +345,7 @@ class SubagentSpawner {
             subRunner = Object.create(runner);
         }
         subRunner.currentAgentSessionKey = sessionKey;
+        (subRunner as any).currentConversationId = (runner as any).currentConversationId || parentSessionId;
 
         const completionPromise = this.runSubagent(spawnedAgent, subRunner, model, systemPrompt, parentHistory);
         spawnedAgent.completion = completionPromise;
@@ -315,7 +362,9 @@ class SubagentSpawner {
 
         try {
           const { globalAbortManager } = await import('./abort-manager');
-          await this.acquireSlot(globalAbortManager.abortController.signal);
+          // abort-manager imports the spawner for cleanup, so its live binding can
+          // be temporarily undefined during circular module initialization.
+          await this.acquireSlot(globalAbortManager?.abortController?.signal);
         } catch (slotErr) {
           // Issue #13 Fix: Slot acquisition was aborted (parent cancelled while queued).
           // Mark the agent as aborted and exit cleanly without running it.
@@ -351,8 +400,11 @@ class SubagentSpawner {
             // always know the original task goal even when the history window is full.
             const MAX_HISTORY = 40;
             const firstUserMsg = parentHistory.find((m: any) => (m.role || '') === 'user');
-            const sliceStart = parentHistory.length > MAX_HISTORY ? parentHistory.length - MAX_HISTORY : 0;
-            let historySample = parentHistory.slice(sliceStart).map((msg: any) => {
+            let selectedHistory = parentHistory.slice(-MAX_HISTORY);
+            if (firstUserMsg && !selectedHistory.includes(firstUserMsg)) {
+                selectedHistory = [firstUserMsg, ...selectedHistory.slice(-(MAX_HISTORY - 1))];
+            }
+            const historySample = selectedHistory.map((msg: any) => {
                 const role = msg.role || (msg._getType?.() === 'human' ? 'user' : 'assistant');
                 const mapped: any = {
                     role,
@@ -369,15 +421,6 @@ class SubagentSpawner {
                 }
                 return mapped;
             });
-            // Prepend the first user message if it was cut by the slice, so the
-            // sub-agent remembers what the root task objective is.
-            if (firstUserMsg && sliceStart > 0 && historySample[0]?.content !== firstUserMsg.content) {
-                const firstMapped: any = {
-                    role: 'user',
-                    content: typeof firstUserMsg.content === 'string' ? firstUserMsg.content : JSON.stringify(firstUserMsg.content)
-                };
-                historySample = [firstMapped, ...historySample];
-            }
             const cappedHistory = historySample;
 
             // SWARM SYNC: Prepend existing swarm knowledge to the task
@@ -448,19 +491,151 @@ class SubagentSpawner {
                             }, 150);
                         };
 
+                        // Emit initial step event so UI knows sub-agent has started
+                        parentEvents.emit('subagent-progress', 'step', {
+                            toolCallId: agent.toolCallId || agent.agentId,
+                            timestamp: new Date().toISOString(),
+                            content: `Sub-agent started: ${(agent.task || '').substring(0, 150)}`,
+                            stepNumber: 1,
+                            metadata: { agentId: agent.agentId, agentType: agent.agentType, attempt: retries + 1, status: 'running' },
+                            timelineBranch: {
+                                sessionId: agent.sessionKey,
+                                parentId: agent.toolCallId || agent.parentSessionId,
+                                parentSessionKey: agent.parentSessionId,
+                                agentType: agent.agentType,
+                                taskDescription: agent.task,
+                                branchStatus: 'running',
+                                branchLevel: agent.depth
+                            }
+                        });
+
                         for await (const event of stream) {
                             if (event.type === 'done') {
                                 flushReasoning();
+                                parentEvents.emit('subagent-progress', 'complete', {
+                                    toolCallId: agent.toolCallId || agent.agentId,
+                                    timestamp: new Date().toISOString(),
+                                    content: 'Completed task',
+                                    metadata: { agentId: agent.agentId, agentType: agent.agentType, attempt: retries + 1, status: 'completed' },
+                                    timelineBranch: {
+                                        sessionId: agent.sessionKey,
+                                        parentId: agent.toolCallId || agent.parentSessionId,
+                                        parentSessionKey: agent.parentSessionId,
+                                        agentType: agent.agentType,
+                                        taskDescription: agent.task,
+                                        branchStatus: 'completed',
+                                        branchLevel: agent.depth
+                                    }
+                                });
                                 break;
                             }
-                            if (event.type === 'chunk') {
-                                finalResponse += event.content;
+                            if (event.type === 'thought') {
                                 reasoningBuffer += event.content;
                                 scheduleFlush();
                             }
+                            if (event.type === 'chunk') {
+                                finalResponse += event.content;
+                                parentEvents.emit('subagent-progress', 'chunk', {
+                                    toolCallId: agent.toolCallId || agent.agentId,
+                                    timestamp: new Date().toISOString(),
+                                    content: event.content,
+                                    metadata: { agentId: agent.agentId, agentType: agent.agentType, attempt: retries + 1 },
+                                    timelineBranch: {
+                                        sessionId: agent.sessionKey,
+                                        parentId: agent.toolCallId || agent.parentSessionId,
+                                        parentSessionKey: agent.parentSessionId,
+                                        agentType: agent.agentType,
+                                        taskDescription: agent.task,
+                                        branchStatus: 'running',
+                                        branchLevel: agent.depth
+                                    }
+                                });
+                            }
+                            if (event.type === 'tool_start') {
+                                flushReasoning();
+                                const toolName = (event as any).toolName || 'tool';
+                                const toolArgs = (event as any).toolArgs || {};
+                                const desc = formatToolDescription(toolName, toolArgs);
+                                parentEvents.emit('subagent-progress', 'action', {
+                                    toolCallId: agent.toolCallId || agent.agentId,
+                                    timestamp: new Date().toISOString(),
+                                    content: `Running tool: ${toolName} — ${desc}`,
+                                    action: {
+                                        type: toolName,
+                                        params: toolArgs,
+                                        description: desc,
+                                        status: 'running'
+                                    },
+                                    metadata: { agentId: agent.agentId, agentType: agent.agentType, attempt: retries + 1, toolName, status: 'running' },
+                                    timelineBranch: {
+                                        sessionId: agent.sessionKey,
+                                        parentId: agent.toolCallId || agent.parentSessionId,
+                                        parentSessionKey: agent.parentSessionId,
+                                        agentType: agent.agentType,
+                                        taskDescription: agent.task,
+                                        branchStatus: 'running',
+                                        branchLevel: agent.depth
+                                    }
+                                });
+                            }
+                            if (event.type === 'tool_update') {
+                                const updateText = typeof (event as any).update === 'string' ? (event as any).update : '';
+                                if (updateText) {
+                                    parentEvents.emit('subagent-progress', 'action', {
+                                        toolCallId: agent.toolCallId || agent.agentId,
+                                        timestamp: new Date().toISOString(),
+                                        content: updateText,
+                                        action: {
+                                            type: (event as any).toolName || 'tool',
+                                            params: {},
+                                            description: updateText,
+                                            status: 'running'
+                                        },
+                                        metadata: { agentId: agent.agentId, agentType: agent.agentType, attempt: retries + 1 },
+                                        timelineBranch: {
+                                            sessionId: agent.sessionKey,
+                                            parentId: agent.toolCallId || agent.parentSessionId,
+                                            parentSessionKey: agent.parentSessionId,
+                                            agentType: agent.agentType,
+                                            taskDescription: agent.task,
+                                            branchStatus: 'running',
+                                            branchLevel: agent.depth
+                                        }
+                                    });
+                                }
+                            }
                             if (event.type === 'tool_call') {
                                 flushReasoning();
-                                toolCalls.push(event.toolCall);
+                                const record = (event as any).toolCall;
+                                if (record) {
+                                    toolCalls.push(record);
+                                    const toolName = record.toolName || 'tool';
+                                    const toolArgs = record.args || {};
+                                    const isSuccess = record.result?.success !== false && !record.result?.error;
+                                    const desc = formatToolDescription(toolName, toolArgs);
+                                    parentEvents.emit('subagent-progress', 'action', {
+                                        toolCallId: agent.toolCallId || agent.agentId,
+                                        timestamp: record.timestamp || new Date().toISOString(),
+                                        content: `Finished ${toolName} — ${desc} (${isSuccess ? '✓ Completed' : '✕ Failed'})`,
+                                        action: {
+                                            type: toolName,
+                                            params: toolArgs,
+                                            description: desc,
+                                            result: record.result,
+                                            status: isSuccess ? 'completed' : 'failed'
+                                        },
+                                        metadata: { agentId: agent.agentId, agentType: agent.agentType, attempt: retries + 1, toolName, status: isSuccess ? 'completed' : 'failed' },
+                                        timelineBranch: {
+                                            sessionId: agent.sessionKey,
+                                            parentId: agent.toolCallId || agent.parentSessionId,
+                                            parentSessionKey: agent.parentSessionId,
+                                            agentType: agent.agentType,
+                                            taskDescription: agent.task,
+                                            branchStatus: 'running',
+                                            branchLevel: agent.depth
+                                        }
+                                    });
+                                }
                             }
 
                             // Forward subagent-progress events (e.g. rich navis browser actions)
@@ -471,7 +646,7 @@ class SubagentSpawner {
                                     : agent.depth;
                                 
                                 // Only emit if it's a meaningful browser action or status update
-                                if (event.data?.action || event.data?.stepNumber || event.data?.type === 'screenshot') {
+                                if (event.data?.action || event.data?.stepNumber || event.data?.type === 'screenshot' || event.data?.content) {
                                     parentEvents.emit('subagent-progress', event.data?.type || 'action', {
                                         toolCallId: agent.toolCallId || agent.agentId,
                                         timestamp: event.timestamp || new Date().toISOString(),
@@ -529,6 +704,21 @@ class SubagentSpawner {
             emitLifecycle(agent.parentSessionId, 'agent_failed', {
                 agentId: agent.agentId,
                 error: errMsg
+            });
+            parentEvents.emit('subagent-progress', 'error', {
+                toolCallId: agent.toolCallId || agent.agentId,
+                timestamp: new Date().toISOString(),
+                content: errMsg,
+                metadata: { agentId: agent.agentId, agentType: agent.agentType, status: 'failed' },
+                timelineBranch: {
+                    sessionId: agent.sessionKey,
+                    parentId: agent.toolCallId || agent.parentSessionId,
+                    parentSessionKey: agent.parentSessionId,
+                    agentType: agent.agentType,
+                    taskDescription: agent.task,
+                    branchStatus: 'failed',
+                    branchLevel: agent.depth
+                }
             });
         } finally {
             this.releaseSlot();

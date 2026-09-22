@@ -72,6 +72,13 @@ export function ReasoningPanel({
     >
       {/* Top line: Thought for 36s (collapsible trigger) */}
       <CollapsibleTrigger className="group/trigger text-foreground/45 hover:text-foreground/75 flex items-center gap-1.5 py-0.5 text-[14px] transition-colors outline-none cursor-pointer">
+        <ChevronRight
+          size={14}
+          className={cn(
+            "transition-transform duration-200 shrink-0 text-foreground/40 group-hover/trigger:text-foreground/70",
+            open && "rotate-90"
+          )}
+        />
         <span className="font-normal text-foreground/45">
           {headerLabel}
         </span>

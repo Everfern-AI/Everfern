@@ -354,17 +354,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
      * Always replaces any previously registered listener to prevent handler stacking.
      */
     onSubAgentProgress: (cb: (event: SubAgentProgressEvent) => void) => {
-      // Remove any existing listener first so we never stack up multiple handlers
-      ipcRenderer.removeAllListeners('acp:sub-agent-progress');
-      ipcRenderer.on('acp:sub-agent-progress', (_e, event) => cb(event));
+      const handler = (_e: any, event: any) => cb(event);
+      ipcRenderer.on('acp:sub-agent-progress', handler);
+      return () => {
+        ipcRenderer.removeListener('acp:sub-agent-progress', handler);
+      };
     },
     /**
      * Register a callback for high-level spawned sub-agent lifecycle events.
      * These drive the composer "Sub-agent spawned" attachment and Agents panel.
      */
     onSubagentEvent: (cb: (event: any) => void) => {
-      ipcRenderer.removeAllListeners('acp:subagent-event');
-      ipcRenderer.on('acp:subagent-event', (_e, event) => cb(event));
+      const handler = (_e: any, event: any) => cb(event);
+      ipcRenderer.on('acp:subagent-event', handler);
+      return () => {
+        ipcRenderer.removeListener('acp:subagent-event', handler);
+      };
     },
     /**
      * Remove sub-agent progress event listener.
@@ -619,6 +624,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const wrapper = (_e: any, data: any) => cb(data);
     listenersMap.set(cb, wrapper);
     ipcRenderer.on(channel, wrapper);
+    return () => {
+      ipcRenderer.removeListener(channel, wrapper);
+      listenersMap.delete(cb);
+    };
   },
   off: (channel: string, cb?: (data: any) => void) => {
     if (cb) {
@@ -626,10 +635,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       if (wrapper) {
         ipcRenderer.removeListener(channel, wrapper);
         listenersMap.delete(cb);
+        return;
       }
-    } else {
-      ipcRenderer.removeAllListeners(channel);
     }
+    ipcRenderer.removeAllListeners(channel);
   },
 
   // ── Screenshot Loader ──────────────────────────────────────────────

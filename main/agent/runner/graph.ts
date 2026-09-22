@@ -810,6 +810,9 @@ If a specialized agent failed to complete a step, identify the issue and use you
                     // Issue #3 Fix: deep_research was silently routed to web_explorer,
                     // bypassing the dedicated node and its research-specific prompts.
                     return 'deep_research';
+                case 'route_computer_use' as any:
+                    console.log('[Graph] ➡️ Brain routing decision: route_computer_use → brain');
+                    return 'brain';
                 case 'complete_task':
                     console.log('[Graph] ➡️ Brain routing decision: complete_task → memory_consolidator');
                     return 'memory_consolidator';

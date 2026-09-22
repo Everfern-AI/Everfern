@@ -121,12 +121,12 @@ describe('Fix 9: callAI checks error type before retrying', () => {
 
 describe('Fix 10: JSON schema uses ref instead of index', () => {
   it('click_element schema uses ref property', () => {
-    const src = read('orchestrator.ts');
+    const src = read('core/types.ts');
     expect(src).toContain("ref: { type: 'string' }");
   });
 
   it('input_text schema uses ref property', () => {
-    const src = read('orchestrator.ts');
+    const src = read('core/types.ts');
     const inputTextMatch = src.match(/input_text[\s\S]*?ref[\s\S]*?text/);
     expect(inputTextMatch).toBeDefined();
   });

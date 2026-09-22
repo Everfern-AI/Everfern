@@ -63,7 +63,7 @@ describe('Preservation Property 2.1 — Error Propagation Unchanged', () => {
     });
 
     // Wait for completion
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await agent.completion;
 
     // Verify error propagated to registry
     const registry = getSubagentRegistry();
@@ -95,7 +95,7 @@ describe('Preservation Property 2.1 — Error Propagation Unchanged', () => {
           });
 
           // Wait for completion
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await agent.completion;
 
           const registry = getSubagentRegistry();
           const entry = registry.get(agent.agentId);
