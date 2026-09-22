@@ -529,7 +529,7 @@ export default function IntegrationSettings({ isOpen, onClose }: IntegrationSett
                         className="glossy"
                         style={{
                             position: "relative",
-                            width: "700px",
+                            width: "min(700px, calc(100vw - 32px))",
                             maxHeight: "80vh",
                             backgroundColor: colors.background,
                             borderRadius: "16px",
@@ -549,10 +549,12 @@ export default function IntegrationSettings({ isOpen, onClose }: IntegrationSett
                                 </p>
                             </div>
                             <button
+                                type="button"
+                                aria-label="Close integration settings"
                                 onClick={onClose}
                                 style={{
-                                    width: 32,
-                                    height: 32,
+                                    width: 40,
+                                    height: 40,
                                     borderRadius: 8,
                                     border: "none",
                                     backgroundColor: "transparent",

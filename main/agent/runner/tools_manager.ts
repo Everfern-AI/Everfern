@@ -31,11 +31,29 @@ import { previewLiveUrlTool, showUserUrlTool } from '../tools/preview-live-url';
 import { webFetchTool } from '../tools/webfetch';
 import { loadAllSynthesizedTools, synthesizeToolTool, synthesizeSkillTool } from '../tools/tool-synthesizer';
 import * as os from 'os';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export const getBaseTools = (runner: any): AgentTool[] => {
   const platform = os.platform();
   const config = runner.config;
-  const mainConfig = hydrateVlmApiKey(runner.client.getFullConfig() as any);
+  let clientConfig = runner.client?.getFullConfig?.() as any || {};
+  if (!clientConfig.vlm) {
+    try {
+      const home = process.env.USERPROFILE ?? process.env.HOME ?? '';
+      const diskConfigPath = path.join(home, '.everfern', 'config.json');
+      if (fs.existsSync(diskConfigPath)) {
+        const diskConfig = JSON.parse(fs.readFileSync(diskConfigPath, 'utf-8'));
+        clientConfig = {
+          ...diskConfig,
+          ...clientConfig,
+          vlm: diskConfig.vlm || clientConfig.vlm,
+          keys: { ...(diskConfig.keys || {}), ...(clientConfig.keys || {}) }
+        };
+      }
+    } catch {}
+  }
+  const mainConfig = hydrateVlmApiKey(clientConfig);
 
   if (!runner.navisOrchestrator && runner.client) {
     // Check if we need a separate vision client for Navis

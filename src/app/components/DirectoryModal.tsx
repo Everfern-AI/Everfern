@@ -162,6 +162,30 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
         loadCustomSkills();
     }, []);
 
+    useEffect(() => {
+        if (!isOpen) return;
+
+        const previousOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key !== 'Escape') return;
+            if (selectedMCP) {
+                setSelectedMCP(null);
+            } else if (isAddingSkill) {
+                setIsAddingSkill(false);
+            } else {
+                onClose();
+            }
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+        return () => {
+            document.removeEventListener('keydown', handleKeyDown);
+            document.body.style.overflow = previousOverflow;
+        };
+    }, [isOpen, isAddingSkill, onClose, selectedMCP]);
+
     const openCustomSkillsFolder = async () => {
         try {
             const path = await (window as any).electronAPI?.skills?.getCustomPath?.();
@@ -249,11 +273,6 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
         primaryButtonHover: "#333333"
     };
 
-    const handleAddClick = (mcp: MCPConnector) => {
-        setSelectedMCP(mcp);
-        setFormValues({});
-    };
-
     const handleSaveMCP = (e: React.FormEvent) => {
         e.preventDefault();
 
@@ -287,14 +306,17 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                     />
 
                     <motion.div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="directory-modal-title"
                         initial={{ opacity: 0, scale: 0.95, y: 10 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: 10 }}
                         transition={{ type: "spring", damping: 25, stiffness: 300 }}
                         style={{
                             position: "relative",
-                            width: "900px",
-                            height: "600px",
+                            width: "min(900px, calc(100vw - 32px))",
+                            height: "min(600px, calc(100vh - 32px))",
                             backgroundColor: colors.background,
                             borderRadius: "16px",
                             boxShadow: "0 20px 40px rgba(0,0,0,0.1), 0 0 0 1px rgba(0,0,0,0.05)",
@@ -303,18 +325,21 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                         }}
                     >
                         {/* Sidebar */}
-                        <div style={{ width: "240px", backgroundColor: colors.sidebarBg, borderRight: `1px solid ${colors.border}`, display: "flex", flexDirection: "column", padding: "20px" }}>
-                            <div style={{ fontSize: "20px", fontWeight: 600, color: colors.textPrimary, marginBottom: "24px", fontFamily: 'var(--font-serif, Georgia, serif)' }}>
+                        <div style={{ width: "clamp(176px, 26vw, 240px)", backgroundColor: colors.sidebarBg, borderRight: `1px solid ${colors.border}`, display: "flex", flexDirection: "column", padding: "20px" }}>
+                            <div id="directory-modal-title" style={{ fontSize: "20px", fontWeight: 600, color: colors.textPrimary, marginBottom: "24px", fontFamily: 'var(--font-serif, Georgia, serif)' }}>
                                 Directory
                             </div>
 
-                            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <div role="tablist" aria-label="Directory sections" style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                                 {[
                                     { id: 'skills', label: 'Skills', icon: WrenchIcon },
                                     { id: 'mcp', label: 'MCP', icon: CpuChipIcon },
                                     { id: 'plugins', label: 'Plugins', icon: PuzzlePieceIcon },
                                 ].map((tab) => (
                                     <button
+                                        type="button"
+                                        role="tab"
+                                        aria-selected={activeTab === tab.id}
                                         key={tab.id}
                                         onClick={() => setActiveTab(tab.id as TabType)}
                                         style={{
@@ -355,13 +380,15 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                         <div style={{ flex: 1, display: "flex", flexDirection: "column", position: "relative" }}>
                             {/* Close Button */}
                             <button
+                                type="button"
+                                aria-label="Close directory"
                                 onClick={onClose}
                                 style={{
                                     position: "absolute",
                                     top: "16px",
                                     right: "16px",
-                                    width: "32px",
-                                    height: "32px",
+                                    width: "40px",
+                                    height: "40px",
                                     borderRadius: "8px",
                                     border: "none",
                                     backgroundColor: 'transparent',
@@ -395,6 +422,8 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                     />
                                     <input
                                         type="text"
+                                        autoFocus
+                                        aria-label={"Search " + (activeTab === 'mcp' ? 'MCP connectors' : activeTab)}
                                         placeholder={`Search ${activeTab === 'mcp' ? 'MCP connectors' : activeTab}...`}
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
@@ -431,6 +460,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                         {activeTab === 'skills' && (
                                             <>
                                                 <button
+                                                    type="button"
                                                     onClick={() => { setIsAddingSkill(true); setSkillResult(null); }}
                                                     style={{
                                                         display: "flex", alignItems: "center", gap: "6px",
@@ -442,6 +472,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                                     <PlusIcon width={14} height={14} /> Add Custom Skill
                                                 </button>
                                                 <button
+                                                    type="button"
                                                     onClick={openCustomSkillsFolder}
                                                     style={{
                                                         display: "flex", alignItems: "center", gap: "6px",
@@ -455,53 +486,32 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                         )}
                                         {activeTab === 'mcp' && (
                                             <button
-                                                onClick={() => {
-                                                    setSelectedMCP({ id: 'custom', name: 'Custom MCP Server', description: 'Configure custom MCP server via JSON', domain: 'custom', fields: [] });
-                                                    setCustomJsonConfig(JSON.stringify({
-                                                        "mcp": {
-                                                            "inputs": [
-                                                                {
-                                                                    "type": "promptString",
-                                                                    "id": "maps_api_key",
-                                                                    "description": "Google Maps API Key",
-                                                                    "password": true
-                                                                }
-                                                            ],
-                                                            "servers": {
-                                                                "google-maps": {
-                                                                    "command": "npx",
-                                                                    "args": ["-y", "@modelcontextprotocol/server-google-maps"],
-                                                                    "env": {
-                                                                        "GOOGLE_MAPS_API_KEY": "${input:maps_api_key}"
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                    }, null, 2));
-                                                }}
+                                                type="button"
+                                                disabled
+                                                title="Connect MCP servers from chat for now"
                                                 style={{
                                                 display: "flex", alignItems: "center", gap: "6px",
                                                 padding: "6px 12px", borderRadius: "8px",
                                                 border: `1px solid ${colors.border}`, backgroundColor: 'transparent',
-                                                color: colors.textPrimary, fontSize: "13px", cursor: "pointer",
-                                                fontWeight: 500
+                                                color: colors.textMuted, fontSize: "13px", cursor: "not-allowed",
+                                                fontWeight: 500, opacity: 0.7
                                             }}>
                                                 <PlusIcon width={14} height={14} /> Add Custom
                                             </button>
                                         )}
-                                        <button style={{
+                                        <button type="button" disabled title="Filtering is coming soon" style={{
                                             display: "flex", alignItems: "center", gap: "6px",
                                             padding: "6px 12px", borderRadius: "8px",
                                             border: `1px solid ${colors.border}`, backgroundColor: 'transparent',
-                                            color: colors.textSecondary, fontSize: "13px", cursor: "pointer"
+                                            color: colors.textMuted, fontSize: "13px", cursor: "not-allowed", opacity: 0.7
                                         }}>
                                             Filter by <ChevronDownIcon width={14} height={14} />
                                         </button>
-                                        <button style={{
+                                        <button type="button" disabled title="Sorting is coming soon" style={{
                                             display: "flex", alignItems: "center", gap: "6px",
                                             padding: "6px 12px", borderRadius: "8px",
                                             border: `1px solid ${colors.border}`, backgroundColor: 'transparent',
-                                            color: colors.textSecondary, fontSize: "13px", cursor: "pointer"
+                                            color: colors.textMuted, fontSize: "13px", cursor: "not-allowed", opacity: 0.7
                                         }}>
                                             Sort by <ChevronDownIcon width={14} height={14} />
                                         </button>
@@ -511,7 +521,12 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
 
                             {/* Grid Area */}
                             <div style={{ flex: 1, overflowY: "auto", padding: "24px 32px" }}>
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "16px" }}>
+                                    {activeTab === 'mcp' && (
+                                        <div role="status" style={{ gridColumn: "1 / -1", padding: "10px 12px", borderRadius: "10px", backgroundColor: colors.sidebarBg, color: colors.textSecondary, fontSize: "13px", lineHeight: 1.5 }}>
+                                            MCP connectors are discoverable here. To connect one today, ask EverFern in chat to connect an MCP server.
+                                        </div>
+                                    )}
                                     {activeTab === 'mcp' && MCP_CONNECTORS.filter(m => m.name.toLowerCase().includes(searchQuery.toLowerCase())).map((mcp) => (
                                         <div key={mcp.id} style={{
                                             border: `1px solid ${colors.border}`,
@@ -521,8 +536,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                             display: "flex",
                                             flexDirection: "column",
                                             gap: "12px",
-                                            transition: "all 0.2s",
-                                            cursor: "pointer"
+                                            transition: "background-color 0.2s, border-color 0.2s, box-shadow 0.2s"
                                         }}
                                         onMouseEnter={e => {
                                             e.currentTarget.style.backgroundColor = colors.cardHover;
@@ -534,7 +548,6 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                             e.currentTarget.style.borderColor = colors.border;
                                             e.currentTarget.style.boxShadow = "none";
                                         }}
-                                        onClick={() => handleAddClick(mcp)}
                                         >
                                             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
                                                 <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
@@ -560,12 +573,15 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                                     </div>
                                                 </div>
                                                 <button
-                                                    onClick={(e) => { e.stopPropagation(); handleAddClick(mcp); }}
+                                                    type="button"
+                                                    disabled
+                                                    aria-label={mcp.name + " setup is available from chat"}
+                                                    title="Connect this MCP server from chat"
                                                     style={{
-                                                        width: "28px", height: "28px", borderRadius: "8px",
+                                                        width: "40px", height: "40px", borderRadius: "8px",
                                                         border: "none", backgroundColor: 'transparent', color: colors.textSecondary,
                                                         display: "flex", alignItems: "center", justifyContent: "center",
-                                                        cursor: "pointer", transition: "all 0.2s"
+                                                        cursor: "not-allowed", transition: "all 0.2s", opacity: 0.55
                                                     }}
                                                     onMouseEnter={e => {
                                                         e.currentTarget.style.backgroundColor = colors.buttonHover;
@@ -634,8 +650,10 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                                     </div>
                                                 ) : (
                                                     <button
+                                                        type="button"
+                                                        aria-label={"Remove " + skill.name}
                                                         style={{
-                                                            width: "28px", height: "28px", borderRadius: "8px",
+                                                            width: "40px", height: "40px", borderRadius: "8px",
                                                             border: "none", backgroundColor: 'transparent', color: colors.textSecondary,
                                                             display: "flex", alignItems: "center", justifyContent: "center",
                                                             cursor: "pointer", transition: "all 0.2s"
@@ -681,6 +699,8 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                                             {skill.name}
                                                         </div>
                                                         <button
+                                                            type="button"
+                                                            aria-label={"Remove " + skill.name}
                                                             onClick={() => handleDeleteSkill(skill.name)}
                                                             style={{
                                                                 width: "28px", height: "28px", borderRadius: "8px",
@@ -736,6 +756,9 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                     }}
                                 >
                                     <motion.div
+                                        role="dialog"
+                                        aria-modal="true"
+                                        aria-label={"Connect " + selectedMCP.name}
                                         initial={{ scale: 0.95, y: 20 }}
                                         animate={{ scale: 1, y: 0 }}
                                         exit={{ scale: 0.95, y: 20 }}
@@ -779,6 +802,8 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                                 </div>
                                             </div>
                                             <button
+                                                type="button"
+                                                aria-label="Close MCP setup"
                                                 onClick={() => setSelectedMCP(null)}
                                                 style={{
                                                     width: "28px", height: "28px", borderRadius: "8px",
@@ -922,6 +947,9 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                     }}
                                 >
                                     <motion.div
+                                        role="dialog"
+                                        aria-modal="true"
+                                        aria-labelledby="custom-skill-dialog-title"
                                         initial={{ scale: 0.95, y: 20 }}
                                         animate={{ scale: 1, y: 0 }}
                                         exit={{ scale: 0.95, y: 20 }}
@@ -942,10 +970,12 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                             alignItems: "center",
                                             justifyContent: "space-between"
                                         }}>
-                                            <div style={{ fontSize: "16px", fontWeight: 600, color: colors.textPrimary }}>
+                                            <div id="custom-skill-dialog-title" style={{ fontSize: "16px", fontWeight: 600, color: colors.textPrimary }}>
                                                 Create Custom Skill
                                             </div>
                                             <button
+                                                type="button"
+                                                aria-label="Close custom skill editor"
                                                 onClick={() => setIsAddingSkill(false)}
                                                 style={{
                                                     width: "28px", height: "28px", borderRadius: "8px",
@@ -962,10 +992,11 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                                 Create a custom skill that EverFern can use for specific tasks.
                                             </div>
                                             <div>
-                                                <label style={{ fontSize: "13px", fontWeight: 500, color: colors.textPrimary, display: "block", marginBottom: "6px" }}>
+                                                    <label htmlFor="custom-skill-name" style={{ fontSize: "13px", fontWeight: 500, color: colors.textPrimary, display: "block", marginBottom: "6px" }}>
                                                     Skill Name
                                                 </label>
                                                 <input
+                                                    id="custom-skill-name"
                                                     type="text"
                                                     placeholder="e.g., my-analysis-skill"
                                                     value={newSkillName}
@@ -983,10 +1014,11 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                                 />
                                             </div>
                                             <div>
-                                                <label style={{ fontSize: "13px", fontWeight: 500, color: colors.textPrimary, display: "block", marginBottom: "6px" }}>
+                                                <label htmlFor="custom-skill-description" style={{ fontSize: "13px", fontWeight: 500, color: colors.textPrimary, display: "block", marginBottom: "6px" }}>
                                                     Description
                                                 </label>
                                                 <input
+                                                    id="custom-skill-description"
                                                     type="text"
                                                     placeholder="Use this skill for..."
                                                     value={newSkillDesc}
@@ -1003,7 +1035,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                                     }}
                                                 />
                                             </div>
-                                            <div onClick={handleFileSelect} onDrop={handleFileDrop} onDragOver={e => { e.preventDefault(); setIsDragOver(true); }} onDragLeave={() => setIsDragOver(false)}
+                                            <div role="button" tabIndex={0} aria-label="Choose or drop a SKILL.md file" onClick={handleFileSelect} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleFileSelect(); } }} onDrop={handleFileDrop} onDragOver={e => { e.preventDefault(); setIsDragOver(true); }} onDragLeave={() => setIsDragOver(false)}
                                                 style={{
                                                     width: "100%",
                                                     minHeight: "150px",
@@ -1043,6 +1075,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                             )}
                                             <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
                                                 <button
+                                                    type="button"
                                                     onClick={() => { setIsAddingSkill(false); setNewSkillName(''); setNewSkillDesc(''); setNewSkillFileName(''); setNewSkillFileContent(''); setSkillResult(null); }}
                                                     style={{
                                                         padding: "8px 16px",
@@ -1058,6 +1091,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                                     Cancel
                                                 </button>
                                                 <button
+                                                    type="button"
                                                     onClick={handleAddSkill}
                                                     disabled={isSavingSkill || !newSkillName.trim() || !newSkillDesc.trim() || !newSkillFileContent.trim()}
                                                     style={{

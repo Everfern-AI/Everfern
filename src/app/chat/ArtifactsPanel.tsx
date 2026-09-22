@@ -1199,7 +1199,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
     const loadProcesses = useCallback(async () => {
         try {
             setProcessesLoading(true);
-            const results = await (window as any).electronAPI.terminal.listProcesses();
+            const results = await (window as any).electronAPI?.terminal?.listProcesses?.();
             setProcesses(results || []);
         } catch (e) {
             console.error('Failed to load terminal processes', e);
@@ -1292,7 +1292,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
 
     const handleSelectArtifactByName = async (name: string) => {
         if (!activeChatId) return;
-        const content = await (window as any).electronAPI?.artifacts.read(activeChatId, name, projectPath);
+        const content = await (window as any).electronAPI?.artifacts?.read?.(activeChatId, name, projectPath);
         if (content !== null) {
             setSelectedCode({ name, content, chatId: activeChatId });
             setActiveTab('yours');
@@ -1301,7 +1301,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
 
     const loadArtifacts = async () => {
         try {
-            const results = await (window as any).electronAPI?.artifacts.list(undefined, projectPath); // No chatId = load all for this project/global
+            const results = await (window as any).electronAPI?.artifacts?.list?.(undefined, projectPath); // No chatId = load all for this project/global
             // Filter out exec/ temp files (Python scripts, shell scripts, JS/TS temp files)
             const EXEC_EXTS = ['.py', '.sh', '.bat', '.ps1', '.js', '.ts', '.tsx', '.jsx'];
             const filtered = (results || []).filter((a: any) => {
@@ -1317,7 +1317,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
 
     const loadSites = async (chatId: string) => {
         try {
-            const results = await (window as any).electronAPI.sites.list(chatId);
+            const results = await (window as any).electronAPI?.sites?.list?.(chatId);
             const sitesList = results || [];
             setSites(sitesList.map((s: any) => ({
                 id: s.id,
@@ -1335,7 +1335,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
 
     const loadAllSites = async () => {
         try {
-            const results = await (window as any).electronAPI.sites.list();
+            const results = await (window as any).electronAPI?.sites?.list?.();
             const sitesList = results || [];
             setSites(sitesList.map((s: any) => ({
                 id: s.id,
@@ -1479,12 +1479,14 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                         flexDirection: "column",
                         color: "var(--color-text-primary)",
                         overflowY: "auto",
-                        padding: "60px 80px"
+                        padding: "clamp(48px, 5vw, 60px) clamp(16px, 6vw, 80px)"
                     }}
                 >
                     <button
+                        type="button"
+                        aria-label="Close artifacts"
                         onClick={onClose}
-                        style={{ position: "absolute", top: 30, right: 40, background: "transparent", border: "none", color: "var(--color-text-tertiary)", cursor: "pointer", padding: 8, borderRadius: "50%" }}
+                        style={{ position: "absolute", top: 16, right: "clamp(16px, 4vw, 40px)", background: "transparent", border: "none", color: "var(--color-text-tertiary)", cursor: "pointer", padding: 8, borderRadius: "50%" }}
                         onMouseEnter={e => e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"}
                         onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
                     >

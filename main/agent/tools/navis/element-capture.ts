@@ -622,10 +622,11 @@ export async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResul
       };
 
       // Select interactive elements + semantic context. This intentionally uses a
-      // broad semantic selector so SPAs with custom roles/onClick handlers are visible.
+      // targeted semantic selector so SPAs with custom roles/onClick handlers are visible
+      // while avoiding DOM thrashing on thousands of generic divs/spans.
       const selector = [
         'button',
-        'a[href]',
+        'a',
         'input',
         'select',
         'textarea',
@@ -644,6 +645,10 @@ export async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResul
         '[role="tab"]',
         '[role="menuitem"]',
         '[role="option"]',
+        '[role="dialog"]',
+        '[role="alertdialog"]',
+        '[role="navigation"]',
+        'nav',
         'h1',
         'h2',
         'h3',
@@ -654,12 +659,6 @@ export async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResul
         'main',
         'article',
         '[role="main"]',
-        'div',
-        'span',
-        'li',
-        'p',
-        'img',
-        'svg',
       ].join(',');
 
       const queryShadowAll = (root: Document | ShadowRoot, selectorString: string, results: Element[] = []): Element[] => {
@@ -717,6 +716,7 @@ export async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResul
       // Optimization: Pre-compute interactive tag set for faster lookup
       const interactiveTags = new Set(['BUTTON', 'A', 'INPUT', 'SELECT', 'TEXTAREA', 'SUMMARY']);
       const interactiveRoles = new Set(['button', 'link', 'textbox', 'searchbox', 'combobox', 'checkbox', 'radio', 'switch', 'tab', 'menuitem', 'option']);
+      const opacityCache = new Map<Element, number>();
 
       for (let i = 0; i < elements.length; i++) {
         if (ref >= MAX_ELEMENTS) break;
@@ -724,22 +724,46 @@ export async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResul
         const el = elements[i];
         const rect = el.getBoundingClientRect();
 
-        // Check if element is visible (opacity, display, visibility)
-        const style = window.getComputedStyle(el);
-        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0' || rect.width < 1 || rect.height < 1) {
+        // Keep the agent fast: check bounding dimensions and viewport buffer first
+        // before expensive window.getComputedStyle recalculations.
+        if (rect.width < 1 || rect.height < 1) {
           continue;
         }
 
-        // Parent/Ancestor Opacity Check
+        const VIEWPORT_BUFFER = 500;
+        if (
+          rect.bottom < -VIEWPORT_BUFFER ||
+          rect.top > vHeight + VIEWPORT_BUFFER ||
+          rect.right < -VIEWPORT_BUFFER ||
+          rect.left > vWidth + VIEWPORT_BUFFER
+        ) {
+          continue;
+        }
+
+        // Check if element itself is visible (opacity, display, visibility)
+        const style = window.getComputedStyle(el);
+        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+          continue;
+        }
+
+        // Parent/Ancestor Opacity & Visibility Check (memoized to prevent catastrophic DOM thrashing)
         let parentEl: Element | null = el.parentElement;
         let effectiveOpacity = parseFloat(style.opacity);
         if (isNaN(effectiveOpacity)) effectiveOpacity = 1.0;
-        while (parentEl && effectiveOpacity >= 0.01) {
-          const parentStyle = window.getComputedStyle(parentEl);
-          const parentOp = parseFloat(parentStyle.opacity);
-          if (!isNaN(parentOp)) {
-            effectiveOpacity *= parentOp;
+        while (parentEl && effectiveOpacity >= 0.01 && parentEl !== document.body && parentEl !== document.documentElement) {
+          let parentOp = opacityCache.get(parentEl);
+          if (parentOp === undefined) {
+            const parentStyle = window.getComputedStyle(parentEl);
+            if (parentStyle.display === 'none' || parentStyle.visibility === 'hidden') {
+              parentOp = 0;
+            } else {
+              parentOp = parseFloat(parentStyle.opacity);
+              if (isNaN(parentOp)) parentOp = 1.0;
+            }
+            opacityCache.set(parentEl, parentOp);
           }
+          effectiveOpacity *= parentOp;
+          if (effectiveOpacity < 0.01) break;
           parentEl = parentEl.parentElement;
         }
         if (effectiveOpacity < 0.01) {
@@ -748,18 +772,6 @@ export async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResul
 
         // Skip elements inside aria-hidden subtrees
         if (el.closest('[aria-hidden="true"]')) {
-          continue;
-        }
-
-        // Keep the agent fast: include viewport + a nearby buffer, but prune
-        // elements far outside the current scroll region.
-        const VIEWPORT_BUFFER = 500;
-        if (
-          rect.bottom < -VIEWPORT_BUFFER ||
-          rect.top > vHeight + VIEWPORT_BUFFER ||
-          rect.right < -VIEWPORT_BUFFER ||
-          rect.left > vWidth + VIEWPORT_BUFFER
-        ) {
           continue;
         }
 
@@ -804,16 +816,16 @@ export async function captureFastSnapshot(page: Page): Promise<AriaSnapshotResul
                   isObscured = false;
                 }
               }
-              // Skip sibling overlays (small icons/spans/paths/images inside same component parent)
-              if (isObscured && ['SVG', 'SPAN', 'PATH', 'I', 'IMG'].includes(topEl.tagName)) {
-                if (el.parentElement && el.parentElement.contains(topEl)) {
+              // Skip sibling/child overlays (small icons/spans/paths/images inside same component parent)
+              if (isObscured && ['SVG', 'SPAN', 'PATH', 'USE', 'I', 'IMG', 'EM', 'STRONG', 'B'].includes(topEl.tagName)) {
+                if (el.parentElement && (el.parentElement.contains(topEl) || topEl.parentElement?.contains(el))) {
                   isObscured = false;
                 }
               }
               // If they share a common clickable container, they are not obscured
               if (isObscured) {
-                const clickableEl = el.closest('button, a, [role="button"], [role="link"], [onclick], input, select, textarea');
-                const clickableTop = topEl.closest('button, a, [role="button"], [role="link"], [onclick], input, select, textarea');
+                const clickableEl = el.closest('button, a, [role="button"], [role="link"], [onclick], input, select, textarea, [tabindex]') || el;
+                const clickableTop = topEl.closest('button, a, [role="button"], [role="link"], [onclick], input, select, textarea, [tabindex]') || topEl;
                 if (clickableEl && clickableTop && (clickableEl === clickableTop || clickableEl.contains(clickableTop) || clickableTop.contains(clickableEl))) {
                   isObscured = false;
                 }

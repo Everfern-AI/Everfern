@@ -83,24 +83,26 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
 
     const handleSelectFolder = async () => {
         try {
+            let selectedPath: string | null = null;
+            let folderName: string | undefined = undefined;
+
             if ((window as any).electronAPI?.projects?.selectFolder) {
-                const selectedPath = await (window as any).electronAPI.projects.selectFolder();
-                if (selectedPath) {
-                    setPath(selectedPath);
-                    pathEditedRef.current = true;
-                    if (!name) {
-                        const parts = selectedPath.split(/[\\/]/).filter(Boolean);
-                        if (parts.length > 0) setName(parts[parts.length - 1]);
-                    }
-                }
+                selectedPath = await (window as any).electronAPI.projects.selectFolder();
             } else if ((window as any).electronAPI?.system?.openFolderPicker) {
                 const folder = await (window as any).electronAPI.system.openFolderPicker();
                 if (folder && folder.success && folder.path) {
-                    setPath(folder.path);
-                    pathEditedRef.current = true;
-                    if (!name && folder.name) {
-                        setName(folder.name);
-                    }
+                    selectedPath = folder.path;
+                    folderName = folder.name;
+                }
+            }
+
+            if (selectedPath) {
+                setPath(selectedPath);
+                pathEditedRef.current = true;
+                const parts = selectedPath.split(/[\\/]/).filter(Boolean);
+                const derivedName = folderName || (parts.length > 0 ? parts[parts.length - 1] : '');
+                if (derivedName && (!name.trim() || name === 'Website Creation')) {
+                    setName(derivedName);
                 }
             }
         } catch (err) {
@@ -217,11 +219,39 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }: Creat
                         }}
                     >
                         {/* Header */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 32 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
                             <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-tertiary)', padding: 4 }}>
                                 <ArrowLeftIcon width={20} height={20} strokeWidth={2} />
                             </button>
-                            <h2 style={{ fontSize: 22, fontWeight: 600, color: 'var(--color-text-primary)', margin: 0, letterSpacing: '-0.01em' }}>Start a new project</h2>
+                            <h2 style={{ fontSize: 22, fontWeight: 600, color: 'var(--color-text-primary)', margin: 0, letterSpacing: '-0.01em' }}>Start a project</h2>
+                        </div>
+
+                        {/* Quick option: Select existing folder */}
+                        <div
+                            onClick={handleSelectFolder}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: '12px 16px',
+                                backgroundColor: 'var(--color-bg-subtle)',
+                                borderRadius: 14,
+                                border: '1px solid var(--color-border)',
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease',
+                                marginBottom: 20,
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--color-primary)'}
+                            onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--color-border)'}
+                        >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                <FolderIcon width={22} height={22} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />
+                                <div>
+                                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>Select an existing folder</div>
+                                    <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>Pick any folder or codebase from your computer</div>
+                                </div>
+                            </div>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-primary)', flexShrink: 0 }}>Browse folder →</span>
                         </div>
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>

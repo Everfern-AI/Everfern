@@ -100,6 +100,13 @@ export interface SubAgentProgressEvent {
     type: string;
     params: Record<string, unknown>;
     description: string;
+    status?: 'pending' | 'running' | 'completed' | 'failed';
+    result?: string | {
+      success?: boolean;
+      output?: unknown;
+      error?: unknown;
+      [key: string]: unknown;
+    };
   };
   screenshot?: {
     base64: string;

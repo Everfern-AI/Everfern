@@ -14,6 +14,7 @@ import { bridgeServer } from '../../../../lib/extension-server';
 import type { AIClient } from '../../../../lib/ai-client';
 import { BrowserSession } from '../session';
 import { executeAction } from '../actions';
+import { captureInteractiveElements } from '../element-capture';
 import type { NavisLogger } from '../logger';
 import type {
   BrowserControlAdapter,
@@ -358,11 +359,24 @@ export class PlaywrightBrowserAdapter implements BrowserControlAdapter {
 
   async capture(): Promise<BrowserPageState> {
     const page = this.session.page;
+    let refs: BrowserPageState['refs'] = [];
+    let snapshotData: any = undefined;
+    try {
+      const snap = await captureInteractiveElements(page);
+      if (snap?.refs) {
+        refs = snap.refs instanceof Map ? Array.from(snap.refs.values()) : Array.isArray(snap.refs) ? snap.refs : [];
+      }
+      snapshotData = { raw: snap.raw, refs, elementCount: snap.elementCount };
+    } catch (err) {
+      console.warn(`[Navis] Playwright element capture failed: ${err}`);
+    }
+
     return {
       url: page.url(),
       title: await page.title().catch(() => 'Untitled'),
-      refs: [],
+      refs,
       tabs: this.session.allPages.map((p, index) => ({ id: index, url: p.url(), title: '' })),
+      snapshot: snapshotData,
       mode: 'playwright',
     };
   }

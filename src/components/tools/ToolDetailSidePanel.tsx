@@ -14,6 +14,7 @@ import {
 import { FolderOpenIcon } from '@heroicons/react/24/outline';
 import { MarkdownViewer } from '../files/FileViewerModal';
 import ToolCallCodePane from './ToolCallCodePane';
+import { useTheme } from '@/components/ThemeProvider';
 
 /* ============================================================
    TYPES
@@ -689,8 +690,15 @@ function ZoomModal({ screenshot, onClose }: { screenshot: any; onClose: () => vo
    ============================================================ */
 function NavisReportViewer({ report, isRunning }: { report: string; isRunning: boolean }) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const { theme } = useTheme();
   const [displayedReport, setDisplayedReport] = useState(report);
-  const [readerTheme, setReaderTheme] = useState<'light' | 'dark'>('dark');
+  const [readerTheme, setReaderTheme] = useState<'light' | 'dark'>(theme ?? 'light');
+
+  useEffect(() => {
+    if (theme) {
+      setReaderTheme(theme);
+    }
+  }, [theme]);
 
   useEffect(() => {
     setDisplayedReport(report);
@@ -699,22 +707,23 @@ function NavisReportViewer({ report, isRunning }: { report: string; isRunning: b
     }
   }, [report, isRunning]);
 
-  const themeColors = readerTheme === 'light' ? {
-    bg: '#fcfbfa',
-    text: '#2d312e',
-    textMuted: '#686c69',
-    border: '#e7e5e0',
-    codeBg: '#f5f3ee',
-    headerColor: '#1d211e',
+  const isLight = readerTheme === 'light';
+  const themeColors = isLight ? {
+    bg: 'var(--color-bg-surface, #ffffff)',
+    text: 'var(--color-text-primary, #111111)',
+    textMuted: 'var(--color-text-secondary, #4a4846)',
+    border: 'var(--color-border, #e8e6d9)',
+    codeBg: 'var(--color-bg-subtle, #f4f4f4)',
+    headerColor: 'var(--color-text-primary, #111111)',
     accent: '#d97706',
-    accentFaint: '#fef3c7',
+    accentFaint: 'rgba(217, 119, 6, 0.1)',
   } : {
-    bg: '#141413',
-    text: '#e2e2dc',
-    textMuted: '#8b8b83',
-    border: '#2c2b29',
-    codeBg: '#1e1e1c',
-    headerColor: '#f5f5f0',
+    bg: 'var(--color-bg-surface, #181714)',
+    text: 'var(--color-text-primary, #e5e4df)',
+    textMuted: 'var(--color-text-secondary, #96948d)',
+    border: 'var(--color-border, #333029)',
+    codeBg: 'var(--color-bg-subtle, #22201b)',
+    headerColor: 'var(--color-text-primary, #e5e4df)',
     accent: '#f59e0b',
     accentFaint: 'rgba(245, 158, 11, 0.1)',
   };
@@ -861,6 +870,11 @@ function NavisReportViewer({ report, isRunning }: { report: string; isRunning: b
               <Loader2 size={10} color={themeColors.accent} style={{ animation: 'spin 1s linear infinite' }} />
               <span style={{ fontSize: 10, color: themeColors.accent, fontFamily: T.sans, fontWeight: 600 }}>Writing...</span>
             </div>
+          ) : (displayedReport && (displayedReport.includes('Unable to reach') || displayedReport.includes('ECONNREFUSED') || displayedReport.includes('Error:') || displayedReport.includes('Failed to'))) ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(239,68,68,0.08)', border: `1px solid rgba(239,68,68,0.3)`, borderRadius: 20, padding: '2px 8px' }}>
+              <AlertCircle size={10} color={T.red} />
+              <span style={{ fontSize: 10, color: T.red, fontFamily: T.sans, fontWeight: 600 }}>Failed</span>
+            </div>
           ) : (
             <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(34,197,94,0.08)', border: `1px solid rgba(34,197,94,0.3)`, borderRadius: 20, padding: '2px 8px' }}>
               <CheckCircle size={10} color={T.green} />
@@ -887,7 +901,7 @@ function NavisReportViewer({ report, isRunning }: { report: string; isRunning: b
           </div>
         ) : (
           <div style={{ color: themeColors.textMuted, fontSize: 12, textAlign: 'center', paddingTop: 40, fontFamily: T.sans }}>
-            Waiting for findings...
+            {isRunning ? 'Running browser automation steps...' : 'Waiting for findings...'}
           </div>
         )}
         {isRunning && (
@@ -913,12 +927,30 @@ function NavisView({
   const [zoomed, setZoomed] = useState<any>(null);
   const safe = Array.isArray(screenshots) ? screenshots : [];
 
+  const isComputerUse = Boolean(
+    toolName?.toLowerCase().includes('computer_use') ||
+    toolCall?.toolName?.toLowerCase().includes('computer_use')
+  );
+
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true); // Autoplay by default
   const prevLengthRef = useRef(safe.length);
-  const [activeTab, setActiveTab] = useState<'findings' | 'screenshots'>('findings');
+  const [activeTab, setActiveTab] = useState<'findings' | 'screenshots'>(
+    isComputerUse ? 'screenshots' : 'findings'
+  );
 
   const [findingsContent, setFindingsContent] = useState<string>('');
+
+  const isRunning =
+    toolCall?.status === 'running' ||
+    toolCall?.status === 'executing' ||
+    toolCall?.status === 'pending';
+
+  useEffect(() => {
+    if (isComputerUse) {
+      setActiveTab('screenshots');
+    }
+  }, [isComputerUse, toolCall?.id]);
 
   useEffect(() => {
     let isMounted = true;
@@ -967,8 +999,8 @@ function NavisView({
           content = await api.projects.readFile(projectPath, filename);
         }
 
-        // Fallback to global findings.md if tool-call-specific file was not found
-        if (content === null && toolCall?.id) {
+        // Fallback to global findings.md ONLY when finished (not running), NOT for computer_use, and tool-call-specific file was not found
+        if (content === null && toolCall?.id && !isRunning && !isComputerUse) {
           try {
             const everfernPath = await api.projects.getEverfernPath();
             if (everfernPath) {
@@ -985,21 +1017,20 @@ function NavisView({
         if (isMounted) {
           if (content !== null) {
             setFindingsContent(content);
-          } else {
-            setFindingsContent('Could not find findings.md for this task.');
+          } else if (!isRunning) {
+            setFindingsContent(isComputerUse ? '' : 'Could not find findings.md for this task.');
           }
         }
       } catch (err) {
         console.error('Error reading findings.md in NavisView:', err);
-        if (isMounted) {
-          setFindingsContent('Could not find findings.md for this task.');
+        if (isMounted && !isRunning) {
+          setFindingsContent(isComputerUse ? '' : 'Could not find findings.md for this task.');
         }
       }
     };
 
     readFindings();
 
-    const isRunning = toolCall.status === 'executing' || toolCall.status === 'pending';
     let intervalId: any;
     if (isRunning) {
       intervalId = setInterval(readFindings, 1000);
@@ -1009,7 +1040,7 @@ function NavisView({
       isMounted = false;
       if (intervalId) clearInterval(intervalId);
     };
-  }, [toolCall]);
+  }, [toolCall, isRunning, isComputerUse]);
 
   useEffect(() => {
     let interval: any;
@@ -1090,10 +1121,14 @@ function NavisView({
     </div>
   );
 
+  const activeReport = (isRunning && navisReport)
+    ? navisReport
+    : (findingsContent || navisReport || '');
+
   if (activeTab === 'findings') {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-        <SectionLabel>findings.md</SectionLabel>
+        <SectionLabel>{isComputerUse ? 'Execution Findings' : 'findings.md'}</SectionLabel>
         <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column' }}>
           {renderTabs()}
           <div style={{
@@ -1105,8 +1140,8 @@ function NavisView({
             flex: 1,
           }}>
             <NavisReportViewer
-              report={findingsContent}
-              isRunning={toolCall?.status === 'executing' || toolCall?.status === 'pending'}
+              report={activeReport}
+              isRunning={isRunning}
             />
           </div>
         </div>
@@ -1117,14 +1152,14 @@ function NavisView({
   if (safe.length === 0) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-        <SectionLabel>Browser session</SectionLabel>
+        <SectionLabel>{isComputerUse ? 'Computer Use Session' : 'Browser session'}</SectionLabel>
         <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column' }}>
           {renderTabs()}
           <EmptyState
             icon={CameraOff}
             title="No captures yet"
             description={`${toolName} ran but didn't produce screenshots during this session.`}
-            note="Frames appear here in real-time as the browser navigates."
+            note="Frames appear here in real-time as actions execute."
           />
         </div>
       </div>

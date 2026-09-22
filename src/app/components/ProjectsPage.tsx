@@ -63,6 +63,58 @@ export default function ProjectsPage({ onClose, onSelectProject, onCreateNew }: 
         }
     };
 
+    const handleOpenFolderAsProject = async () => {
+        try {
+            let selectedPath: string | null = null;
+            if ((window as any).electronAPI?.projects?.selectFolder) {
+                selectedPath = await (window as any).electronAPI.projects.selectFolder();
+            } else if ((window as any).electronAPI?.system?.openFolderPicker) {
+                const res = await (window as any).electronAPI.system.openFolderPicker();
+                if (res?.success && res?.path) selectedPath = res.path;
+            }
+
+            if (!selectedPath) return;
+
+            const normalizedSelected = selectedPath.replace(/[\\/]+$/, '').toLowerCase();
+            const existing = projects.find(p => p.path && p.path.replace(/[\\/]+$/, '').toLowerCase() === normalizedSelected);
+
+            if (existing) {
+                onSelectProject(existing);
+                return;
+            }
+
+            const parts = selectedPath.split(/[\\/]/).filter(Boolean);
+            const folderName = parts.length > 0 ? parts[parts.length - 1] : 'New Project';
+
+            let newProject: Project;
+            if ((window as any).electronAPI?.projects?.create) {
+                const res = await (window as any).electronAPI.projects.create({
+                    name: folderName,
+                    path: selectedPath,
+                });
+                newProject = res?.project || (res?.success ? res : {
+                    id: crypto.randomUUID(),
+                    name: folderName,
+                    path: selectedPath,
+                    createdAt: new Date().toISOString(),
+                });
+            } else {
+                newProject = {
+                    id: crypto.randomUUID(),
+                    name: folderName,
+                    path: selectedPath,
+                    createdAt: new Date().toISOString(),
+                };
+            }
+
+            await fetchProjects();
+            onSelectProject(newProject);
+        } catch (err) {
+            console.error('Failed to open folder as project:', err);
+            alert(`Failed to open folder: ${err instanceof Error ? err.message : String(err)}`);
+        }
+    };
+
     const filteredProjects = projects.filter(p => 
         p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         p.path.toLowerCase().includes(searchQuery.toLowerCase())
@@ -85,6 +137,29 @@ export default function ProjectsPage({ onClose, onSelectProject, onCreateNew }: 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 40 }}>
                 <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 32, fontWeight: 400, color: 'var(--color-text-primary)' }}>Projects</h1>
                 <div style={{ display: 'flex', gap: 12 }}>
+                    <button
+                        onClick={handleOpenFolderAsProject}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            padding: '10px 18px',
+                            backgroundColor: 'var(--color-bg-surface)',
+                            color: 'var(--color-text-primary)',
+                            borderRadius: 12,
+                            border: '1px solid var(--color-border)',
+                            fontSize: 14,
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                            transition: 'all 0.15s ease'
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'}
+                        onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'}
+                    >
+                        <FolderIcon width={18} height={18} className="text-[var(--color-text-secondary)]" />
+                        Open folder as project
+                    </button>
                     <button
                         onClick={onCreateNew}
                         style={{
@@ -155,8 +230,55 @@ export default function ProjectsPage({ onClose, onSelectProject, onCreateNew }: 
                 {isLoading ? (
                     <div style={{ textAlign: 'center', color: '#71717a', marginTop: 100 }}>Loading projects...</div>
                 ) : filteredProjects.length === 0 ? (
-                    <div style={{ textAlign: 'center', color: '#71717a', marginTop: 100 }}>
-                        {searchQuery ? 'No projects match your search.' : 'No projects yet. Create your first one!'}
+                    <div style={{ textAlign: 'center', color: '#71717a', marginTop: 80, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+                        <div style={{ width: 64, height: 64, borderRadius: 16, backgroundColor: 'var(--color-bg-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <FolderIcon width={32} height={32} className="text-[var(--color-text-tertiary)]" />
+                        </div>
+                        <p style={{ margin: 0, fontSize: 15 }}>
+                            {searchQuery ? 'No projects match your search.' : 'No projects yet. Select an existing folder or create a new one!'}
+                        </p>
+                        {!searchQuery && (
+                            <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+                                <button
+                                    onClick={handleOpenFolderAsProject}
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 8,
+                                        padding: '10px 18px',
+                                        backgroundColor: 'var(--color-bg-surface)',
+                                        color: 'var(--color-text-primary)',
+                                        borderRadius: 12,
+                                        border: '1px solid var(--color-border)',
+                                        fontSize: 14,
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                    }}
+                                >
+                                    <FolderIcon width={18} height={18} className="text-[var(--color-text-secondary)]" />
+                                    Open existing folder
+                                </button>
+                                <button
+                                    onClick={onCreateNew}
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 8,
+                                        padding: '10px 18px',
+                                        backgroundColor: 'var(--color-text-primary)',
+                                        color: 'var(--color-text-inverse)',
+                                        borderRadius: 12,
+                                        border: 'none',
+                                        fontSize: 14,
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                    }}
+                                >
+                                    <PlusIcon width={18} height={18} />
+                                    New project
+                                </button>
+                            </div>
+                        )}
                     </div>
                 ) : (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 24 }}>

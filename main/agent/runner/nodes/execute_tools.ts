@@ -91,8 +91,12 @@ function isCommandComplete(output: string): boolean {
          output.includes('Status: DONE') || output.includes('Exit code:');
 }
 
-async function recordFinding(toolName: string, args: any, result: any, workspaceDir: string) {
+async function recordFinding(toolName: string, args: any, result: any, workspaceDir: string, toolCallId?: string) {
   try {
+    if (!result?.success) return;
+    const outputText = String(result?.output || '');
+    if (outputText.startsWith('Unable to reach VLM') || outputText.toLowerCase().includes('econnrefused')) return;
+
     const findingsDir = path.join(os.homedir(), '.everfern');
     try {
       await fsPromises.mkdir(findingsDir, { recursive: true });
@@ -120,6 +124,10 @@ async function recordFinding(toolName: string, args: any, result: any, workspace
       const url = urlMatch ? urlMatch[0] : 'Browser Action';
       sectionHeader = `## [${dateStr}] Browser Web View`;
       sectionBody = `* **Target URL**: \`${url}\`\n* **Task**: ${task}\n* **Scraped Data Summary**:\n${(result.output || '').slice(0, 500)}...`;
+    } else if (toolName === 'computer_use') {
+      const action = args.action || args.task || 'OS Interaction';
+      sectionHeader = `## [${dateStr}] Computer Use: ${action}`;
+      sectionBody = `* **Action**: \`${action}\`\n* **Details**: ${(result.output || '').slice(0, 500)}...`;
     } else if (toolName === 'web_fetch') {
       const url = args.url || '';
       sectionHeader = `## [${dateStr}] Web Fetch`;
@@ -134,6 +142,14 @@ async function recordFinding(toolName: string, args: any, result: any, workspace
       findingsContent += `\n${sectionHeader}\n${sectionBody}\n`;
       await fsPromises.writeFile(findingsPath, findingsContent, 'utf-8');
       console.log(`[Findings] Updated findings.md with entry for ${toolName}`);
+
+      if (toolCallId) {
+        try {
+          const specificPath = path.join(findingsDir, `findings_${toolCallId}.md`);
+          const specificContent = `# Project Research Findings\n\n${sectionHeader}\n${sectionBody}\n`;
+          await fsPromises.writeFile(specificPath, specificContent, 'utf-8');
+        } catch {}
+      }
     }
   } catch (err) {
     console.warn(`[Findings] Failed to write findings.md:`, err);
@@ -191,11 +207,31 @@ export const createExecuteToolsNode = (
     const homedirNorm = os.homedir().replace(/\\/g, '/');
     const safeConvId = conversationId || 'current';
 
-    const analysis = analyzeToolDependencies(calls.map(tc => ({
-      name: tc.name,
-      args: validateAndCorrectToolArgs(tc.name, tc.arguments || {}, homedirNorm, safeConvId),
-      id: tc.id
-    })));
+    // Synchronize workspaceRoot before dispatching any tools
+    const workspaceRoot = runner.workspaceDir || os.homedir();
+    try {
+      const { setPiToolsWorkspaceDir } = require('../../tools/pi-tools');
+      setPiToolsWorkspaceDir(workspaceRoot);
+    } catch {}
+
+    const analysis = analyzeToolDependencies(calls.map(tc => {
+      const corrected = validateAndCorrectToolArgs(tc.name, tc.arguments || {}, homedirNorm, safeConvId);
+      if (['executePwsh', 'terminal_execute'].includes(tc.name)) {
+        if (!corrected.cwd && !corrected.Cwd) {
+          corrected.cwd = workspaceRoot;
+        }
+      }
+      if (['grep', 'find', 'ls'].includes(tc.name)) {
+        if (!corrected.path || corrected.path === '.' || corrected.path === './') {
+          corrected.path = workspaceRoot;
+        }
+      }
+      return {
+        name: tc.name,
+        args: corrected,
+        id: tc.id
+      };
+    }));
 
     const parallelGroups = groupParallelTools(analysis);
     // PERF: executeSynchronizedParallelGroup is now a static import (was dynamic await import)
@@ -278,8 +314,8 @@ export const createExecuteToolsNode = (
 
         // Record findings for research/browser/file tools (awaited to ensure availability to the agent and prevent data loss)
         const workspaceDir = runner.workspaceDir || path.join(os.homedir(), '.everfern');
-        if (rec.result?.success && ['web_search', 'web_fetch', 'read', 'write', 'edit'].includes(rec.toolName)) {
-          await recordFinding(rec.toolName, rec.args, rec.result, workspaceDir);
+        if (rec.result?.success && ['web_search', 'web_fetch', 'read', 'write', 'edit', 'computer_use'].includes(rec.toolName)) {
+          await recordFinding(rec.toolName, rec.args, rec.result, workspaceDir, rec.id);
         }
 
         // ── Harness Post-Execution ────────────────────────────────────

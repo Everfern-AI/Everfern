@@ -145,7 +145,9 @@ export const createPlannerNode = (runner: AgentRunner, eventQueue?: StreamEvent[
         ? '\n\nRESEARCH/BROWSER ROUTING GUARD: This task is classified as research/browser work. Use `web_search` for discovery and route to `web_explorer`/`navis` for opening pages, forms, listings, booking platforms, and live prices. Ignore any plan step that suggests `computer_use` for websites or browser workflows.'
         : '';
 
-      const systemMessage = `Follow this task decomposition plan to execute the user's request directly and efficiently:\n\n${planText}\n\n${agiHints}${researchRoutingGuard}\nIMPORTANT: Execute parallel groups using your execution tools concurrently if applicable. Act and communicate directly as Fern without exposing internal orchestration labels, planning meta-text, or robotic prefixes.`;
+      const computerUsePromptGuard = '\n\nCOMPUTER_USE PROMPT RULE: When calling `computer_use` for direct desktop automation, pass the user\'s original prompt verbatim as the task. When calling `computer_use` for checking or testing (e.g. in coding/build tasks), provide a concise one-liner prompt stating only what to accomplish. NEVER hallucinate rigid multi-sentence navigation recipes.';
+
+      const systemMessage = `Follow this task decomposition plan to execute the user's request directly and efficiently:\n\n${planText}\n\n${agiHints}${researchRoutingGuard}${computerUsePromptGuard}\nIMPORTANT: Execute parallel groups using your execution tools concurrently if applicable. Act and communicate directly as Fern without exposing internal orchestration labels, planning meta-text, or robotic prefixes.`;
 
       logger.info(`Execution pipeline finalized. System ready for task processing.`);
 

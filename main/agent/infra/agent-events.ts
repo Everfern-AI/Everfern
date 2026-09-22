@@ -62,7 +62,12 @@ class AgentEventEmitter {
         this.globalListeners.forEach(cb => cb(event));
 
         // Emit via EventEmitter for compatibility
-        this.emitter.emit(type, event);
+        // Node treats the literal "error" event name specially and throws when
+        // there is no listener. Agent errors are ordinary stream events, so do
+        // not let a missing compatibility listener crash the completion task.
+        if (type !== 'error' || this.emitter.listenerCount('error') > 0) {
+            this.emitter.emit(type, event);
+        }
         this.emitter.emit('event', event);
 
         return event;

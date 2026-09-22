@@ -43,6 +43,63 @@ export default function ProjectsPage({ onClose, onSelectProject, onCreateNew }: 
         return () => clearInterval(interval);
     }, []);
 
+    const handleOpenFolderAsProject = async () => {
+        try {
+            let selectedPath: string | null = null;
+            if ((window as any).electronAPI?.projects?.selectFolder) {
+                selectedPath = await (window as any).electronAPI.projects.selectFolder();
+            } else if ((window as any).electronAPI?.system?.openFolderPicker) {
+                const res = await (window as any).electronAPI.system.openFolderPicker();
+                if (res?.success && res?.path) selectedPath = res.path;
+            }
+
+            if (!selectedPath) return;
+
+            const normalizedSelected = selectedPath.replace(/[\\/]+$/, '').toLowerCase();
+            const existing = projects.find(p => p.path && p.path.replace(/[\\/]+$/, '').toLowerCase() === normalizedSelected);
+
+            if (existing) {
+                onSelectProject(existing);
+                return;
+            }
+
+            const parts = selectedPath.split(/[\\/]/).filter(Boolean);
+            const folderName = parts.length > 0 ? parts[parts.length - 1] : 'New Project';
+
+            let newProject: Project;
+            if ((window as any).electronAPI?.projects?.create) {
+                const res = await (window as any).electronAPI.projects.create({
+                    name: folderName,
+                    path: selectedPath,
+                });
+                newProject = res?.project || (res?.success ? res : {
+                    id: crypto.randomUUID(),
+                    name: folderName,
+                    path: selectedPath,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                });
+            } else {
+                newProject = {
+                    id: crypto.randomUUID(),
+                    name: folderName,
+                    path: selectedPath,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                };
+            }
+
+            if ((window as any).electronAPI?.projects?.list) {
+                const list = await (window as any).electronAPI.projects.list();
+                setProjects(list || []);
+            }
+            onSelectProject(newProject);
+        } catch (err) {
+            console.error('Failed to open folder as project:', err);
+            alert(`Failed to open folder: ${err instanceof Error ? err.message : String(err)}`);
+        }
+    };
+
     const filteredProjects = projects.filter(p => 
         p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
         p.path.toLowerCase().includes(searchQuery.toLowerCase())
@@ -73,6 +130,28 @@ export default function ProjectsPage({ onClose, onSelectProject, onCreateNew }: 
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <h1 style={{ fontSize: 32, fontWeight: 700, color: "var(--color-text-primary)", margin: 0, fontFamily: 'var(--font-serif)' }}>Projects</h1>
                     <div style={{ display: "flex", gap: 12 }}>
+                        <button
+                            onClick={handleOpenFolderAsProject}
+                            style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                                padding: "8px 16px",
+                                backgroundColor: "var(--color-bg-surface)",
+                                color: "var(--color-text-primary)",
+                                border: "1px solid var(--color-border)",
+                                borderRadius: 8,
+                                fontSize: 14,
+                                fontWeight: 500,
+                                cursor: "pointer",
+                                transition: "background-color 0.2s"
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"}
+                            onMouseLeave={e => e.currentTarget.style.backgroundColor = "var(--color-bg-surface)"}
+                        >
+                            <FolderIcon width={16} height={16} className="text-[var(--color-text-secondary)]" />
+                            Open folder as project
+                        </button>
                         <button
                             onClick={onCreateNew}
                             style={{

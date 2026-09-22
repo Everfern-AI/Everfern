@@ -24,6 +24,7 @@
  */
 
 import { spawn, ChildProcess } from 'child_process';
+import * as os from 'os';
 import { ToolResult } from '../runner/types';
 
 /**
@@ -300,8 +301,14 @@ export class UnifiedExecutor {
         env.WSLENV = '';
       }
 
+      let fallbackCwd = os.homedir();
+      try {
+        const { getPiToolsWorkspaceDir } = require('./pi-tools');
+        fallbackCwd = getPiToolsWorkspaceDir() || os.homedir();
+      } catch {}
+
       const proc: ChildProcess = spawn(executable, args, {
-        cwd: options.cwd || process.cwd(),
+        cwd: options.cwd || fallbackCwd,
         env,
         shell: false
       });

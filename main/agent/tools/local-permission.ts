@@ -1,14 +1,15 @@
 import type { AgentTool, ToolResult } from '../runner/types';
-import { getLocalExecutionResolvers } from './pi-tools';
+import { getLocalExecutionResolvers, getPiToolsWorkspaceDir } from './pi-tools';
 import * as os from 'os';
 import * as path from 'path';
 
 function getHostExecutionContext(cwd?: string, shell?: string): string {
   const home = os.homedir();
+  const effectiveCwd = cwd || getPiToolsWorkspaceDir() || home;
   return [
     'Host execution context:',
     `- Platform: ${process.platform} ${os.release()}`,
-    `- Current working directory: ${cwd || process.cwd()}`,
+    `- Current working directory: ${effectiveCwd}`,
     `- User profile/home: ${home}`,
     `- Downloads: ${path.join(home, 'Downloads')}`,
     `- Desktop: ${path.join(home, 'Desktop')}`,
@@ -118,16 +119,18 @@ export const localPermissionTool: AgentTool = {
       const output = result.output.trim() || '(Command succeeded with no output)';
       const stripAnsi = (str: string) => str.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*\x07)/g, '');
 
+      const effectiveCwd = getPiToolsWorkspaceDir() || os.homedir();
+
       if (result.success) {
         return {
           success: true,
-          output: stripAnsi(`Success: local command completed\n${getHostExecutionContext(process.cwd(), targetShell)}\nCommand: ${command}\nOutput:\n${output}`),
+          output: stripAnsi(`Success: local command completed\n${getHostExecutionContext(effectiveCwd, targetShell)}\nCommand: ${command}\nOutput:\n${output}`),
           data: {
             approved: true,
             alwaysAllow: response.alwaysAllow,
             command,
             shellType,
-            cwd: process.cwd(),
+            cwd: effectiveCwd,
             homeDir: os.homedir(),
             downloadsDir: path.join(os.homedir(), 'Downloads'),
             shell: targetShell,
@@ -136,14 +139,14 @@ export const localPermissionTool: AgentTool = {
       } else {
         return {
           success: false,
-          output: stripAnsi(`Error: local command failed\n${getHostExecutionContext(process.cwd(), targetShell)}\nCommand: ${command}\nOutput:\n${output}`),
+          output: stripAnsi(`Error: local command failed\n${getHostExecutionContext(effectiveCwd, targetShell)}\nCommand: ${command}\nOutput:\n${output}`),
           error: stripAnsi(result.error || output),
           data: {
             approved: true,
             alwaysAllow: response.alwaysAllow,
             command,
             shellType,
-            cwd: process.cwd(),
+            cwd: effectiveCwd,
             homeDir: os.homedir(),
             downloadsDir: path.join(os.homedir(), 'Downloads'),
             shell: targetShell,
@@ -151,20 +154,21 @@ export const localPermissionTool: AgentTool = {
         };
       }
     } catch (execError: any) {
+      const fallbackCwd = getPiToolsWorkspaceDir() || os.homedir();
       const combined = [execError.message].filter(Boolean).join('\n');
       const output = combined.trim() || '(Command failed with no output)';
       const stripAnsi = (str: string) => str.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*\x07)/g, '');
 
       return {
         success: false,
-        output: stripAnsi(`Error: local command failed\n${getHostExecutionContext(process.cwd())}\nCommand: ${command}\nOutput:\n${output}`),
+        output: stripAnsi(`Error: local command failed\n${getHostExecutionContext(fallbackCwd)}\nCommand: ${command}\nOutput:\n${output}`),
         error: stripAnsi(output),
         data: {
           approved: true,
           alwaysAllow: response.alwaysAllow,
           command,
           shellType,
-          cwd: process.cwd(),
+          cwd: fallbackCwd,
           homeDir: os.homedir(),
           downloadsDir: path.join(os.homedir(), 'Downloads'),
         }

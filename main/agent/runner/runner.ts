@@ -727,6 +727,7 @@ export class AgentRunner {
     globalAbortManager.reset();
 
     const convId = conversationId || crypto.randomUUID();
+    this.currentConversationId = convId;
 
     // UNITY: Ensure only one execution runs at a time for this conversation
     // This prevents clobbering state and "messages being wiped" due to race conditions
@@ -755,17 +756,40 @@ export class AgentRunner {
       this.telemetry.setAgentId(this.client.model);
       this.projectId = projectId;
 
+      let resolvedWorkspace: string | undefined;
       if (projectId) {
         try {
+          const fs = await import('fs');
           const { projectsStore } = await import('../../store/projects/projects');
-          const project = await projectsStore.get(projectId);
+          let project = await projectsStore.get(projectId);
+          if (!project) {
+            const allProjects = await projectsStore.list();
+            project = allProjects.find(p => p.id === projectId || p.path === projectId || (p.path && p.path.toLowerCase() === projectId.toLowerCase())) || null;
+          }
           if (project) {
-            this.workspaceDir = project.path;
+            resolvedWorkspace = project.path;
             console.log(`[AgentRunner] 📂 Project context detected: ${project.name} (${project.path})`);
+          } else if (fs.existsSync(projectId) && fs.statSync(projectId).isDirectory()) {
+            resolvedWorkspace = projectId;
+            console.log(`[AgentRunner] 📂 Project directory detected directly: ${projectId}`);
           }
         } catch (err) {
           console.warn(`[AgentRunner] Failed to resolve project ${projectId}:`, err);
         }
+      }
+
+      // Root MUST default to user home path (os.homedir()), NEVER EverFern's source repository
+      const efCwd = process.cwd();
+      if (!resolvedWorkspace || resolvedWorkspace.toLowerCase() === efCwd.toLowerCase()) {
+        resolvedWorkspace = os.homedir();
+      }
+      this.workspaceDir = resolvedWorkspace;
+
+      try {
+        const { setPiToolsWorkspaceDir } = await import('../tools/pi-tools');
+        setPiToolsWorkspaceDir(this.workspaceDir);
+      } catch (err) {
+        console.warn(`[AgentRunner] Failed to sync workspaceDir to pi-tools:`, err);
       }
 
       this.currentConversationId = convId;
@@ -962,9 +986,10 @@ export class AgentRunner {
         removeProgressListener = swarmEvents.onStream('subagent-progress', (event: any) => {
           eventQueue.push({
             type: 'subagent-progress',
-            toolCallId: event.data.toolCallId,
-            timestamp: event.data.timestamp || new Date().toISOString(),
-            data: { ...event.data, type: event.type }
+            conversationId: convId,
+            toolCallId: event.data?.toolCallId,
+            timestamp: event.data?.timestamp || new Date().toISOString(),
+            data: { ...event.data, type: event.type, conversationId: convId }
           } as any);
         });
       }

@@ -92,9 +92,9 @@ export class CognitiveRouter {
       this.runner.telemetry.info('[CognitiveRouter] Fast path matched: data domain.');
       return { decision: 'route_data_analyst', confidence: 0.95, explanation: 'Fast path: data analysis task detected.' };
     }
-    if (normIntent === 'research' || normReq.includes('deep research') || normReq.includes('investigate')) {
-      this.runner.telemetry.info('[CognitiveRouter] Fast path matched: research domain.');
-      return { decision: 'route_deep_research', confidence: 0.95, explanation: 'Fast path: research task detected.' };
+    if (normReq.includes('deep research') || normReq.includes('investigate') || normReq.includes('multi-source research')) {
+      this.runner.telemetry.info('[CognitiveRouter] Fast path matched: deep research domain.');
+      return { decision: 'route_deep_research', confidence: 0.95, explanation: 'Fast path: deep research task detected.' };
     }
 
     const reactMessages: any[] = [
