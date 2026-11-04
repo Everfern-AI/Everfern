@@ -1,18 +1,20 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import Image from "next/image";
 import { motion } from "framer-motion";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight } from "lucide-react";
-import WindowControls from "./components/WindowControls";
-import { useTheme } from "@/components/ThemeProvider";
+import { ArrowRight, Bot, Mountain, Plug } from "lucide-react";
+import { GlassShell, GlassTitle, GlassCard, GlassPill, stagger, rise } from "./components/onboarding/GlassShell";
+
+const PILLARS = [
+  { icon: Bot, name: "Workers", meta: "Your digital team", desc: "Describe a job once. A worker does it on its own computer, every time." },
+  { icon: Mountain, name: "Own VM", meta: "Alpine Linux", desc: "Workers run in a small sandboxed Linux machine, not on your desktop." },
+  { icon: Plug, name: "Your tools", meta: "Mail, docs, apps", desc: "Connect the apps you already use. Every action can be watched live." },
+];
 
 export default function OnboardingPage() {
   const router = useRouter();
   const [isChecking, setIsChecking] = useState(true);
-  const { theme } = useTheme();
 
   useEffect(() => {
     let active = true;
@@ -62,106 +64,44 @@ export default function OnboardingPage() {
     return () => { active = false; };
   }, [router]);
 
-  // Show a solid background during the IPC check — prevents grey/transparent flash on Mac
-  if (isChecking) return <div style={{ minHeight: '100vh', background: '#111' }} />;
+  // Calm placeholder during the IPC check: same frame colour as the shell, no flash
+  if (isChecking) return <div style={{ position: "fixed", inset: 0, background: "#ececea" }} />;
 
   return (
-    <main
-      className="flex flex-col items-center justify-center min-h-screen bg-[var(--color-bg-base)] text-[var(--color-text-primary)]"
-      style={{ fontFamily: "var(--font-sans)" }}
-    >
-      {/* Window Controls - Top Right */}
-      <div style={{ position: "fixed", top: 16, right: 20, zIndex: 100 }}>
-        <WindowControls />
-      </div>
-
+    <GlassShell photo="lake" progress={[1, 3]} bottomLeft={<span>Open source · runs on your machine</span>}>
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ type: "spring", bounce: 0.2, duration: 0.8 }}
-        className="flex flex-col items-center text-center gap-6 px-8 glossy"
-        style={{ maxWidth: 440, borderRadius: 24, padding: 40, background: 'var(--color-bg-surface)' }}
+        variants={stagger}
+        initial="hidden"
+        animate="show"
+        style={{ width: "100%", maxWidth: 760, display: "flex", flexDirection: "column", alignItems: "center" }}
       >
-        {/* Logo */}
-        <Image
-          src="/images/logos/black-logo-withoutbg.png"
-          alt="EverFern Logo"
-          width={72}
-          height={72}
-          priority
-          loading="eager"
-          style={{ filter: theme === 'dark' ? 'invert(1) brightness(0.9)' : 'none' }}
+        <GlassTitle
+          title="Welcome to EverFern"
+          subtitle="Build AI workers that use a computer the way you do: open apps, read mail, fill forms, and report back."
         />
 
-        {/* Title */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <h1
-            style={{
-              fontSize: 44,
-              fontWeight: 400,
-              letterSpacing: "-0.035em",
-              color: "var(--color-text-primary)",
-              lineHeight: 1.15,
-              margin: 0,
-            }}
-          >
-            Get started with{" "}
-            <span style={{ fontWeight: 700 }}>EverFern</span>
-          </h1>
-          <p
-            style={{
-              fontSize: 15,
-              color: "var(--color-text-tertiary)",
-              fontWeight: 400,
-              lineHeight: 1.6,
-              margin: 0,
-            }}
-          >
-            The fastest way to orchestrate your workspace
-          </p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12, width: "100%" }}>
+          {PILLARS.map(({ icon: Icon, name, meta, desc }) => (
+            <GlassCard key={name} style={{ cursor: "default" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span className="ef-icon-tile"><Icon size={17} strokeWidth={1.8} /></span>
+                <div>
+                  <div className="ef-card-name">{name}</div>
+                  <div className="ef-card-meta">{meta}</div>
+                </div>
+              </div>
+              <p className="ef-card-desc">{desc}</p>
+            </GlassCard>
+          ))}
         </div>
 
-        {/* CTA Button */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.96 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.2, type: "spring", bounce: 0.2, duration: 0.6 }}
-          style={{ width: "100%", marginTop: 8 }}
-        >
-          <Link
-            href="/auth"
-            className="glossy"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: "100%",
-              padding: "14px 24px",
-              backgroundColor: "var(--color-text-primary)",
-              color: "var(--color-text-inverse)",
-              borderRadius: "12px",
-              fontWeight: 600,
-              fontSize: "15px",
-              border: "none",
-              cursor: "pointer",
-              fontFamily: "var(--font-sans)",
-              textDecoration: "none",
-              transition: "all 0.2s ease",
-            }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLAnchorElement).style.opacity = "0.9";
-              (e.currentTarget as HTMLAnchorElement).style.transform = "translateY(-1px)";
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLAnchorElement).style.opacity = "1";
-              (e.currentTarget as HTMLAnchorElement).style.transform = "translateY(0)";
-            }}
-          >
-            Get started
-            <ArrowRight size={18} style={{ marginLeft: 8, opacity: 0.8 }} />
-          </Link>
+        <motion.div variants={rise} style={{ marginTop: 28, display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+          <GlassPill onClick={() => router.push("/auth")}>
+            Get started <ArrowRight size={15} />
+          </GlassPill>
+          <span className="ef-note">Takes about two minutes.</span>
         </motion.div>
       </motion.div>
-    </main>
+    </GlassShell>
   );
 }

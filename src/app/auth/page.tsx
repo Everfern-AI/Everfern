@@ -2,10 +2,9 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
 import { motion, AnimatePresence, Variants } from "framer-motion";
-import { ChevronLeft, Loader2, CheckCircle, ArrowRight, Cloud } from "lucide-react";
-import WindowControls from "../components/WindowControls";
+import { ChevronLeft, Loader2, ArrowRight, Cloud, Check } from "lucide-react";
+import { GlassShell, GlassTitle, GlassPill, stagger, rise, EASE } from "../components/onboarding/GlassShell";
 
 const containerVariants: Variants = {
     hidden: {},
@@ -187,347 +186,93 @@ export default function AuthPage() {
 
     const displayName = signedInUser?.displayName ?? signedInUser?.fullName ?? signedInUser?.email ?? "";
 
+    const busy = isGoogleLoading || isGuestLoading;
+    const swap = {
+        initial: { opacity: 0, y: 12, filter: "blur(8px)" },
+        animate: { opacity: 1, y: 0, filter: "blur(0px)", transition: { duration: 0.6, ease: EASE } },
+        exit: { opacity: 0, y: -8, filter: "blur(6px)", transition: { duration: 0.3, ease: EASE } },
+    };
+
     return (
-        <div className="flex min-h-screen bg-[#f5f4f0]" style={{ fontFamily: "var(--font-sans)" }}>
-            {/* Window Controls */}
-            <div style={{ position: "fixed", top: 16, right: 20, zIndex: 100 }}>
-                <WindowControls />
-            </div>
-
-            <div className="flex-1 flex flex-col items-center justify-center relative px-8 bg-[#f5f4f0]">
-
-                {/* Back Button */}
-                {!signedInUser && (
-                    <button
-                        onClick={() => router.push("/")}
-                        className="absolute top-12 left-8 flex items-center gap-2 text-[#8a8886] hover:text-[#4a4846] transition-colors text-sm font-medium z-50 focus:outline-none"
-                    >
-                        <ChevronLeft size={16} /> Back
+        <GlassShell
+            photo="lake"
+            progress={[2, 3]}
+            bottomLeft={
+                !signedInUser && !googleWaiting ? (
+                    <button className="ef-chip-btn" onClick={() => router.push("/")}>
+                        <ChevronLeft size={14} /> Back
                     </button>
-                )}
-
-                {/* Logo */}
-                <motion.div
-                    initial={{ opacity: 0, y: -12 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ type: "spring", bounce: 0.15, duration: 0.6, delay: 0.05 }}
-                    className="absolute top-10 flex items-center gap-3"
-                >
-                    <Image
-                        src="/images/logos/black-logo-withoutbg.png"
-                        alt="EverFern"
-                        width={52}
-                        height={52}
-                        className="opacity-95"
-                        priority
-                    />
-                    <span className="text-[32px] font-normal text-[#201e24] tracking-[-0.04em]" style={{ fontFamily: "var(--font-branding)" }}>
-                        everfern
-                    </span>
-                </motion.div>
-
-                <AnimatePresence mode="wait">
-
-                    {/* ── Signed-in view ── */}
-                    {signedInUser ? (
-                        <motion.div
-                            key="signed-in"
-                            initial={{ opacity: 0, scale: 0.96, y: 10 }}
-                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.96 }}
-                            transition={{ type: "spring", bounce: 0.18, duration: 0.5 }}
-                            className="glossy"
-                            style={{
-                                width: "100%",
-                                maxWidth: 420,
-                                display: "flex",
-                                flexDirection: "column",
-                                alignItems: "center",
-                                textAlign: "center",
-                                background: 'var(--color-bg-surface)',
-                                borderRadius: 24,
-                                padding: 40,
-                            }}
-                        >
-                            {/* Avatar or check icon */}
+                ) : null
+            }
+        >
+            <AnimatePresence mode="wait">
+                {signedInUser ? (
+                    <motion.div key="signed-in" {...swap} style={{ width: "100%", maxWidth: 420, display: "flex", flexDirection: "column", alignItems: "center" }}>
+                        <GlassTitle title="Welcome back" subtitle={displayName || undefined} />
+                        <div className="ef-card is-selected" style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, cursor: "default" }}>
                             {signedInUser.avatarUrl ? (
-                                <img
-                                    src={signedInUser.avatarUrl}
-                                    alt={displayName}
-                                    referrerPolicy="no-referrer"
-                                    onError={(e) => {
-                                        (e.target as HTMLImageElement).src = `https://tapback.co/api/avatar/johndoe`;
-                                    }}
-                                    style={{
-                                        width: 64,
-                                        height: 64,
-                                        borderRadius: "50%",
-                                        marginBottom: 16,
-                                    }}
-                                />
+                                <img src={signedInUser.avatarUrl} alt="" width={40} height={40} style={{ borderRadius: 999 }} />
                             ) : (
-                                <img
-                                    src="https://tapback.co/api/avatar/johndoe"
-                                    alt={displayName}
-                                    style={{
-                                        width: 64,
-                                        height: 64,
-                                        borderRadius: "50%",
-                                        marginBottom: 16,
-                                    }}
-                                />
+                                <span className="ef-icon-tile" style={{ width: 40, height: 40, borderRadius: 999, fontWeight: 600 }}>
+                                    {(displayName || "?").charAt(0).toUpperCase()}
+                                </span>
                             )}
-
-                            <h2 style={{
-                                fontSize: 28,
-                                fontWeight: 500,
-                                letterSpacing: "-0.03em",
-                                color: "#201e24",
-                                marginBottom: 6,
-                                lineHeight: 1.2,
-                            }}>
-                                Welcome back, {displayName.split(" ")[0]}!
-                            </h2>
-
-                            {/* Email + plan pill */}
-                            <div style={{
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: 6,
-                                background: "rgba(0,0,0,0.04)",
-                                border: "1px solid rgba(0,0,0,0.1)",
-                                borderRadius: 999,
-                                padding: "5px 14px",
-                                marginBottom: 28,
-                            }}>
-                                <span style={{ fontSize: 12, color: "#111111", fontWeight: 500 }}>
-                                    {signedInUser.email}
-                                </span>
-                                <span style={{ fontSize: 10, color: "#8a8886" }}>·</span>
-                                <span style={{
-                                    fontSize: 10,
-                                    fontWeight: 700,
-                                    textTransform: "uppercase",
-                                    letterSpacing: "0.06em",
-                                    color: signedInUser.plan === "free" ? "#8a8886" : "#111111",
-                                }}>
-                                    {signedInUser.plan}
-                                </span>
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                                <div className="ef-card-name" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{signedInUser.email}</div>
+                                <div className="ef-card-meta" style={{ textTransform: "capitalize" }}>EverFern Cloud · {signedInUser.plan} plan</div>
                             </div>
+                        </div>
+                        <div style={{ marginTop: 24, display: "flex", gap: 8 }}>
+                            <GlassPill variant="ghost" onClick={handleSignOut}>Use another account</GlassPill>
+                            <GlassPill onClick={handleContinueAsUser}>Continue <ArrowRight size={15} /></GlassPill>
+                        </div>
+                    </motion.div>
+                ) : googleWaiting ? (
+                    <motion.div key="waiting" {...swap} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                        <Loader2 size={28} className="animate-spin" style={{ color: "#fff", marginBottom: 20 }} />
+                        <GlassTitle title="Finish signing in" subtitle="We opened EverFern Cloud in your browser. Come back here once you are signed in." />
+                        <GlassPill
+                            variant="ghost"
+                            onClick={() => { setGoogleWaiting(false); if (pollRef.current) clearInterval(pollRef.current); }}
+                        >
+                            Cancel
+                        </GlassPill>
+                    </motion.div>
+                ) : (
+                    <motion.div key="choose" variants={stagger} initial="hidden" animate="show" exit="exit" style={{ width: "100%", maxWidth: 440, display: "flex", flexDirection: "column", alignItems: "center" }}>
+                        <GlassTitle title="Sign in to EverFern Cloud" subtitle="Your workers run on models tuned for computer use. Fastest, most reliable, nothing to configure." />
 
-                            {/* Continue */}
-                            <motion.button
-                                onClick={handleContinueAsUser}
-                                whileTap={{ scale: 0.98 }}
-                                style={{
-                                    width: "100%",
-                                    padding: "15px 24px",
-                                    backgroundColor: "#111111",
-                                    color: "#ffffff",
-                                    borderRadius: "12px",
-                                    fontWeight: 600,
-                                    fontSize: "15px",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    gap: 10,
-                                    border: "none",
-                                    cursor: "pointer",
-                                    fontFamily: "var(--font-sans)",
-                                    boxShadow: "0 4px 14px rgba(0,0,0,0.12)",
-                                }}
-                            >
-                                Continue to EverFern <ArrowRight size={16} />
-                            </motion.button>
+                        <motion.div variants={rise} className="ef-card is-selected" style={{ width: "100%", cursor: "default" }}>
+                            {[
+                                "Best accuracy on clicks, forms and long tasks",
+                                "Works the moment you sign in, no API keys",
+                                "Free plan included",
+                            ].map((t) => (
+                                <div key={t} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", fontSize: 13.5, color: "rgba(255,255,255,0.88)" }}>
+                                    <Check size={15} strokeWidth={2.2} style={{ flexShrink: 0 }} /> {t}
+                                </div>
+                            ))}
+                        </motion.div>
 
-                            <button
-                                onClick={handleSignOut}
-                                style={{
-                                    marginTop: 16,
-                                    background: "none",
-                                    border: "none",
-                                    cursor: "pointer",
-                                    fontSize: 12,
-                                    color: "#8a8886",
-                                    textDecoration: "underline",
-                                    fontFamily: "var(--font-sans)",
-                                }}
-                            >
-                                Sign out
+                        <motion.div variants={rise} style={{ marginTop: 22, width: "100%" }}>
+                            <button type="button" className="ef-pill ef-pill-light" style={{ width: "100%", height: 46, fontSize: 14.5 }} onClick={handleGoogleLogin} disabled={busy}>
+                                {isGoogleLoading ? <Loader2 size={16} className="animate-spin" /> : <Cloud size={16} />}
+                                Sign in with EverFern Cloud
                             </button>
                         </motion.div>
 
-                    ) : (
-
-                        /* ── Auth options ── */
-                        <motion.div
-                            key="auth-options"
-                            variants={containerVariants}
-                            initial="hidden"
-                            animate="visible"
-                            exit={{ opacity: 0 }}
-                            className="w-full max-w-[420px] flex flex-col items-center text-center glossy"
-                            style={{ background: 'var(--color-bg-surface)', borderRadius: 24, padding: 40 }}
-                        >
-                            <motion.h2
-                                variants={itemVariants}
-                                style={{
-                                    fontSize: 32,
-                                    fontWeight: 500,
-                                    letterSpacing: "-0.03em",
-                                    color: "#201e24",
-                                    lineHeight: 1.2,
-                                    margin: "0 0 12px 0",
-                                }}
-                            >
-                                Welcome Back
-                            </motion.h2>
-
-                            <motion.p
-                                variants={itemVariants}
-                                style={{
-                                    fontSize: 14,
-                                    color: "#8a8886",
-                                    fontWeight: 400,
-                                    lineHeight: 1.6,
-                                    margin: "0 0 36px 0",
-                                    maxWidth: 340,
-                                }}
-                            >
-                                Sign in to continue, or jump straight in as a guest.
-                            </motion.p>
-
-                            <motion.div variants={itemVariants} className="w-full" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-
-                                {/* Google — via landing API, no SDK */}
-                                <div className="w-full">
-                                    {googleWaiting ? (
-                                        <div style={{
-                                            width: "100%",
-                                            padding: "14px 24px",
-                                            backgroundColor: "rgba(0,104,95,0.05)",
-                                            border: "1px solid rgba(0,104,95,0.25)",
-                                            borderRadius: "12px",
-                                            display: "flex",
-                                            alignItems: "center",
-                                            gap: 10,
-                                            fontFamily: "var(--font-sans)",
-                                        }}>
-                                            <Loader2 size={16} className="animate-spin" style={{ color: "#00685f", flexShrink: 0 }} />
-                                            <span style={{ fontSize: 14, color: "#4a4846", fontWeight: 500 }}>
-                                                Waiting for Everfern Cloud sign-in…
-                                            </span>
-                                            <button
-                                                onClick={() => { setGoogleWaiting(false); if (pollRef.current) clearInterval(pollRef.current); }}
-                                                style={{
-                                                    marginLeft: "auto",
-                                                    fontSize: 11,
-                                                    color: "#8a8886",
-                                                    background: "none",
-                                                    border: "none",
-                                                    cursor: "pointer",
-                                                    textDecoration: "underline",
-                                                    padding: 0,
-                                                    flexShrink: 0,
-                                                }}
-                                            >
-                                                Cancel
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        <motion.button
-                                            onClick={handleGoogleLogin}
-                                            disabled={isGoogleLoading || isGuestLoading}
-                                            whileTap={{ scale: 0.985 }}
-                                            style={{
-                                                width: "100%",
-                                                padding: "15px 24px",
-                                                backgroundColor: "#ffffff",
-                                                border: "1px solid #e8e6d9",
-                                                color: "#201e24",
-                                                borderRadius: "12px",
-                                                fontWeight: 500,
-                                                fontSize: "15px",
-                                                display: "flex",
-                                                alignItems: "center",
-                                                justifyContent: "center",
-                                                gap: 12,
-                                                cursor: isGoogleLoading ? "wait" : "pointer",
-                                                fontFamily: "var(--font-sans)",
-                                                boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-                                                transition: "border-color 0.15s, box-shadow 0.15s",
-                                            }}
-                                            onMouseEnter={(e) => {
-                                                (e.currentTarget as HTMLElement).style.borderColor = "#8a8886";
-                                                (e.currentTarget as HTMLElement).style.boxShadow = "0 2px 8px rgba(0,0,0,0.08)";
-                                            }}
-                                            onMouseLeave={(e) => {
-                                                (e.currentTarget as HTMLElement).style.borderColor = "#e8e6d9";
-                                                (e.currentTarget as HTMLElement).style.boxShadow = "0 1px 3px rgba(0,0,0,0.06)";
-                                            }}
-                                        >
-                                            {isGoogleLoading ? (
-                                                <Loader2 size={18} className="animate-spin" style={{ opacity: 0.6 }} />
-                                            ) : (
-                                                <Image src="/images/logos/black-logo-withoutbg.png" alt="Everfern" width={38} height={38} style={{ opacity: 0.85 }} />
-                                            )}
-                                            Continue with Everfern Cloud
-                                        </motion.button>
-                                    )}
-                                </div>
-
-                                {/* Guest */}
-                                <motion.div className="w-full" whileTap={{ scale: 0.98 }}>
-                                    <button
-                                        onClick={handleGuestLogin}
-                                        disabled={isGuestLoading}
-                                        style={{
-                                            width: "100%",
-                                            padding: "15px 24px",
-                                            backgroundColor: "#111111",
-                                            color: "#ffffff",
-                                            borderRadius: "12px",
-                                            fontWeight: 600,
-                                            fontSize: "15px",
-                                            display: "flex",
-                                            alignItems: "center",
-                                            justifyContent: "center",
-                                            gap: 12,
-                                            border: "none",
-                                            cursor: isGuestLoading ? "wait" : "pointer",
-                                            fontFamily: "var(--font-sans)",
-                                            boxShadow: "0 4px 14px rgba(0,0,0,0.1)",
-                                            transition: "background-color 0.2s ease, box-shadow 0.2s ease",
-                                        }}
-                                    >
-                                        {isGuestLoading ? (
-                                            <div className="flex items-center gap-1.5 h-5">
-                                                {[0, 1, 2].map((i) => (
-                                                    <motion.span
-                                                        key={i}
-                                                        className="w-1.5 h-1.5 bg-[#ffffff] rounded-full"
-                                                        animate={{ opacity: [0.3, 1, 0.3], scale: [0.8, 1, 0.8] }}
-                                                        transition={{ duration: 0.9, repeat: Infinity, delay: i * 0.18 }}
-                                                    />
-                                                ))}
-                                            </div>
-                                        ) : (
-                                            <>
-                                                Continue as Guest
-                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="ml-1 opacity-80">
-                                                    <path d="M5 12h14" />
-                                                    <path d="M12 5l7 7-7 7" />
-                                                </svg>
-                                            </>
-                                        )}
-                                    </button>
-                                </motion.div>
-
-                            </motion.div>
+                        <motion.div variants={rise} style={{ marginTop: 26, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                            <button type="button" className="ef-skip" onClick={handleGuestLogin} disabled={busy}>
+                                {isGuestLoading ? <Loader2 size={13} className="animate-spin" /> : null}
+                                Skip, and lose performance
+                            </button>
+                            <span className="ef-note" style={{ fontSize: 11.5, opacity: 0.8 }}>
+                                Bring your own API key or local model. Workers are only as good as the model you pick.
+                            </span>
                         </motion.div>
-                    )}
-                </AnimatePresence>
-            </div>
-        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </GlassShell>
     );
 }

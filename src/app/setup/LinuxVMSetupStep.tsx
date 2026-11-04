@@ -81,7 +81,9 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
   // Auto-scroll terminal to bottom when new logs arrive
   useEffect(() => {
     if (terminalExpanded && terminalEndRef.current) {
-      terminalEndRef.current.scrollIntoView({ behavior: "smooth" });
+      // Scroll only the terminal box; scrollIntoView would also drag the whole step up
+      const box = terminalEndRef.current.parentElement;
+      if (box) box.scrollTo({ top: box.scrollHeight, behavior: "smooth" });
     }
   }, [terminalLogs, terminalExpanded]);
 
@@ -142,7 +144,6 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
             setVmStatus("ready");
             setOsDetails(info?.osName || "Ubuntu Linux (WSL 2)");
             addLog("[ensureWSLSetup] Setting up WSL environment...", "info", 1);
-            addLog("[ensureWSLSetup] Created/Updated .wslconfig with resource caps.", "info", 1);
             checkDeps();
           } else {
             setVmStatus("not-installed");
@@ -380,15 +381,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
           {selectedOS === "linux" && <UbuntuLogo size={46} />}
         </div>
 
-        <h1
-          style={{
-            fontSize: 27,
-            fontWeight: 600,
-            letterSpacing: "-0.03em",
-            color: "var(--color-text-primary)",
-            marginBottom: 8,
-            lineHeight: 1.15,
-          }}
+        <h1 className="ef-title"
         >
           {selectedOS === "windows" && "WSL & Skill Dependencies"}
           {selectedOS === "macos" && "macOS Docker & Skill Sandbox"}
@@ -501,8 +494,8 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
           width: "100%",
           padding: "16px 20px",
           borderRadius: 14,
-          border: "1px solid rgba(32,30,36,0.08)",
-          background: "rgba(32,30,36,0.02)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          background: "rgba(255,255,255,0.02)",
           marginBottom: 16,
           boxSizing: "border-box",
         }}
@@ -530,8 +523,8 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
                   justifyContent: "space-between",
                   padding: "8px 12px",
                   borderRadius: 10,
-                  backgroundColor: isDone ? "rgba(34, 197, 94, 0.05)" : isActive ? "rgba(0, 104, 95, 0.06)" : "rgba(32,30,36,0.02)",
-                  border: `1px solid ${isDone ? "rgba(34, 197, 94, 0.15)" : isActive ? "rgba(0, 104, 95, 0.2)" : "rgba(32,30,36,0.04)"}`,
+                  backgroundColor: isDone ? "rgba(34, 197, 94, 0.05)" : isActive ? "rgba(0, 104, 95, 0.06)" : "rgba(255,255,255,0.02)",
+                  border: `1px solid ${isDone ? "rgba(34, 197, 94, 0.15)" : isActive ? "rgba(0, 104, 95, 0.2)" : "rgba(255,255,255,0.04)"}`,
                   transition: "all 0.2s ease",
                 }}
               >
@@ -541,7 +534,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
                       width: 24,
                       height: 24,
                       borderRadius: "50%",
-                      backgroundColor: isDone ? "#16a34a" : isActive ? "var(--color-text-primary)" : "rgba(32,30,36,0.08)",
+                      backgroundColor: isDone ? "#16a34a" : isActive ? "var(--color-text-primary)" : "rgba(255,255,255,0.08)",
                       color: isDone || isActive ? "#ffffff" : "var(--color-text-tertiary)",
                       display: "flex",
                       alignItems: "center",
@@ -584,7 +577,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
           width: "100%",
           borderRadius: 14,
           overflow: "hidden",
-          border: "1px solid rgba(32,30,36,0.12)",
+          border: "1px solid rgba(255,255,255,0.12)",
           boxShadow: "0 4px 16px rgba(0,0,0,0.06)",
           marginBottom: 18,
           boxSizing: "border-box",
@@ -714,8 +707,8 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
             width: "100%",
             padding: "14px 18px",
             borderRadius: 14,
-            border: "1px solid rgba(32,30,36,0.08)",
-            background: "rgba(32,30,36,0.02)",
+            border: "1px solid rgba(255,255,255,0.08)",
+            background: "rgba(255,255,255,0.02)",
             marginBottom: 20,
             boxSizing: "border-box",
             textAlign: "left",
@@ -737,7 +730,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
 
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {/* Python 3, Node.js & Venv */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: 10, backgroundColor: "rgba(32,30,36,0.03)", border: "1px solid rgba(32,30,36,0.05)" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: 10, backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <div style={{ position: "relative", width: 36, height: 32, display: "flex", alignItems: "center", flexShrink: 0 }}>
                   <img
@@ -766,7 +759,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
             </div>
 
             {/* Dependencies */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: 10, backgroundColor: "rgba(32,30,36,0.03)", border: "1px solid rgba(32,30,36,0.05)" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: 10, backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <div style={{ width: 36, height: 32, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                   <img
@@ -791,7 +784,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
           </div>
 
           {depsInstalling && (
-            <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid rgba(32,30,36,0.06)" }}>
+            <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                 <Loader size={13} style={{ animation: "spin 1s linear infinite", color: "var(--color-text-primary)" }} />
                 <span style={{ fontSize: 11.5, color: "var(--color-text-secondary)" }}>{depsInstallMessage}</span>
@@ -817,7 +810,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
                     background: "var(--color-text-primary)",
                     color: "var(--color-bg-base)",
                     border: "none",
-                    borderRadius: 12,
+                    borderRadius: 999,
                     fontWeight: 600,
                     fontSize: 13.5,
                     cursor: depsInstalling ? "wait" : "pointer",
@@ -839,7 +832,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
                     height: 48,
                     background: "transparent",
                     color: "var(--color-text-tertiary)",
-                    border: "1px solid rgba(32,30,36,0.12)",
+                    border: "1px solid rgba(255,255,255,0.12)",
                     borderRadius: 12,
                     fontWeight: 600,
                     fontSize: 13.5,
@@ -862,7 +855,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
                     background: "var(--color-text-primary)",
                     color: "var(--color-bg-base)",
                     border: "none",
-                    borderRadius: 12,
+                    borderRadius: 999,
                     fontWeight: 600,
                     fontSize: 13.5,
                     cursor: depsChecking ? "wait" : "pointer",
@@ -879,7 +872,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
                     height: 48,
                     background: "transparent",
                     color: "var(--color-text-tertiary)",
-                    border: "1px solid rgba(32,30,36,0.12)",
+                    border: "1px solid rgba(255,255,255,0.12)",
                     borderRadius: 12,
                     fontWeight: 600,
                     fontSize: 13.5,
@@ -906,7 +899,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
                   background: "var(--color-text-primary)",
                   color: "var(--color-bg-base)",
                   border: "none",
-                  borderRadius: 12,
+                  borderRadius: 999,
                   fontWeight: 600,
                   fontSize: 13.5,
                   cursor: "pointer",
@@ -928,7 +921,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
                   background: "var(--color-text-primary)",
                   color: "var(--color-bg-base)",
                   border: "none",
-                  borderRadius: 12,
+                  borderRadius: 999,
                   fontWeight: 600,
                   fontSize: 13.5,
                   cursor: "pointer",
@@ -950,7 +943,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
                   background: "var(--color-text-primary)",
                   color: "var(--color-bg-base)",
                   border: "none",
-                  borderRadius: 12,
+                  borderRadius: 999,
                   fontWeight: 600,
                   fontSize: 13.5,
                 }}
@@ -967,7 +960,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
                 height: 48,
                 background: "transparent",
                 color: "var(--color-text-tertiary)",
-                border: "1px solid rgba(32,30,36,0.12)",
+                border: "1px solid rgba(255,255,255,0.12)",
                 borderRadius: 12,
                 fontWeight: 600,
                 fontSize: 13.5,
@@ -990,7 +983,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
                   background: "var(--color-text-primary)",
                   color: "var(--color-bg-base)",
                   border: "none",
-                  borderRadius: 12,
+                  borderRadius: 999,
                   fontWeight: 600,
                   fontSize: 14,
                   cursor: "pointer",
@@ -1006,7 +999,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
                 height: 48,
                 background: "transparent",
                 color: "var(--color-text-tertiary)",
-                border: "1px solid rgba(32,30,36,0.12)",
+                border: "1px solid rgba(255,255,255,0.12)",
                 borderRadius: 12,
                 fontWeight: 600,
                 fontSize: 13.5,
@@ -1029,7 +1022,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
                 background: "var(--color-text-primary)",
                 color: "var(--color-bg-base)",
                 border: "none",
-                borderRadius: 12,
+                borderRadius: 999,
                 fontWeight: 600,
                 fontSize: 13.5,
                 cursor: "pointer",
@@ -1049,7 +1042,7 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
                 height: 48,
                 background: "transparent",
                 color: "var(--color-text-tertiary)",
-                border: "1px solid rgba(32,30,36,0.12)",
+                border: "1px solid rgba(255,255,255,0.12)",
                 borderRadius: 12,
                 fontWeight: 600,
                 fontSize: 13.5,
@@ -1068,8 +1061,8 @@ export default function LinuxVMSetupStep({ onComplete, onSkip }: LinuxVMSetupSte
           marginTop: 18,
           padding: "10px 14px",
           borderRadius: 10,
-          background: "rgba(32,30,36,0.03)",
-          border: "1px solid rgba(32,30,36,0.05)",
+          background: "rgba(255,255,255,0.03)",
+          border: "1px solid rgba(255,255,255,0.05)",
           display: "flex",
           alignItems: "center",
           gap: 8,

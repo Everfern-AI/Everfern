@@ -2,11 +2,13 @@ import type { Metadata } from "next";
 import { Figtree, JetBrains_Mono, Fira_Code, Geist } from "next/font/google";
 import localFont from "next/font/local";
 import "./globals.css";
+import "./onboarding.css";
 import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import UpdateNotification from "@/components/UpdateNotification";
 import { AnnouncementPopup } from "@/components/AnnouncementPopup";
 import { MaterialSymbolsLoader } from "@/components/MaterialSymbolsLoader";
+import { SmoothScroll } from "@/components/SmoothScroll";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -73,6 +75,12 @@ export default function RootLayout({
       )}
     >
       <head>
+        {/* EverFern v2 type: Satoshi (body) + General Sans (titles), Fontshare free license */}
+        <link rel="preconnect" href="https://api.fontshare.com" crossOrigin="" />
+        <link
+          rel="stylesheet"
+          href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&f[]=general-sans@500,600&display=swap"
+        />
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -83,6 +91,15 @@ export default function RootLayout({
               } else {
                 document.documentElement.classList.remove('dark');
               }
+              const font = localStorage.getItem('everfern_font') || 'default';
+              document.documentElement.setAttribute('data-font', font);
+              if (font === 'sf-pro') {
+                document.documentElement.classList.add('font-sf-pro');
+              } else if (font === 'segoe-ui') {
+                document.documentElement.classList.add('font-segoe-ui');
+              } else {
+                document.documentElement.classList.add('font-default');
+              }
             } catch (_) {}
           `,
           }}
@@ -92,6 +109,7 @@ export default function RootLayout({
         <ThemeProvider>
           {children}
           <MaterialSymbolsLoader />
+          <SmoothScroll />
           <UpdateNotification />
           <AnnouncementPopup />
         </ThemeProvider>
