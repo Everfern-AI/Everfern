@@ -11,6 +11,7 @@ import {
 import { PlanArtifact } from './PlanArtifact';
 import ToolCallCodePane from '@/components/tools/ToolCallCodePane';
 import { useTheme } from '@/components/ThemeProvider';
+import { normalizeToolName } from '@/lib/tool-utils';
 
 /* ============================================================
    CU-UI-01 XSS HARDENING
@@ -259,7 +260,7 @@ function FileOperationView({ toolCall, onClose }: { toolCall: ToolCallDetail; on
           {/* Agent name + action pill */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 13, color: '#e5e5e5', fontWeight: 500 }}>Fern</span>
-            <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>→</span>
+            <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: 13 }}>→</span>
             <span style={{
               fontSize: 12,
               color: '#e5e5e5',
@@ -1373,9 +1374,7 @@ export function ToolCallDetailPane({
     if (isRead) return 'File Read';
     if (isNavis) return 'AI Research';
     // Format tool name: remove underscores, capitalize words
-    return toolCall.toolName
-      .replace(/_/g, ' ')
-      .replace(/\b\w/g, c => c.toUpperCase());
+    return normalizeToolName(toolCall.toolName);
   };
 
   const hasError = toolCall.status === 'failed' || 
@@ -1436,7 +1435,7 @@ export function ToolCallDetailPane({
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
             <Terminal size={16} color={T.textMuted} />
             <span style={{ fontSize: 13, color: T.textMuted, fontFamily: T.sans }}>
-              {isTerminal ? 'bash' : isWrite ? 'write' : isEdit ? 'edit' : 'view'}
+              {isTerminal ? 'Terminal' : isWrite ? 'Write' : isEdit ? 'Edit' : 'View'}
             </span>
           </div>
         ) : (

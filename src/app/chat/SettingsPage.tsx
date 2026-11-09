@@ -1,4 +1,5 @@
 'use client';
+import { useDialogFocus } from "@/lib/use-dialog-focus";
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -28,6 +29,7 @@ import {
     ExclamationTriangleIcon,
     ArrowPathIcon,
     PencilIcon,
+    PaintBrushIcon,
 } from '@heroicons/react/24/outline';
 import { ToolSettingsSection } from './components/ToolSettingsSection';
 import PdfOcrPanel from './components/PdfOcrPanel';
@@ -80,7 +82,8 @@ export const navCategories = [
         category: 'Account & System',
         items: [
             { id: 'profile', label: 'Profile', icon: UserCircleIcon, keywords: 'user name avatar email account tier plan cloud support' },
-            { id: 'general', label: 'General', icon: Cog6ToothIcon, keywords: 'theme dark light interface language default home view' },
+            { id: 'general', label: 'General', icon: Cog6ToothIcon, keywords: 'theme dark light interface language default home view font typography sf pro segoe ui segueo customization' },
+            { id: 'customization', label: 'Customization', icon: PaintBrushIcon, keywords: 'customization font typography sf pro segoe ui segueo default theme appearance interface font-family font style text windows' },
             { id: 'system', label: 'System & Hardware', icon: ComputerDesktopIcon, keywords: 'system hardware gpu cpu vram memory ram specs performance tps benchmarks models compatible compatibility accelerate huggingface' },
             { id: 'keybinds', label: 'Keybindings & Shortcuts', icon: CommandLineIcon, keywords: 'keyboard shortcuts keybinds hotkeys commands ctrl cmd bind key toggle' },
             { id: 'linux-vm', label: 'Linux VM', icon: ComputerDesktopIcon, keywords: 'wsl docker container ubuntu linux terminal environment sandbox' },
@@ -868,7 +871,7 @@ const LinuxVMSection = () => {
                 setDepsProgress({ percent: 0, step: 0, title: '', detail: '' });
             }, 4000);
         } catch (err: any) {
-            setDepsMessage(`❌ ${err?.message || 'Installation failed'}`);
+            setDepsMessage(`✗ ${err?.message || 'Installation failed'}`);
         } finally {
             setDepsInstalling(false);
         }
@@ -1443,6 +1446,8 @@ interface SettingsPageProps {
     setSettingsCustomModel: (v: string) => void;
     settingsShowuiUrl: string;
     setSettingsShowuiUrl: (v: string) => void;
+    settingsVlmEnabled: boolean;
+    setSettingsVlmEnabled: (v: boolean) => void;
     settingsVlmMode: 'local' | 'cloud';
     setSettingsVlmMode: React.Dispatch<React.SetStateAction<'local' | 'cloud'>>;
     settingsVlmCloudProvider: string;
@@ -1599,7 +1604,7 @@ const SystemHardwareSection: React.FC = () => {
                         return;
                     }
                 } catch (ipcErr) {
-                    console.warn('[EverFern] ⚠️ IPC query failed:', ipcErr);
+                    console.warn('[EverFern] IPC query failed:', ipcErr);
                 }
             }
 
@@ -2067,7 +2072,7 @@ const SystemHardwareSection: React.FC = () => {
                                     transition: 'all 0.15s'
                                 }}
                             >
-                                {st === 'all' ? 'All Models' : st === 'full_gpu' ? '⚡ Full GPU' : st === 'cpu_offload' ? '⏳ CPU Offload' : '☁️ Cloud'}
+                                {st === 'all' ? 'All Models' : st === 'full_gpu' ? 'Full GPU' : st === 'cpu_offload' ? 'CPU Offload' : 'Cloud'}
                             </button>
                         ))}
                     </div>
@@ -2180,6 +2185,7 @@ export default function SettingsPage({
     settingsApiKey, setSettingsApiKey,
     settingsCustomModel, setSettingsCustomModel,
     settingsShowuiUrl, setSettingsShowuiUrl,
+    settingsVlmEnabled, setSettingsVlmEnabled,
     settingsVlmMode, setSettingsVlmMode,
     settingsVlmCloudProvider, setSettingsVlmCloudProvider,
     settingsVlmCloudModel, setSettingsVlmCloudModel,
@@ -2197,7 +2203,8 @@ export default function SettingsPage({
     handleSaveSettings,
     onOpenVlmOnboarding,
 }: SettingsPageProps) {
-    const { theme, setTheme } = useTheme();
+    const dialogRef = useDialogFocus<HTMLDivElement>(true, onClose);
+    const { theme, setTheme, font, setFont } = useTheme();
     const [activeSection, setActiveSection] = useState(initialSection || 'general');
     const [showStarPopup, setShowStarPopup] = useState(false);
 
@@ -2231,6 +2238,23 @@ export default function SettingsPage({
         } else {
             onOpenVlmOnboarding();
         }
+    };
+
+    const handleVisionEnabledChange = async (nextEnabled: boolean) => {
+        if (!nextEnabled) {
+            setSettingsVlmEnabled(false);
+            return;
+        }
+
+        if (settingsVlmMode === 'local') {
+            const status = await (window as any).electronAPI?.system?.ollamaStatus?.();
+            if (!status?.installed || !status?.modelInstalled) {
+                setSettingsVlmEnabled(false);
+                await handleVisionLocalSetup();
+                return;
+            }
+        }
+        setSettingsVlmEnabled(true);
     };
     const [soul, setSoul] = useState('');
     const [agents, setAgents] = useState('');
@@ -2383,7 +2407,7 @@ export default function SettingsPage({
                         setRecommendedLocalModels(res.recommendedModels);
                     }
                     if (!res.running) {
-                        setLocalProviderError(res.error || `${curProv === 'lmstudio' ? 'LM Studio' : 'Ollama'} is not reachable.`);
+                        setLocalProviderError(res.error || `${curProv === 'llamacpp' ? 'llama.cpp' : curProv === 'lmstudio' ? 'LM Studio' : 'Ollama'} is not reachable.`);
                     }
                     return;
                 }
@@ -2408,15 +2432,17 @@ export default function SettingsPage({
                     ...cur,
                     engine: 'local',
                     provider: settingsProvider || 'ollama',
+                    ...(settingsProvider === 'llamacpp' && { apiKey: '' }),
                     model: modelName,
-                    baseUrl: settingsApiKey?.trim() || (settingsProvider === 'lmstudio' ? 'http://localhost:1234/v1' : 'http://localhost:11434')
+                    baseUrl: settingsApiKey?.trim() || (settingsProvider === 'llamacpp' ? 'http://localhost:8080/v1' : settingsProvider === 'lmstudio' ? 'http://localhost:1234/v1' : 'http://localhost:11434')
                 });
             }
             if ((window as any).electronAPI?.agent?.setProvider) {
                 await (window as any).electronAPI.agent.setProvider({
                     provider: settingsProvider || 'ollama',
+                    ...(settingsProvider === 'llamacpp' && { apiKey: '' }),
                     model: modelName,
-                    baseUrl: settingsApiKey?.trim() || (settingsProvider === 'lmstudio' ? 'http://localhost:1234/v1' : 'http://localhost:11434')
+                    baseUrl: settingsApiKey?.trim() || (settingsProvider === 'llamacpp' ? 'http://localhost:8080/v1' : settingsProvider === 'lmstudio' ? 'http://localhost:1234/v1' : 'http://localhost:11434')
                 });
             }
         } catch (err) {
@@ -2694,7 +2720,524 @@ export default function SettingsPage({
         fetchProfileData();
     }, []);
 
-    // ── General ───────────────────────────────────────────────────────────────
+    // ── Theme Selector Cards ──────────────────────────────────────────────────
+    const ThemeSelectorCards = () => (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginTop: 8, marginBottom: 12 }}>
+            {/* Light Mode Selector Card */}
+            <div 
+                onClick={() => setTheme('light')}
+                style={{ 
+                    border: `2px solid ${theme === 'light' ? 'var(--color-accent)' : 'var(--color-border)'}`, 
+                    borderRadius: 16, 
+                    padding: 16, 
+                    cursor: 'pointer',
+                    backgroundColor: 'var(--color-bg-surface)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 12,
+                    transition: 'all 0.2s ease',
+                    boxShadow: theme === 'light' ? '0 4px 12px rgba(20, 184, 166, 0.1)' : 'none'
+                }}
+            >
+                {/* Mini Window Mockup */}
+                <div style={{ 
+                    backgroundColor: '#f5f4f0', 
+                    border: '1px solid #e8e6d9', 
+                    borderRadius: 8, 
+                    height: 100, 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    overflow: 'hidden',
+                    userSelect: 'none'
+                }}>
+                    {/* Mock Title Bar */}
+                    <div style={{ display: 'flex', gap: 4, padding: '6px 8px', borderBottom: '1px solid #e8e6d9', backgroundColor: '#fcfcfb' }}>
+                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#ff5f56' }} />
+                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#ffbd2e' }} />
+                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#27c93f' }} />
+                    </div>
+                    {/* Mock Layout */}
+                    <div style={{ display: 'flex', flex: 1 }}>
+                        {/* Mock Sidebar */}
+                        <div style={{ width: '25%', borderRight: '1px solid #e8e6d9', backgroundColor: '#f5f4f0', padding: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <div style={{ width: '100%', height: 6, backgroundColor: '#e8e6d9', borderRadius: 2 }} />
+                            <div style={{ width: '80%', height: 4, backgroundColor: '#e8e6d9', borderRadius: 2 }} />
+                            <div style={{ width: '90%', height: 4, backgroundColor: '#e8e6d9', borderRadius: 2 }} />
+                        </div>
+                        {/* Mock Content / Chat */}
+                        <div style={{ flex: 1, backgroundColor: '#ffffff', padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            <div style={{ alignSelf: 'flex-end', backgroundColor: '#edeacc', border: '1px solid #e0ddbc', borderRadius: 6, padding: '3px 6px', width: '60%' }}>
+                                <div style={{ width: '100%', height: 3, backgroundColor: '#4a4846', borderRadius: 1 }} />
+                            </div>
+                            <div style={{ alignSelf: 'flex-start', backgroundColor: '#ffffff', border: '1px solid #e8e6d9', borderRadius: 6, padding: '3px 6px', width: '70%' }}>
+                                <div style={{ width: '100%', height: 3, backgroundColor: '#8a8886', borderRadius: 1 }} />
+                                <div style={{ width: '60%', height: 3, backgroundColor: '#8a8886', borderRadius: 1, marginTop: 2 }} />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                {/* Radio Button Selector */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{
+                        width: 18,
+                        height: 18,
+                        borderRadius: '50%',
+                        border: `2px solid ${theme === 'light' ? 'var(--color-accent)' : 'var(--color-border-strong)'}`,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'all 0.2s'
+                    }}>
+                        {theme === 'light' && (
+                            <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: 'var(--color-accent)' }} />
+                        )}
+                    </div>
+                    <span style={{ fontSize: 13, fontWeight: theme === 'light' ? 600 : 500, color: 'var(--color-text-primary)' }}>Light (Beach)</span>
+                </div>
+            </div>
+
+            {/* Dark Mode Selector Card */}
+            <div 
+                onClick={() => setTheme('dark')}
+                style={{ 
+                    border: `2px solid ${theme === 'dark' ? 'var(--color-accent)' : 'var(--color-border)'}`, 
+                    borderRadius: 16, 
+                    padding: 16, 
+                    cursor: 'pointer',
+                    backgroundColor: 'var(--color-bg-surface)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 12,
+                    transition: 'all 0.2s ease',
+                    boxShadow: theme === 'dark' ? '0 4px 12px rgba(20, 184, 166, 0.15)' : 'none'
+                }}
+            >
+                {/* Mini Window Mockup */}
+                <div style={{ 
+                    backgroundColor: '#22201b', 
+                    border: '1px solid #333029', 
+                    borderRadius: 8, 
+                    height: 100, 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    overflow: 'hidden',
+                    userSelect: 'none'
+                }}>
+                    {/* Mock Title Bar */}
+                    <div style={{ display: 'flex', gap: 4, padding: '6px 8px', borderBottom: '1px solid #333029', backgroundColor: '#181714' }}>
+                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#ff5f56' }} />
+                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#ffbd2e' }} />
+                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#27c93f' }} />
+                    </div>
+                    {/* Mock Layout */}
+                    <div style={{ display: 'flex', flex: 1 }}>
+                        {/* Mock Sidebar */}
+                        <div style={{ width: '25%', borderRight: '1px solid #333029', backgroundColor: '#22201b', padding: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <div style={{ width: '100%', height: 6, backgroundColor: '#333029', borderRadius: 2 }} />
+                            <div style={{ width: '80%', height: 4, backgroundColor: '#333029', borderRadius: 2 }} />
+                            <div style={{ width: '90%', height: 4, backgroundColor: '#333029', borderRadius: 2 }} />
+                        </div>
+                        {/* Mock Content / Chat */}
+                        <div style={{ flex: 1, backgroundColor: '#181714', padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            <div style={{ alignSelf: 'flex-end', backgroundColor: '#2d2a20', border: '1px solid #3e3a2c', borderRadius: 6, padding: '3px 6px', width: '60%' }}>
+                                <div style={{ width: '100%', height: 3, backgroundColor: '#c2c0b8', borderRadius: 1 }} />
+                            </div>
+                            <div style={{ alignSelf: 'flex-start', backgroundColor: '#181714', border: '1px solid #333029', borderRadius: 6, padding: '3px 6px', width: '70%' }}>
+                                <div style={{ width: '100%', height: 3, backgroundColor: '#96948d', borderRadius: 1 }} />
+                                <div style={{ width: '60%', height: 3, backgroundColor: '#96948d', borderRadius: 1, marginTop: 2 }} />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                {/* Radio Button Selector */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{
+                        width: 18,
+                        height: 18,
+                        borderRadius: '50%',
+                        border: `2px solid ${theme === 'dark' ? 'var(--color-accent)' : 'var(--color-border-strong)'}`,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'all 0.2s'
+                    }}>
+                        {theme === 'dark' && (
+                            <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: 'var(--color-accent)' }} />
+                        )}
+                    </div>
+                    <span style={{ fontSize: 13, fontWeight: theme === 'dark' ? 600 : 500, color: 'var(--color-text-primary)' }}>Dark (Charcoal)</span>
+                </div>
+            </div>
+        </div>
+    );
+
+    // ── Font Selector Component ────────────────────────────────────────────────
+    const FontSelector = () => {
+        const activeFontName = font === 'sf-pro' ? 'SF Pro Display Active' : font === 'segoe-ui' ? 'Segoe UI Active' : 'Default (Figtree) Active';
+        const activeFontFamily = font === 'sf-pro' ? "'SF Pro Display', 'SF Pro', -apple-system, sans-serif" : font === 'segoe-ui' ? "'Segoe UI', 'Segoe UI Variable', -apple-system, BlinkMacSystemFont, Roboto, sans-serif" : "'Figtree', 'Inter', sans-serif";
+
+        return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 16 }}>
+                    {/* Default Font Option */}
+                    <div
+                        onClick={() => setFont('default')}
+                        style={{
+                            border: `2px solid ${font === 'default' ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                            borderRadius: 16,
+                            padding: 16,
+                            cursor: 'pointer',
+                            backgroundColor: 'var(--color-bg-surface)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 12,
+                            transition: 'all 0.2s ease',
+                            boxShadow: font === 'default' ? '0 4px 16px rgba(20, 184, 166, 0.12)' : 'none',
+                        }}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <div style={{
+                                    width: 34,
+                                    height: 34,
+                                    borderRadius: 10,
+                                    backgroundColor: font === 'default' ? 'var(--color-accent-dim)' : 'var(--color-bg-subtle)',
+                                    color: font === 'default' ? 'var(--color-accent)' : 'var(--color-text-secondary)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontFamily: "'Figtree', 'Inter', sans-serif",
+                                    fontWeight: 600,
+                                    fontSize: 15
+                                }}>
+                                    Aa
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+                                        Default
+                                    </div>
+                                    <div style={{ fontSize: 11.5, color: 'var(--color-text-tertiary)' }}>
+                                        Figtree & Inter
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style={{
+                                width: 18,
+                                height: 18,
+                                borderRadius: '50%',
+                                border: `2px solid ${font === 'default' ? 'var(--color-accent)' : 'var(--color-border-strong)'}`,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                transition: 'all 0.2s'
+                            }}>
+                                {font === 'default' && (
+                                    <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: 'var(--color-accent)' }} />
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Preview Box */}
+                        <div style={{
+                            padding: '10px 12px',
+                            borderRadius: 10,
+                            backgroundColor: 'var(--color-bg-subtle)',
+                            border: '1px solid var(--color-border)',
+                            fontFamily: "'Figtree', 'Inter', -apple-system, sans-serif"
+                        }}>
+                            <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)', marginBottom: 2 }}>
+                                The quick brown fox jumps
+                            </div>
+                            <div style={{ fontSize: 11.5, color: 'var(--color-text-secondary)', lineHeight: 1.4 }}>
+                                Modern geometric sans-serif for balanced clarity.
+                            </div>
+                            <div style={{ fontSize: 10.5, color: 'var(--color-text-tertiary)', marginTop: 4, letterSpacing: '0.03em' }}>
+                                0123456789 • ABCDEFGH
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+                            <span style={{
+                                display: 'inline-block',
+                                padding: '2px 7px',
+                                borderRadius: 6,
+                                backgroundColor: font === 'default' ? 'var(--color-accent-dim)' : 'var(--color-bg-subtle)',
+                                color: font === 'default' ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
+                                fontWeight: 600,
+                                fontSize: 10
+                            }}>
+                                STANDARD
+                            </span>
+                            <span style={{ fontSize: 11 }}>Balanced UI</span>
+                        </div>
+                    </div>
+
+                    {/* SF Pro Display Option */}
+                    <div
+                        onClick={() => setFont('sf-pro')}
+                        style={{
+                            border: `2px solid ${font === 'sf-pro' ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                            borderRadius: 16,
+                            padding: 16,
+                            cursor: 'pointer',
+                            backgroundColor: 'var(--color-bg-surface)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 12,
+                            transition: 'all 0.2s ease',
+                            boxShadow: font === 'sf-pro' ? '0 4px 16px rgba(20, 184, 166, 0.12)' : 'none',
+                        }}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <div style={{
+                                    width: 34,
+                                    height: 34,
+                                    borderRadius: 10,
+                                    backgroundColor: font === 'sf-pro' ? 'var(--color-accent-dim)' : 'var(--color-bg-subtle)',
+                                    color: font === 'sf-pro' ? 'var(--color-accent)' : 'var(--color-text-secondary)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontFamily: "'SF Pro Display', 'SF Pro', -apple-system, sans-serif",
+                                    fontWeight: 400,
+                                    fontSize: 15
+                                }}>
+                                    Aa
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+                                        SF Pro
+                                    </div>
+                                    <div style={{ fontSize: 11.5, color: 'var(--color-text-tertiary)' }}>
+                                        Apple San Francisco
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style={{
+                                width: 18,
+                                height: 18,
+                                borderRadius: '50%',
+                                border: `2px solid ${font === 'sf-pro' ? 'var(--color-accent)' : 'var(--color-border-strong)'}`,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                transition: 'all 0.2s'
+                            }}>
+                                {font === 'sf-pro' && (
+                                    <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: 'var(--color-accent)' }} />
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Preview Box */}
+                        <div style={{
+                            padding: '10px 12px',
+                            borderRadius: 10,
+                            backgroundColor: 'var(--color-bg-subtle)',
+                            border: '1px solid var(--color-border)',
+                            fontFamily: "'SF Pro Display', 'SF Pro', -apple-system, BlinkMacSystemFont, sans-serif"
+                        }}>
+                            <div style={{ fontSize: 13, fontWeight: 400, color: 'var(--color-text-primary)', marginBottom: 2 }}>
+                                The quick brown fox jumps
+                            </div>
+                            <div style={{ fontSize: 11.5, color: 'var(--color-text-secondary)', lineHeight: 1.4 }}>
+                                Apple's crisp design typography with natural regular weight.
+                            </div>
+                            <div style={{ fontSize: 10.5, color: 'var(--color-text-tertiary)', marginTop: 4, letterSpacing: '0.03em' }}>
+                                0123456789 • ABCDEFGH
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+                            <span style={{
+                                display: 'inline-block',
+                                padding: '2px 7px',
+                                borderRadius: 6,
+                                backgroundColor: font === 'sf-pro' ? 'var(--color-accent-dim)' : 'var(--color-bg-subtle)',
+                                color: font === 'sf-pro' ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
+                                fontWeight: 600,
+                                fontSize: 10
+                            }}>
+                                APPLE NATIVE
+                            </span>
+                            <span style={{ fontSize: 11 }}>Regular weight</span>
+                        </div>
+                    </div>
+
+                    {/* Segoe UI Option */}
+                    <div
+                        onClick={() => setFont('segoe-ui')}
+                        style={{
+                            border: `2px solid ${font === 'segoe-ui' ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                            borderRadius: 16,
+                            padding: 16,
+                            cursor: 'pointer',
+                            backgroundColor: 'var(--color-bg-surface)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 12,
+                            transition: 'all 0.2s ease',
+                            boxShadow: font === 'segoe-ui' ? '0 4px 16px rgba(20, 184, 166, 0.12)' : 'none',
+                        }}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <div style={{
+                                    width: 34,
+                                    height: 34,
+                                    borderRadius: 10,
+                                    backgroundColor: font === 'segoe-ui' ? 'var(--color-accent-dim)' : 'var(--color-bg-subtle)',
+                                    color: font === 'segoe-ui' ? 'var(--color-accent)' : 'var(--color-text-secondary)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontFamily: "'Segoe UI', 'Segoe UI Variable', sans-serif",
+                                    fontWeight: 400,
+                                    fontSize: 15
+                                }}>
+                                    Aa
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+                                        Segoe UI
+                                    </div>
+                                    <div style={{ fontSize: 11.5, color: 'var(--color-text-tertiary)' }}>
+                                        Microsoft Windows
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style={{
+                                width: 18,
+                                height: 18,
+                                borderRadius: '50%',
+                                border: `2px solid ${font === 'segoe-ui' ? 'var(--color-accent)' : 'var(--color-border-strong)'}`,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                transition: 'all 0.2s'
+                            }}>
+                                {font === 'segoe-ui' && (
+                                    <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: 'var(--color-accent)' }} />
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Preview Box */}
+                        <div style={{
+                            padding: '10px 12px',
+                            borderRadius: 10,
+                            backgroundColor: 'var(--color-bg-subtle)',
+                            border: '1px solid var(--color-border)',
+                            fontFamily: "'Segoe UI', 'Segoe UI Variable', -apple-system, BlinkMacSystemFont, Roboto, sans-serif"
+                        }}>
+                            <div style={{ fontSize: 13, fontWeight: 400, color: 'var(--color-text-primary)', marginBottom: 2 }}>
+                                The quick brown fox jumps
+                            </div>
+                            <div style={{ fontSize: 11.5, color: 'var(--color-text-secondary)', lineHeight: 1.4 }}>
+                                Ergonomic Windows and Fluent Design system typeface.
+                            </div>
+                            <div style={{ fontSize: 10.5, color: 'var(--color-text-tertiary)', marginTop: 4, letterSpacing: '0.03em' }}>
+                                0123456789 • ABCDEFGH
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+                            <span style={{
+                                display: 'inline-block',
+                                padding: '2px 7px',
+                                borderRadius: 6,
+                                backgroundColor: font === 'segoe-ui' ? 'var(--color-accent-dim)' : 'var(--color-bg-subtle)',
+                                color: font === 'segoe-ui' ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
+                                fontWeight: 600,
+                                fontSize: 10
+                            }}>
+                                WINDOWS NATIVE
+                            </span>
+                            <span style={{ fontSize: 11 }}>Fluent Typography</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Interactive Live Preview Box */}
+                <div style={{
+                    marginTop: 4,
+                    padding: '16px 20px',
+                    borderRadius: 14,
+                    backgroundColor: 'var(--color-bg-subtle)',
+                    border: '1px solid var(--color-border)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 10
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                            Live Typography Preview
+                        </span>
+                        <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-accent)' }}>
+                            {activeFontName}
+                        </span>
+                    </div>
+                    <div style={{
+                        fontFamily: activeFontFamily
+                    }}>
+                        <h4 style={{ fontSize: 17, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 4px', letterSpacing: '-0.01em' }}>
+                            Autonomous AI Workplace Intelligence
+                        </h4>
+                        <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: '0 0 10px', lineHeight: 1.5, fontWeight: 400 }}>
+                            EverFern pairs local reasoning engines with persistent memory graphs to orchestrate complex developer and workplace workflows.
+                        </p>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                            <span style={{ padding: '3px 10px', borderRadius: 6, backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+                                v1.2.0 Production
+                            </span>
+                            <span style={{ padding: '3px 10px', borderRadius: 6, backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', fontSize: 12, color: 'var(--color-text-secondary)' }}>
+                                120 tokens/sec
+                            </span>
+                            <span style={{ padding: '3px 10px', borderRadius: 6, backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', fontSize: 12, color: 'var(--color-text-secondary)' }}>
+                                Sub-pixel ClearType & Antialiasing
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    // ── Customization Section ──────────────────────────────────────────────────
+    const CustomizationSection = () => (
+        <div>
+            <SectionTitle>Customization</SectionTitle>
+            <SectionSubtitle>Personalize EverFern's typography, appearance, and visual styling.</SectionSubtitle>
+
+            <Card>
+                <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 6px' }}>
+                    Interface Typography
+                </h3>
+                <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)', margin: '0 0 18px', lineHeight: 1.4 }}>
+                    Choose the font family used across the application interface, code snippets, and chat sessions.
+                </p>
+                <FontSelector />
+            </Card>
+
+            <Card>
+                <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 16px' }}>
+                    Appearance & Theme
+                </h3>
+                <div>
+                    <Label>App Theme</Label>
+                    <ThemeSelectorCards />
+                </div>
+            </Card>
+        </div>
+    );
+
+    // ── General Section ────────────────────────────────────────────────────────
     const GeneralSection = () => (
         <div>
             <SectionTitle>General</SectionTitle>
@@ -2702,158 +3245,14 @@ export default function SettingsPage({
 
             <Card>
                 <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 16px' }}>Interface</h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                     <div>
                         <Label>App Theme</Label>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginTop: 8, marginBottom: 12 }}>
-                            {/* Light Mode Selector Card */}
-                            <div 
-                                onClick={() => setTheme('light')}
-                                style={{ 
-                                    border: `2px solid ${theme === 'light' ? 'var(--color-accent)' : 'var(--color-border)'}`, 
-                                    borderRadius: 16, 
-                                    padding: 16, 
-                                    cursor: 'pointer',
-                                    backgroundColor: 'var(--color-bg-surface)',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: 12,
-                                    transition: 'all 0.2s ease',
-                                    boxShadow: theme === 'light' ? '0 4px 12px rgba(20, 184, 166, 0.1)' : 'none'
-                                }}
-                            >
-                                {/* Mini Window Mockup */}
-                                <div style={{ 
-                                    backgroundColor: '#f5f4f0', 
-                                    border: '1px solid #e8e6d9', 
-                                    borderRadius: 8, 
-                                    height: 100, 
-                                    display: 'flex', 
-                                    flexDirection: 'column', 
-                                    overflow: 'hidden',
-                                    userSelect: 'none'
-                                }}>
-                                    {/* Mock Title Bar */}
-                                    <div style={{ display: 'flex', gap: 4, padding: '6px 8px', borderBottom: '1px solid #e8e6d9', backgroundColor: '#fcfcfb' }}>
-                                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#ff5f56' }} />
-                                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#ffbd2e' }} />
-                                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#27c93f' }} />
-                                    </div>
-                                    {/* Mock Layout */}
-                                    <div style={{ display: 'flex', flex: 1 }}>
-                                        {/* Mock Sidebar */}
-                                        <div style={{ width: '25%', borderRight: '1px solid #e8e6d9', backgroundColor: '#f5f4f0', padding: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                            <div style={{ width: '100%', height: 6, backgroundColor: '#e8e6d9', borderRadius: 2 }} />
-                                            <div style={{ width: '80%', height: 4, backgroundColor: '#e8e6d9', borderRadius: 2 }} />
-                                            <div style={{ width: '90%', height: 4, backgroundColor: '#e8e6d9', borderRadius: 2 }} />
-                                        </div>
-                                        {/* Mock Content / Chat */}
-                                        <div style={{ flex: 1, backgroundColor: '#ffffff', padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                            <div style={{ alignSelf: 'flex-end', backgroundColor: '#edeacc', border: '1px solid #e0ddbc', borderRadius: 6, padding: '3px 6px', width: '60%' }}>
-                                                <div style={{ width: '100%', height: 3, backgroundColor: '#4a4846', borderRadius: 1 }} />
-                                            </div>
-                                            <div style={{ alignSelf: 'flex-start', backgroundColor: '#ffffff', border: '1px solid #e8e6d9', borderRadius: 6, padding: '3px 6px', width: '70%' }}>
-                                                <div style={{ width: '100%', height: 3, backgroundColor: '#8a8886', borderRadius: 1 }} />
-                                                <div style={{ width: '60%', height: 3, backgroundColor: '#8a8886', borderRadius: 1, marginTop: 2 }} />
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                {/* Radio Button Selector */}
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    <div style={{
-                                        width: 18,
-                                        height: 18,
-                                        borderRadius: '50%',
-                                        border: `2px solid ${theme === 'light' ? 'var(--color-accent)' : 'var(--color-border-strong)'}`,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        transition: 'all 0.2s'
-                                    }}>
-                                        {theme === 'light' && (
-                                            <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: 'var(--color-accent)' }} />
-                                        )}
-                                    </div>
-                                    <span style={{ fontSize: 13, fontWeight: theme === 'light' ? 600 : 500, color: 'var(--color-text-primary)' }}>Light (Beach)</span>
-                                </div>
-                            </div>
-
-                            {/* Dark Mode Selector Card */}
-                            <div 
-                                onClick={() => setTheme('dark')}
-                                style={{ 
-                                    border: `2px solid ${theme === 'dark' ? 'var(--color-accent)' : 'var(--color-border)'}`, 
-                                    borderRadius: 16, 
-                                    padding: 16, 
-                                    cursor: 'pointer',
-                                    backgroundColor: 'var(--color-bg-surface)',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: 12,
-                                    transition: 'all 0.2s ease',
-                                    boxShadow: theme === 'dark' ? '0 4px 12px rgba(20, 184, 166, 0.15)' : 'none'
-                                }}
-                            >
-                                {/* Mini Window Mockup */}
-                                <div style={{ 
-                                    backgroundColor: '#22201b', 
-                                    border: '1px solid #333029', 
-                                    borderRadius: 8, 
-                                    height: 100, 
-                                    display: 'flex', 
-                                    flexDirection: 'column', 
-                                    overflow: 'hidden',
-                                    userSelect: 'none'
-                                }}>
-                                    {/* Mock Title Bar */}
-                                    <div style={{ display: 'flex', gap: 4, padding: '6px 8px', borderBottom: '1px solid #333029', backgroundColor: '#181714' }}>
-                                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#ff5f56' }} />
-                                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#ffbd2e' }} />
-                                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#27c93f' }} />
-                                    </div>
-                                    {/* Mock Layout */}
-                                    <div style={{ display: 'flex', flex: 1 }}>
-                                        {/* Mock Sidebar */}
-                                        <div style={{ width: '25%', borderRight: '1px solid #333029', backgroundColor: '#22201b', padding: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                            <div style={{ width: '100%', height: 6, backgroundColor: '#333029', borderRadius: 2 }} />
-                                            <div style={{ width: '80%', height: 4, backgroundColor: '#333029', borderRadius: 2 }} />
-                                            <div style={{ width: '90%', height: 4, backgroundColor: '#333029', borderRadius: 2 }} />
-                                        </div>
-                                        {/* Mock Content / Chat */}
-                                        <div style={{ flex: 1, backgroundColor: '#181714', padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                            <div style={{ alignSelf: 'flex-end', backgroundColor: '#2d2a20', border: '1px solid #3e3a2c', borderRadius: 6, padding: '3px 6px', width: '60%' }}>
-                                                <div style={{ width: '100%', height: 3, backgroundColor: '#c2c0b8', borderRadius: 1 }} />
-                                            </div>
-                                            <div style={{ alignSelf: 'flex-start', backgroundColor: '#181714', border: '1px solid #333029', borderRadius: 6, padding: '3px 6px', width: '70%' }}>
-                                                <div style={{ width: '100%', height: 3, backgroundColor: '#96948d', borderRadius: 1 }} />
-                                                <div style={{ width: '60%', height: 3, backgroundColor: '#96948d', borderRadius: 1, marginTop: 2 }} />
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                {/* Radio Button Selector */}
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    <div style={{
-                                        width: 18,
-                                        height: 18,
-                                        borderRadius: '50%',
-                                        border: `2px solid ${theme === 'dark' ? 'var(--color-accent)' : 'var(--color-border-strong)'}`,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        transition: 'all 0.2s'
-                                    }}>
-                                        {theme === 'dark' && (
-                                            <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: 'var(--color-accent)' }} />
-                                        )}
-                                    </div>
-                                    <span style={{ fontSize: 13, fontWeight: theme === 'dark' ? 600 : 500, color: 'var(--color-text-primary)' }}>Dark (Charcoal)</span>
-                                </div>
-                            </div>
-                        </div>
+                        <ThemeSelectorCards />
+                    </div>
+                    <div>
+                        <Label>App Font</Label>
+                        <FontSelector />
                     </div>
                     <div>
                         <Label>Language</Label>
@@ -3253,12 +3652,14 @@ export default function SettingsPage({
                                         onChange={(e) => {
                                             const val = e.target.value;
                                             setSettingsProvider(val);
+                                            if (val === 'llamacpp') setSettingsApiKey('http://localhost:8080/v1');
                                             if (val === 'lmstudio') setSettingsApiKey('http://localhost:1234/v1');
                                             else if (val === 'ollama') setSettingsApiKey('http://localhost:11434');
                                         }}
                                     >
                                         <option value="ollama">Ollama (Default)</option>
                                         <option value="lmstudio">LM Studio</option>
+                                        <option value="llamacpp">llama.cpp</option>
                                     </Select>
                                 </div>
 
@@ -3268,7 +3669,7 @@ export default function SettingsPage({
                                         <GlobeAltIcon width={16} height={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-tertiary)' }} />
                                         <Input 
                                             type="text" 
-                                            placeholder={settingsProvider === 'lmstudio' ? "http://localhost:1234/v1" : "http://localhost:11434"} 
+                                            placeholder={settingsProvider === 'llamacpp' ? 'http://localhost:8080/v1' : settingsProvider === 'lmstudio' ? "http://localhost:1234/v1" : "http://localhost:11434"} 
                                             value={settingsApiKey} 
                                             onChange={e => setSettingsApiKey(e.target.value)} 
                                             style={{ paddingLeft: 40 }} 
@@ -3324,7 +3725,7 @@ export default function SettingsPage({
                                             {localProviderRunning ? 'Connected' : 'Offline'}
                                         </div>
                                         <div style={{ fontSize: 10.5, color: 'var(--color-text-tertiary)' }}>
-                                            {settingsProvider === 'lmstudio' ? 'LM Studio' : 'Ollama'}
+                                            {settingsProvider === 'llamacpp' ? 'llama.cpp' : settingsProvider === 'lmstudio' ? 'LM Studio' : 'Ollama'}
                                         </div>
                                     </div>
                                 </div>
@@ -3339,7 +3740,7 @@ export default function SettingsPage({
                                 }}>
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                         <span style={{ fontSize: 12, fontWeight: 600, color: '#d97706' }}>
-                                            ⚠️ {settingsProvider === 'lmstudio' ? "LM Studio Local Server is not reachable" : "Ollama service is offline"}
+                                            {settingsProvider === 'llamacpp' ? 'llama.cpp server is not reachable' : settingsProvider === 'lmstudio' ? "LM Studio Local Server is not reachable" : "Ollama service is offline"}
                                         </span>
                                         <button
                                             onClick={() => loadLocalModelsForSection(settingsProvider || 'ollama', settingsApiKey)}
@@ -3353,7 +3754,9 @@ export default function SettingsPage({
                                         </button>
                                     </div>
                                     <p style={{ fontSize: 11, color: 'var(--color-text-secondary)', margin: 0 }}>
-                                        {settingsProvider === 'lmstudio'
+                                        {settingsProvider === 'llamacpp'
+                                            ? 'Start llama-server -m /path/to/model.gguf --port 8080 --jinja, then refresh to select the loaded model.'
+                                            : settingsProvider === 'lmstudio'
                                             ? "Open LM Studio -> Developer tab (<->) -> Start Server on port 1234."
                                             : "Ensure Ollama is running in background or installed on your machine."}
                                     </p>
@@ -3375,7 +3778,7 @@ export default function SettingsPage({
                                         Installed Models ({installedLocalModels.length})
                                     </button>
 
-                                    <button
+                                    {settingsProvider !== 'llamacpp' && (<button
                                         onClick={() => setLocalModelTab('recommended')}
                                         style={{
                                             padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer',
@@ -3385,7 +3788,7 @@ export default function SettingsPage({
                                         }}
                                     >
                                         ★ AI Recommended
-                                    </button>
+                                    </button>)}
                                 </div>
 
                                 <button
@@ -3400,7 +3803,7 @@ export default function SettingsPage({
                             </div>
 
                             {/* Tab 1: Installed Models */}
-                            {localModelTab === 'installed' && (
+                            {(settingsProvider === 'llamacpp' || localModelTab === 'installed') && (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 260, overflowY: 'auto' }}>
                                     {installedLocalModels.length > 0 ? (
                                         installedLocalModels.map(m => {
@@ -3430,7 +3833,7 @@ export default function SettingsPage({
                                                             </span>
                                                         </div>
                                                         <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-                                                            {m.size_gb ? `${m.size_gb} GB disk` : `${m.quantized_q4_vram_gb} GB VRAM`} • {m.isRunnable ? "✓ Fully Runnable" : "⚠️ Heavy"}
+                                                            {m.size_gb ? `${m.size_gb} GB disk` : `${m.quantized_q4_vram_gb} GB VRAM`} • {m.isRunnable ? "✓ Fully Runnable" : "Heavy"}
                                                         </div>
                                                     </div>
 
@@ -3470,11 +3873,11 @@ export default function SettingsPage({
                                         })
                                     ) : (
                                         <div style={{ padding: '20px', borderRadius: 10, backgroundColor: 'var(--color-bg-subtle)', textAlign: 'center' }}>
-                                            <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 4 }}>No models installed in {settingsProvider === 'lmstudio' ? 'LM Studio' : 'Ollama'}</div>
+                                            <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 4 }}>No models installed in {settingsProvider === 'llamacpp' ? 'llama.cpp' : settingsProvider === 'lmstudio' ? 'LM Studio' : 'Ollama'}</div>
                                             <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', margin: '0 0 10px' }}>
-                                                Switch to AI Recommended to download top-performing models for your GPU in 1 click.
+                                                {settingsProvider === 'llamacpp' ? 'Load a GGUF model in llama-server, then refresh this list.' : 'Switch to AI Recommended to download top-performing models for your GPU in 1 click.'}
                                             </p>
-                                            <button
+                                            {settingsProvider !== 'llamacpp' && (<button
                                                 onClick={() => setLocalModelTab('recommended')}
                                                 style={{
                                                     padding: '5px 12px', borderRadius: 6, backgroundColor: 'var(--color-text-primary)', color: 'var(--color-bg-base)',
@@ -3482,14 +3885,14 @@ export default function SettingsPage({
                                                 }}
                                             >
                                                 View AI Recommended →
-                                            </button>
+                                            </button>)}
                                         </div>
                                     )}
                                 </div>
                             )}
 
                             {/* Tab 2: AI Recommended for Your Hardware */}
-                            {localModelTab === 'recommended' && (
+                            {settingsProvider !== 'llamacpp' && localModelTab === 'recommended' && (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 260, overflowY: 'auto' }}>
                                     {recommendedLocalModels.map(m => {
                                         const modelTag = (m.tags && m.tags[0]) || m.name;
@@ -3803,7 +4206,7 @@ export default function SettingsPage({
                     {voiceProvider === 'everfern' && (
                         <motion.div key="everfern" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }} transition={{ duration: 0.2 }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '12px 14px', borderRadius: 8, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-subtle)' }}>
-                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>🌿 EverFern Cloud Voice (Deepgram Nova-2)</span>
+                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>EverFern Cloud Voice (Deepgram Nova-2)</span>
                                 <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.55 }}>
                                     Zero-configuration cloud speech-to-text powered by Deepgram Nova-2. Ready to use out-of-the-box.
                                 </span>
@@ -3833,7 +4236,7 @@ export default function SettingsPage({
                     {voiceProvider === 'local' && (
                         <motion.div key="local" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }} transition={{ duration: 0.2 }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '12px 14px', borderRadius: 8, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-subtle)' }}>
-                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>🤖 Local RealtimeSTT ASR</span>
+                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>Local RealtimeSTT ASR</span>
                                 <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.55 }}>
                                     Transcribes your voice locally on your computer. EverFern will automatically start your local <strong style={{ color: 'var(--color-text-primary)' }}>RealtimeSTT</strong> FastAPI server on a dynamically allocated port.
                                 </span>
@@ -3902,7 +4305,33 @@ export default function SettingsPage({
     const VisionSection = () => (
         <div>
             <SectionTitle>Vision Grounding</SectionTitle>
-            <SectionSubtitle>Connect a vision model to enable precise GUI automation and screen understanding.</SectionSubtitle>
+            <SectionSubtitle>Optional screen understanding for desktop automation. This is separate from your EverFern Cloud chat model.</SectionSubtitle>
+
+            <Card>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 24 }}>
+                    <div style={{ minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 5 }}>
+                            <h3 style={{ fontSize: 15, fontWeight: 650, color: 'var(--color-text-primary)', margin: 0 }}>Use Vision Grounding</h3>
+                            <span style={{ padding: '3px 8px', borderRadius: 999, fontSize: 11, fontWeight: 650, color: settingsVlmEnabled ? '#059669' : 'var(--color-text-tertiary)', background: settingsVlmEnabled ? 'rgba(16, 185, 129, 0.12)' : 'var(--color-bg-subtle)' }}>
+                                {settingsVlmEnabled ? 'On' : 'Off'}
+                            </span>
+                        </div>
+                        <p style={{ fontSize: 12, lineHeight: 1.55, color: 'var(--color-text-secondary)', margin: 0, maxWidth: 560 }}>
+                            When on, EverFern may capture the current screen for requests such as “click this button.” If the vision model is unavailable, normal cloud chat remains online.
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        role="switch"
+                        aria-checked={settingsVlmEnabled}
+                        aria-label="Use Vision Grounding"
+                        onClick={() => void handleVisionEnabledChange(!settingsVlmEnabled)}
+                        style={{ width: 46, height: 26, padding: 3, border: '1px solid var(--color-border)', borderRadius: 999, background: settingsVlmEnabled ? '#10b981' : 'var(--color-bg-subtle)', cursor: 'pointer', flexShrink: 0, transition: 'background-color 160ms ease-out' }}
+                    >
+                        <span style={{ display: 'block', width: 18, height: 18, borderRadius: '50%', background: '#fff', transform: settingsVlmEnabled ? 'translateX(18px)' : 'translateX(0)', transition: 'transform 180ms cubic-bezier(0.22, 1, 0.36, 1)', boxShadow: '0 2px 5px rgba(0,0,0,0.22)' }} />
+                    </button>
+                </div>
+            </Card>
 
             <Card>
                 <Label>ShowUI Endpoint</Label>
@@ -3915,7 +4344,7 @@ export default function SettingsPage({
                 </p>
             </Card>
 
-            <Card>
+            <Card style={{ opacity: settingsVlmEnabled ? 1 : 0.72 }}>
                 <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 16px' }}>Vision Model Source</h3>
                 {/* Toggle */}
                 <div style={{ display: 'flex', gap: 4, padding: 4, backgroundColor: 'var(--color-bg-subtle)', borderRadius: 12, border: '1px solid var(--color-border)', marginBottom: 20, width: 'fit-content' }}>
@@ -4578,13 +5007,13 @@ export default function SettingsPage({
                             <text x="200" y="140" fontSize="11" fontWeight="600" textAnchor="middle" dy=".3em" fill="var(--color-text-primary)">Decomposer</text>
 
                             <rect x="50" y="200" width="100" height="40" rx="8" fill="var(--color-warning-dim)" stroke="var(--color-warning)" strokeWidth="2" />
-                            <text x="100" y="220" fontSize="11" fontWeight="700" textAnchor="middle" dy=".3em" fill="var(--color-warning)">🐝 Swarm</text>
+                            <text x="100" y="220" fontSize="11" fontWeight="700" textAnchor="middle" dy=".3em" fill="var(--color-warning)">Swarm</text>
 
                             <rect x="250" y="200" width="100" height="40" rx="8" fill="var(--color-bg-surface)" stroke="var(--color-border)" strokeWidth="2" />
                             <text x="300" y="220" fontSize="11" fontWeight="600" textAnchor="middle" dy=".3em" fill="var(--color-text-primary)">Planner</text>
 
                             <rect x="150" y="280" width="100" height="40" rx="8" fill="var(--color-text-primary)" stroke="var(--color-text-primary)" strokeWidth="2" />
-                            <text x="200" y="300" fontSize="11" fontWeight="700" textAnchor="middle" dy=".3em" fill="var(--color-text-inverse)">🧠 Brain</text>
+                            <text x="200" y="300" fontSize="11" fontWeight="700" textAnchor="middle" dy=".3em" fill="var(--color-text-inverse)">Brain</text>
 
                             <rect x="50" y="360" width="100" height="40" rx="8" fill="var(--color-navis-active-bg)" stroke="var(--color-navis-active-border)" strokeWidth="2" />
                             <text x="100" y="380" fontSize="10" fontWeight="600" textAnchor="middle" dy=".3em" fill="var(--color-navis-active-text)">Specialists</text>
@@ -6007,6 +6436,7 @@ export default function SettingsPage({
     const renderActiveSection = () => {
         switch (activeSection) {
             case 'general': return <GeneralSection />;
+            case 'customization': return <CustomizationSection />;
             case 'system': return <SystemHardwareSection />;
             case 'keybinds': return <KeybindsSection />;
             case 'openclaw': return <OpenClawSection />;
@@ -6046,7 +6476,7 @@ export default function SettingsPage({
     };
 
     return (
-        <motion.div
+        <motion.div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Settings"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}

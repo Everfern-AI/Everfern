@@ -1,0 +1,48 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "EverFern",
+  "version": "2.0.0",
+  "identifier": "com.everfern.desktop",
+  "build": {
+    "frontendDist": "../out",
+    "devUrl": "http://localhost:3001"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "publisher": "EverFern",
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.ico"
+    ],
+    "resources": {},
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerHooks": "windows-migration.nsh"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "",
+      "endpoints": ["https://github.com/Everfern-AI/Everfern/releases/latest/download/latest.json"]
+    },
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "everfern-app"
+        ]
+      }
+    }
+  }
+}

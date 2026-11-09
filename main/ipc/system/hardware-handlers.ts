@@ -364,7 +364,7 @@ export function registerHardwareHandlers(): void {
 
   ipcMain.handle('system:get-local-models', async (_event, params?: { provider?: string; baseUrl?: string }) => {
     const provider = String(params?.provider || 'ollama').toLowerCase();
-    const defaultUrl = provider === 'lmstudio' ? 'http://localhost:1234/v1' : 'http://localhost:11434';
+    const defaultUrl = provider === 'llamacpp' ? 'http://localhost:8080/v1' : provider === 'lmstudio' ? 'http://localhost:1234/v1' : 'http://localhost:11434';
     const baseUrl = (params?.baseUrl && params.baseUrl.trim()) ? params.baseUrl.trim().replace(/\/$/, '') : defaultUrl;
 
     console.log(`\n[EverFern Desktop] [IPC:system:get-local-models] Querying local provider '${provider}' at '${baseUrl}'...`);
@@ -567,7 +567,7 @@ export function registerHardwareHandlers(): void {
       } catch (err: any) {
         providerError = `Could not connect to Ollama at ${baseUrl}. Ensure Ollama is running.`;
       }
-    } else if (provider === 'lmstudio') {
+    } else if (provider === 'lmstudio' || provider === 'llamacpp') {
       try {
         const http = baseUrl.startsWith('https:') ? require('https') : require('http');
         const urlToFetch = baseUrl.endsWith('/v1') ? `${baseUrl}/models` : `${baseUrl}/v1/models`;
@@ -576,7 +576,8 @@ export function registerHardwareHandlers(): void {
             let data = '';
             res.on('data', (chunk: any) => data += chunk);
             res.on('end', () => {
-              try { resolve(JSON.parse(data)); } catch (e) { resolve(null); }
+              if (res.statusCode < 200 || res.statusCode >= 300) { reject(new Error(`HTTP ${res.statusCode}`)); return; }
+              try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
             });
           });
           req.on('error', reject);
@@ -604,7 +605,7 @@ export function registerHardwareHandlers(): void {
               quantized_q4_vram_gb: q4,
               raw_fp16_vram_gb: rawFp16,
               min_ram_gb: Math.max(4, Math.round(paramB * 1.1)),
-              category: "LM Studio Loaded Model",
+              category: provider === 'llamacpp' ? 'llama.cpp Loaded Model' : 'LM Studio Loaded Model',
               tags: [rawId]
             });
             installedModels.push(enriched);
@@ -613,7 +614,7 @@ export function registerHardwareHandlers(): void {
           isRunning = true;
         }
       } catch (err: any) {
-        providerError = `Could not reach LM Studio at ${baseUrl}. Make sure LM Studio Local Server is started.`;
+        providerError = `Could not reach ${provider === 'llamacpp' ? 'llama.cpp' : 'LM Studio'} at ${baseUrl}. Start the local server and load a model.`;
       }
     }
 
@@ -624,7 +625,7 @@ export function registerHardwareHandlers(): void {
       baseUrl,
       hardware,
       installedModels,
-      recommendedModels,
+      recommendedModels: provider === 'llamacpp' ? [] : recommendedModels,
       error: isRunning ? undefined : providerError
     };
   });

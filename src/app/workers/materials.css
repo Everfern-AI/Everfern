@@ -1,0 +1,170 @@
+/* Floating chrome owns the glass. Content inside it stays quiet and readable. */
+.wk {
+  --wk-panel-fill: linear-gradient(145deg, #ffffff16, #ffffff04), #2439414a;
+  --wk-panel-edge: #ffffff2b;
+  --wk-panel-shadow: 0 8px 24px -12px #091d273b, inset 0 1px 0 #ffffff1c;
+}
+.wk .wk-task-surface, .wk .wk-task-schedule-menu, .wk .wk-task-schedule {
+  background: var(--wk-panel-fill);
+  border: 1px solid var(--wk-panel-edge);
+  -webkit-backdrop-filter: blur(28px) saturate(1.2);
+  backdrop-filter: blur(28px) saturate(1.2);
+  box-shadow: var(--wk-panel-shadow);
+}
+.wk .wk-task-panel { width: 280px; gap: 8px; }
+.wk .wk-task-surface { border-radius: 22px; padding: 12px; }
+.wk .wk-task-schedule { min-height: 32px; padding: 6px 12px; }
+.wk .wk-task-schedule-menu { border-radius: 18px; }
+.wk .wk-task-edit {
+  background: #ffffff16; color: #fff; border: 1px solid #ffffff24;
+  box-shadow: none; margin-bottom: 10px; min-height: 34px; font-weight: 500;
+}
+.wk .wk-task-edit:hover { background: #ffffff26; }
+.wk .wk-task-surface, .wk .wk-task-schedule-menu {
+  background: linear-gradient(145deg,#f1f8ff16,#e0f3ff04),#173d4c24;
+  border-color: #ffffff26;
+  box-shadow: 0 8px 30px -20px #122b3838;
+}
+.wk .wk-report, .wk .wk-login-card, .wk .wk-ready-card {
+  background: linear-gradient(145deg,#eff8ff16,#d5ecff04),#203e4b32;
+  border: 1px solid #ffffff26;
+  border-radius: 28px;
+  -webkit-backdrop-filter: blur(30px) saturate(1.12);
+  backdrop-filter: blur(30px) saturate(1.12);
+  box-shadow: 0 14px 40px -26px #0c273c55;
+  padding: 24px;
+  max-height: calc(100% - 120px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.wk .wk-report { max-width: 640px; }
+.wk .wk-report-section {
+  background: #ffffff08;
+  border: 1px solid #ffffff18;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.wk .wk-report h1 { margin-bottom: 20px; }
+.wk .wk-report .wk-result-summary { font-size: 13px; line-height: 1.65; color: #ffffffe0; }
+.wk .wk-report button, .wk .wk-ready-card button { -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none; }
+.wk .wk-report button:active, .wk .wk-login-card button:active, .wk .wk-ready-card button:active { transform: scale(.97); transition: transform 90ms ease-out; }
+@media (max-width:600px) {
+  .wk .wk-report, .wk .wk-login-card, .wk .wk-ready-card { padding: 18px; border-radius: 22px; max-height: calc(100% - 100px); }
+  .wk .wk-report .grid-cols-3 { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }
+  .wk .wk-report-section { padding: 12px; }
+  .wk .wk-report-section .text-xl { font-size: 16px; overflow-wrap: anywhere; }
+}
+@media (prefers-reduced-transparency:reduce) {
+  .wk.wk :is(.wk-report,.wk-login-card,.wk-ready-card,.wk-task-surface,.wk-task-schedule-menu) { background: #344a55; backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+@media (prefers-contrast:more) {
+  .wk.wk :is(.wk-report,.wk-login-card,.wk-ready-card,.wk-report-section,.wk-task-surface) { border-color: #ffffffa6; }
+  .wk .wk-report-section { background: #173240dd; }
+}
+.wk .wk-thumbs { padding: 16px 24px 20px 10px; gap: 14px; }
+.wk .wk-thumb, .wk .wk-thumb:hover { filter: none; transition: none; }
+.wk .wk-thumb-bar, .wk .wk-thumb:hover .wk-thumb-bar {
+  background: linear-gradient(140deg,#ffffff24,#ffffff0a),#273f4824;
+  border-color: #ffffff38; box-shadow: inset 0 1px 0 #ffffff24;
+  -webkit-backdrop-filter: blur(16px) saturate(1.15);
+  backdrop-filter: blur(16px) saturate(1.15);
+  transition: background 160ms ease, border-color 160ms ease;
+}
+.wk .wk-thumb-name { text-shadow: none; font-weight: 500; }
+.wk .wk-thumb-card, .wk .wk-thumb:hover .wk-thumb-card {
+  background: #233d472b; border-color: #ffffff30;
+  box-shadow: 3px 7px 14px -7px #081f2740, inset 0 1px 0 #ffffff1c;
+  -webkit-backdrop-filter: blur(18px) saturate(1.1);
+  backdrop-filter: blur(18px) saturate(1.1);
+  transition: border-color 160ms ease;
+}
+.wk .wk-thumb:hover .wk-thumb-card { border-color: #ffffff60; }
+.wk .wk-sheet, .wk.is-desktop .wk-sheet {
+  background: linear-gradient(145deg,#ffffff18,#ffffff04),#23384380;
+  border: 1px solid var(--wk-panel-edge); border-radius: 28px;
+  -webkit-backdrop-filter: blur(36px) saturate(1.2);
+  backdrop-filter: blur(36px) saturate(1.2);
+  box-shadow: 0 20px 56px -28px #0b202955, inset 0 1px 0 #ffffff20;
+}
+.wk.is-desktop .wk-sheet-head { height: 78px; padding: 18px 24px; border-color: #ffffff18; gap: 16px; }
+.wk.is-desktop .wk-sheet-title { font: 600 22px/1.2 'Satoshi',sans-serif; }
+.wk.is-desktop .wk-search { background: #12293338; border: 1px solid #ffffff20; height: 38px; width: min(280px,50%); }
+.wk.is-desktop .wk-sheet-body { padding: 20px 24px 28px; }
+.wk.is-desktop .wk-custom {
+  min-height: 96px; padding: 20px; border-radius: 20px;
+  background: #ffffff09; border: 1px solid #ffffff20; box-shadow: none;
+}
+.wk.is-desktop .wk-custom-title { font: 600 18px/1.3 'Satoshi',sans-serif; }
+.wk.is-desktop .wk-custom-sub { font-size: 13px; line-height: 1.5; color: #ffffffbd; }
+.wk.is-desktop .wk-custom .wk-gpill { min-height: 38px; padding-inline: 16px; font-size: 13px; }
+.wk.is-desktop .wk-custom .wk-gpill svg { width: 16px; height: 16px; }
+.wk .wk-market-section { margin-top: 20px; padding: 16px; border-radius: 20px; background: #ffffff08; border: 1px solid #ffffff16; box-shadow: none; }
+.wk.is-desktop .wk-sec { font: 600 18px/1.3 'Satoshi',sans-serif; margin: 0 0 14px; }
+.wk.is-desktop .wk-apps { gap: 8px; }
+.wk.is-desktop .wk-app {
+  height: auto; min-height: 88px; padding: 12px; gap: 12px; border-radius: 16px;
+  background: #102a3222; border: 1px solid #ffffff18; box-shadow: none;
+  transition: background 160ms ease, border-color 160ms ease, transform 120ms ease;
+}
+.wk.is-desktop .wk-app:hover { background: #ffffff10; border-color: #ffffff35; }
+.wk.is-desktop .wk-app:active { transform: scale(.985); }
+.wk.is-desktop .wk-app-name { font-size: 15px; font-weight: 600; }
+.wk .wk-app-meta { display: block; margin-top: 3px; line-height: 1.4; }
+.wk .wk-app-cat-badge { background: none; border: none; padding: 0; font-size: 12px; color: #ffffffb8; }
+.wk .wk-app-blurb-text { display: block; font-size: 12px; line-height: 1.4; color: #ffffffb8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.wk .wk-app-item-right { gap: 4px; flex-shrink: 0; }
+.wk .wk-app-installed-chip { width: 24px; height: 24px; padding: 0; display: inline-flex; justify-content: center; align-items: center; border-radius: 50%; background: #99e3ce1a; color: #b5f4df; border: 1px solid #b5f4df35; }
+.wk .wk-empty { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 48px 20px; color: #ffffffc9; }
+.wk .wk-empty p { margin: 0; }
+.wk .wk-store-product { font: 400 14px/1.5 'Satoshi',sans-serif; }
+.wk .wk-store-product-head { min-height: 70px; border-color: #ffffff18; gap: 12px; }
+.wk .wk-store-product-head > span { text-transform: none; letter-spacing: 0; font-weight: 500; }
+.wk .wk-store-product-head > button:last-child { min-width: 36px; min-height: 36px; }
+.wk .wk-store-product-head > button { color: #ffffffe6; }
+.wk .wk-store-product-body { overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #ffffff30 transparent; padding: 24px; }
+.wk .wk-store-card { background: #112c3426; border: 1px solid #ffffff1c; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+.wk .wk-store-card h1 { font-size: 24px; font-weight: 600; line-height: 1.2; }
+.wk .wk-store-card h3 { font-size: 16px; line-height: 1.3; }
+.wk .wk-store-card :is(p,li) { font-size: 13px; line-height: 1.6; }
+.wk .wk-store-card .text-white\/40, .wk .wk-store-card .text-white\/50 { color: #ffffffb0; }
+.wk .wk-store-install { min-height: 38px; box-shadow: none; }
+.wk .wk-store-note { color: #ffffffb8; margin: 4px 0 16px; }
+.wk .wk-store-review-form :is(input,textarea) { font: inherit; min-height: 40px; background: #122a3433; border-color: #ffffff26; }
+.wk .wk-store-review-form :is(input,textarea)::placeholder { color: #ffffffa6; }
+.wk .wk-store-review-form button[type=button] { min-width: 32px; min-height: 32px; }
+.wk .wk-store-error { color: #ffd4cf; }
+.wk .wk-sheet .wk-gpill { backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: none; background: #ffffff0c; }
+.wk .wk-sheet .wk-gpill.is-white { background: #fff; color: #19282f; }
+.ef-shell :is(button,a,input,textarea,select,[tabindex="0"]):focus-visible {
+  outline: 2px solid #8cd5f4; outline-offset: 3px;
+}
+.wk .wk-search:focus-within { border-color: #b2e8ff; box-shadow: 0 0 0 2px #b2e8ff25; }
+.wk .wk-search input:focus-visible { outline: none; }
+@media (max-width: 1100px) { .wk .wk-task-panel { width: 236px; right: 12px; top: 12px; } }
+@media (max-width: 850px) {
+  .wk .wk-task-panel { position: relative; top: auto; right: auto; width: min(100% - 32px,440px); margin: 84px auto 12px; max-height: 180px; overflow: auto; }
+  .wk.is-desktop .wk-sheet { width: calc(100% - 32px); top: 78px; bottom: 100px; }
+  .wk.is-desktop .wk-apps { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+  .wk.is-desktop .wk-sheet-head { padding: 14px 16px; gap: 8px; }
+  .wk.is-desktop .wk-sheet-body, .wk .wk-store-product-body { padding: 16px; }
+  .wk.is-desktop .wk-custom { flex-wrap: wrap; padding: 16px; }
+  .wk .wk-custom input { flex-basis: 100%; }
+  .wk .wk-market-section { padding: 12px; }
+  .wk .wk-store-hero { flex-wrap: wrap; padding: 16px; }
+  .wk .wk-store-hero > div:last-child { width: 100%; align-items: stretch; }
+  .wk .wk-store-install { justify-content: center; }
+  .wk .wk-sheet button { min-height: 40px; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .wk.wk :is(.wk-sheet,.wk-task-surface,.wk-task-schedule-menu,.wk-task-schedule,.wk-thumb-card,.wk-thumb-bar,.wk-boot,.wk-win,.wk-glass) {
+    background: #344a55; backdrop-filter: none; -webkit-backdrop-filter: none;
+  }
+}
+@media (prefers-contrast: more) {
+  .wk.wk :is(.wk-sheet,.wk-task-surface,.wk-task-schedule-menu,.wk-task-schedule,.wk-thumb-card,.wk-thumb-bar,.wk-store-card,.wk-app) { border-color: #ffffffa6; }
+  .wk.wk :is(.wk-store-card,.wk-task-surface,.wk-app) { background: #1d333ee8; }
+  .wk :is(.wk-app-meta,.wk-app-cat-badge,.wk-app-blurb-text,.wk-store-note) { color: #fff; }
+}

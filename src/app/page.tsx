@@ -28,7 +28,7 @@ export default function OnboardingPage() {
         ]);
         if (!active) return;
         if (res.success && (res as any).config) {
-          router.push("/chat");
+          router.push("/workers");
           return;
         }
       }
@@ -52,7 +52,7 @@ export default function OnboardingPage() {
               await (window as any).electronAPI.saveConfig(config);
             }
             if (!active) return;
-            router.push("/chat");
+            router.push("/workers");
             return;
           }
         } catch { }
@@ -60,7 +60,7 @@ export default function OnboardingPage() {
 
       if (active) setIsChecking(false);
     };
-    checkConfig();
+    checkConfig().catch(() => { if (active) setIsChecking(false); });
     return () => { active = false; };
   }, [router]);
 

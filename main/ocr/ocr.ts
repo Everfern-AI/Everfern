@@ -94,8 +94,85 @@ export function getOcrScriptPath(): string {
   return path.join(os.homedir(), '.everfern', OCR_SCRIPT_FILE);
 }
 
+function downloadFile(url: string, destPath: string): Promise<void> {
+  const https = require('https');
+  const http = require('http');
+  return new Promise<void>((resolve, reject) => {
+    const file = fs.createWriteStream(destPath);
+    let settled = false;
+
+    const cleanup = (err: any) => {
+      if (settled) return;
+      settled = true;
+      file.destroy();
+      try { if (fs.existsSync(destPath)) fs.unlinkSync(destPath); } catch {}
+      reject(err);
+    };
+
+    const req = (currUrl: string) => {
+      const client = currUrl.startsWith('https:') ? https : http;
+      client.get(currUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (res: any) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          req(res.headers.location);
+          return;
+        }
+        if (res.statusCode !== 200) {
+          cleanup(new Error(`Download failed with status ${res.statusCode}`));
+          return;
+        }
+        res.pipe(file);
+        file.on('finish', () => {
+          file.close((err: any) => {
+            if (err) cleanup(err);
+            else {
+              settled = true;
+              resolve();
+            }
+          });
+        });
+      }).on('error', cleanup);
+    };
+
+    req(url);
+  });
+}
+
 export function isOcrReady(): boolean {
-  return fs.existsSync(getOcrPythonBin());
+  const pythonBin = getOcrPythonBin();
+  if (!fs.existsSync(pythonBin)) return false;
+
+  const venvDir = getOcrVenvDir();
+  const coreNames = ['paddleocr', 'fitz', 'ocrmypdf', 'pil', 'paddle'];
+
+  if (process.platform === 'win32') {
+    const sitePackages = path.join(venvDir, 'Lib', 'site-packages');
+    if (!fs.existsSync(sitePackages)) return false;
+    try {
+      const items = fs.readdirSync(sitePackages).map(s => s.toLowerCase());
+      return items.some(item => coreNames.some(c => item.startsWith(c)));
+    } catch {
+      return false;
+    }
+  }
+
+  // Unix (macOS / Linux): lib/pythonX.Y/site-packages
+  const libDir = path.join(venvDir, 'lib');
+  if (!fs.existsSync(libDir)) return false;
+  try {
+    const entries = fs.readdirSync(libDir);
+    for (const entry of entries) {
+      const sp = path.join(libDir, entry, 'site-packages');
+      if (fs.existsSync(sp)) {
+        const items = fs.readdirSync(sp).map(s => s.toLowerCase());
+        if (items.some(item => coreNames.some(c => item.startsWith(c)))) {
+          return true;
+        }
+      }
+    }
+  } catch {
+    // fallback
+  }
+  return false;
 }
 
 function runCapture(cmd: string, args: string[], timeoutMs: number): Promise<{ code: number; stdout: string; stderr: string }> {
@@ -150,7 +227,15 @@ export async function ensureOcrDeps(): Promise<{ ok: boolean; message: string }>
   const pythonBin = getOcrPythonBin();
 
   try {
-    if (!fs.existsSync(venvDir)) {
+    if (!fs.existsSync(pythonBin)) {
+      if (fs.existsSync(venvDir)) {
+        try {
+          fs.rmSync(venvDir, { recursive: true, force: true });
+        } catch {
+          // continue
+        }
+      }
+
       emitOcrProgress(4, 'Bootstrap', 'Locating a Python interpreter to create the OCR environment...');
       // Locate a system Python to bootstrap the venv.
       const candidates: Array<[string, string[]]> = process.platform === 'win32'
@@ -176,6 +261,41 @@ export async function ensureOcrDeps(): Promise<{ ok: boolean; message: string }>
 
     if (!fs.existsSync(pythonBin)) {
       return { ok: false, message: 'OCR venv missing Python binary.' };
+    }
+
+    // Check if pip is present in the virtual environment.
+    // In some environments (e.g. minimal host Python or ensurepip missing), python -m venv
+    // creates an environment without pip.
+    emitOcrProgress(18, 'Preparing', 'Checking pip in the OCR environment...');
+    let pipCheck = await runCapture(pythonBin, ['-m', 'pip', '--version'], 15000);
+    if (pipCheck.code !== 0) {
+      emitOcrProgress(20, 'Bootstrap', 'Bootstrapping pip into virtual environment...');
+      console.log('[OCR] pip missing in venv, running ensurepip...');
+      await runCapture(pythonBin, ['-m', 'ensurepip', '--default-pip'], 60000);
+      pipCheck = await runCapture(pythonBin, ['-m', 'pip', '--version'], 15000);
+
+      if (pipCheck.code !== 0) {
+        emitOcrProgress(24, 'Bootstrap', 'Downloading get-pip.py...');
+        console.log('[OCR] ensurepip unavailable or failed, downloading get-pip.py...');
+        const getPipScript = path.join(venvDir, 'get-pip.py');
+        try {
+          await downloadFile('https://bootstrap.pypa.io/get-pip.py', getPipScript);
+          if (fs.existsSync(getPipScript)) {
+            await runCapture(pythonBin, [getPipScript, '--no-warn-script-location'], 120000);
+            try { fs.unlinkSync(getPipScript); } catch {}
+          }
+        } catch (dlErr: any) {
+          console.warn('[OCR] Failed to download or run get-pip.py:', dlErr?.message || dlErr);
+        }
+        pipCheck = await runCapture(pythonBin, ['-m', 'pip', '--version'], 15000);
+      }
+
+      if (pipCheck.code !== 0) {
+        return {
+          ok: false,
+          message: 'The OCR environment exists, but pip could not be installed (ensurepip and get-pip.py failed). Please reinstall Python with pip enabled from python.org.',
+        };
+      }
     }
 
     emitOcrProgress(30, 'Preparing', 'Upgrading pip in the OCR environment...');
@@ -233,44 +353,7 @@ export async function ensureOcrDeps(): Promise<{ ok: boolean; message: string }>
 
           if (!fs.existsSync(setupPath)) {
             emitOcrProgress(97, 'Tesseract', 'Downloading Tesseract OCR installer...');
-            const https = require('https');
-            await new Promise<void>((resolve, reject) => {
-              const file = fs.createWriteStream(setupPath);
-              let settled = false;
-
-              const cleanup = (err: any) => {
-                if (settled) return;
-                settled = true;
-                file.destroy();
-                try { if (fs.existsSync(setupPath)) fs.unlinkSync(setupPath); } catch {}
-                reject(err);
-              };
-
-              const req = (url: string) => {
-                https.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (res: any) => {
-                  if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-                    req(res.headers.location);
-                    return;
-                  }
-                  if (res.statusCode !== 200) {
-                    cleanup(new Error(`Download failed with status ${res.statusCode}`));
-                    return;
-                  }
-                  res.pipe(file);
-                  file.on('finish', () => {
-                    file.close((err: any) => {
-                      if (err) cleanup(err);
-                      else {
-                        settled = true;
-                        resolve();
-                      }
-                    });
-                  });
-                }).on('error', cleanup);
-              };
-
-              req('https://github.com/tesseract-ocr/tesseract/releases/download/5.5.3/tesseract-ocr-w64-setup-5.5.3.20260724.exe');
-            });
+            await downloadFile('https://github.com/tesseract-ocr/tesseract/releases/download/5.5.3/tesseract-ocr-w64-setup-5.5.3.20260724.exe', setupPath);
           }
 
           // Verify installer exists and has valid size (> 10MB) before launching

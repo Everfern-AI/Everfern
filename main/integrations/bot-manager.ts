@@ -7,8 +7,8 @@
 
 import { EventEmitter } from 'events';
 import { MessagePlatform, IncomingMessage, SendOptions, PlatformStatus } from './platform-interface';
-import { TelegramPlatform, TelegramConfig } from './telegram-platform';
-import { DiscordPlatform, DiscordConfig } from './discord-platform';
+import type { TelegramPlatform, TelegramConfig } from './telegram-platform';
+import type { DiscordPlatform, DiscordConfig } from './discord-platform';
 import { InputValidator, createInputValidator, ContentFilterConfig, WebhookConfig } from './input-validator';
 
 /**
@@ -530,6 +530,7 @@ export class BotIntegrationManager extends EventEmitter {
 
     // Initialize Telegram if configured
     if (platforms.telegram?.enabled) {
+      const { TelegramPlatform } = require('./telegram-platform') as typeof import('./telegram-platform');
       const telegramPlatform = new TelegramPlatform(platforms.telegram);
       this.registerPlatform('telegram', telegramPlatform);
       await telegramPlatform.initialize();
@@ -537,6 +538,7 @@ export class BotIntegrationManager extends EventEmitter {
 
     // Initialize Discord if configured
     if (platforms.discord?.enabled) {
+      const { DiscordPlatform } = require('./discord-platform') as typeof import('./discord-platform');
       const discordPlatform = new DiscordPlatform(platforms.discord);
       this.registerPlatform('discord', discordPlatform);
       await discordPlatform.initialize();

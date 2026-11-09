@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import {
   Folder, Mail, Globe, Search, Sheet, FileText, Presentation, FileType2, Image as ImageIcon,
-  Music, PenTool, Calendar, HardDrive, Megaphone, SquareTerminal, type LucideIcon,
+  Music, PenTool, Calendar, HardDrive, Megaphone, SquareTerminal, Cloud, type LucideIcon,
 } from "lucide-react";
 import { APPS, type AppDef, type AppTile } from "@/lib/apps";
 
@@ -21,7 +21,7 @@ const TOKEN = process.env.NEXT_PUBLIC_LOGO_DEV_TOKEN;
 const ICONS: Record<AppTile["icon"], LucideIcon> = {
   folder: Folder, mail: Mail, globe: Globe, search: Search, sheet: Sheet, doc: FileText,
   slides: Presentation, pdf: FileType2, image: ImageIcon, music: Music, pen: PenTool,
-  calendar: Calendar, drive: HardDrive, megaphone: Megaphone, terminal: SquareTerminal,
+  calendar: Calendar, drive: HardDrive, megaphone: Megaphone, terminal: SquareTerminal, cloud: Cloud,
 };
 
 export function logoUrl(domain: string, px: number) {
@@ -61,6 +61,41 @@ export function AppLogo({
 
   if (!def) return <span className={className} style={{ ...box, background: "rgba(255,255,255,0.12)" }} />;
 
+  const nativeLogo: Record<string, string> = { amazon: '/images/logos/amazon-shopping.ico', moss: '/images/logos/moss.svg', linkedin: '/images/logos/linkedin.svg', images: '/images/logos/images.svg', audio: '/images/logos/audio.svg', chatgpt: '/images/ai-providers/openai.svg', gemini: '/images/ai-providers/gemini.svg' };
+  if (nativeLogo[def.id]) {
+    const bare = def.id === 'linkedin' || def.id === 'gemini';
+    return <span className={className} style={{ ...box, background: bare ? 'transparent' : '#fff', ...(bare ? { boxShadow: 'none', borderRadius: 0 } : {}) }} aria-label={def.name} role="img">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={nativeLogo[def.id]} alt="" draggable={false} style={{ width: def.id === 'chatgpt' ? '90%' : '100%', height: def.id === 'chatgpt' ? '90%' : '100%', objectFit: 'contain' }} />
+    </span>;
+  }
+
+  if (['files', 'browser', 'websearch', 'search'].includes(def.id)) {
+    return <span className={className} style={{ ...box, background: 'linear-gradient(#fff,#fafafa)', boxShadow: '0 1px 2px #00000012, inset 0 0 0 1px #00000005' }} aria-label={def.name} role="img">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={`/images/logos/${def.id === 'files' ? 'files' : 'browser'}.svg`} alt="" draggable={false} style={{ width: '100%', height: '100%' }} />
+    </span>;
+  }
+
+  if (def.id === "chrome") {
+    return (
+      <span className={className} style={{ ...box, background: "transparent", borderRadius: '50%', boxShadow: 'none' }} aria-label="Chrome" role="img">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/images/logos/chrome-google.svg" alt="" draggable={false} style={{ width: "100%", height: "100%" }} />
+      </span>
+    );
+  }
+
+  if (def.icon && !failed) {
+    return (
+      <span className={className} style={{ ...box, background: def.iconBg ?? "#fff" }} aria-label={def.name} role="img">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={`https://cdn.simpleicons.org/${def.icon}${def.iconBg ? "/white" : ""}`} alt="" draggable={false} onError={() => setFailed(true)}
+          style={{ width: "62%", height: "62%", objectFit: "contain" }} />
+      </span>
+    );
+  }
+
   if (def.tile) {
     const Icon = ICONS[def.tile.icon];
     return (
@@ -83,7 +118,7 @@ export function AppLogo({
           loading="lazy"
           draggable={false}
           onError={() => setFailed(true)}
-          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          style={{ width: "100%", height: "100%", objectFit: "contain" }}
         />
       </span>
     );

@@ -25,7 +25,8 @@ import {
     ChevronRightIcon,
     CheckIcon,
     XMarkIcon,
-    FolderMinusIcon
+    FolderMinusIcon,
+    UserGroupIcon
 } from "@heroicons/react/24/outline";
 import SearchPopup from "./SearchPopup";
 import { useTheme } from "@/components/ThemeProvider";
@@ -702,6 +703,7 @@ export default function Sidebar({
 
                         <div style={{ width: "100%", paddingTop: 6, display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
                             {[
+                                { icon: UserGroupIcon, label: "Workers" },
                                 { icon: MagnifyingGlassIcon, label: "Search" },
                                 { icon: BriefcaseIcon, label: "Customize" },
                                 { icon: LinkIcon, label: "Integrations" },
@@ -733,7 +735,8 @@ export default function Sidebar({
                                     onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--sidebar-bg-hover)"; e.currentTarget.style.color = "var(--sidebar-text-primary)"; }}
                                     onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "var(--sidebar-text-secondary)"; }}
                                     onClick={() => {
-                                        if (item.label === "Search") triggerSearchOpen();
+                                        if (item.label === "Workers") { window.location.href = "/workers"; }
+                                        else if (item.label === "Search") triggerSearchOpen();
                                         else if (item.label === "Artifacts" && onArtifactsClick) onArtifactsClick();
                                         else if (item.label === "Customize" && onCustomizeClick) onCustomizeClick();
                                         else if (item.label === "Integrations" && onIntegrationClick) onIntegrationClick();

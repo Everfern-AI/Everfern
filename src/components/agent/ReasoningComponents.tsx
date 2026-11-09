@@ -7,6 +7,7 @@ import { useAutoCollapse } from '@/hooks/use-auto-collapse';
 import { MarkdownRenderer } from '../common/MarkdownComponents';
 import type { ToolCallDisplay } from '@/app/chat/types/index';
 import { ReasoningPanel, type ReasoningStep } from '@/components/elements/reasoning-panel';
+import { normalizeToolName } from '@/lib/tool-utils';
 
 // ── Reasoning Branch Component ─────────────────────────────────────────────────
 export const ReasoningBranch = ({
@@ -440,7 +441,7 @@ export const ReasoningPane = ({
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                                 <span style={{ fontSize: 12, lineHeight: 1 }}>{tc.icon}</span>
                                                 <span style={{ fontSize: 12, color: tc.status === 'running' ? 'var(--color-text-tertiary)' : 'var(--color-text-primary)', fontStyle: tc.status === 'running' ? 'italic' : 'normal', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                                                    {tc.label || tc.toolName}
+                                                    {tc.label || normalizeToolName(tc.toolName)}
                                                 </span>
                                                 {tc.durationMs !== undefined && (
                                                     <span style={{ fontSize: 10.5, color: 'var(--color-text-tertiary)', fontFamily: "'JetBrains Mono', monospace", flexShrink: 0 }}>

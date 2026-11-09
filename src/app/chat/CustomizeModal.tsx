@@ -1,5 +1,6 @@
 'use client';
 
+import { useDialogFocus } from "@/lib/use-dialog-focus";
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -12,6 +13,7 @@ import {
     PencilSquareIcon,
     CheckIcon
 } from '@heroicons/react/24/outline';
+import { useTheme } from '@/components/ThemeProvider';
 
 interface CustomizeModalProps {
     isOpen: boolean;
@@ -67,6 +69,8 @@ const TONE_OPTIONS: ToneOption[] = [
 ];
 
 export default function CustomizeModal({ isOpen, onClose }: CustomizeModalProps) {
+    const dialogRef = useDialogFocus<HTMLDivElement>(isOpen, onClose);
+    const { font, setFont } = useTheme();
     const [selectedTone, setSelectedTone] = useState<TonePreset>('direct');
     const [customTone, setCustomTone] = useState('');
     const [customInstructions, setCustomInstructions] = useState('');
@@ -130,7 +134,7 @@ export default function CustomizeModal({ isOpen, onClose }: CustomizeModalProps)
     return (
         <AnimatePresence>
             {isOpen && (
-                <motion.div
+                <motion.div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Customize your assistant"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
@@ -343,6 +347,158 @@ export default function CustomizeModal({ isOpen, onClose }: CustomizeModalProps)
                                         lineHeight: 1.5,
                                     }}
                                 />
+                            </div>
+
+                            {/* Font Selection */}
+                            <div>
+                                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary, #111111)', marginBottom: 4 }}>
+                                    Interface Font
+                                </label>
+                                <span style={{ display: 'block', fontSize: 12, color: 'var(--color-text-tertiary, #888888)', marginBottom: 10 }}>
+                                    Choose between the standard EverFern font, Apple SF Pro, or Segoe UI.
+                                </span>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+                                    <div
+                                        onClick={() => setFont('default')}
+                                        style={{
+                                            padding: '12px 14px',
+                                            borderRadius: 14,
+                                            border: font === 'default'
+                                                ? '1.5px solid var(--color-accent, #14b8a6)'
+                                                : '1px solid var(--color-border, #e5e5e5)',
+                                            backgroundColor: font === 'default'
+                                                ? 'var(--color-accent-subtle, rgba(20, 184, 166, 0.08))'
+                                                : 'var(--color-bg-surface, #ffffff)',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.15s ease',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                        }}
+                                    >
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                            <div style={{
+                                                width: 30,
+                                                height: 30,
+                                                borderRadius: 8,
+                                                backgroundColor: 'var(--color-bg-subtle, #f4f4f4)',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                fontFamily: "'Figtree', 'Inter', sans-serif",
+                                                fontWeight: 600,
+                                                fontSize: 14,
+                                            }}>
+                                                Aa
+                                            </div>
+                                            <div>
+                                                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary, #111111)' }}>
+                                                    Default
+                                                </div>
+                                                <div style={{ fontSize: 11.5, color: 'var(--color-text-tertiary, #888888)' }}>
+                                                    Figtree & Inter
+                                                </div>
+                                            </div>
+                                        </div>
+                                        {font === 'default' && (
+                                            <CheckIcon width={16} height={16} color="var(--color-accent, #14b8a6)" />
+                                        )}
+                                    </div>
+
+                                    <div
+                                        onClick={() => setFont('sf-pro')}
+                                        style={{
+                                            padding: '12px 14px',
+                                            borderRadius: 14,
+                                            border: font === 'sf-pro'
+                                                ? '1.5px solid var(--color-accent, #14b8a6)'
+                                                : '1px solid var(--color-border, #e5e5e5)',
+                                            backgroundColor: font === 'sf-pro'
+                                                ? 'var(--color-accent-subtle, rgba(20, 184, 166, 0.08))'
+                                                : 'var(--color-bg-surface, #ffffff)',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.15s ease',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                        }}
+                                    >
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                            <div style={{
+                                                width: 30,
+                                                height: 30,
+                                                borderRadius: 8,
+                                                backgroundColor: 'var(--color-bg-subtle, #f4f4f4)',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                fontFamily: "'SF Pro Display', 'SF Pro', -apple-system, sans-serif",
+                                                fontWeight: 400,
+                                                fontSize: 14,
+                                            }}>
+                                                Aa
+                                            </div>
+                                            <div>
+                                                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary, #111111)' }}>
+                                                    SF Pro
+                                                </div>
+                                                <div style={{ fontSize: 11.5, color: 'var(--color-text-tertiary, #888888)' }}>
+                                                    Apple Display
+                                                </div>
+                                            </div>
+                                        </div>
+                                        {font === 'sf-pro' && (
+                                            <CheckIcon width={16} height={16} color="var(--color-accent, #14b8a6)" />
+                                        )}
+                                    </div>
+
+                                    <div
+                                        onClick={() => setFont('segoe-ui')}
+                                        style={{
+                                            padding: '12px 14px',
+                                            borderRadius: 14,
+                                            border: font === 'segoe-ui'
+                                                ? '1.5px solid var(--color-accent, #14b8a6)'
+                                                : '1px solid var(--color-border, #e5e5e5)',
+                                            backgroundColor: font === 'segoe-ui'
+                                                ? 'var(--color-accent-subtle, rgba(20, 184, 166, 0.08))'
+                                                : 'var(--color-bg-surface, #ffffff)',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.15s ease',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                        }}
+                                    >
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                            <div style={{
+                                                width: 30,
+                                                height: 30,
+                                                borderRadius: 8,
+                                                backgroundColor: 'var(--color-bg-subtle, #f4f4f4)',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                fontFamily: "'Segoe UI', 'Segoe UI Variable', -apple-system, sans-serif",
+                                                fontWeight: 400,
+                                                fontSize: 14,
+                                            }}>
+                                                Aa
+                                            </div>
+                                            <div>
+                                                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary, #111111)' }}>
+                                                    Segoe UI
+                                                </div>
+                                                <div style={{ fontSize: 11.5, color: 'var(--color-text-tertiary, #888888)' }}>
+                                                    Windows Native
+                                                </div>
+                                            </div>
+                                        </div>
+                                        {font === 'segoe-ui' && (
+                                            <CheckIcon width={16} height={16} color="var(--color-accent, #14b8a6)" />
+                                        )}
+                                    </div>
+                                </div>
                             </div>
                         </div>
 

@@ -49,16 +49,17 @@ function getClient(options?: TitleOptions): AIClient | null {
   if (options?.providerType) {
     const provider = options.providerType as any;
     const config = loadConfigSync();
-    const isCustomUrl = Boolean(options.baseUrl && !['lmstudio', 'ollama'].includes(provider));
-    const apiKey = options.apiKey || (isCustomUrl ? '' : (config?.keys?.[provider] || config?.apiKey || ''));
+    const isCustomUrl = Boolean(options.baseUrl && !['lmstudio', 'ollama', 'llamacpp'].includes(provider));
+    const apiKey = options.apiKey || (isCustomUrl ? '' : (config?.keys?.[provider] || (config?.provider === provider ? config?.apiKey : '') || ''));
     const baseUrl = options.baseUrl ||
-      (provider === 'lmstudio' ? (config?.lmstudioBaseUrl || 'http://localhost:1234/v1') :
+      (provider === 'llamacpp' ? (config?.baseUrls?.llamacpp || (config?.provider === provider ? config.baseUrl : undefined) || 'http://localhost:8080/v1') :
+       provider === 'lmstudio' ? (config?.lmstudioBaseUrl || 'http://localhost:1234/v1') :
        provider === 'ollama' ? (config?.ollamaBaseUrl || 'http://localhost:11434') : undefined);
 
     try {
       return new AIClient({
         provider,
-        model: options.model,
+        model: provider === 'llamacpp' ? options.model?.replace(/^llamacpp:/, '') : options.model,
         apiKey,
         baseUrl,
       });

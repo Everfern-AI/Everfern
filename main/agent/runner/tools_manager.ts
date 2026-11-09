@@ -1,3 +1,5 @@
+import { guardWorkerTools } from './worker-tool-policy';
+export { guardWorkerTools } from './worker-tool-policy';
 import { AgentTool } from './types';
 import { plannerTool, updateStepTool, executionPlanTool } from '../tools/planner';
 import { createComputerUseTool } from '../tools/computer-use';
@@ -30,6 +32,31 @@ import { rememberFactTool, recallFactTool, updateProfileTool } from '../tools/me
 import { previewLiveUrlTool, showUserUrlTool } from '../tools/preview-live-url';
 import { webFetchTool } from '../tools/webfetch';
 import { loadAllSynthesizedTools, synthesizeToolTool, synthesizeSkillTool } from '../tools/tool-synthesizer';
+import {
+  openAppTool,
+  switchAppTool,
+  listAppsTool,
+  closeAppTool,
+  createWorkerBashTool,
+  createWorkerReadFileTool,
+  createWorkerWriteFileTool,
+  createWorkerListFilesTool,
+  createWorkerUploadFilesTool,
+} from '../tools/worker-tools';
+import {
+  createSheetsReadTool,
+  createSheetsWriteTool,
+  createSheetsAppendTool,
+  createSheetsClearTool,
+  createSheetsCreateTool,
+  createSheetsImportTool,
+  createSheetsExportTool,
+  createSheetsFormatTool,
+  createSheetsAddSheetTool,
+  createWorkerClickTool,
+  createWorkerTypeTool,
+  createWorkerDescribeTool,
+} from '../tools/sheet-tools';
 import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -59,7 +86,7 @@ export const getBaseTools = (runner: any): AgentTool[] => {
     // Check if we need a separate vision client for Navis
     // If the main AI doesn't support vision, use the configured VLM (from settings)
     let visionClient: AIClient | undefined;
-    if (mainConfig.vlm) {
+    if (mainConfig.vlm?.enabled === true) {
       try {
         const mappedProvider = (mainConfig.vlm.engine === 'cloud' && mainConfig.vlm.provider === 'ollama' ? 'ollama-cloud' :
                                 mainConfig.vlm.engine === 'cloud' && mainConfig.vlm.provider === 'everfern' ? 'everfern' :
@@ -111,7 +138,7 @@ export const getBaseTools = (runner: any): AgentTool[] => {
       config.ollamaBaseUrl,
       config.checkPermission,
       config.requestPermission,
-      mainConfig.vlm as any
+      mainConfig.vlm?.enabled === true ? mainConfig.vlm as any : undefined
     );
 
     // Validate tool instance has all required properties
@@ -164,6 +191,29 @@ export const getBaseTools = (runner: any): AgentTool[] => {
     updateProfileTool,
     previewLiveUrlTool,
     showUserUrlTool,
+    // EverFern Worker primitives
+    openAppTool,
+    switchAppTool,
+    listAppsTool,
+    closeAppTool,
+    createWorkerBashTool(runner),
+    createWorkerReadFileTool(runner),
+    createWorkerWriteFileTool(runner),
+    createWorkerListFilesTool(runner),
+    createWorkerUploadFilesTool(runner),
+    // Native Sheets app + in-app pixel automation
+    createSheetsReadTool(runner),
+    createSheetsWriteTool(runner),
+    createSheetsAppendTool(runner),
+    createSheetsClearTool(runner),
+    createSheetsCreateTool(runner),
+    createSheetsImportTool(runner),
+    createSheetsExportTool(runner),
+    createSheetsFormatTool(runner),
+    createSheetsAddSheetTool(runner),
+    createWorkerClickTool(runner),
+    createWorkerTypeTool(runner),
+    createWorkerDescribeTool(runner),
   );
 
   // Add dynamically connected MCP tools
@@ -188,5 +238,6 @@ export const getBaseTools = (runner: any): AgentTool[] => {
 
   console.log(`[ToolsManager] Registered ${tools.length} base tools: ${tools.map(t => t.name).join(', ')}`);
 
-  return tools;
+  // Enforce at execution time: runner tools can be built before a worker ID is set.
+  return guardWorkerTools(tools, runner);
 };

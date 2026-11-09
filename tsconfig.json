@@ -48,6 +48,8 @@
     "dist",
     "release",
     "dist-electron",
+    "tauri/staging",
+    "src-tauri",
     "test-navis-cursor.test.ts",
     "test-navis-nvidia.ts",
     "**/*.test.ts",

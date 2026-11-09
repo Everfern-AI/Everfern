@@ -21,18 +21,39 @@ export const createMemoryConsolidatorNode = (
 
     // Run memory consolidation silently in the background
     try {
-      // Only process if there are user messages in the state
-      const hasUserMsg = state.messages.some(m => {
+      if (globalAbortManager.abortController.signal.aborted) return {};
+
+      // Filter to user/human messages only to avoid bloating with massive tool outputs (scraped web pages, files, diffs)
+      const userMessages = (state.messages || []).filter(m => {
         const role = (m as any).role || (m as any).type || (m as any)._getType?.();
         return role === 'user' || role === 'human';
       });
-      if (!hasUserMsg) return {};
 
-      const formattedHistory = state.messages.map(m => {
-        const role = (m as any).role || (m as any).type || (m as any)._getType?.() || 'unknown';
-        const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+      if (userMessages.length === 0) return {};
+
+      // Take the most recent user messages (up to 5)
+      const recentUserMessages = userMessages.slice(-5);
+
+      // Skip trivial confirmations or approvals that cannot contain enduring personal preferences
+      const hasSubstantiveMessage = recentUserMessages.some(m => {
+        const text = (typeof m.content === 'string' ? m.content : '').trim().toLowerCase();
+        if (text.length < 5) return false;
+        if (text.startsWith('[hitl_') || text.startsWith('[user approved') || text.startsWith('[user rejected')) return false;
+        if (['yes', 'no', 'okay', 'sure', 'proceed', 'cancel', 'approve'].includes(text)) return false;
+        return true;
+      });
+
+      if (!hasSubstantiveMessage) return {};
+
+      const formattedHistory = recentUserMessages.map(m => {
+        const role = (m as any).role || (m as any).type || (m as any)._getType?.() || 'user';
+        let content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+        // Truncate giant pastes or log dumps to prevent token explosion
+        if (content.length > 1500) {
+          content = content.slice(0, 1500) + '... [truncated]';
+        }
         return `[${role.toUpperCase()}]: ${content}`;
-      }).join('\n');
+      }).join('\n\n');
 
       const systemPrompt = `You are the EverFern Memory Agent.
 Your job is to analyze the conversation history and determine if the user EXPLICITLY stated an enduring personal preference, rule, or identity fact that should be remembered across future sessions.
@@ -74,13 +95,20 @@ If no enduring memory should be saved (the common case), respond with:
       const userPrompt = `Here is the conversation history:\n\n${formattedHistory}`;
 
       const isLocal = runner.client?.isLocal?.();
-      const timeoutMs = isLocal ? 30000 : 5000;
-      const createTimeoutPromise = () => new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('Memory operation timed out')), timeoutMs);
-      });
+      const timeoutMs = isLocal ? 30000 : 15000;
 
-      const response = await Promise.race([
-        runner.client.chat({
+      const timeoutController = new AbortController();
+      let timer: NodeJS.Timeout | null = setTimeout(() => {
+        timeoutController.abort(new Error('Memory operation timed out'));
+      }, timeoutMs);
+
+      const onGlobalAbort = () => {
+        timeoutController.abort(new Error('Execution aborted by user'));
+      };
+      globalAbortManager.abortController.signal.addEventListener('abort', onGlobalAbort, { once: true });
+
+      try {
+        const response = await runner.client.chat({
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt }
@@ -88,37 +116,47 @@ If no enduring memory should be saved (the common case), respond with:
           responseFormat: 'json',
           temperature: 0.1,
           maxTokens: 500,
-          abortSignal: globalAbortManager.abortController.signal,
-        }),
-        createTimeoutPromise()
-      ]) as any;
+          abortSignal: timeoutController.signal,
+        });
 
-      let content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
-      content = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
-
-      const result = extractJsonFromLLM(content) || { newMemories: [] };
-      const newMemories = (result.newMemories || []).filter((m: any) => {
-        if (!m.type || !m.category || !m.value || !m.linkedFile) return false;
-        const valLower = String(m.value).toLowerCase();
-        // Reject common junk memories
-        if (valLower.includes('bot detection') || valLower.includes('no direct flights') || valLower.includes('error') || valLower.includes('failed') || valLower.length < 5) {
-          return false;
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
         }
-        return true;
-      });
 
-      if (newMemories.length > 0) {
-        console.log(`[MemoryConsolidator] High-confidence memories to save: ${newMemories.length}`);
-        for (const mem of newMemories) {
-          const { type, category, value, linkedFile } = mem;
-          await addOrUpdateMemory(type, category, value, linkedFile);
-          console.log(`[MemoryConsolidator] Saved ${type} (${category}): "${value}" -> ${linkedFile}`);
+        let content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+        content = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+
+        const result = extractJsonFromLLM(content) || { newMemories: [] };
+        const newMemories = (result.newMemories || []).filter((m: any) => {
+          if (!m.type || !m.category || !m.value || !m.linkedFile) return false;
+          const valLower = String(m.value).toLowerCase();
+          // Reject common junk memories
+          if (valLower.includes('bot detection') || valLower.includes('no direct flights') || valLower.includes('error') || valLower.includes('failed') || valLower.length < 5) {
+            return false;
+          }
+          return true;
+        });
+
+        if (newMemories.length > 0) {
+          console.log(`[MemoryConsolidator] High-confidence memories to save: ${newMemories.length}`);
+          for (const mem of newMemories) {
+            const { type, category, value, linkedFile } = mem;
+            await addOrUpdateMemory(type, category, value, linkedFile);
+            console.log(`[MemoryConsolidator] Saved ${type} (${category}): "${value}" -> ${linkedFile}`);
+          }
+        } else {
+          console.log('[MemoryConsolidator] No enduring user preferences to save.');
         }
-      } else {
-        console.log('[MemoryConsolidator] No enduring user preferences to save.');
+      } finally {
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        globalAbortManager.abortController.signal.removeEventListener('abort', onGlobalAbort);
       }
     } catch (err: any) {
-      console.warn('[MemoryConsolidator] Silent memory consolidation skipped:', err?.message || String(err));
+      console.log('[MemoryConsolidator] Silent memory consolidation skipped:', err?.message || String(err));
     }
 
     return {};

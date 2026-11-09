@@ -7,3 +7,4 @@ export function cn(...inputs: ClassValue[]) {
 
 // Re-export formatDuration for convenience
 export { formatDuration } from './formatDuration';
+export { normalizeToolName } from './tool-utils';

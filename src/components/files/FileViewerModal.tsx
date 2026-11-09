@@ -1,3 +1,4 @@
+import { useDialogFocus } from "@/lib/use-dialog-focus";
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -1319,6 +1320,7 @@ function MediaViewer({ file }: { file: { name: string; path: string } }) {
 
 // ── MAIN MODAL COMPONENT ───────────────────────────────────────────
 export default function FileViewerModal({ file, onClose, chatId, projectPath }: FileViewerModalProps) {
+    const dialogRef = useDialogFocus<HTMLDivElement>(!!file, onClose);
     const { theme } = useTheme();
     const isDark = theme === 'dark';
 
@@ -1496,7 +1498,7 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                 />
 
                 {/* Modal Container */}
-                <motion.div
+                <motion.div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="File viewer"
                     initial={{ opacity: 0, scale: 0.97, y: 10 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.97, y: 10 }}

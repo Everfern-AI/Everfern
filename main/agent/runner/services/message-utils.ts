@@ -4,13 +4,25 @@ import { ChatMessage } from '../../../lib/ai-client';
  * Normalizes a LangChain or internal message object into a standard ChatMessage.
  */
 export function normalizeMessage(m: any): ChatMessage {
+  const toolCallId = m.tool_call_id || (m as any).toolCallId || (m as any).tool_call_id;
+  // Sanitize any pseudo-tool messages like harness_recovery / harness_rollback into valid system messages
+  if (
+    (m.role === 'tool' || m.type === 'tool' || m._getType?.() === 'tool') &&
+    (toolCallId === 'harness_recovery' || toolCallId === 'harness_rollback')
+  ) {
+    return {
+      role: 'system',
+      content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content || '')
+    };
+  }
+
   // If it's already a standard ChatMessage plain object with role
   if (m.role && (m.content !== undefined)) {
     return {
       role: m.role,
       content: m.content,
       name: m.name || (m as any).tool_name || (m as any).toolName,
-      tool_call_id: m.tool_call_id || (m as any).toolCallId,
+      tool_call_id: toolCallId,
       tool_calls: m.tool_calls || (m as any).toolCalls,
       reasoning_content: m.reasoning_content || (m as any).thought
     };
@@ -33,7 +45,7 @@ export function normalizeMessage(m: any): ChatMessage {
     role,
     content: m.content || '',
     name: m.name || (m as any).tool_name || (m as any).toolName,
-    tool_call_id: m.tool_call_id || (m as any).tool_call_id || (m as any).toolCallId,
+    tool_call_id: toolCallId,
     tool_calls: m.tool_calls || (m as any).tool_calls || (m as any).toolCalls,
     reasoning_content: m.reasoning_content || (m as any).reasoning_content || (m as any).thought
   };

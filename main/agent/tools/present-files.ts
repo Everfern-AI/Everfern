@@ -111,17 +111,17 @@ export const createPresentFilesTool = (runner?: any): AgentTool => ({
       // 3. Direct Windows UNC paths for WSL / Linux VM
       if (process.platform === 'win32') {
         const uncCandidates = [
-          `\\\\wsl.localhost\\Ubuntu\\everfern\\${name}`,
-          `\\\\wsl.localhost\\Ubuntu\\everfern\\workspace\\${name}`,
-          `\\\\wsl.localhost\\Ubuntu\\everfern\\artifacts\\${name}`,
-          `\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\.everfern\\${name}`,
-          `\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\.everfern\\workspace\\${name}`,
-          `\\\\wsl.localhost\\Ubuntu\\home\\ubuntu\\${name}`,
-          `\\\\wsl.localhost\\Ubuntu\\tmp\\${name}`,
-          `\\\\wsl.localhost\\Ubuntu\\tmp\\everfern\\${name}`,
-          `\\\\wsl$\\Ubuntu\\everfern\\${name}`,
-          `\\\\wsl$\\Ubuntu\\home\\ubuntu\\.everfern\\${name}`,
-          `\\\\wsl$\\Ubuntu\\tmp\\${name}`,
+          `\\\\wsl.localhost\\EverFern-Alpine\\everfern\\${name}`,
+          `\\\\wsl.localhost\\EverFern-Alpine\\everfern\\workspace\\${name}`,
+          `\\\\wsl.localhost\\EverFern-Alpine\\everfern\\artifacts\\${name}`,
+          `\\\\wsl.localhost\\EverFern-Alpine\\root\\.everfern\\${name}`,
+          `\\\\wsl.localhost\\EverFern-Alpine\\root\\.everfern\\workspace\\${name}`,
+          `\\\\wsl.localhost\\EverFern-Alpine\\root\\${name}`,
+          `\\\\wsl.localhost\\EverFern-Alpine\\tmp\\${name}`,
+          `\\\\wsl.localhost\\EverFern-Alpine\\tmp\\everfern\\${name}`,
+          `\\\\wsl$\\EverFern-Alpine\\everfern\\${name}`,
+          `\\\\wsl$\\EverFern-Alpine\\root\\.everfern\\${name}`,
+          `\\\\wsl$\\EverFern-Alpine\\tmp\\${name}`,
         ];
         for (const unc of uncCandidates) {
           if (fs.existsSync(unc)) {
@@ -278,7 +278,7 @@ export const createPresentFilesTool = (runner?: any): AgentTool => ({
 
           for (const dp of dockerPaths) {
             try {
-              execFileSync('docker', ['cp', `everfern-ubuntu:${dp}`, targetPath], { timeout: 15000, stdio: 'pipe', maxBuffer: 10 * 1024 * 1024 });
+              execFileSync('docker', ['cp', `everfern-alpine:${dp}`, targetPath], { timeout: 15000, stdio: 'pipe', maxBuffer: 10 * 1024 * 1024 });
               if (fs.existsSync(targetPath)) {
                 fileCopied = true;
                 console.log(`[PresentFiles] Copied Docker file ${dp} to host artifacts at ${targetPath}`);

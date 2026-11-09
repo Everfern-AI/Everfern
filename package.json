@@ -10,7 +10,9 @@
     "prebuild:electron-ts": "node -e \"require('fs').rmSync('dist-electron', { recursive: true, force: true })\"",
     "build:electron-ts": "tsc -p tsconfig.electron.json",
     "postbuild:electron-ts": "node -e \"const fs=require('fs'),path=require('path');const src='main/lib/migrations',dst='dist-electron/main/lib/migrations';fs.mkdirSync(dst,{recursive:true});fs.readdirSync(src).filter(f=>f.endsWith('.sql')).forEach(f=>fs.copyFileSync(path.join(src,f),path.join(dst,f)));console.log('[Build] SQL migrations copied to dist-electron');const pSrc='main/agent/prompts',pDst='dist-electron/main/agent/prompts';fs.cpSync(pSrc,pDst,{recursive:true});console.log('[Build] Prompt files copied to dist-electron');const sSrc='main/skills',sDst='dist-electron/main/skills';fs.cpSync(sSrc,sDst,{recursive:true});console.log('[Build] Skills copied to dist-electron');const oSrc='main/ocr',oDst='dist-electron/main/ocr';fs.mkdirSync(oDst,{recursive:true});fs.copyFileSync(path.join(oSrc,'ocr_pdf.py'),path.join(oDst,'ocr_pdf.py'));console.log('[Build] OCR script copied to dist-electron')\"",
-    "dev": "npm run build:electron-ts && cross-env NEXT_TELEMETRY_DISABLED=1 UV_THREADPOOL_SIZE=16 concurrently -k \"next dev --webpack -p 3001\" \"wait-on tcp:3001 && electron .\"",
+    "dev": "npm run build:electron-ts && cross-env NEXT_TELEMETRY_DISABLED=1 UV_THREADPOOL_SIZE=16 concurrently -k \"next dev --turbopack -p 3001\" \"wait-on tcp:3001 && electron .\"",
+    "tauri:dev": "npm run build:electron-ts && cross-env NEXT_TELEMETRY_DISABLED=1 UV_THREADPOOL_SIZE=16 concurrently -k \"next dev --turbopack -p 3001\" \"wait-on tcp:3001 && cargo run --manifest-path src-tauri/Cargo.toml\"",
+    "tauri:sidecar": "node tauri/sidecar/boot.js",
     "build:next": "next build --webpack",
     "build:electron": "npm run build:electron-ts && electron-builder",
     "build:linux": "npm run build:next && npm run build:electron-ts && electron-builder --linux",
@@ -27,7 +29,10 @@
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
     "package": "electron-forge package",
-    "make": "electron-forge make"
+    "make": "electron-forge make",
+    "tauri:prepare": "node scripts/prepare-tauri.cjs",
+    "tauri:test": "cargo test --manifest-path src-tauri/Cargo.toml --bin everfern",
+    "tauri:package": "node scripts/build-tauri.cjs"
   },
   "build": {
     "publish": [

@@ -23,8 +23,7 @@ export class ComputerOverlayManager {
   private hideTimeout: NodeJS.Timeout | null = null;
 
   constructor() {
-    console.log('[ComputerOverlay] Manager created, preloading window at startup...');
-    this.ensureWindow();
+    console.log('[ComputerOverlay] Manager created (window will be created on first use).');
   }
 
   /**

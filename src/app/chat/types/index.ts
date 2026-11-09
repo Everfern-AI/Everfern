@@ -72,6 +72,10 @@ export interface ModelOption {
     logo: any;
     size?: number;
     parameterSize?: string;
+    capabilities?: {
+      reasoning?: boolean;
+      imageGeneration?: boolean;
+    };
 }
 
 // Sub-agent progress streaming types

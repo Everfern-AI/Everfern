@@ -1,6 +1,7 @@
 import { spawn, exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import { ensureOcrDeps } from '../../ocr/ocr';
+import { ALPINE_DISTRO, ALPINE_CONTAINER, isAlpineInstalled, installAlpineVM, alpineProvisionScript, provisionAlpine } from './alpine-vm';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -33,12 +34,16 @@ function getCommandHead(command: string): string {
   return command.trim().toLowerCase().split(/\s+/)[0];
 }
 
+function quoteBashArg(value: string): string {
+  return `'${value.replace(/'/g, `'"'"'`)}'`;
+}
+
 /**
  * Thin wrapper that runs any shell command in a Linux VM environment.
  *
  * Platform-specific implementations:
- * - Windows: Uses WSL (Windows Subsystem for Linux) via `wsl.exe --exec bash -c "<cmd>"`
- * - macOS: Uses Docker with Ubuntu container via `docker exec everfern-ubuntu bash -c "<cmd>"`
+ * - Windows: the EverFern-Alpine WSL 2 distro via `wsl.exe -d EverFern-Alpine --exec bash -c "<cmd>"`
+ * - macOS: the everfern-alpine Docker container via `docker exec everfern-alpine bash -c "<cmd>"`
  * - Linux: Falls back to native execution (already Linux)
  *
  * This executor returns stdout/stderr in the same shape as the existing pi-tools terminal output.
@@ -66,7 +71,7 @@ export async function runInLinuxVM(
   try {
     switch (platform) {
       case 'win32':
-        console.log('[runInLinuxVM] Platform=win32 → running in WSL');
+        console.log('[runInLinuxVM] Platform=win32 → running in Alpine (WSL)');
         return await runInWSL(command, cwd, onUpdate);
       case 'darwin':
         console.log('[runInLinuxVM] Platform=darwin → running in Docker');
@@ -147,46 +152,54 @@ export function broadcastVMSetupLog(message: string, level: 'info' | 'success' |
 }
 
 let _wslSetupDone = false;
+let _wslSetupPromise: Promise<boolean> | null = null;
 let _cachedDistroName: string | null = null;
 
 export const CORE_PYTHON_DEPS = 'pypdf pdfplumber openpyxl python-pptx pandas python-docx matplotlib numpy requests beautifulsoup4 reportlab weasyprint';
 export const CORE_NODE_DEPS = 'pptxgenjs pdf-lib exceljs typescript ts-node';
 
+export function parseWSLDistroList(output: string): string[] {
+  return output
+    .replace(/^\uFEFF/, '')
+    .replace(/\0/g, '')
+    .split(/[\r\n]+/)
+    .map((name) => name.trim().replace(/^\*\s*/, ''))
+    .filter((name) => Boolean(name) && !/^docker-desktop(?:-data)?$/i.test(name));
+}
+
+export function decodeWSLOutput(output: Buffer | string): string {
+  if (typeof output === 'string') return output;
+  const hasUtf16Bom = output.length >= 2 && output[0] === 0xff && output[1] === 0xfe;
+  const sampleLength = Math.min(output.length, 200);
+  let oddNulls = 0;
+  for (let i = 1; i < sampleLength; i += 2) {
+    if (output[i] === 0) oddNulls++;
+  }
+  const looksUtf16 = hasUtf16Bom || oddNulls > Math.max(2, sampleLength / 8);
+  return output.toString(looksUtf16 ? 'utf16le' : 'utf8');
+}
+
+async function discoverWSLDistro(): Promise<string | null> {
+  if (_cachedDistroName) return _cachedDistroName;
+  if (await isAlpineInstalled()) {
+    _cachedDistroName = ALPINE_DISTRO;
+    return ALPINE_DISTRO;
+  }
+  return null;
+}
+
+/** Every WSL call targets EverFern's Alpine distro, never the user's default one. */
 async function getTargetWSLArgs(extraArgs: string[]): Promise<string[]> {
-  if (!_cachedDistroName) {
-    try {
-      let raw = '';
-      // Try utf16le first (standard on many Windows builds)
-      const res1 = await execFileAsync('wsl.exe', ['-l', '-q'], { encoding: 'utf16le', timeout: 5000 }).catch(() => null);
-      if (res1?.stdout && res1.stdout.replace(/\0/g, '').trim()) {
-        raw = res1.stdout;
-      }
-      // If empty or garbled, try utf8
-      if (!raw) {
-        const res2 = await execFileAsync('wsl.exe', ['-l', '-q'], { encoding: 'utf8', timeout: 5000 }).catch(() => null);
-        if (res2?.stdout) raw = res2.stdout;
-      }
-      const distros = raw.replace(/\0/g, '').split(/[\r\n]+/).map(d => d.trim()).filter(Boolean);
-      if (distros.includes('Ubuntu')) _cachedDistroName = 'Ubuntu';
-      else if (distros.some(d => d.toLowerCase().startsWith('ubuntu'))) _cachedDistroName = distros.find(d => d.toLowerCase().startsWith('ubuntu')) || null;
-      else if (distros.includes('Debian')) _cachedDistroName = 'Debian';
-      else if (distros.length > 0) _cachedDistroName = distros[0];
-    } catch {}
-    // Default to 'Ubuntu' on Windows if detection was inconclusive
-    if (!_cachedDistroName && process.platform === 'win32') {
-      _cachedDistroName = 'Ubuntu';
-    }
-  }
-  if (_cachedDistroName) {
-    return ['-d', _cachedDistroName, ...extraArgs];
-  }
-  return extraArgs;
+  return ['--distribution', ALPINE_DISTRO, ...extraArgs];
 }
 
 interface WslToolchain {
   reachable: boolean;
   python3: boolean;
   node: boolean;
+  venv: boolean;
+  npm: boolean;
+  curl: boolean;
   pythonVersion?: string;
   nodeVersion?: string;
   error?: string;
@@ -205,13 +218,16 @@ async function checkWslToolchain(): Promise<WslToolchain> {
     `printf 'NODE=%s\\n' "$(command -v node >/dev/null 2>&1 && echo yes || echo no)"`,
     `printf 'NODEBIN=%s\\n' "$(command -v node 2>/dev/null | tr -d '\\r\\n')"`,
     `printf 'NODEVER=%s\\n' "$(node -v 2>/dev/null | tr -d '\\r\\n')"`,
+    `printf 'NPM=%s\\n' "$(command -v npm >/dev/null 2>&1 && echo yes || echo no)"`,
+    `printf 'CURL=%s\\n' "$(command -v curl >/dev/null 2>&1 && echo yes || echo no)"`,
+    `tmp_dir="$(mktemp -d 2>/dev/null)"; if [ -n "$tmp_dir" ] && python3 -m venv "$tmp_dir" >/dev/null 2>&1 && [ -x "$tmp_dir/bin/pip" ]; then echo 'VENV=yes'; else echo 'VENV=no'; fi; [ -n "$tmp_dir" ] && rm -rf "$tmp_dir"`,
   ].join('\n');
 
   let lastErr: any = null;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       // First attempt with regular user, second attempt with root fallback
-      const probeFlag = attempt === 1 ? ['--user', 'root', '--exec', 'bash', '-c', script] : ['--exec', 'bash', '-c', script];
+      const probeFlag = ['--user', 'root', '--exec', '/bin/sh', '-c', script];
       const args = await getTargetWSLArgs(probeFlag);
       const { stdout } = await execFileAsync(getWslCmd(), args, { timeout: 30000 });
       const read = (key: string) => {
@@ -222,6 +238,9 @@ async function checkWslToolchain(): Promise<WslToolchain> {
         reachable: true,
         python3: read('PY') === 'yes',
         node: read('NODE') === 'yes',
+        venv: read('VENV') === 'yes',
+        npm: read('NPM') === 'yes',
+        curl: read('CURL') === 'yes',
         pythonVersion: read('PYVER') || undefined,
         nodeVersion: read('NODEVER') || undefined,
       };
@@ -232,7 +251,7 @@ async function checkWslToolchain(): Promise<WslToolchain> {
       const errMsg = e?.message || String(e);
       if (errMsg.includes('0x80370102') || errMsg.toLowerCase().includes('reboot') || errMsg.toLowerCase().includes('restart')) {
         console.warn(`[WSL toolchain probe] WSL requires system restart: ${errMsg}`);
-        return { reachable: false, python3: false, node: false, error: 'Windows restart required to activate WSL 2 hypervisor' };
+        return { reachable: false, python3: false, node: false, venv: false, npm: false, curl: false, error: 'Windows restart required to activate WSL 2 hypervisor' };
       }
       if (attempt === 0) {
         console.warn(`[WSL toolchain probe] attempt 1 failed (${errMsg}), retrying with root...`);
@@ -241,171 +260,56 @@ async function checkWslToolchain(): Promise<WslToolchain> {
     }
   }
   console.warn(`[WSL toolchain probe] WSL unreachable after 2 attempts:`, lastErr?.message || lastErr);
-  return { reachable: false, python3: false, node: false, error: lastErr?.message || String(lastErr) };
+  return { reachable: false, python3: false, node: false, venv: false, npm: false, curl: false, error: lastErr?.message || String(lastErr) };
 }
 
-export async function ensureWSLSetup(): Promise<void> {
-  if (process.platform !== 'win32') return;
+async function performWSLSetup(): Promise<boolean> {
+  if (process.platform !== 'win32') return false;
+  const log = (m: string, level: 'info' | 'success' | 'warn' | 'error' = 'info') => {
+    console.log(`[AlpineVM] ${m}`);
+    broadcastVMSetupLog(m, level, 1);
+  };
 
-  const wslCmd = getWslCmd();
-  const baseArgs = await getTargetWSLArgs([]);
-  console.log(`[ensureWSLSetup] Setting up WSL environment via ${wslCmd} ${baseArgs.join(' ')}...`);
-  broadcastVMSetupLog('[ensureWSLSetup] Setting up WSL environment...', 'info', 1);
-
-  // Step 0: Ensure WSL & Ubuntu container is booted and initialized (especially if installed with --no-launch)
-  try {
-    const initArgs = await getTargetWSLArgs(['--user', 'root', '--exec', '/bin/true']);
-    await execFileAsync(wslCmd, initArgs, { timeout: 45000 }).catch(() => {});
-  } catch {}
-
-  // Configure WSL resources (.wslconfig)
-  try {
-    const os = require('os');
-    const path = require('path');
-    const fs = require('fs');
-    const wslConfigPath = path.join(os.homedir(), '.wslconfig');
-    const configContent = `[wsl2]\nmemory=3GB\nprocessors=2\n`;
-    if (!fs.existsSync(wslConfigPath) || !fs.readFileSync(wslConfigPath, 'utf8').includes('memory=')) {
-      fs.writeFileSync(wslConfigPath, configContent);
-      console.log('[ensureWSLSetup] Created/Updated .wslconfig with resource caps.');
-      broadcastVMSetupLog('[ensureWSLSetup] Created/Updated .wslconfig with resource caps.', 'info', 1);
+  if (!(await discoverWSLDistro())) {
+    const res = await installAlpineVM(log);
+    if (!res.success) {
+      log(res.error || 'Could not create the Alpine VM', res.needsRestart ? 'warn' : 'error');
+      return false;
     }
-  } catch (err) {
-    console.error('[ensureWSLSetup] Failed to configure .wslconfig:', err);
+    _cachedDistroName = ALPINE_DISTRO;
   }
 
-  // Step 2: Check & install system interpreters if missing
-  try {
-    const toolchain = await checkWslToolchain();
-    const missing = [
-      toolchain.python3 ? null : 'python3',
-      toolchain.node ? null : 'node',
-    ].filter(Boolean) as string[];
+  // Already provisioned: nothing to install.
+  _lastEnvCheckResult = null;
+  const pre = await checkEnvironmentDependencies(true);
+  if (pre.vmReady && pre.pipPackagesInstalled && pre.nodePackagesInstalled) return true;
 
-    if (!toolchain.reachable) {
-      console.warn(`[ensureWSLSetup] Could not reach WSL to verify toolchain (${toolchain.error}). Attempting install anyway...`);
-      broadcastVMSetupLog(`[ensureWSLSetup] WSL notice: ${toolchain.error || 'Initializing distribution...'}`, 'warn', 2);
-    }
+  log('Installing tools inside Alpine (first run downloads about 1 GB)...');
+  const code = await provisionAlpine(alpineProvisionScript(CORE_PYTHON_DEPS, CORE_NODE_DEPS), log, 'wsl');
+  if (code !== 0) log(`Provisioning stopped early (exit ${code}).`, 'warn');
 
-    if (missing.length > 0) {
-      console.log(`[ensureWSLSetup] Core tools missing (${missing.join(', ')}), installing system toolchain via root...`);
-      broadcastVMSetupLog(`[ensureWSLSetup] Installing missing system toolchain (${missing.join(', ')})...`, 'info', 2);
-      const sysPackages = 'python3 python3-pip python3-venv nodejs npm curl wget git build-essential jq pandoc poppler-utils libreoffice';
-      try {
-        const rootArgs = await getTargetWSLArgs(['--user', 'root', '--exec', 'bash', '-c', `apt-get update -qq && apt-get install -y -qq ${sysPackages}`]);
-        await execFileAsync(wslCmd, rootArgs, { timeout: 240000 });
-      } catch (rootErr) {
-        console.log('[ensureWSLSetup] Root apt-get failed, trying sudo...', rootErr);
-        const sudoArgs = await getTargetWSLArgs(['--exec', 'bash', '-c', `sudo apt-get update -qq && sudo apt-get install -y -qq ${sysPackages}`]);
-        await execFileAsync(wslCmd, sudoArgs, { timeout: 240000 }).catch(() => {});
-      }
-      // Re-verify after install so the setup log reflects reality.
-      const after = await checkWslToolchain();
-      const stillMissing = [
-        after.python3 ? null : 'python3',
-        after.node ? null : 'node',
-      ].filter(Boolean) as string[];
-      if (stillMissing.length > 0) {
-        console.warn(`[ensureWSLSetup] Still missing after install: ${stillMissing.join(', ')}`);
-        broadcastVMSetupLog(`[ensureWSLSetup] Warning: still missing ${stillMissing.join(', ')} after install.`, 'warn', 2);
-      } else {
-        console.log(`[ensureWSLSetup] System toolchains verified (python3 ${after.pythonVersion || ''}, node ${after.nodeVersion || ''}).`);
-        broadcastVMSetupLog('[ensureWSLSetup] System toolchains verified.', 'info', 2);
-      }
-    } else {
-      console.log(`[ensureWSLSetup] python3 (${toolchain.pythonVersion || ''}) and node (${toolchain.nodeVersion || ''}) already installed`);
-      broadcastVMSetupLog('[ensureWSLSetup] python3 and nodejs already installed', 'info', 2);
-    }
-  } catch (err: any) {
-    console.warn('[ensureWSLSetup] WSL package check notice:', err?.message || err);
-    broadcastVMSetupLog(`[ensureWSLSetup] Toolchain check notice: ${err?.message || err}`, 'warn', 2);
-  }
-
-  // Step 3: Set up pure-JS Node packages in ~/.everfern
-  try {
-    broadcastVMSetupLog('[ensureWSLSetup] Setting up Node packages in ~/.everfern...', 'info', 3);
-    const nodeSetupScript = [
-      'mkdir -p ~/.everfern',
-      'cd ~/.everfern',
-      'if [ ! -f package.json ]; then npm init -y &>/dev/null; fi',
-      `npm install ${CORE_NODE_DEPS} --no-audit --no-fund --prefer-offline -q &>/dev/null || true`
-    ].join(' && ');
-    const nodeArgs = await getTargetWSLArgs(['--exec', 'bash', '-c', nodeSetupScript]);
-    await execFileAsync(wslCmd, nodeArgs, { timeout: 60000 }).catch((e) => console.warn('[ensureWSLSetup] Node setup notice:', e));
-  } catch (nodeErr) {
-    console.warn('[ensureWSLSetup] Node package setup warning (continuing):', nodeErr);
-  }
-
-  // Step 4: Set up Python virtualenv & packages in ~/.everfern/venv with multi-tier fallbacks
-  try {
-    broadcastVMSetupLog('[ensureWSLSetup] Provisioning Python virtualenv (~/.everfern/venv) & core skill libraries...', 'info', 4);
-    const pySetupScript = `
-if command -v python3 &>/dev/null; then
-  mkdir -p "$HOME/.everfern"
-  if [ ! -d "$HOME/.everfern/venv" ]; then
-    python3 -m venv "$HOME/.everfern/venv" 2>/dev/null || true
-  fi
-
-  PY_BIN="$HOME/.everfern/venv/bin/python"
-  PIP_BIN="$HOME/.everfern/venv/bin/pip"
-  if [ ! -x "$PY_BIN" ]; then
-    PY_BIN="python3"
-    PIP_BIN="python3 -m pip"
-  fi
-
-  export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
-  UV_SUCCESS=0
-  if ! command -v uv &>/dev/null; then
-    (curl -LsSf https://astral.sh/uv/install.sh | sh) &>/dev/null || $PIP_BIN install uv -q &>/dev/null || true
-    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
-  fi
-  if command -v uv &>/dev/null; then
-    if uv pip install --python "$PY_BIN" ${CORE_PYTHON_DEPS} -q 2>/dev/null; then
-      UV_SUCCESS=1
-    fi
-  fi
-  if [ "$UV_SUCCESS" -ne 1 ]; then
-    $PIP_BIN install ${CORE_PYTHON_DEPS} -q 2>/dev/null || true
-  fi
-
-  for pkg in pypdf pdfplumber openpyxl pptx pandas docx matplotlib numpy requests reportlab; do
-    $PY_BIN -c "import $pkg" 2>/dev/null || $PIP_BIN install "$pkg" -q 2>/dev/null || true
-  done
-fi
-`.trim();
-
-    const pyArgs = await getTargetWSLArgs(['--exec', 'bash', '-c', pySetupScript]);
-    await execFileAsync(wslCmd, pyArgs, { timeout: 180000 });
-    broadcastVMSetupLog('[ensureWSLSetup] Node & Python packages installed in ~/.everfern/venv', 'info', 4);
-  } catch (err) {
-    console.error('[ensureWSLSetup] Failed to set up Node/Python dependencies:', err);
-    broadcastVMSetupLog(`[ensureWSLSetup] Package setup warning: ${err}`, 'warn', 4);
-  }
-
-  // Step 5: Ensure default user has passwordless sudo
-  try {
-    const whoamiArgs = await getTargetWSLArgs(['--exec', 'bash', '-c', 'whoami']);
-    const { stdout: defaultUserOut } = await execFileAsync(wslCmd, whoamiArgs, { timeout: 10000 }).catch(() => ({ stdout: '' }));
-    const defaultUser = (defaultUserOut || '').trim();
-    if (defaultUser && defaultUser !== 'root') {
-      const sudoArgs = await getTargetWSLArgs(['--user', 'root', '--exec', 'bash', '-c', `echo '${defaultUser} ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/${defaultUser} && chmod 0440 /etc/sudoers.d/${defaultUser}`]);
-      await execFileAsync(wslCmd, sudoArgs, { timeout: 10000 }).catch(() => {});
-    }
-  } catch (err) {
-    console.error('[ensureWSLSetup] Failed to configure passwordless sudo:', err);
-  }
-
+  _lastEnvCheckResult = null;
   const finalCheck = await checkWslToolchain();
-  if (finalCheck.reachable && finalCheck.python3 && finalCheck.node) {
-    console.log('[ensureWSLSetup] WSL environment setup complete with full Node/Python toolchain ✅');
-    broadcastVMSetupLog('[ensureWSLSetup] WSL environment setup complete with full Node/Python toolchain ✅', 'success', 5);
-  } else if (!finalCheck.reachable) {
-    console.warn('[ensureWSLSetup] WSL is not yet reachable:', finalCheck.error);
-    broadcastVMSetupLog('[ensureWSLSetup] WSL service is not reachable yet. If you recently installed WSL, please restart your computer to activate the virtualization layer.', 'warn', 5);
-  } else {
-    console.log('[ensureWSLSetup] WSL environment setup finished.');
-    broadcastVMSetupLog('[ensureWSLSetup] WSL environment setup finished. Some optional packages may install during first run.', 'info', 5);
+  const dependencyCheck = await checkEnvironmentDependencies(true);
+  const ok = finalCheck.reachable && finalCheck.python3 && finalCheck.node && dependencyCheck.pipPackagesInstalled && dependencyCheck.nodePackagesInstalled;
+  if (ok) log('Alpine VM is ready.', 'success');
+  else if (!finalCheck.reachable) log(`The Alpine VM is not reachable: ${finalCheck.error || 'unknown error'}`, 'warn');
+  else log(`Setup incomplete: ${dependencyCheck.missingList.join(', ') || 'required packages'}`, 'warn');
+  return ok;
+}
+
+/**
+ * Provision WSL once per app process. Concurrent terminal calls share the same
+ * setup promise instead of each launching apt/npm/pip installers.
+ */
+export async function ensureWSLSetup(): Promise<void> {
+  if (process.platform !== 'win32' || _wslSetupDone) return;
+  if (!_wslSetupPromise) {
+    _wslSetupPromise = performWSLSetup().finally(() => {
+      _wslSetupPromise = null;
+    });
   }
+  _wslSetupDone = await _wslSetupPromise;
 }
 
 export interface EnvironmentDependenciesResult {
@@ -461,17 +365,17 @@ export async function checkEnvironmentDependencies(forceRefresh = false): Promis
 
   try {
     const probeScript = `
-if command -v python3 &>/dev/null; then
+if command -v python3 >/dev/null 2>&1; then
   echo "PY: $(python3 --version 2>&1)"
-elif command -v python &>/dev/null; then
+elif command -v python >/dev/null 2>&1; then
   echo "PY: $(python --version 2>&1)"
 else
   echo "NO_PYTHON"
 fi
 
-if command -v node &>/dev/null; then
+if command -v node >/dev/null 2>&1; then
   echo "NODE: $(node --version 2>&1)"
-elif command -v nodejs &>/dev/null; then
+elif command -v nodejs >/dev/null 2>&1; then
   echo "NODE: $(nodejs --version 2>&1)"
 else
   echo "NO_NODE"
@@ -488,13 +392,14 @@ if [ -x "$HOME/.everfern/venv/bin/python3" ]; then
   PY_BIN="$HOME/.everfern/venv/bin/python3"
 elif [ -x "$HOME/.everfern/venv/bin/python" ]; then
   PY_BIN="$HOME/.everfern/venv/bin/python"
-elif command -v python3 &>/dev/null; then
+elif command -v python3 >/dev/null 2>&1; then
   PY_BIN="python3"
-elif command -v python &>/dev/null; then
+elif command -v python >/dev/null 2>&1; then
   PY_BIN="python"
 fi
 
 if [ -n "$PY_BIN" ]; then
+  $PY_BIN -c "import pypdf, pdfplumber, openpyxl, pptx, pandas, docx, matplotlib, numpy, requests, bs4, reportlab, weasyprint" 2>/dev/null && echo "PY_PKGS_OK" || echo "NO_PY_PKGS"
   $PY_BIN -c "import pypdf; print('PDF_OK')" 2>/dev/null || $PY_BIN -c "import pdfplumber; print('PDF_OK')" 2>/dev/null || echo "NO_PDF"
   $PY_BIN -c "import pandas; print('EXCEL_OK')" 2>/dev/null || $PY_BIN -c "import openpyxl; print('EXCEL_OK')" 2>/dev/null || echo "NO_EXCEL"
   $PY_BIN -c "import pptx; print('PPTX_OK')" 2>/dev/null || echo "NO_PPTX"
@@ -508,7 +413,7 @@ else
   echo "NO_DATA"
 fi
 
-if [ -d "$HOME/.everfern/node_modules" ]; then
+if NODE_PATH="$HOME/.everfern/node_modules" node -e "for (const p of ['pptxgenjs','pdf-lib','exceljs','typescript','ts-node']) require.resolve(p)" >/dev/null 2>&1; then
   echo "NODE_PKGS_OK"
 else
   echo "NO_NODE_PKGS"
@@ -522,7 +427,7 @@ fi
       let stdout = '';
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
-          const probeArgs = await getTargetWSLArgs(['--exec', 'bash', '-c', probeScript]);
+          const probeArgs = await getTargetWSLArgs(['--exec', '/bin/sh', '-c', probeScript]);
           const res = await execFileAsync(wslCmd, probeArgs, { timeout: 30000 });
           stdout = res.stdout || '';
           result.vmReady = true;
@@ -537,7 +442,7 @@ fi
       }
       output = stdout;
     } else if (process.platform === 'darwin') {
-      const { stdout } = await execFileAsync('docker', ['exec', 'everfern-ubuntu', 'bash', '-c', probeScript], { timeout: 30000 });
+      const { stdout } = await execFileAsync('docker', ['exec', ALPINE_CONTAINER, '/bin/sh', '-c', probeScript], { timeout: 30000 });
       output = stdout || '';
       result.vmReady = true;
     } else if (process.platform === 'linux') {
@@ -554,7 +459,7 @@ fi
       result.missingList.push('Python 3');
     }
 
-    if ((output.includes('NODE: v') || output.includes('v')) && !output.includes('NO_NODE')) {
+    if (/^NODE:\s+v\d+/m.test(output) && !output.includes('NO_NODE')) {
       result.nodeInstalled = true;
       const match = output.match(/v[0-9.]+/);
       if (match) result.nodeVersion = match[0];
@@ -580,8 +485,10 @@ fi
     if (!result.details.docx) result.missingList.push('DOCX Libraries (python-docx)');
     if (!result.details.data) result.missingList.push('Data Science Libraries (numpy, matplotlib)');
 
-    result.pipPackagesInstalled = result.details.pdf && result.details.excel && result.details.pptx && result.details.docx && result.details.data;
+    result.pipPackagesInstalled = output.includes('PY_PKGS_OK');
     result.nodePackagesInstalled = output.includes('NODE_PKGS_OK');
+    if (!result.pipPackagesInstalled) result.missingList.push('Python skill libraries');
+    if (!result.nodePackagesInstalled) result.missingList.push('Node.js skill packages');
 
     result.available = result.vmReady && result.pythonInstalled && (result.venvReady || result.pipPackagesInstalled);
     _lastEnvCheckResult = { data: result, timestamp: Date.now() };
@@ -639,6 +546,14 @@ export async function setupEnvironmentDependencies(): Promise<{ success: boolean
       console.warn('[setupEnvironmentDependencies] PDF OCR provision skipped:', ocrResult.message);
     }
 
+    const readiness = await checkEnvironmentDependencies(true);
+    if (!readiness.available || !readiness.nodePackagesInstalled) {
+      return {
+        success: false,
+        error: `Environment setup is incomplete: ${readiness.missingList.join(', ') || 'required Node packages are missing'}`,
+      };
+    }
+
     return { success: true };
   } catch (err: any) {
     return { success: false, error: err?.message || String(err) };
@@ -661,33 +576,33 @@ async function runInWSL(command: string, cwd?: string, onUpdate?: (chunk: string
   resetWslIdleTimer();
 
   // Translate Windows paths to Linux paths if cwd is provided, otherwise default to native Linux workspace
-  let linuxCwd = cwd ? translateWindowsPathToLinux(cwd) : '$HOME/.everfern/workspace';
+  const linuxCwd = cwd ? quoteBashArg(translateWindowsPathToLinux(cwd)) : '"$HOME/.everfern/workspace"';
 
   const envExports = 'mkdir -p "$HOME/.everfern/workspace" "$HOME/.everfern/exec" "$HOME/.everfern/artifacts" && export VIRTUAL_ENV="$HOME/.everfern/venv" && export PATH="$HOME/.everfern/venv/bin:$HOME/.everfern/node_modules/.bin:$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" && export NODE_PATH="$HOME/.everfern/node_modules"';
 
   // Prepend environment exports and cd to workspace
-  const fullCommand = `${envExports} && cd "${linuxCwd}" && ${command}`;
+  const fullCommand = `${envExports} && cd ${linuxCwd} && ${command}`;
 
   const execArgs = await getTargetWSLArgs(['--exec', 'bash', '-c', fullCommand]);
   return executeCommand(wslCmd, execArgs, onUpdate);
 }
 
 /**
- * Runs command in Docker Ubuntu container (macOS)
+ * Runs command in the Alpine Docker container (macOS)
  */
 async function runInDocker(command: string, cwd?: string, onUpdate?: (chunk: string) => void): Promise<LinuxVMExecutionResult> {
   // Ensure Docker container exists and is running
   await ensureDockerContainer();
 
   // Translate macOS paths to Docker volume mounts if cwd is provided, otherwise default to native Linux workspace
-  let dockerCwd = cwd ? translateMacOSPathToDocker(cwd) : '$HOME/.everfern/workspace';
+  const dockerCwd = cwd ? quoteBashArg(translateMacOSPathToDocker(cwd)) : '"$HOME/.everfern/workspace"';
 
   const envExports = 'mkdir -p "$HOME/.everfern/workspace" "$HOME/.everfern/exec" "$HOME/.everfern/artifacts" && export VIRTUAL_ENV="$HOME/.everfern/venv" && export PATH="$HOME/.everfern/venv/bin:$HOME/.everfern/node_modules/.bin:$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" && export NODE_PATH="$HOME/.everfern/node_modules"';
 
   // Prepend environment exports and cd to workspace
-  const fullCommand = `${envExports} && cd "${dockerCwd}" && ${command}`;
+  const fullCommand = `${envExports} && cd ${dockerCwd} && ${command}`;
 
-  return executeCommand('docker', ['exec', 'everfern-ubuntu', 'bash', '-c', fullCommand], onUpdate);
+  return executeCommand('docker', ['exec', ALPINE_CONTAINER, 'bash', '-c', fullCommand], onUpdate);
 }
 
 /**
@@ -718,7 +633,7 @@ async function runNatively(command: string, cwd?: string, onUpdate?: (chunk: str
 
   let fullCommand = command;
   if (hostCwd) {
-    fullCommand = `cd "${hostCwd}" && ${command}`;
+    fullCommand = `cd ${quoteBashArg(hostCwd)} && ${command}`;
   }
   return executeCommand('bash', ['-c', fullCommand], onUpdate);
 }
@@ -745,15 +660,16 @@ export async function isLinuxVMAvailable(): Promise<{ available: boolean; reason
   try {
     if (platform === 'win32') {
       try {
-        console.log('[isLinuxVMAvailable] Testing wsl.exe -e echo ok...');
-        await execAsync('wsl.exe -e echo ok', { timeout: 15000 });
+        console.log(`[isLinuxVMAvailable] Testing ${ALPINE_DISTRO}...`);
+        if (!(await isAlpineInstalled())) throw new Error(`${ALPINE_DISTRO} is not installed yet`);
+        await execFileAsync('wsl.exe', ['-d', ALPINE_DISTRO, '-e', 'echo', 'ok'], { timeout: 15000 });
         console.log('[isLinuxVMAvailable] wsl.exe OK → VM available');
         return { available: true };
       } catch (err: any) {
         console.warn(`[isLinuxVMAvailable] wsl.exe failed: ${err.message || err}`);
         return {
           available: false,
-          reason: `WSL is not running, no Linux distribution is installed, or the WSL startup timed out. Error: ${err.message || err}`
+          reason: `The EverFern Alpine VM is not installed or did not start. Error: ${err.message || err}`
         };
       }
     } else if (platform === 'darwin') {
@@ -848,47 +764,25 @@ function executeCommand(cmd: string, args: string[], onUpdate?: (chunk: string) 
  */
 export async function ensureDockerContainer(): Promise<void> {
   try {
-    // Check if Docker is running
     await execAsync('docker info');
-
-    // Choose volume mount based on platform
     const isMac = process.platform === 'darwin';
     const volumeMount = isMac ? '-v /Users:/host/Users' : '-v /home:/host/Home';
 
-    // Check if container exists
-    const { stdout: containerList } = await execAsync('docker ps -a --filter name=everfern-ubuntu --format "{{.Names}}"');
-
-    if (!containerList.includes('everfern-ubuntu')) {
-      // Create container with platform-appropriate volume mount
-      console.log('Creating everfern-ubuntu Docker container...');
-      await execAsync(`docker run -d --name everfern-ubuntu ${volumeMount} ubuntu:latest tail -f /dev/null`);
-
-      // Install basic tools in the container
-      await execAsync('docker exec everfern-ubuntu apt-get update');
-      await execAsync('docker exec everfern-ubuntu apt-get install -y curl wget git python3 python3-pip python3-venv nodejs npm build-essential jq pandoc poppler-utils libreoffice tesseract-ocr imagemagick ffmpeg');
-
-      // Create ~/.everfern/ directory, Node dependencies, and Python venv with uv / pip
-      const dockerSetup = [
-        'mkdir -p ~/.everfern',
-        'cd ~/.everfern',
-        'if [ ! -f package.json ]; then npm init -y &>/dev/null; fi',
-        `npm install ${CORE_NODE_DEPS} --no-audit --no-fund --prefer-offline -q &>/dev/null || true`,
-        'if [ ! -d ~/.everfern/venv ]; then python3 -m venv ~/.everfern/venv; fi',
-        'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"',
-        'UV_SUCCESS=0',
-        '(if ! command -v uv &>/dev/null; then (curl -LsSf https://astral.sh/uv/install.sh | sh) &>/dev/null || ~/.everfern/venv/bin/pip install uv -q &>/dev/null || true; export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; fi)',
-        `(if command -v uv &>/dev/null; then if uv pip install --python ~/.everfern/venv/bin/python ${CORE_PYTHON_DEPS} -q; then UV_SUCCESS=1; fi; fi)`,
-        `(if [ "$UV_SUCCESS" -ne 1 ]; then ~/.everfern/venv/bin/pip install ${CORE_PYTHON_DEPS} -q || true; fi)`
-      ].join(' && ');
-      await execAsync(`docker exec everfern-ubuntu bash -c "${dockerSetup.replace(/"/g, '\\"')}"`);
+    const { stdout: containerList } = await execAsync(`docker ps -a --filter name=${ALPINE_CONTAINER} --format "{{.Names}}"`);
+    if (!containerList.includes(ALPINE_CONTAINER)) {
+      console.log(`Creating ${ALPINE_CONTAINER} Docker container...`);
+      await execAsync(`docker run -d --name ${ALPINE_CONTAINER} ${volumeMount} alpine:latest tail -f /dev/null`);
+      const code = await provisionAlpine(
+        alpineProvisionScript(CORE_PYTHON_DEPS, CORE_NODE_DEPS),
+        (m, level) => broadcastVMSetupLog(m, level || 'info', 1),
+        'docker',
+      );
+      if (code !== 0) throw new Error(`Alpine provisioning exited with ${code}`);
     } else {
-      // Check if container is running
-      const { stdout: runningContainers } = await execAsync('docker ps --filter name=everfern-ubuntu --format "{{.Names}}"');
-
-      if (!runningContainers.includes('everfern-ubuntu')) {
-        // Start the container
-        console.log('Starting everfern-ubuntu Docker container...');
-        await execAsync('docker start everfern-ubuntu');
+      const { stdout: runningContainers } = await execAsync(`docker ps --filter name=${ALPINE_CONTAINER} --format "{{.Names}}"`);
+      if (!runningContainers.includes(ALPINE_CONTAINER)) {
+        console.log(`Starting ${ALPINE_CONTAINER} Docker container...`);
+        await execAsync(`docker start ${ALPINE_CONTAINER}`);
       }
     }
   } catch (error) {
@@ -953,7 +847,7 @@ export function translateMacOSPathToDocker(macOSPath: string): string {
  *
  * Windows examples:
  * - /mnt/c/Users/... → C:\Users\...
- * - /home/ubuntu/... → \\wsl.localhost\Ubuntu\home\ubuntu\...
+ * - /root/... → \\wsl.localhost\EverFern-Alpine\root\...
  *
  * macOS examples:
  * - /host/Users/... → /Users/...
@@ -983,7 +877,7 @@ export function translateLinuxPathToHost(linuxPath: string): string {
 
     // Otherwise, translate to WSL localhost UNC path
     const relativePath = cleanPath.startsWith('/') ? cleanPath.substring(1) : cleanPath;
-    return `\\\\wsl.localhost\\Ubuntu\\${relativePath.replace(/\//g, '\\')}`;
+    return `\\\\wsl.localhost\\${ALPINE_DISTRO}\\${relativePath.replace(/\//g, '\\')}`;
   } else if (process.platform === 'darwin') {
     if (linuxPath.startsWith('/host/Users/')) {
       return linuxPath.replace('/host/Users/', '/Users/');

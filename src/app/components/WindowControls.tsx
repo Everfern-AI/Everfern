@@ -1,82 +1,49 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 
 /**
- * Mac-style traffic light window controls.
- * Close (red), Minimize (yellow), Maximize (green).
+ * Traffic-light window controls: close (red), minimize (yellow), maximize (green).
+ * Each dot has a thin darker rim and shows its glyph while the group is hovered.
  * Hidden on macOS where Electron provides native traffic lights.
  */
 export default function WindowControls() {
-    // On macOS, Electron already renders native traffic lights — hide ours
-    const isMac = typeof window !== 'undefined' && /Mac|iPhone|iPod|iPad/.test(navigator.userAgent);
-    if (isMac) {
-        return null;
-    }
+    const [hover, setHover] = useState(false);
+    const isMac = typeof window !== "undefined" && /Mac|iPhone|iPod|iPad/.test(navigator.userAgent);
+    if (isMac) return null;
 
-    const handleClose = () => {
-        if ((window as any).electronAPI?.window?.close) {
-            (window as any).electronAPI.window.close();
-        }
-    };
-
-    const handleMinimize = () => {
-        if ((window as any).electronAPI?.window?.minimize) {
-            (window as any).electronAPI.window.minimize();
-        }
-    };
-
-    const handleMaximize = () => {
-        if ((window as any).electronAPI?.window?.maximize) {
-            (window as any).electronAPI.window.maximize();
-        }
-    };
-
-    const dotStyle: React.CSSProperties = {
-        width: 13,
-        height: 13,
-        borderRadius: "50%",
-        border: "none",
-        cursor: "pointer",
-        padding: 0,
-        transition: "opacity 0.15s, transform 0.1s",
-    };
+    const win = () => (window as any).electronAPI?.window;
+    const dots = [
+        { label: "Close", bg: "#ff5f57", rim: "#e0443e", glyph: "#4d0000", onClick: () => win()?.close?.(), path: "M3.5 3.5l5 5M8.5 3.5l-5 5" },
+        { label: "Minimize", bg: "#febc2e", rim: "#dea123", glyph: "#5a3a00", onClick: () => win()?.minimize?.(), path: "M3 6h6" },
+        { label: "Maximize", bg: "#28c840", rim: "#1aab29", glyph: "#003a00", onClick: () => win()?.maximize?.(), path: "M6 3v6M3 6h6" },
+    ];
 
     return (
         <div
-            style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "0 4px",
-                WebkitAppRegion: "no-drag",
-                zIndex: 9999,
-            } as any}
+            onMouseEnter={() => setHover(true)}
+            onMouseLeave={() => setHover(false)}
+            style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px", WebkitAppRegion: "no-drag", zIndex: 9999 } as any}
         >
-            {/* Close */}
-            <button
-                onClick={handleClose}
-                aria-label="Close"
-                style={{ ...dotStyle, backgroundColor: "#ff5f57" }}
-                onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.75"; e.currentTarget.style.transform = "scale(1.1)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; e.currentTarget.style.transform = "scale(1)"; }}
-            />
-            {/* Minimize */}
-            <button
-                onClick={handleMinimize}
-                aria-label="Minimize"
-                style={{ ...dotStyle, backgroundColor: "#febc2e" }}
-                onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.75"; e.currentTarget.style.transform = "scale(1.1)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; e.currentTarget.style.transform = "scale(1)"; }}
-            />
-            {/* Maximize */}
-            <button
-                onClick={handleMaximize}
-                aria-label="Maximize"
-                style={{ ...dotStyle, backgroundColor: "#28c841" }}
-                onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.75"; e.currentTarget.style.transform = "scale(1.1)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; e.currentTarget.style.transform = "scale(1)"; }}
-            />
+            {dots.map((d) => (
+                <button
+                    key={d.label}
+                    type="button"
+                    onClick={d.onClick}
+                    aria-label={d.label}
+                    title={d.label}
+                    style={{
+                        width: 13, height: 13, borderRadius: "50%", padding: 0, cursor: "pointer",
+                        display: "grid", placeItems: "center", flexShrink: 0,
+                        background: d.bg, border: `0.5px solid ${d.rim}`,
+                        boxShadow: "0 0.5px 1px rgba(0,0,0,0.12)",
+                    }}
+                >
+                    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden style={{ opacity: hover ? 1 : 0, transition: "opacity 0.12s" }}>
+                        <path d={d.path} stroke={d.glyph} strokeWidth="1.3" strokeLinecap="round" fill="none" />
+                    </svg>
+                </button>
+            ))}
         </div>
     );
 }

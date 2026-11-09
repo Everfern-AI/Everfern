@@ -1,6 +1,9 @@
 import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
 import { BrowserWindow, ipcMain } from 'electron';
+import { existsSync } from 'fs';
+import { join } from 'path';
+import { app } from 'electron';
 
 // Track the current update status to allow newly mounted windows to fetch it
 export const updateStatus = {
@@ -32,6 +35,12 @@ function safeSend(channel: string, payload: unknown) {
 }
 
 export function initializeUpdater(mainWindow: BrowserWindow) {
+  if (process.env.EVERFERN_SHELL === 'tauri') return; // Rust owns the Tauri updater.
+  const bridge = existsSync(join(process.resourcesPath, 'native', 'everfern.exe'));
+  if (bridge) {
+    autoUpdater.setFeedURL({ provider: 'generic', url: 'https://github.com/Everfern-AI/Everfern/releases/latest/download', channel: 'tauri-transition', useMultipleRangeRequest: false });
+    autoUpdater.disableDifferentialDownload = true;
+  }
   autoUpdater.logger = log;
   (autoUpdater.logger as any).transports.file.level = 'info';
   
@@ -97,11 +106,19 @@ export function initializeUpdater(mainWindow: BrowserWindow) {
   });
 
   // Check for updates
-  try {
+  const check = () => { try {
     autoUpdater.checkForUpdatesAndNotify()?.catch((error: unknown) => {
       log.error('[Updater] Async update check failed:', error);
     });
   } catch (error) {
     log.error('[Updater] Failed to check for updates on startup:', error);
-  }
+  } };
+  if (bridge) {
+    // A fresh installation must export before downloading the framework switch.
+    const waitForExport = () => {
+      if (existsSync(join(app.getPath('userData'), 'renderer-migration.native'))) check();
+      else setTimeout(waitForExport, 2000).unref();
+    };
+    waitForExport();
+  } else check();
 }

@@ -224,6 +224,7 @@ export const createCallModelNode = (
       (runner as any).shouldCaptureScreenshot(lastMsgContent);
 
     const needsVisionGrounding = iterations === 0 &&
+      vlm?.enabled === true &&
       vlm?.model &&
       vlm?.provider &&
       shouldUseDesktopVision;

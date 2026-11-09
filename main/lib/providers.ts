@@ -88,6 +88,7 @@ export const PROVIDER_MODELS: Record<ProviderType, string[]> = {
     'deepseek-v4-flash:cloud',
     'deepseek-v4-pro:cloud',
   ],
+  llamacpp: [], // populated dynamically at runtime
   lmstudio: [], // populated dynamically at runtime
   everfern: [
     'fern-1',
@@ -270,6 +271,17 @@ export const PROVIDER_REGISTRY: Record<ProviderType, ProviderMeta> = {
     engine: 'online',
     baseUrl: 'https://ollama.com/api',
   },
+  llamacpp: {
+    type: 'llamacpp',
+    name: 'llama.cpp',
+    description: 'Local GGUF models via llama-server',
+    image: '/images/ai-providers/llamacpp.png',
+    requiresApiKey: false,
+    isLocal: true,
+    defaultModel: 'local-model',
+    engine: 'local',
+    baseUrl: 'http://localhost:8080/v1',
+  },
   lmstudio: {
     type: 'lmstudio',
     name: 'LM Studio',
@@ -326,6 +338,10 @@ export interface FlatModelEntry {
   provider: string;
   providerType: ProviderType;
   description?: string;
+  capabilities?: {
+    reasoning?: boolean;
+    imageGeneration?: boolean;
+  };
 }
 
 export function getAllModelsFlat(): FlatModelEntry[] {

@@ -452,7 +452,7 @@ html[data-font="default"],
 html[data-font="default"] body,
 body[data-font="default"],
 .font-default {
-  --font-sans: 'Figtree', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  --font-sans: 'Satoshi', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
   --font-branding: 'Figtree', sans-serif !important;
 }
 
@@ -554,7 +554,7 @@ body[data-font="default"],
   --interrupted-btn-hover-bg: rgba(0, 0, 0, 0.10);
 
   /* Typography System */
-  --font-sans: 'Figtree', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-sans: 'Satoshi', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-branding: 'Figtree', sans-serif;
   --font-serif: 'Loretta', 'LorettaLight', 'Tiempos', 'TestTiemposFine', 'Georgia', serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
@@ -718,6 +718,8 @@ body[data-font="default"],
 
 /* ── Reset & Base ────────────────────────────────────────────────────────── */
 
+/* Keep defaults below Tailwind utilities so p-*, m-* and text-* remain effective. */
+@layer base {
 *,
 *::before,
 *::after {
@@ -756,6 +758,7 @@ body {
 main {
   height: 100%;
 }
+}
 
 /* ── Scrollbar Styling ───────────────────────────────────────────────────── */
 
@@ -779,6 +782,7 @@ main {
 
 /* ── Typography Utilities ────────────────────────────────────────────────── */
 
+@layer base {
 h1,
 h2,
 h3,
@@ -809,6 +813,7 @@ a {
 
 a:hover {
   color: var(--color-text-primary);
+}
 }
 
 /* ── Markdown Content Styles (for AI messages) ───────────────────────────── */
@@ -1698,3 +1703,135 @@ a:hover {
   color: transparent !important;
   animation: everfernShimmerText 2.4s infinite linear;
 }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Keyboard feedback survives legacy inline outline resets. */
+:where(button,a[href],input,textarea,select,[tabindex="0"]):focus-visible {
+  outline: 2px solid var(--color-border-focus, #57b8e6) !important;
+  outline-offset: 3px !important;
+}
+.ef-confirm-backdrop { position: fixed; inset: 0; z-index: 12000; display: grid; place-items: center; padding: 24px; background: #0c18264d; backdrop-filter: blur(12px); }
+.ef-confirm { width: min(420px,100%); padding: 24px; border-radius: 24px; color: var(--color-text-primary,#fff); background: var(--color-bg-surface,#344a55); border: 1px solid var(--color-border,#ffffff40); box-shadow: 0 18px 44px -24px #0006; font-family: 'Satoshi',sans-serif; }
+.ef-confirm h2 { font: 600 20px/1.3 'Satoshi',sans-serif; margin: 0 0 12px; }
+.ef-confirm p { font-size: 14px; line-height: 1.6; margin: 0 0 20px; }
+.ef-confirm > div { display: flex; justify-content: flex-end; gap: 8px; }
+.ef-confirm button { min-height: 40px; padding: 0 18px; border-radius: 999px; background: var(--color-bg-subtle,#ffffff16); border: 1px solid var(--color-border,#ffffff30); cursor: pointer; }
+.ef-confirm button.is-destructive { background: #c93647; border-color: transparent; color: #fff; }
+.ef-confirm button:disabled { opacity: .5; cursor: wait; }
+@media (prefers-reduced-transparency: reduce) {
+  [role="dialog"], [role="alertdialog"], .ef-confirm-backdrop,
+  .ef-shell [style*="backdrop-filter"] {
+    backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+    background-color: var(--color-bg-surface,#344a55) !important;
+  }
+}
+@media (prefers-contrast: more) {
+  :root { --color-text-tertiary: var(--color-text-primary); --color-text-placeholder: var(--color-text-primary); }
+  :where([role="dialog"],[role="alertdialog"],input,textarea,select,button) { border-color: currentColor !important; }
+}
+
+:root { --font-mono: 'Cascadia Code', Consolas, 'Liberation Mono', monospace; --font-code: var(--font-mono); --font-figtree: 'Satoshi', sans-serif; }
+.wk .wk-search input:focus-visible { outline: none !important; }
+
+@media (prefers-reduced-transparency: reduce) {
+  .ef-narrative-panel { background: #24323e !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+}
+@media (prefers-contrast: more) { .ef-narrative-panel { border: 1px solid #fff !important; } }
+
+/* ── Liquid glass surfaces ─────────────────────────────────────────── */
+.liquid-glass {
+  position: relative;
+  isolation: isolate;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.03) 42%, rgba(255,255,255,0.09)),
+    color-mix(in srgb, var(--color-bg-surface, #1b2430) 58%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-border, #ffffff30) 78%, transparent);
+  box-shadow:
+    0 24px 70px -30px rgba(0,0,0,0.70),
+    inset 0 1px 0 rgba(255,255,255,0.30),
+    inset 0 -1px 0 rgba(0,0,0,0.10);
+  -webkit-backdrop-filter: blur(28px) saturate(180%) brightness(1.06);
+  backdrop-filter: blur(28px) saturate(180%) brightness(1.06);
+  overflow: hidden;
+}
+.liquid-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(90% 65% at 18% 0%, rgba(255,255,255,0.30), transparent 62%);
+  mix-blend-mode: screen;
+  pointer-events: none;
+  z-index: 0;
+}
+.liquid-glass::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(120deg, rgba(255,255,255,0.55), rgba(255,255,255,0.06) 42%, rgba(120,180,255,0.30));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 0;
+}
+.liquid-glass > * { position: relative; z-index: 1; }
+@media (prefers-reduced-transparency: reduce) {
+  .liquid-glass {
+    background: var(--color-bg-surface, #1b2430);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .liquid-glass::before, .liquid-glass::after { display: none; }
+}
+
+/* User prompt bubble: wide, centered, light grey-blue liquid glass (light theme) */
+.user-msg-glass {
+  position: relative;
+  isolation: isolate;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,0.30), rgba(255,255,255,0.06) 45%, rgba(255,255,255,0.18)),
+    color-mix(in srgb, #b9cbd8 56%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  box-shadow:
+    0 16px 44px -20px rgba(0,0,0,0.35),
+    inset 0 1px 0 rgba(255,255,255,0.45);
+  -webkit-backdrop-filter: blur(22px) saturate(180%) brightness(1.04);
+  backdrop-filter: blur(22px) saturate(180%) brightness(1.04);
+  overflow: hidden;
+}
+.user-msg-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(90% 65% at 18% 0%, rgba(255,255,255,0.30), transparent 62%);
+  mix-blend-mode: screen;
+  pointer-events: none;
+  z-index: 0;
+}
+.dark .user-msg-glass {
+  background:
+    linear-gradient(135deg, rgba(255,255,255,0.32), rgba(255,255,255,0.08) 45%, rgba(255,255,255,0.20)),
+    color-mix(in srgb, #b9cbd8 62%, transparent);
+  border-color: color-mix(in srgb, #c8d8e4 55%, transparent);
+}
+.user-msg-glass > * { position: relative; z-index: 1; }
+@media (prefers-reduced-transparency: reduce) {
+  .user-msg-glass {
+    background: color-mix(in srgb, var(--color-bg-surface) 88%, transparent);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .user-msg-glass::before { display: none; }
+}
+

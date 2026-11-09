@@ -1,5 +1,6 @@
 'use client';
 
+import { useDialogFocus } from "@/lib/use-dialog-focus";
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { XMarkIcon, ClockIcon, ChevronDownIcon, CalendarDaysIcon, SparklesIcon } from '@heroicons/react/24/outline';
@@ -319,7 +320,8 @@ const s = {
 };
 
 export default function ScheduledTaskModal({ isOpen, onClose, onSave }: ScheduledTaskModalProps) {
-  const [name, setName] = useState('');
+  const dialogRef = useDialogFocus<HTMLDivElement>(isOpen, onClose);
+    const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [pattern, setPattern] = useState('daily');
   const [startTime, setStartTime] = useState(() => {
@@ -381,7 +383,7 @@ export default function ScheduledTaskModal({ isOpen, onClose, onSave }: Schedule
   return (
     <AnimatePresence>
       <div style={s.overlay}>
-        <motion.div
+        <motion.div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Schedule task"
           initial={{ opacity: 0, scale: 0.96, y: 12 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.96, y: 12 }}

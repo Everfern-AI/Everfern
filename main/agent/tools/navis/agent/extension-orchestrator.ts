@@ -12,6 +12,7 @@
 import type { AIClient } from '../../../../lib/ai-client';
 import { globalAbortManager } from '../../../runner/abort-manager';
 import { ExtensionBrowserAdapter, type BrowserPageState } from '../core/adapter';
+import type { BrowserControlAdapter } from '../core/types';
 import { Observer } from '../core/observer';
 import { compressHistory } from '../ai-optimization';
 import { NavisLogger } from '../logger';
@@ -109,16 +110,17 @@ export class NavisExtensionOrchestrator {
   private visionClient: AIClient | null;
   private model: string;
   private logger: NavisLogger;
-  private adapter: ExtensionBrowserAdapter;
+  private adapter: BrowserControlAdapter;
   private observer: Observer;
   private state: StateManager;
 
-  constructor(aiClient: AIClient, logger: NavisLogger, visionClient?: AIClient) {
+  /** `adapter` defaults to the companion extension; workers pass their own window. */
+  constructor(aiClient: AIClient, logger: NavisLogger, visionClient?: AIClient, adapter?: BrowserControlAdapter) {
     this.aiClient = aiClient;
     this.visionClient = visionClient || null;
     this.model = aiClient.model;
     this.logger = logger;
-    this.adapter = new ExtensionBrowserAdapter(logger);
+    this.adapter = adapter ?? new ExtensionBrowserAdapter(logger);
     this.observer = new Observer();
     this.state = new StateManager();
   }

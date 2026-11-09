@@ -3,9 +3,9 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { integrationService } from '../integrations/integration-service';
-import { DiscordPlatform } from '../integrations/discord-platform';
-import { TelegramPlatform } from '../integrations/telegram-platform';
-import { MessageHandler } from '../integrations/message-handler';
+import type { DiscordPlatform } from '../integrations/discord-platform';
+import type { TelegramPlatform } from '../integrations/telegram-platform';
+import type { MessageHandler } from '../integrations/message-handler';
 import { acpManager } from '../acp/manager';
 import { PROVIDER_REGISTRY, getModelsForProvider, formatModelName, FlatModelEntry } from '../lib/providers';
 import type { ProviderType } from '../acp/types';
@@ -54,6 +54,18 @@ let integrationConfig: IntegrationConfig = {
 };
 
 let messageHandlerInstance: MessageHandler | null = null;
+
+// Load the agent-heavy MessageHandler only when a bot is actually configured.
+function createMessageHandler(options: any): MessageHandler {
+  const { MessageHandler } = require('../integrations/message-handler') as typeof import('../integrations/message-handler');
+  return new MessageHandler(options);
+}
+
+// Integration services are deferred at startup when no bot is configured;
+// initialize them on demand the first time the user touches an integration.
+async function ensureIntegrationInitialized(): Promise<void> {
+  await integrationService.initialize();
+}
 
 export const loadIntegrationConfig = (): IntegrationConfig => {
   try {
@@ -132,6 +144,7 @@ export async function autoStartEnabledBots(): Promise<void> {
       try {
         const discordPlatform = botManager.getPlatform?.('discord');
         if (!discordPlatform) {
+          const { DiscordPlatform } = require('../integrations/discord-platform') as typeof import('../integrations/discord-platform');
           const platform = new DiscordPlatform({
             enabled: true,
             config: {
@@ -164,6 +177,7 @@ export async function autoStartEnabledBots(): Promise<void> {
       try {
         const telegramPlatform = botManager.getPlatform?.('telegram');
         if (!telegramPlatform) {
+          const { TelegramPlatform } = require('../integrations/telegram-platform') as typeof import('../integrations/telegram-platform');
           const platform = new TelegramPlatform(buildTelegramPlatformConfig(integrationConfig.telegram));
           await platform.initialize();
           botManager.registerPlatform('telegram', platform);
@@ -195,7 +209,7 @@ export async function initializeBotMessageHandler(): Promise<MessageHandler | nu
       if (messageHandlerInstance) {
         await messageHandlerInstance.shutdown();
       }
-      messageHandlerInstance = new MessageHandler({
+      messageHandlerInstance = createMessageHandler({
         integrationConfig,
         acpManager,
         botManager
@@ -296,6 +310,7 @@ export function registerIntegrationHandlers() {
       };
       saveIntegrationConfig(integrationConfig);
 
+      await ensureIntegrationInitialized();
       const botManager = integrationService.getService<any>('bot-integration-manager');
       if (botManager) {
         const hasConfiguredBot =
@@ -307,7 +322,7 @@ export function registerIntegrationHandlers() {
             await messageHandlerInstance.shutdown();
             messageHandlerInstance = null;
           }
-          messageHandlerInstance = new MessageHandler({
+          messageHandlerInstance = createMessageHandler({
             integrationConfig,
             acpManager,
             botManager
@@ -320,6 +335,7 @@ export function registerIntegrationHandlers() {
         const discordPlatform = botManager.getPlatform?.('discord');
         if (discordPlatform && integrationConfig.discord.enabled) {
           await discordPlatform.disconnect();
+          const { DiscordPlatform } = require('../integrations/discord-platform') as typeof import('../integrations/discord-platform');
           const newPlatform = new DiscordPlatform({
             enabled: true,
             config: {
@@ -339,6 +355,7 @@ export function registerIntegrationHandlers() {
         const telegramPlatform = botManager.getPlatform?.('telegram');
         if (telegramPlatform && integrationConfig.telegram.enabled) {
           await telegramPlatform.disconnect();
+          const { TelegramPlatform } = require('../integrations/telegram-platform') as typeof import('../integrations/telegram-platform');
           const newPlatform = new TelegramPlatform(buildTelegramPlatformConfig(integrationConfig.telegram));
           await newPlatform.initialize();
           botManager.registerPlatform('telegram', newPlatform);
@@ -379,12 +396,14 @@ export function registerIntegrationHandlers() {
       saveIntegrationConfig(integrationConfig);
 
       if (result) {
+        await ensureIntegrationInitialized();
         const botManager = integrationService.getService<any>('bot-integration-manager');
         if (botManager) {
           try {
             if (platform === 'discord' && integrationConfig.discord.enabled) {
               const existingPlatform = botManager.getPlatform?.('discord');
               if (!existingPlatform) {
+                const { DiscordPlatform } = require('../integrations/discord-platform') as typeof import('../integrations/discord-platform');
                 const discordPlatform = new DiscordPlatform({
                   enabled: true,
                   config: {
@@ -403,6 +422,7 @@ export function registerIntegrationHandlers() {
             } else if (platform === 'telegram' && integrationConfig.telegram.enabled) {
               const existingPlatform = botManager.getPlatform?.('telegram');
               if (!existingPlatform) {
+                const { TelegramPlatform } = require('../integrations/telegram-platform') as typeof import('../integrations/telegram-platform');
                 const telegramPlatform = new TelegramPlatform(buildTelegramPlatformConfig(integrationConfig.telegram));
                 await telegramPlatform.initialize();
                 botManager.registerPlatform('telegram', telegramPlatform);
@@ -451,6 +471,7 @@ export function registerIntegrationHandlers() {
 
   ipcMain.handle('integration:start-service', async (_event, serviceName: string) => {
     try {
+      await ensureIntegrationInitialized();
       const service = integrationService.getService(serviceName);
       if (service && typeof service.start === 'function') {
         await service.start();
@@ -464,6 +485,7 @@ export function registerIntegrationHandlers() {
 
   ipcMain.handle('integration:stop-service', async (_event, serviceName: string) => {
     try {
+      await ensureIntegrationInitialized();
       const service = integrationService.getService(serviceName);
       if (service && typeof service.stop === 'function') {
         await service.stop();
@@ -477,6 +499,7 @@ export function registerIntegrationHandlers() {
 
   ipcMain.handle('integration:restart-service', async (_event, serviceName: string) => {
     try {
+      await ensureIntegrationInitialized();
       const service = integrationService.getService(serviceName);
       if (service) {
         if (typeof service.stop === 'function') await service.stop();

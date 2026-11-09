@@ -134,6 +134,7 @@ export type ProviderType =
   | 'ollama'
   | 'ollama-cloud'
   | 'lmstudio'
+  | 'llamacpp'
   | 'everfern'
   | 'gemini'
   | 'nvidia'

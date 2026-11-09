@@ -23,6 +23,7 @@ import { Loader } from '@/components/ui/animated-loading-svg-text-shimmer';
 import { SimpleFileNotification } from './SimpleFileNotification';
 import { GradientBorderSystem } from './GradientBorderSystem';
 import { CursorOverlaySystem } from './CursorOverlaySystem';
+import { normalizeToolName } from '@/lib/tool-utils';
 
 // ── Utility Functions ────────────────────────────────────────────────────────
 /**
@@ -492,7 +493,7 @@ const ToolCallTag = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay;
                     tabIndex={0}
                     role="button"
                     aria-pressed={isSelected}
-                    aria-label={`Tool: ${tc.label || tc.toolName}`}
+                    aria-label={`Tool: ${tc.label || normalizeToolName(tc.toolName)}`}
                     style={{
                         display: 'flex', alignItems: 'center', gap: 8,
                         padding: '7px 12px', borderRadius: 10,
@@ -768,7 +769,7 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                 tabIndex={0}
                 role="button"
                 aria-pressed={isSelected}
-                aria-label={isSkill ? `Skill - ${skillName || tc.toolName}` : `Tool: ${tc.label || tc.displayName || tc.toolName}`}
+                aria-label={isSkill ? `Skill - ${skillName || normalizeToolName(tc.toolName)}` : `Tool: ${tc.label || tc.displayName || normalizeToolName(tc.toolName)}`}
                 className={`flex items-center gap-3 relative z-1 ${hasOutput ? 'cursor-pointer' : 'cursor-default'} px-3 py-2 rounded-lg transition-all ${
                     isSelected
                         ? 'bg-[var(--color-bg-active)] border border-indigo-200'
@@ -798,7 +799,7 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                     <div className="flex-1 flex items-center justify-between overflow-hidden">
                         <span className={`text-[15px] overflow-hidden text-ellipsis whitespace-nowrap font-normal tracking-[-0.01em] ${isSearchTool ? 'text-[var(--color-text-tertiary)]' : isError ? 'text-[#ef4444]' : 'text-[var(--color-text-primary)]'}`}
                             style={{ fontFamily: "'Matter', sans-serif" }}>
-                            {isSkill ? `Skill - ${skillName || tc.label || tc.toolName}` : (tc.label || tc.displayName || tc.toolName)}
+                            {isSkill ? `Skill - ${skillName || tc.label || normalizeToolName(tc.toolName)}` : (tc.label || tc.displayName || normalizeToolName(tc.toolName))}
                         </span>
 
                         {isSearchTool && Array.isArray(tc.data?.results) && (

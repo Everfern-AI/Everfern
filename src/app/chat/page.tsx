@@ -2,6 +2,9 @@
 
 import React, { useState, useRef, useEffect, useCallback, useMemo, KeyboardEvent } from "react";
 import Image from "next/image";
+import { DialogSurface } from "@/components/DialogSurface";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { getModelCapabilities, type ReasoningEffort } from './model-capabilities';
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { EverFernCloudLimitNotice, EverFernCloudUsageBanner, PromptWrapper } from "./components/EverFernCloudBanners";
@@ -54,6 +57,8 @@ import { CheckIcon as CheckSolidIcon, BookmarkIcon as BookmarkSolidIcon } from "
 // Components
 import { AgentTimeline } from "../../components/AgentTimeline";
 import MissionProgressCard from './components/MissionProgressCard';
+import RunSummaryCard from './components/RunSummaryCard';
+import TodoPanel from './components/TodoPanel';
 import type { MissionTimeline as MissionTimelineType } from "../../components/MissionTimeline";
 import StreamView from "../../components/StreamView";
 import WindowControls from "../components/WindowControls";
@@ -97,6 +102,7 @@ import { useSubagentTracking } from '@/hooks/useSubagentTracking';
 import { VisionDowngradeNotice } from '@/components/VisionDowngradeNotice';
 import { InterruptedResponseBanner } from './components/InterruptedResponseBanner';
 import { DotmSquare4 } from "@/components/ui/dotm-square-4";
+import { normalizeToolName } from '@/lib/tool-utils';
 
 
 // Extracted components
@@ -109,13 +115,14 @@ import {
     OpenRouterLogo,
     OllamaLogo,
     LMStudioLogo,
+    LlamaCppLogo,
     HuggingFaceLogo,
     EverFernBglessLogo,
     MiniMaxLogo
 } from './components/ProviderLogos';
 import { WaveformIcon, FernStarburst } from './components/UIIcons';
 import { MarkdownRenderer, StreamingMarkdown } from './components/MarkdownComponents';
-import { ContextTokenRing, VoiceButton, RateLimitContinueButton, CloudAuthLoginButton } from './components/UIHelpers';
+import { ContextTokenRing, VoiceButton, RateLimitContinueButton, CloudAuthLoginButton, VisionGroundingErrorCard, isVisionGroundingError } from './components/UIHelpers';
 import { ToolCallTag, ToolCallRow, ComputerUseResultCard, LiveToolCallCard } from './components/ToolCallComponents';
 import { ReportContainer } from './components/ReportComponents';
 import { InlineVisualization } from './components/InlineVisualization';
@@ -613,7 +620,21 @@ const isNavisQuestion = (questions: any[]) => {
 };
 
 // ── Main ChatPage ─────────────────────────────────────────────────────────────
+const RIBBON_SEGMENT = {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    borderRadius: 999,
+    background: "color-mix(in srgb, var(--color-bg-surface) 62%, transparent)",
+    border: "1px solid color-mix(in srgb, var(--color-border) 72%, transparent)",
+    boxShadow: "0 10px 30px -18px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.16)",
+    backdropFilter: "blur(22px) saturate(160%)",
+    WebkitBackdropFilter: "blur(22px) saturate(160%)",
+    WebkitAppRegion: "no-drag",
+} as any;
+
 export default function ChatPage() {
+    const [projectToDelete, setProjectToDelete] = useState<{id: string; name: string} | null>(null);
     const router = useRouter();
     const [messages, setMessages] = useState<Message[]>([]);
     const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
@@ -833,8 +854,25 @@ export default function ChatPage() {
 
     const [fileViewerPane, setFileViewerPane] = useState<{ toolId: string; filename: string; content: string; tab: 'code' | 'preview' } | null>(null);
     const [selectedModel, setSelectedModel] = useState("fern-1");
+    const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>('medium');
+    const [showReasoningSelector, setShowReasoningSelector] = useState(false);
     const [availableModels, setAvailableModels] = useState<ModelOption[]>([]);
     const availableModelsRef = useRef<ModelOption[]>([]);
+    const currentModel = availableModels.find(m => m.id === selectedModel) || availableModels[0] || { id: "fern", name: "EverFern-1", provider: "EverFern", providerType: "everfern", logo: null };
+    const currentModelCapabilities = getModelCapabilities(currentModel);
+
+    useEffect(() => {
+        setShowReasoningSelector(false);
+        if (!currentModelCapabilities.reasoning) return;
+        const saved = localStorage.getItem(`everfern_reasoning_effort:${selectedModel}`);
+        if (saved === 'low' || saved === 'medium' || saved === 'high') setReasoningEffort(saved);
+    }, [selectedModel, currentModelCapabilities.reasoning]);
+
+    const updateReasoningEffort = (effort: ReasoningEffort) => {
+        setReasoningEffort(effort);
+        localStorage.setItem(`everfern_reasoning_effort:${selectedModel}`, effort);
+        setShowReasoningSelector(false);
+    };
     // Keep the ref updated so closures (dispatch command handler) always see the latest models
     useEffect(() => { availableModelsRef.current = availableModels; }, [availableModels]);
     const messagesRef = useRef<Message[]>([]);
@@ -1191,7 +1229,7 @@ export default function ChatPage() {
 
     useEffect(() => {
         // Only run on client side
-        if (typeof window !== 'undefined') {
+        if (typeof window !== 'undefined' && (window as any).electronAPI?.db?.checkConnection) {
             const healthCheckDone = sessionStorage.getItem('healthCheckCompleted');
             if (!healthCheckDone) {
                 setShowHealthCheck(true);
@@ -1556,11 +1594,11 @@ export default function ChatPage() {
 
         const m = selectedModel.toLowerCase();
         return pType === 'ollama' ||
-            pType === 'lmstudio' ||
+            pType === 'lmstudio' || pType === 'llamacpp' ||
             pType === 'local' ||
             m === 'fern-1' ||
             m.startsWith('ollama:') ||
-            m.startsWith('lmstudio:');
+            m.startsWith('llamacpp:') || m.startsWith('lmstudio:');
     }, [selectedModel, availableModels, config?.provider]);
 
     // Timer to detect if local model is taking too long to respond (e.g. >12s)
@@ -1607,7 +1645,7 @@ export default function ChatPage() {
             m.providerType === 'everfern' ||
             m.provider === 'EverFern' ||
             m.id === 'mistralai/mistral-medium-3.5-128b' ||
-            (m.providerType !== 'ollama' && m.providerType !== 'lmstudio' && m.providerType !== 'local')
+            (m.providerType !== 'ollama' && m.providerType !== 'lmstudio' && m.providerType !== 'llamacpp' && m.providerType !== 'local')
         );
 
         if (cloudModel) {
@@ -1666,6 +1704,10 @@ export default function ChatPage() {
         dependencies?: string[];
     }> | null>(null);
     const [activePlanTitle, setActivePlanTitle] = useState<string | null>(null);
+    const activePlanStepsRef = useRef<typeof activePlanSteps>(null);
+    const activePlanTitleRef = useRef<string | null>(null);
+    useEffect(() => { activePlanStepsRef.current = activePlanSteps; }, [activePlanSteps]);
+    useEffect(() => { activePlanTitleRef.current = activePlanTitle; }, [activePlanTitle]);
     const [envWarning, setEnvWarning] = useState<string | null>(null);
     const [showEnvWarningBanner, setShowEnvWarningBanner] = useState<boolean>(false);
     const [settingsInitialSection, setSettingsInitialSection] = useState<string>('general');
@@ -1814,6 +1856,7 @@ export default function ChatPage() {
 
     // Settings
     const [settingsShowuiUrl, setSettingsShowuiUrl] = useState("http://127.0.0.1:7860");
+    const [settingsVlmEnabled, setSettingsVlmEnabled] = useState(false);
     const [settingsVlmMode, setSettingsVlmMode] = useState<"local" | "cloud">("local");
     const [settingsVlmCloudProvider, setSettingsVlmCloudProvider] = useState("ollama");
     const [settingsVlmCloudModel, setSettingsVlmCloudModel] = useState("qwen3-vl:235b-cloud");
@@ -2190,7 +2233,7 @@ export default function ChatPage() {
     const CompletionToast = () => (
         <AnimatePresence>
             {notification && (
-                <motion.div
+                <DialogSurface label="Assistant dialog"
                     initial={{ opacity: 0, y: -20, x: 20 }}
                     animate={{ opacity: 1, y: 0, x: 0 }}
                     exit={{ opacity: 0, scale: 0.95 }}
@@ -2237,7 +2280,7 @@ export default function ChatPage() {
                     <div style={{ color: 'var(--color-text-tertiary)' }}>
                         <ChevronRightIcon width={16} height={16} />
                     </div>
-                </motion.div>
+                </DialogSurface>
             )}
         </AnimatePresence>
     );
@@ -2647,7 +2690,8 @@ export default function ChatPage() {
             if (res.success && res.models) {
                 const formatted = res.models.map((m: any) => ({
                     id: m.id, name: m.name, provider: m.provider, providerType: m.providerType,
-                    logo: (m.providerType === 'ollama' || m.providerType === 'local') ? OllamaLogo : m.providerType === 'openai' ? OpenAILogo : m.providerType === 'anthropic' ? AnthropicLogo : m.providerType === 'deepseek' ? DeepSeekLogo : m.providerType === 'nvidia' ? NvidiaLogo : m.providerType === 'openrouter' ? OpenRouterLogo : (m.providerType === 'gemini' || m.providerType === 'google') ? GeminiLogo : m.providerType === 'lmstudio' ? LMStudioLogo : m.providerType === 'minimax' ? MiniMaxLogo : m.providerType === 'everfern' ? EverFernBglessLogo : null
+                    capabilities: m.capabilities,
+                    logo: (m.providerType === 'ollama' || m.providerType === 'local') ? OllamaLogo : m.providerType === 'openai' ? OpenAILogo : m.providerType === 'anthropic' ? AnthropicLogo : m.providerType === 'deepseek' ? DeepSeekLogo : m.providerType === 'nvidia' ? NvidiaLogo : m.providerType === 'openrouter' ? OpenRouterLogo : (m.providerType === 'gemini' || m.providerType === 'google') ? GeminiLogo : m.providerType === 'llamacpp' ? LlamaCppLogo : m.providerType === 'lmstudio' ? LMStudioLogo : m.providerType === 'minimax' ? MiniMaxLogo : m.providerType === 'everfern' ? EverFernBglessLogo : null
                 }));
 
                 // Ensure openrouter / nvidia custom model from config is visible in dropdown
@@ -2686,7 +2730,16 @@ export default function ChatPage() {
                 setAvailableModels(finalModels);
                 setSelectedModel(prev => {
                     const validIds = finalModels.filter((m: ModelOption) => !m.id.endsWith('-error') && !m.id.endsWith('-empty')).map((m: ModelOption) => m.id);
-                    if (!validIds.includes(prev)) return validIds[0] ?? prev;
+                    if (!validIds.includes(prev)) {
+                        if (config?.provider === 'llamacpp') {
+                            const savedModel = String(config.model || prev).replace(/^llamacpp:/, '');
+                            const savedId = `llamacpp:${savedModel}`;
+                            if (validIds.includes(savedId)) return savedId;
+                            const localId = validIds.find((id: string) => id.startsWith('llamacpp:'));
+                            if (localId) return localId;
+                        }
+                        return validIds[0] ?? prev;
+                    }
                     return prev;
                 });
             }
@@ -2786,7 +2839,7 @@ export default function ChatPage() {
         if (selectedModel) {
             console.log('[ModelInfo] Effect: selectedModel changed to:', selectedModel);
             // For local models (fern-1, ollama*, lmstudio*), use fallback
-            if (selectedModel === 'fern-1' || selectedModel.includes('ollama') || selectedModel.includes('lmstudio')) {
+            if (selectedModel === 'fern-1' || selectedModel.includes('ollama') || selectedModel.includes('llamacpp') || selectedModel.includes('lmstudio')) {
                 console.log('[ModelInfo] Local model detected, skipping API fetch');
                 setModelInfo({
                     contextLength: 128000,
@@ -2893,10 +2946,11 @@ export default function ChatPage() {
         if (showSettings && config) {
             setSettingsEngine(config.engine || "everfern");
             setSettingsProvider(config.provider || null);
-            setSettingsApiKey(config.keys?.[config.provider || ""] || config.apiKey || "");
+            setSettingsApiKey(config.provider === "llamacpp" ? (config.baseUrl || config.baseUrls?.llamacpp || "http://localhost:8080/v1") : (config.keys?.[config.provider || ""] || config.apiKey || ""));
             setSettingsCustomModel(config.customModel || "z-ai/glm5");
             setModelValidationStatus("none");
             setSettingsShowuiUrl(config.showuiUrl || "http://127.0.0.1:7860");
+            setSettingsVlmEnabled(config.vlm?.enabled === true || (config.vlm?.enabled == null && config.vlm?.engine === "cloud"));
             const loadedVlmProvider = config.vlm?.engine === "cloud" ? (config.vlm.provider || "ollama") : "ollama";
             const defaultLoadedVlmModel =
                 loadedVlmProvider === "everfern" ? "everfern-tars-v1" :
@@ -2922,7 +2976,7 @@ export default function ChatPage() {
     }, [showSettings]);
 
     useEffect(() => {
-        if (settingsProvider && config) setSettingsApiKey(config.keys?.[settingsProvider] || "");
+        if (settingsProvider && config) setSettingsApiKey(settingsProvider === "llamacpp" ? (config.baseUrls?.llamacpp || (config.provider === "llamacpp" ? config.baseUrl : undefined) || "http://localhost:8080/v1") : (config.keys?.[settingsProvider] || ""));
     }, [settingsProvider, config]);
 
     useEffect(() => {
@@ -3117,7 +3171,9 @@ export default function ChatPage() {
                             timestamp: new Date(),
                             toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
                             generatedTitle: title,
-                            missionTimeline: missionTimelineRef.current,
+                            planSteps: activePlanStepsRef.current || undefined,
+                            planTitle: activePlanTitleRef.current || undefined,
+                        missionTimeline: missionTimelineRef.current,
                         };
                         setLiveToolCalls([]);
                         setStreamingToolCalls([]);
@@ -3190,7 +3246,9 @@ export default function ChatPage() {
                             timestamp: new Date(),
                             toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
                             generatedTitle: title,
-                            missionTimeline: missionTimelineRef.current,
+                            planSteps: activePlanStepsRef.current || undefined,
+                            planTitle: activePlanTitleRef.current || undefined,
+                        missionTimeline: missionTimelineRef.current,
                         };
                         setLiveToolCalls([]);
                         setStreamingToolCalls([]);
@@ -3239,6 +3297,8 @@ export default function ChatPage() {
                         timestamp: new Date(),
                         toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
                         generatedTitle: title,
+                        planSteps: activePlanStepsRef.current || undefined,
+                        planTitle: activePlanTitleRef.current || undefined,
                         missionTimeline: missionTimelineRef.current,
                     };
                     setStreamingContent("");
@@ -3787,6 +3847,7 @@ export default function ChatPage() {
                     conversationId: activeConversationId,
                     assistantMessageId: assistantMessageIdRef.current,
                     operatorMode: pursueGoalMode,
+                    reasoningEffort: currentModelCapabilities.reasoning ? reasoningEffort : undefined,
                 });
             } catch (err: any) {
                 console.error("Stream error:", err);
@@ -3798,7 +3859,7 @@ export default function ChatPage() {
             }
             finally { setIsLoading(false); }
         })();
-    }, [activeConversationId, selectedModel, availableModels, pursueGoalMode, applyLiveToolUpdate]);
+    }, [activeConversationId, selectedModel, availableModels, pursueGoalMode, applyLiveToolUpdate, reasoningEffort, currentModelCapabilities.reasoning]);
 
     const saveConversation = useCallback(async (msgs: Message[], isFullSave: boolean = true) => {
         // Full-snapshot saves of empty lists are not a supported UI flow — bail unconditionally
@@ -3979,14 +4040,22 @@ export default function ChatPage() {
                     feedback_type: type,
                     reason,
                     custom_reason: customReason,
-                    context_data: contextMessages
+                    context_data: contextMessages,
+                    model: {
+                        id: selectedModel,
+                        name: currentModel.name,
+                    },
+                    provider: {
+                        name: currentModel.provider,
+                        type: currentModel.providerType,
+                    },
                 })
             });
             if (!reqRes.ok) throw new Error('Failed to submit feedback');
         } catch (err) {
             console.error('Error submitting feedback:', err);
         }
-    }, [messages, feedbackTargetIndex]);
+    }, [messages, feedbackTargetIndex, selectedModel, currentModel]);
 
 
     const handleSend = useCallback(async (overrideValue?: any, currentMessages?: Message[], skipAddUserMessage?: boolean) => {
@@ -4319,7 +4388,9 @@ export default function ChatPage() {
                                     reasoning_content: streamingThoughtRef.current,
                                     timestamp: new Date(),
                                     toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
-                                    missionTimeline: missionTimelineRef.current,
+                                    planSteps: activePlanStepsRef.current || undefined,
+                            planTitle: activePlanTitleRef.current || undefined,
+                        missionTimeline: missionTimelineRef.current,
                                 };
                                 setMessages(prev => {
                                     // Prevent duplicate message if the last message is identical
@@ -4443,7 +4514,9 @@ export default function ChatPage() {
                             reasoning_content: effectiveThoughtPlan || undefined,
                             timestamp: new Date(),
                             toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
-                            missionTimeline: missionTimelineRef.current,
+                            planSteps: activePlanStepsRef.current || undefined,
+                            planTitle: activePlanTitleRef.current || undefined,
+                        missionTimeline: missionTimelineRef.current,
                         };
                         setMessages(prev => {
                             // Prevent duplicate message if the last message is identical
@@ -4719,7 +4792,9 @@ export default function ChatPage() {
                                 timestamp: new Date(),
                                 toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
                                 stopped: wasStopped,
-                                missionTimeline: missionTimelineRef.current,
+                                planSteps: activePlanStepsRef.current || undefined,
+                            planTitle: activePlanTitleRef.current || undefined,
+                        missionTimeline: missionTimelineRef.current,
                             };
 
                             setStreamingContent("");
@@ -4953,6 +5028,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                     projectPath: folderContexts.length > 0 ? folderContexts[0].path : undefined,
                     assistantMessageId: assistantMessageIdRef.current,
                     operatorMode: pursueGoalMode,
+                    reasoningEffort: currentModelCapabilities.reasoning ? reasoningEffort : undefined,
                 });
             } catch (err) {
                 if (isMessageCommittedRef.current) return;
@@ -5003,7 +5079,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                 setIsLoading(false);
             }
         })();
-    }, [inputValue, attachments, folderContexts, isLoading, messages, saveConversation, selectedModel, availableModels, activeConversationId, checkForPlan, pursueGoalMode, applyLiveToolUpdate]);
+    }, [inputValue, attachments, folderContexts, isLoading, messages, saveConversation, selectedModel, availableModels, activeConversationId, checkForPlan, pursueGoalMode, applyLiveToolUpdate, reasoningEffort, currentModelCapabilities.reasoning]);
 
     const handleSaveEditedMessage = useCallback(async (targetMsg: Message) => {
         const text = editingUserMessageText.trim();
@@ -5459,6 +5535,8 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                             reasoning_content: m.reasoning_content,
                             thinkingDuration: m.thinkingDuration,
                             missionTimeline: m.missionTimeline,
+                            planSteps: m.planSteps || undefined,
+                            planTitle: m.planTitle || undefined,
                             toolCalls: m.toolCalls ? m.toolCalls.map((tc: any) => {
                                 const display = tc.toolName ? resolveToolDisplay(tc.toolName, tc.args) : {};
                                 return {
@@ -5508,7 +5586,6 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
         await loadPromise;
     };
 
-    const currentModel = availableModels.find(m => m.id === selectedModel) || availableModels[0] || { id: "fern", name: "EverFern-1", provider: "EverFern", providerType: "everfern", logo: null };
     const isCloudModel = currentModel.providerType === 'everfern';
     const isCloudUsageOver = isCloudModel && (
         (dailyLimit !== null && dailyUsed !== null && dailyUsed >= dailyLimit) ||
@@ -5567,6 +5644,8 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                 : <model.logo size={14} />)
                                             : <GlobeAltIcon width={14} height={14} className="text-zinc-500" />}
                                         <span style={{ flex: 1, whiteSpace: "normal", wordBreak: "break-word", lineHeight: 1.3 }}>{model.name}</span>
+                                        {getModelCapabilities(model).reasoning && <span title="Supports adjustable reasoning" style={{ fontSize: 9, color: "var(--color-text-tertiary)", border: "1px solid var(--color-border)", borderRadius: 4, padding: "1px 4px" }}>Reasoning</span>}
+                                        {getModelCapabilities(model).imageGeneration && <span title="Supports image generation" style={{ fontSize: 9, color: "var(--color-text-tertiary)", border: "1px solid var(--color-border)", borderRadius: 4, padding: "1px 4px" }}>Images</span>}
                                         {selectedModel === model.id && <CheckSolidIcon width={14} height={14} className="text-indigo-400" />}
                                     </button>
                                 );
@@ -5577,6 +5656,37 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
             </AnimatePresence>
         </div>
     );
+
+    const renderReasoningSelector = () => {
+        if (!currentModelCapabilities.reasoning) return null;
+        const labels: Record<ReasoningEffort, string> = { low: 'Low', medium: 'Medium', high: 'High' };
+        return (
+            <div style={{ position: 'relative' }}>
+                <button
+                    type="button"
+                    title="Change reasoning effort"
+                    onClick={() => setShowReasoningSelector(open => !open)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 5, height: 36, padding: '0 10px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg-subtle)', color: 'var(--color-text-primary)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
+                >
+                    Reasoning: {labels[reasoningEffort]}
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m6 9 6 6 6-6" /></svg>
+                </button>
+                <AnimatePresence>
+                    {showReasoningSelector && (
+                        <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }}
+                            style={{ position: 'absolute', bottom: 'calc(100% + 8px)', right: 0, width: 180, padding: 6, zIndex: 9999, border: '1px solid var(--color-border)', borderRadius: 10, background: 'var(--color-bg-elevated)' }}>
+                            {(['low', 'medium', 'high'] as ReasoningEffort[]).map(effort => (
+                                <button key={effort} type="button" onClick={() => updateReasoningEffort(effort)}
+                                    style={{ width: '100%', padding: '8px 10px', border: 'none', borderRadius: 7, textAlign: 'left', cursor: 'pointer', color: 'var(--color-text-primary)', background: reasoningEffort === effort ? 'var(--color-bg-selected)' : 'transparent', fontSize: 13 }}>
+                                    {labels[effort]}
+                                </button>
+                            ))}
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            </div>
+        );
+    };
 
     const handleSaveSettings = async (
         newProfileName?: string,
@@ -5619,9 +5729,10 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
 
         if (settingsEngine === "local") {
             updated.provider = settingsProvider || "ollama";
+            if (updated.provider === "llamacpp") updated.apiKey = baseConfig.keys?.llamacpp || "";
             const trimmedKey = settingsApiKey?.trim() || '';
             const isValidHttp = /^https?:\/\//i.test(trimmedKey);
-            updated.baseUrl = isValidHttp ? trimmedKey : (updated.provider === "lmstudio" ? "http://localhost:1234/v1" : "http://localhost:11434");
+            updated.baseUrl = isValidHttp ? trimmedKey : (updated.provider === 'llamacpp' ? 'http://localhost:8080/v1' : updated.provider === "lmstudio" ? "http://localhost:1234/v1" : "http://localhost:11434");
         }
         const defaultVlmModel =
             settingsVlmCloudProvider === 'everfern' ? 'everfern-tars-v1' :
@@ -5648,6 +5759,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
             }
 
             updated.vlm = {
+                enabled: settingsVlmEnabled,
                 engine: "cloud",
                 provider: settingsVlmCloudProvider,
                 model: finalVlmModel,
@@ -5657,6 +5769,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
         } else {
             // Local VLM mode - explicitly save with engine "local"
             updated.vlm = {
+                enabled: settingsVlmEnabled,
                 engine: "local",
                 provider: "ollama",
                 model: "qwen3-vl:2b",
@@ -6113,7 +6226,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                 max={contextTokens.max}
                 modelInfo={modelInfo}
                 estimatedCost={estimatedCost}
-                isLocalModel={currentModel.providerType === 'ollama' || currentModel.providerType === 'lmstudio' || currentModel.providerType === 'local'}
+                isLocalModel={currentModel.providerType === 'ollama' || currentModel.providerType === 'llamacpp' || currentModel.providerType === 'lmstudio' || currentModel.providerType === 'local'}
                 systemTokens={contextTokens.systemTokens}
                 chatTokens={(contextTokens.chatTokens || 0) + currentTokens}
                 inputTokens={contextTokens.inputTokens !== undefined ? contextTokens.inputTokens + currentTokens : undefined}
@@ -6125,6 +6238,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
             />
 
             {renderModelSelector(true)}
+            {renderReasoningSelector()}
 
             <VoiceButton
                 isRecording={isRecording}
@@ -6159,6 +6273,8 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                         timestamp: new Date(),
                         toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
                         stopped: true, // Mark as stopped by user
+                        planSteps: activePlanStepsRef.current || undefined,
+                        planTitle: activePlanTitleRef.current || undefined,
                         missionTimeline: missionTimelineRef.current,
                     };
 
@@ -6505,7 +6621,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
     const onboardingModalNode = (
         <AnimatePresence>
             {showOnboarding && (
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                <DialogSurface label="Assistant dialog" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                     style={{ position: "fixed", inset: 0, zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "var(--color-bg-overlay)", backdropFilter: "blur(16px)" }}>
                     <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}
                         className="glossy"
@@ -6517,7 +6633,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                 </div>
                                 <h2 style={{ fontFamily: "var(--font-serif)", fontSize: 34, fontWeight: 500, margin: "0 0 12px", color: "var(--color-text-primary)", letterSpacing: "-0.02em" }}>Welcome to EverFern</h2>
                                 <p style={{ fontSize: 16, color: "var(--color-text-tertiary)", marginBottom: 32, lineHeight: 1.5 }}>Let's get started. How should your intelligence companion address you?</p>
-                                <input type="text" placeholder="Your name..." value={onboardingName} onChange={(e) => setOnboardingName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleNextFromName()}
+                                <input aria-label="Your name..." type="text" placeholder="Your name..." value={onboardingName} onChange={(e) => setOnboardingName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleNextFromName()}
                                     style={{ width: "100%", padding: "18px 24px", backgroundColor: "var(--color-bg-subtle)", border: "1px solid var(--color-border)", borderRadius: 18, color: "var(--color-text-primary)", fontSize: 16, outline: "none", boxSizing: "border-box", marginBottom: 24, textAlign: "center", transition: "all 0.2s", fontFamily: "var(--font-sans)" }}
                                     onFocus={e => { e.target.style.borderColor = "var(--color-border-focus)"; e.target.style.backgroundColor = "var(--color-bg-surface)"; }}
                                     onBlur={e => { e.target.style.borderColor = "var(--color-border)"; e.target.style.backgroundColor = "var(--color-bg-subtle)"; }}
@@ -6604,7 +6720,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                             </motion.div>
                         )}
                     </motion.div>
-                </motion.div>
+                </DialogSurface>
             )}
         </AnimatePresence>
     );
@@ -6628,6 +6744,8 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                     setSettingsCustomModel={setSettingsCustomModel}
                     settingsShowuiUrl={settingsShowuiUrl}
                     setSettingsShowuiUrl={setSettingsShowuiUrl}
+                    settingsVlmEnabled={settingsVlmEnabled}
+                    setSettingsVlmEnabled={setSettingsVlmEnabled}
                     settingsVlmMode={settingsVlmMode}
                     setSettingsVlmMode={setSettingsVlmMode}
                     settingsVlmCloudProvider={settingsVlmCloudProvider}
@@ -7199,7 +7317,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                 const runningTool = liveToolCalls.find(t => t.status === 'running');
                 let actionText = 'Executing tasks...';
                 if (runningTool) {
-                    actionText = runningTool.label || `Running ${runningTool.toolName}...`;
+                    actionText = runningTool.label || `Running ${normalizeToolName(runningTool.toolName)}...`;
                 } else if (streamingThought) {
                     actionText = streamingThought;
                 }
@@ -7243,6 +7361,14 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
             )}
 
             <div style={{ height: "100vh", backgroundColor: "var(--color-bg-base)", color: "var(--color-text-primary)", fontFamily: "var(--font-sans)", display: "flex", overflow: "hidden" }}>
+                {projectToDelete && <ConfirmDialog title={`Delete ${projectToDelete.name}?`} description="This removes the project from EverFern. Files on your computer are kept." onClose={() => setProjectToDelete(null)} onConfirm={async () => {
+                    const api = (window as any).electronAPI?.projects;
+                    if (!api?.delete) throw new Error('Project management is unavailable in this build.');
+                    const result = await api.delete(projectToDelete.id);
+                    if (result?.success === false) throw new Error(result.error || 'Couldn’t delete this project.');
+                    setFolderContexts([]); setContextItems([]); setShowProjectsPage(true);
+                    setProjects(await api.list() || []);
+                }} />}
                 <PermissionDialog />
                 <ArtifactsPanel isOpen={showArtifacts} onClose={() => { setShowArtifacts(false); setSelectedArtifactName(null); }} activeChatId={activeConversationId} selectedFileName={selectedArtifactName} projectPath={folderContexts[0]?.path} />
                 <FileViewerModal
@@ -7297,20 +7423,47 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                     style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", backgroundColor: "var(--color-bg-base)", position: "relative" }}
                 >
                     {/* Header */}
-                    <header style={{ height: 52, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", WebkitAppRegion: "drag" } as any}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 16, WebkitAppRegion: "no-drag" } as any}>
+                    <header style={{ height: 66, display: "flex", alignItems: "center", gap: 10, padding: "10px 14px 8px", WebkitAppRegion: "drag", background: "transparent" } as any}>
+                        <div style={{ ...RIBBON_SEGMENT, padding: "7px 14px", gap: 10, minWidth: 0 }}>
+                            <span
+                                aria-hidden
+                                style={{
+                                    width: 22, height: 22, borderRadius: 999, flexShrink: 0,
+                                    background: "conic-gradient(from 210deg, #34d399, #60a5fa, #a78bfa, #34d399)",
+                                    boxShadow: "0 0 18px rgba(96,165,250,0.45), inset 0 1px 0 rgba(255,255,255,0.5)",
+                                }}
+                            />
+                            <div style={{ display: "flex", flexDirection: "column", minWidth: 0, lineHeight: 1.15 }}>
+                                <span style={{ fontSize: 12.5, fontWeight: 650, letterSpacing: "0.01em", color: "var(--color-text-primary)" }}>EverFern</span>
+                                <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 240 }}>
+                                    {(messages.find(m => m.generatedTitle)?.generatedTitle) || (messages.find(m => m.role === "user" && typeof m.content === "string")?.content?.replace(/\s+/g, " ").trim().slice(0, 48)) || "New task"}
+                                </span>
+                            </div>
+                        </div>
+                        <div style={{ ...RIBBON_SEGMENT, padding: "7px 14px" }}>
+                            <span
+                                aria-hidden
+                                style={{
+                                    width: 7, height: 7, borderRadius: 999, flexShrink: 0,
+                                    background: isLoading ? "#f59e0b" : executionPlan ? "#3b82f6" : "#22c55e",
+                                    boxShadow: `0 0 10px ${isLoading ? "#f59e0b" : executionPlan ? "#3b82f6" : "#22c55e"}`,
+                                }}
+                            />
+                            <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>
+                                {isLoading ? (executionPlan ? "Executing plan" : "Working") : (executionPlan ? "Plan ready" : currentModel.name)}
+                            </span>
+                        </div>
+                        <div style={{ flex: 1 }} />
+                        <div style={{ ...RIBBON_SEGMENT, padding: "5px 8px 5px 10px", gap: 6 }}>
                             {executionPlan && !isExecutionPlanPaneOpen && (
                                 <button onClick={() => {
                                     setIsExecutionPlanPaneOpen(true);
                                     if (activeConversationId) localStorage.removeItem(`everfern_exec_pane_closed_${activeConversationId}`);
-                                }} style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-primary)", backgroundColor: "var(--color-bg-subtle)", padding: "6px 12px", borderRadius: 8, border: "1px solid var(--color-border)", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                                }} style={{ fontSize: 11.5, fontWeight: 600, color: "var(--color-text-primary)", backgroundColor: "color-mix(in srgb, var(--color-bg-subtle) 70%, transparent)", padding: "5px 10px", borderRadius: 999, border: "1px solid color-mix(in srgb, var(--color-border) 70%, transparent)", cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                                     View Plan
                                 </button>
                             )}
-
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, WebkitAppRegion: "no-drag" } as any}>
                             <div style={{ position: "relative" }}>
                                 <button
                                     type="button"
@@ -7483,7 +7636,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                 ) : (
                                     <>
                                         <div ref={chatScrollRef} style={{ flex: 1, overflowY: "auto", padding: isToolDetailOpen ? "16px 0 24px" : "16px 0 32px", display: "flex", flexDirection: "column" }}>
-                                    <div style={{ maxWidth: (isEmpty && folderContexts.length > 0) ? (isToolDetailOpen ? 960 : 1200) : (isToolDetailOpen ? 780 : 1000), margin: isEmpty ? "auto" : "0 auto", padding: (isEmpty && folderContexts.length > 0) ? "0 28px" : (isToolDetailOpen ? "0 22px" : "0 32px"), width: "100%", flex: isEmpty ? 1 : undefined, display: "flex", flexDirection: "column", justifyContent: (isEmpty && folderContexts.length === 0) ? "center" : undefined, alignItems: (isEmpty && folderContexts.length === 0) ? "center" : undefined }}>
+                                    <div style={{ maxWidth: (isEmpty && folderContexts.length > 0) ? (isToolDetailOpen ? 960 : 1200) : (isToolDetailOpen ? 780 : 1000), margin: isEmpty ? "auto" : "0 auto", padding: (isEmpty && folderContexts.length > 0) ? "0 28px" : (isToolDetailOpen ? "0 22px" : "0 32px"), width: "100%", flex: isEmpty ? 1 : undefined, display: "flex", flexDirection: "column", justifyContent: (isEmpty && folderContexts.length === 0) ? "center" : undefined, alignItems: "center" }}>
 
                                         {/* ── Empty / Home State ── */}
                                         {isEmpty && (
@@ -7561,23 +7714,9 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                             }
                                                                         };
 
-                                                                        const handleDeleteActiveProject = async () => {
+                                                                        const handleDeleteActiveProject = () => {
                                                                             setShowProjectMenu(false);
-                                                                            if (!activeProjectObj?.id) return;
-                                                                            if (window.confirm(`Are you sure you want to delete project "${folderContexts[0]?.name}"?`)) {
-                                                                                try {
-                                                                                    if ((window as any).electronAPI?.projects?.delete) {
-                                                                                        await (window as any).electronAPI.projects.delete(activeProjectObj.id);
-                                                                                        setFolderContexts([]);
-                                                                                        setContextItems([]);
-                                                                                        setShowProjectsPage(true);
-                                                                                        const list = await (window as any).electronAPI.projects.list();
-                                                                                        setProjects(list || []);
-                                                                                    }
-                                                                                } catch (e) {
-                                                                                    console.error("Failed to delete project:", e);
-                                                                                }
-                                                                            }
+                                                                            if (activeProjectObj?.id) setProjectToDelete({ id: activeProjectObj.id, name: folderContexts[0]?.name || 'this project' });
                                                                         };
 
                                                                         return (
@@ -7845,7 +7984,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                     </div>
                                                                     {isEditingInstructions ? (
                                                                         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
-                                                                            <textarea
+                                                                            <textarea aria-label="Add instructions for this project..."
                                                                                 value={instructionsInput}
                                                                                 onChange={e => setInstructionsInput(e.target.value)}
                                                                                 placeholder="Add instructions for this project..."
@@ -8180,10 +8319,10 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                         exit={{ opacity: 0, y: -20, scale: 0.95 }}
                                                         transition={{ type: "spring", stiffness: 400, damping: 30, delay: Math.min(idx * 0.05, 0.2) }}
                                                         layout={idx === messages.length - 1}
-                                                        style={{ marginBottom: 28, display: "flex", flexDirection: "column", alignItems: msg.role === "user" ? "flex-end" : "flex-start", width: "100%" }}
+                                                        style={{ marginBottom: 28, display: "flex", flexDirection: "column", alignItems: msg.role === "user" ? "center" : "flex-start", width: "100%", maxWidth: 860, marginLeft: "auto", marginRight: "auto" }}
                                                     >
 
-                                                        <div id={`user-msg-bubble-${msg.id}`} className={msg.role === "user" ? "glossy-bubble group" : ""} style={{ maxWidth: msg.role === "user" ? (editingUserMessageId === msg.id ? "100%" : "80%") : "100%", width: msg.role === "user" ? (editingUserMessageId === msg.id ? "100%" : "auto") : "100%", padding: msg.role === "user" ? "12px 18px" : "0", borderRadius: msg.role === "user" ? 16 : 0, borderTopRightRadius: msg.role === "user" ? 4 : 0, background: msg.role === "user" ? "var(--color-user-bubble)" : "transparent", border: msg.role === "user" ? "1px solid var(--color-user-bubble-border)" : "none", fontSize: 15, lineHeight: 1.7 }}>
+                                                        <div id={`user-msg-bubble-${msg.id}`} className={msg.role === "user" ? "group user-msg-glass" : ""} style={{ maxWidth: msg.role === "user" ? (editingUserMessageId === msg.id ? "100%" : "min(860px, 94%)") : "100%", width: msg.role === "user" ? (editingUserMessageId === msg.id ? "100%" : "min(860px, 94%)") : "100%", margin: msg.role === "user" ? "0 auto" : undefined, padding: msg.role === "user" ? "16px 20px" : "0", borderRadius: msg.role === "user" ? 16 : 0, borderTopRightRadius: msg.role === "user" ? 16 : 0, fontSize: 15, lineHeight: 1.7, textAlign: msg.role === "user" ? "left" : undefined, display: msg.role === "user" ? "flex" : undefined, flexDirection: msg.role === "user" ? "column" : undefined, alignItems: msg.role === "user" ? "stretch" : undefined, gap: msg.role === "user" ? 8 : undefined }}>
                                                             {msg.role === "user" ? (
                                                                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                                                                     {msg.attachments && msg.attachments.length > 0 && (
@@ -8220,7 +8359,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                                                                                 {isEditingThis ? (
                                                                                     <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%", minWidth: "280px" }}>
-                                                                                        <textarea
+                                                                                        <textarea aria-label="Edit your prompt..."
                                                                                             autoFocus
                                                                                             value={editingUserMessageText}
                                                                                             onChange={(e) => setEditingUserMessageText(e.target.value)}
@@ -8343,6 +8482,11 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                             </div>
                                                                         );
                                                                     })()}
+                                                                    {msg.timestamp && (
+                                                                        <div style={{ alignSelf: "flex-end", fontSize: 11, color: "var(--color-text-tertiary)", lineHeight: 1.2, marginTop: 2, whiteSpace: "nowrap" }}>
+                                                                            {new Date(msg.timestamp).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
+                                                                        </div>
+                                                                    )}
                                                                 </div>
                                                             ) : (
                                                                 <>
@@ -8355,7 +8499,8 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                             displayContent = '';
                                                                         }
                                                                         const { cleanContent: finalContent, followUps } = extractSuggestedFollowUps(displayContent);
-                                                                        const hasContent = finalContent.length > 0;
+                                                                        const visionGroundingError = isVisionGroundingError(finalContent);
+                                                                        const hasContent = finalContent.length > 0 && !visionGroundingError;
                                                                         const hasToolCalls = msg.toolCalls && msg.toolCalls.length > 0;
 
                                                                         return (
@@ -8370,6 +8515,9 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                                         marginBottom: msg.content?.trim() ? "14px" : "0px",
                                                                                     }}
                                                                                 >
+                                                                                    {msg.planSteps && msg.planSteps.length > 0 && (
+                                                                                        <TodoPanel steps={msg.planSteps} title={msg.planTitle || "Task plan"} live={false} />
+                                                                                    )}
                                                                                     <AgentTimeline
                                                                                         key={`timeline-${msg.id}`}
                                                                                         toolCalls={msg.toolCalls || []}
@@ -8392,6 +8540,15 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                                     </div>
                                                                                 ) : null}
                                                                                 {msg.limitReached && <EverFernCloudLimitNotice />}
+                                                                                {(msg.missionTimeline || (msg.toolCalls && msg.toolCalls.length > 0) || (msg.thinkingDuration ?? 0) > 0) && (
+                                                                                    <RunSummaryCard
+                                                                                        status={msg.limitReached ? "error" : msg.stopped ? "stopped" : "finished"}
+                                                                                        durationMs={msg.thinkingDuration}
+                                                                                        summary={finalContent}
+                                                                                        tierLabel={userPlan === "pro" || userPlan === "max" ? "Pro intelligence" : "Lite intelligence"}
+                                                                                        onUpgrade={() => setShowSettings(true)}
+                                                                                    />
+                                                                                )}
                                                                                 {artifacts.map((art, i) => {
                                                                                     const ext = art.path.split('.').pop()?.toLowerCase() || '';
                                                                                     const isPremiumDoc = ext === 'md';
@@ -8546,6 +8703,19 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                     )}
                                                                     <RateLimitContinueButton content={msg.content} onContinue={() => { setInputValue("continue"); const inputArea = document.querySelector('textarea') || document.querySelector('input[type="text"]'); if (inputArea) { (inputArea as any).focus(); } }} />
                                                                     <CloudAuthLoginButton content={toContentString(msg.content)} providerType={currentModel?.providerType} onLogin={() => { setCloudAuthError(false); router.push('/auth'); }} />
+                                                                    <VisionGroundingErrorCard
+                                                                        content={toContentString(msg.content)}
+                                                                        onOpenSettings={() => {
+                                                                            setSettingsInitialSection('vision');
+                                                                            setShowSettings(true);
+                                                                        }}
+                                                                        onDisable={async () => {
+                                                                            const updated = { ...config, vlm: { ...(config?.vlm || {}), enabled: false } };
+                                                                            setSettingsVlmEnabled(false);
+                                                                            setConfig(updated);
+                                                                            await (window as any).electronAPI?.saveConfig?.(updated);
+                                                                        }}
+                                                                    />
                                                                     {idx === messages.length - 1 && activeUserQuestions.length > 0 && isNavisQuestion(activeUserQuestions) && (
                                                                         <div style={{ marginTop: 16, width: '100%', maxWidth: '720px' }}>
                                                                             <UserQuestionForm
@@ -8670,6 +8840,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                             const lastAssistantMsg = messages.length > 0 && messages[messages.length - 1].role === "assistant" ? messages[messages.length - 1] : null;
                                                             const lastAssistantClean = lastAssistantMsg ? extractSuggestedFollowUps(lastAssistantMsg.content || '').cleanContent.trim() : '';
                                                             const currentClean = extractSuggestedFollowUps(textToRender).cleanContent.trim();
+                                                            const activeNarration = [...liveToolCalls].reverse().find(tool => tool.status === 'running' && tool.description?.trim())?.description?.trim();
                                                             
                                                             const isAlreadyInMessages = lastAssistantMsg !== null &&
                                                                 assistantMessageIdRef.current !== null &&
@@ -8679,6 +8850,18 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
 
                                                             return (
                                                                 <>
+                                                                    {activeNarration && (
+                                                                        <p style={{ margin: '0 0 10px', maxWidth: 720, fontSize: 14, lineHeight: 1.55, color: 'var(--color-text-primary)' }}>
+                                                                            {activeNarration}
+                                                                        </p>
+                                                                    )}
+                                                                    {(isLoading || (activePlanSteps && activePlanSteps.length > 0)) && (
+                                                                        <TodoPanel
+                                                                            steps={activePlanSteps || []}
+                                                                            title={activePlanTitle || "Task plan"}
+                                                                            live={isLoading}
+                                                                        />
+                                                                    )}
                                                                     <AgentTimeline
                                                                         key={activeConversationId || 'new'}
                                                                         toolCalls={liveToolCalls}
@@ -8919,7 +9102,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                         {/* Screenshot Zoom Overlay */}
                                         <AnimatePresence>
                                             {zoomedScreenshot && (
-                                                <motion.div
+                                                <DialogSurface label="Assistant dialog"
                                                     initial={{ opacity: 0 }}
                                                     animate={{ opacity: 1 }}
                                                     exit={{ opacity: 0 }}
@@ -8936,7 +9119,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                             <XMarkIcon width={18} height={18} strokeWidth={2.5} /> Close Preview
                                                         </div>
                                                     </motion.div>
-                                                </motion.div>
+                                                </DialogSurface>
                                             )}
                                         </AnimatePresence>
 
@@ -9325,3 +9508,4 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
         </>
     );
 }
+

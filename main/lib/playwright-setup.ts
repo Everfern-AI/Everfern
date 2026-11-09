@@ -104,29 +104,34 @@ function getPlaywrightBin(): { bin: string; args: string[] } {
   return { bin: npx, args: ['playwright', 'install', 'chromium'] };
 }
 
-export function ensurePlaywrightChromium(): void {
-  const exe = findChromiumExecutable();
-  if (exe) {
-    console.log(`[Playwright] Chromium found at: ${exe}`);
-    return;
-  }
-
-  console.log('[Playwright] Chromium executable not found — running `playwright install chromium`...');
-
-  const { bin, args } = getPlaywrightBin();
-
-  // On Windows, .cmd files need to be executed via cmd /c
-  const isWindows = process.platform === 'win32';
-  const finalBin = isWindows && bin.endsWith('.cmd') ? 'cmd' : bin;
-  const finalArgs = isWindows && bin.endsWith('.cmd') ? ['/c', bin, ...args] : args;
-
-  execFile(finalBin, finalArgs, { timeout: 5 * 60 * 1000, shell: true }, (err, stdout, stderr) => {
-    if (err) {
-      console.error('[Playwright] Failed to install Chromium:', err.message);
-      if (stderr) console.error('[Playwright] stderr:', stderr.trim());
+export function ensurePlaywrightChromium(): Promise<void> {
+  return new Promise((resolve) => {
+    const exe = findChromiumExecutable();
+    if (exe) {
+      console.log(`[Playwright] Chromium found at: ${exe}`);
+      resolve();
       return;
     }
-    if (stdout) console.log('[Playwright] install output:', stdout.trim());
-    console.log('[Playwright] Chromium installed successfully.');
+
+    console.log('[Playwright] Chromium executable not found — running `playwright install chromium`...');
+
+    const { bin, args } = getPlaywrightBin();
+
+    // On Windows, .cmd files need to be executed via cmd /c
+    const isWindows = process.platform === 'win32';
+    const finalBin = isWindows && bin.endsWith('.cmd') ? 'cmd' : bin;
+    const finalArgs = isWindows && bin.endsWith('.cmd') ? ['/c', bin, ...args] : args;
+
+    execFile(finalBin, finalArgs, { timeout: 5 * 60 * 1000, shell: true }, (err, stdout, stderr) => {
+      if (err) {
+        console.error('[Playwright] Failed to install Chromium:', err.message);
+        if (stderr) console.error('[Playwright] stderr:', stderr.trim());
+        resolve();
+        return;
+      }
+      if (stdout) console.log('[Playwright] install output:', stdout.trim());
+      console.log('[Playwright] Chromium installed successfully.');
+      resolve();
+    });
   });
 }

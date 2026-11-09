@@ -11,12 +11,31 @@ import type { SubAgentProgressEvent } from '../src/app/chat/types';
 
 ipcRenderer.setMaxListeners(200);
 
+// Export through the Electron bridge release while its encryption keys still work.
+if (typeof window !== 'undefined' && process.versions.electron && !process.env.EVERFERN_SHELL) {
+  window.addEventListener('DOMContentLoaded', () => {
+    const snapshot = () => {
+      try {
+        const storage: Record<string, string> = {};
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key) storage[key] = localStorage.getItem(key) || '';
+        }
+        void ipcRenderer.invoke('system:export-tauri-migration', storage).catch(() => {});
+      } catch { /* Storage may be unavailable while navigating. */ }
+    };
+    snapshot();
+    window.addEventListener('beforeunload', snapshot);
+    window.setInterval(snapshot, 60_000);
+  }, { once: true });
+}
+
 const sentLocalExecutionResponses = new Set<string>();
 const listenersMap = new Map<any, any>();
 
 // ── Type Definitions for Providers ────────────────────────────────
 
-export type ProviderType = 'openai' | 'anthropic' | 'deepseek' | 'minimax' | 'ollama' | 'ollama-cloud' | 'lmstudio' | 'everfern' | 'gemini' | 'nvidia' | 'openrouter';
+export type ProviderType = 'openai' | 'anthropic' | 'deepseek' | 'minimax' | 'ollama' | 'ollama-cloud' | 'lmstudio' | 'llamacpp' | 'everfern' | 'gemini' | 'nvidia' | 'openrouter';
 
 // ── Type Definitions for Local Execution ──────────────────────────
 
@@ -110,6 +129,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     fetchMetadata: (url: string) => ipcRenderer.invoke('system:fetch-metadata', url),
     checkWSL:       () => ipcRenderer.invoke('system:checkWSL'),
     getWSLInfo:     () => ipcRenderer.invoke('system:getWSLInfo'),
+    startVMDesktop: (opts?: { openUrl?: string }) => ipcRenderer.invoke('system:startVMDesktop', opts),
+    openVMBrowser:  (url: string) => ipcRenderer.invoke('system:openVMBrowser', url),
+    stopVMDesktop:  () => ipcRenderer.invoke('system:stopVMDesktop'),
     checkDocker:    () => ipcRenderer.invoke('system:checkDocker'),
     installWSL:     () => ipcRenderer.invoke('system:installWSL'),
     setupDockerUbuntu: () => ipcRenderer.invoke('system:setupDockerUbuntu'),
@@ -206,6 +228,51 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
   },
 
+  // ── Workers (store + each worker's VM workspace) ───────────────
+  workers: {
+    list:     ()                                => ipcRenderer.invoke('workers:list'),
+    save:     (w: any)                          => ipcRenderer.invoke('workers:save', w),
+    delete:   (id: string)                      => ipcRenderer.invoke('workers:delete', id),
+    vmStatus: ()                                => ipcRenderer.invoke('workers:vm-status'),
+    vmExec:   (workerId: string, cmd: string)   => ipcRenderer.invoke('workers:vm-exec', workerId, cmd),
+    vmLs:     (workerId: string, subpath?: string) => ipcRenderer.invoke('workers:vm-ls', workerId, subpath),
+    vmRead:   (workerId: string, path: string)  => ipcRenderer.invoke('workers:vm-read', workerId, path),
+    sheetLoad: (workerId: string)               => ipcRenderer.invoke('sheets:load', workerId),
+    sheetSave: (workerId: string, data: any)    => ipcRenderer.invoke('sheets:save', workerId, data),
+    onSheetCommand: (cb: (cmd: any) => void) => {
+      const handler = (_e: any, cmd: any) => cb(cmd);
+      ipcRenderer.on('worker:sheets', handler);
+      return () => { ipcRenderer.removeListener('worker:sheets', handler); };
+    },
+    onPointer: (cb: (event: any) => void) => {
+      const handler = (_e: any, event: any) => cb(event);
+      ipcRenderer.on('worker:pointer', handler);
+      return () => { ipcRenderer.removeListener('worker:pointer', handler); };
+    },
+    onType: (cb: (event: any) => void) => {
+      const handler = (_e: any, event: any) => cb(event);
+      ipcRenderer.on('worker:type', handler);
+      return () => { ipcRenderer.removeListener('worker:type', handler); };
+    },
+    onDescribe: (cb: (req: any) => void) => {
+      const handler = (_e: any, req: any) => cb(req);
+      ipcRenderer.on('worker:describe', handler);
+      return () => { ipcRenderer.removeListener('worker:describe', handler); };
+    },
+    describeResult: (payload: any) => ipcRenderer.send('worker:describe-result', payload),
+    webviewClick: (wcId: number, kind: string, nx: number, ny: number) => ipcRenderer.send('worker:webview-click', { wcId, kind, nx, ny }),
+    webviewType:  (wcId: number, text: string, submit?: boolean) => ipcRenderer.send('worker:webview-type', { wcId, text, submit }),
+    webviewDescribe: (wcId: number) => ipcRenderer.invoke('worker:webview-describe', { wcId }),
+    browserStateLoad: (scope: string)           => ipcRenderer.invoke('workers:browser-state-load', scope),
+    browserStateSave: (scope: string, id: string, data: string, kind?: string) => ipcRenderer.invoke('workers:browser-state-save', scope, id, data, kind),
+    registerWebview:   (partition: string, app: string, wcId: number) => ipcRenderer.invoke('workers:webview-register', partition, app, wcId),
+    unregisterWebview: (partition: string, app: string, wcId: number) => ipcRenderer.invoke('workers:webview-unregister', partition, app, wcId),
+    registerCloudVm:   (partition: string, app: string, vmId: string, apiUrl: string, token: string) => ipcRenderer.invoke('workers:cloudvm-register', partition, app, vmId, apiUrl, token),
+    registerLocalVm: (partition: string, app: string, url: string) => ipcRenderer.invoke('workers:localvm-register', partition, app, url),
+    unregisterLocalVm: (partition: string, app: string) => ipcRenderer.invoke('workers:localvm-unregister', partition, app),
+    unregisterCloudVm: (partition: string, app: string) => ipcRenderer.invoke('workers:cloudvm-unregister', partition, app),
+  },
+
   // ── ACP (AI Completion Provider) ───────────────────────────────
   acp: {
     listProviders: ()            => ipcRenderer.invoke('acp:list-providers'),
@@ -231,6 +298,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       const handler = (_e: any, data: any) => cb(data);
       ipcRenderer.on('acp:thought', handler);
       return () => { ipcRenderer.removeListener('acp:thought', handler); };
+    },
+    /** Pieces of a chat() call made with a streamId: reply text in `delta`, reasoning in `thought`. */
+    onChatChunk: (cb: (data: { streamId: string; delta?: string; thought?: string }) => void) => {
+      const handler = (_e: any, data: any) => cb(data);
+      ipcRenderer.on('acp:chat-chunk', handler);
+      return () => { ipcRenderer.removeListener('acp:chat-chunk', handler); };
     },
     onModelCallInfo: (cb: (data: { model: string; toolsCount: number }) => void) => {
       const handler = (_e: any, data: any) => cb(data);
@@ -743,6 +816,9 @@ export type ElectronAPI = {
     fetchMetadata: (url: string) => Promise<{ title?: string; description?: string; favicon?: string } | null>;
     checkWSL:       () => Promise<boolean>;
     getWSLInfo:     () => Promise<{ healthy: boolean; osName?: string; uptime?: string }>;
+    startVMDesktop: (opts?: { openUrl?: string }) => Promise<{ success: boolean; url?: string; error?: string }>;
+    openVMBrowser:  (url: string) => Promise<{ success: boolean }>;
+    stopVMDesktop:  () => Promise<{ success: boolean }>;
     checkDocker:    () => Promise<boolean>;
     installWSL:     () => Promise<{ success: boolean; warning?: string; error?: string }>;
     setupDockerUbuntu: () => Promise<{ success: boolean; error?: string }>;
@@ -826,6 +902,7 @@ export type ElectronAPI = {
     getSnapshotContent:   (snapshotId: string) => Promise<{ contentBefore: string; contentAfter: string } | null>;
     onStreamChunk:         (cb: (chunk: { delta: string; done: boolean }) => void) => void;
     onThought:             (cb: (data: { content: string }) => void) => void;
+    onChatChunk:           (cb: (data: { streamId: string; delta?: string; thought?: string }) => void) => () => void;
     onToolStart:           (cb: (record: { toolName: string; toolArgs: Record<string, unknown> }) => void) => void;
     onToolCall:            (cb: (record: any) => void) => void;
     onToolUpdate:          (cb: (data: { toolName: string; toolCallId?: string; update: string }) => void) => void;

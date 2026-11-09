@@ -92,6 +92,25 @@ function extractMetadata(html: string): Record<string, string> {
   return meta;
 }
 
+async function fetchWithCurl(targetUrl: string): Promise<{ text: string; contentType: string } | null> {
+  try {
+    const { execFile } = await import('child_process');
+    const { promisify } = await import('util');
+    const execFileAsync = promisify(execFile);
+    const { stdout } = await execFileAsync('curl.exe', [
+      '-sSL',
+      '-A', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      '--max-time', '20',
+      targetUrl,
+    ], { maxBuffer: 10 * 1024 * 1024 });
+
+    if (!stdout || stdout.trim().length === 0) return null;
+    return { text: stdout, contentType: 'text/html' };
+  } catch {
+    return null;
+  }
+}
+
 // ── Tool Definition ──────────────────────────────────────────────────
 
 export const webFetchTool: AgentTool = {
@@ -118,12 +137,32 @@ export const webFetchTool: AgentTool = {
     emitEvent?: (event: any) => void,
     toolCallId?: string,
   ): Promise<ToolResult> {
-    const rawUrl = String(args['url'] ?? '').trim();
+    const anyArgs = args as any;
+    let rawUrl = '';
+    if (typeof anyArgs === 'string') {
+      rawUrl = anyArgs.trim();
+    } else if (anyArgs && typeof anyArgs === 'object') {
+      rawUrl = String(
+        anyArgs['url'] ??
+        anyArgs['Url'] ??
+        anyArgs['URL'] ??
+        anyArgs['targetUrl'] ??
+        anyArgs['target_url'] ??
+        anyArgs['link'] ??
+        anyArgs['uri'] ??
+        anyArgs['href'] ??
+        anyArgs['endpoint'] ??
+        ''
+      ).trim();
+    }
+
+    // Strip wrapping quotes, markdown brackets, angle brackets or backticks
+    rawUrl = rawUrl.replace(/^["'`<\[]+|["'`>\]]+$/g, '').trim();
 
     if (!rawUrl) {
       return {
         success: false,
-        output: 'Error: URL parameter is missing.',
+        output: 'Error: URL parameter is missing. Provide a valid URL like https://example.com',
         error: 'missing_url',
       };
     }
@@ -147,15 +186,26 @@ export const webFetchTool: AgentTool = {
 
     onUpdate?.(`Fetching ${url}...`);
 
+    let html = '';
+    let contentType = '';
+
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 15000);
+      const timeout = setTimeout(() => controller.abort(), 20000);
 
       const response = await fetch(url, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
           'Accept-Language': 'en-US,en;q=0.9',
+          'Sec-Ch-Ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+          'Sec-Ch-Ua-Mobile': '?0',
+          'Sec-Ch-Ua-Platform': '"Windows"',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+          'Sec-Fetch-User': '?1',
+          'Upgrade-Insecure-Requests': '1',
         },
         signal: controller.signal,
         redirect: 'follow',
@@ -164,22 +214,64 @@ export const webFetchTool: AgentTool = {
       clearTimeout(timeout);
 
       if (!response.ok) {
+        // Fallback to curl if HTTP error (like 403 Forbidden from bot mitigation)
+        const curlRes = await fetchWithCurl(url);
+        if (curlRes && curlRes.text) {
+          html = curlRes.text;
+          contentType = curlRes.contentType;
+        } else {
+          return {
+            success: false,
+            output: `Error: HTTP ${response.status} ${response.statusText} when fetching ${url}`,
+            error: `http_${response.status}`,
+          };
+        }
+      } else {
+        contentType = response.headers.get('content-type') || '';
+        html = await response.text();
+      }
+    } catch (fetchErr) {
+      // Fallback to curl on network error or abort
+      const curlRes = await fetchWithCurl(url);
+      if (curlRes && curlRes.text) {
+        html = curlRes.text;
+        contentType = curlRes.contentType;
+      } else {
+        const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+        if (msg.includes('abort') || msg.includes('timeout')) {
+          return {
+            success: false,
+            output: `Error: Request to ${url} timed out after 20 seconds.`,
+            error: 'timeout',
+          };
+        }
         return {
           success: false,
-          output: `Error: HTTP ${response.status} ${response.statusText} when fetching ${url}`,
-          error: `http_${response.status}`,
+          output: `Error fetching ${url}: ${msg}`,
+          error: msg,
         };
       }
-
-      const contentType = response.headers.get('content-type') || '';
-      const html = await response.text();
+    }
 
       // Extract metadata
       const title = extractTitle(html);
       const metadata = extractMetadata(html);
 
-      // Convert to text
-      let text = htmlToText(html);
+      // Convert to text (or format JSON)
+      let text = '';
+      const isJson = Boolean(contentType && contentType.includes('application/json')) ||
+        (html.trim().startsWith('{') && html.trim().endsWith('}')) ||
+        (html.trim().startsWith('[') && html.trim().endsWith(']'));
+      if (isJson) {
+        try {
+          const parsed = JSON.parse(html);
+          text = JSON.stringify(parsed, null, 2);
+        } catch {
+          text = html;
+        }
+      } else {
+        text = htmlToText(html);
+      }
 
       // Truncate if too long (max ~100k chars for AI context)
       const maxChars = 100000;
@@ -234,20 +326,5 @@ export const webFetchTool: AgentTool = {
           contentType,
         },
       };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('abort') || msg.includes('timeout')) {
-        return {
-          success: false,
-          output: `Error: Request to ${url} timed out after 15 seconds.`,
-          error: 'timeout',
-        };
-      }
-      return {
-        success: false,
-        output: `Error fetching ${url}: ${msg}`,
-        error: msg,
-      };
-    }
   },
 };

@@ -3220,7 +3220,7 @@ export function createComputerUseTool(
   _ollamaBaseUrl?: string,
   _checkPermission?: () => boolean,
   _requestPermission?: () => Promise<boolean>,
-  vlm?: { engine?: string; provider: string; model: string; baseUrl?: string; apiKey?: string },
+  vlm?: { enabled?: boolean; engine?: string; provider: string; model: string; baseUrl?: string; apiKey?: string },
 ): AgentTool & { abort(): void } {
 
   const home          = process.env.USERPROFILE ?? process.env.HOME ?? "";

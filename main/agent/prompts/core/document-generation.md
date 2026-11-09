@@ -4,7 +4,7 @@
 
 1. **Script-First Architecture**:
    - Write document generation logic into dedicated Python scripts (e.g. `generate_report.py`) instead of running inline multiline terminal commands.
-   - Execute the script in the sandboxed VM environment where `reportlab`, `python-docx`, `python-pptx`, `openpyxl`, `matplotlib`, and `pandas` are pre-installed.
+   - Execute the script in the Linux environment where `reportlab`, `python-docx`, `python-pptx`, `openpyxl`, `matplotlib`, and `pandas` are provisioned. Treat WSL as a shared execution environment, not a security sandbox, and verify dependencies rather than assuming setup succeeded.
 
 2. **Visual & Typography Standards**:
    - Use professional typography hierarchy: Title (24–30pt), Headings (16–20pt), Subheadings (12–14pt), Body (10–11pt with 14pt leading).

@@ -14,6 +14,7 @@ import React, { useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { NarrativeTimeline, Task, ToolPill, ExecutionStatus } from '../../../main/agent/runner/pill-narrative/types';
 import ToolDetailSidePanel from '../tools/ToolDetailSidePanel';
+import { normalizeToolName } from '@/lib/tool-utils';
 
 /**
  * Props for the PillNarrativeTimelineComponent
@@ -314,7 +315,7 @@ function MemoryTimelineCard({
             </span>
             {!isRunning && (
               <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${badgeClass}`}>
-                {pill.toolName}
+                {normalizeToolName(pill.toolName)}
               </span>
             )}
           </div>
@@ -417,7 +418,7 @@ function PillComponent({
     return <MemoryTimelineCard pill={pill} onClick={onClick} />;
   }
 
-  const displayLabel = pill.label || pill.toolName;
+  const displayLabel = pill.label || normalizeToolName(pill.toolName);
   const displayIcon = pill.icon || '⚙️';
 
   return (

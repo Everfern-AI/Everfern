@@ -56,4 +56,8 @@ dist-electron/
 output.txt
 *.stackdump
 tool-res.json
+src-tauri/target/
+src-tauri/gen/
+tauri/staging/
+build/electron-bridge.json
 generate_*.py

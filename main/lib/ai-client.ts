@@ -13,6 +13,7 @@
 
 import { DebugEmitter } from './debug';
 import OpenAI from 'openai';
+import { nativeFetch } from './native-fetch';
 import { CLOUD_MODEL_MAP } from './providers';
 
 // ── Local URL Normalization ─────────────────────────────────────────
@@ -144,7 +145,7 @@ setInterval(() => globalClientPool.cleanup(), 120000);
 
 // ── Types ────────────────────────────────────────────────────────────
 
-export type ProviderType = 'openai' | 'anthropic' | 'deepseek' | 'minimax' | 'ollama' | 'ollama-cloud' | 'lmstudio' | 'everfern' | 'gemini' | 'nvidia' | 'openrouter';
+export type ProviderType = 'openai' | 'anthropic' | 'deepseek' | 'minimax' | 'ollama' | 'ollama-cloud' | 'lmstudio' | 'llamacpp' | 'everfern' | 'gemini' | 'nvidia' | 'openrouter';
 
 export interface AIClientConfig {
   provider: ProviderType;
@@ -158,6 +159,7 @@ export interface AIClientConfig {
   ollamaNumCtx?: number;
   /** Decoupled Vision AI configuration */
   vlm?: {
+    enabled?: boolean;
     engine: 'online' | 'local' | 'cloud';
     provider: string;
     model: string;
@@ -274,6 +276,7 @@ const DEFAULT_URLS: Record<ProviderType, string> = {
   gemini: 'https://generativelanguage.googleapis.com/v1beta/openai',
   ollama: 'http://127.0.0.1:11434',
   'ollama-cloud': 'https://ollama.com/v1',  // Fixed: was /api, should be /v1
+  llamacpp: 'http://localhost:8080/v1',
   lmstudio: 'http://127.0.0.1:1234/v1',
   nvidia: 'https://integrate.api.nvidia.com/v1',
   openrouter: 'https://openrouter.ai/api/v1',
@@ -288,6 +291,7 @@ const DEFAULT_MODELS: Record<ProviderType, string> = {
   gemini: 'gemini-3.5-flash',
   ollama: 'llama3',
   'ollama-cloud': 'qwen3-vl:235b-cloud',
+  llamacpp: 'local-model',
   lmstudio: 'local-model',
   nvidia: 'meta/llama-3.1-8b-instruct',
   openrouter: 'openai/gpt-5.2',
@@ -545,7 +549,7 @@ export class AIClient {
 
     let finalBaseUrl = config.baseUrl;
     // Clean up stale local baseUrl for cloud/online providers
-    if (config.provider && !['ollama', 'lmstudio'].includes(config.provider)) {
+    if (config.provider && !['ollama', 'lmstudio', 'llamacpp'].includes(config.provider)) {
       if (finalBaseUrl && (finalBaseUrl.includes('localhost') || finalBaseUrl.includes('127.0.0.1'))) {
         finalBaseUrl = undefined;
       }
@@ -558,6 +562,11 @@ export class AIClient {
       if (finalBaseUrl === 'https://ollama.com' || finalBaseUrl === 'https://ollama.com/api') {
         finalBaseUrl = 'https://ollama.com/v1';
       }
+    }
+
+    if (config.provider === 'llamacpp') {
+      finalBaseUrl = finalBaseUrl.trim().replace(/\/+$/, '');
+      if (!finalBaseUrl.endsWith('/v1')) finalBaseUrl += '/v1';
     }
 
     const normalizedModel = config.provider === 'ollama-cloud' && config.model === 'qwen3-vl:235b-instruct-cloud'
@@ -624,12 +633,12 @@ export class AIClient {
 
           console.log(`[AIClient Fetch] Request headers: ${Object.keys(plainHeaders).join(', ')}`);
           if (plainHeaders['Authorization']) {
-            console.log(`[AIClient Fetch] Authorization header value starts with: ${plainHeaders['Authorization'].slice(0, 18)}... (total length: ${plainHeaders['Authorization'].length})`);
+            console.log('[AIClient Fetch] Authorization header present');
           } else {
             console.warn('[AIClient Fetch] WARNING: No Authorization header found!');
           }
 
-          const result = Promise.resolve(fetch(url, safeInit)).then((res: any) => {
+          const result = Promise.resolve(nativeFetch(url, safeInit)).then((res: any) => {
             if (res) {
               if (!res.headers) {
                 res.headers = new Headers();
@@ -695,7 +704,7 @@ export class AIClient {
 
   isLocal(): boolean {
     const provider = this.config.provider;
-    if (provider === 'ollama' || provider === 'lmstudio') {
+    if (provider === 'ollama' || provider === 'lmstudio' || provider === 'llamacpp') {
       return true;
     }
     const baseUrl = this.config.baseUrl || '';
@@ -885,7 +894,7 @@ export class AIClient {
               // Use direct HTTP request to /api/chat/completions for computer use
               const baseUrl = this.config.baseUrl || 'https://api.everfern.app/api';
               const endpoint = baseUrl.endsWith('/api') ? `${baseUrl}/chat/completions` : (baseUrl.endsWith('/') ? `${baseUrl}api/chat/completions` : `${baseUrl}/api/chat/completions`);
-              const response = await fetch(endpoint, {
+              const response = await nativeFetch(endpoint, {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
@@ -1226,8 +1235,8 @@ export class AIClient {
       return [msg];
     });
 
-    // Final Role-Alternation Pass for NVIDIA NIM and Minimax
-    if (this.config.provider === 'nvidia' || this.config.provider === 'minimax') {
+    // Final Role-Alternation Pass for OpenAI-compatible strict providers
+    if (this.config.provider === 'nvidia' || this.config.provider === 'minimax' || this.config.provider === 'everfern' || this.config.provider === 'openrouter' || this.config.provider === 'deepseek' || this.config.provider === 'openai' || this.config.provider === 'ollama-cloud') {
       const finalMessages: any[] = [];
       const seenToolCallIds = new Set<string>();
       let pendingImages: any[] = [];
@@ -1391,11 +1400,15 @@ export class AIClient {
           for (const tc of m.tool_calls) {
             outstandingIds.add(tc.id);
           }
-        } else if (m.role === 'tool' && m.tool_call_id) {
-          if (!outstandingIds.has(m.tool_call_id)) {
-            // This is an orphan tool message with no call in this slice.
-            // Strict NIM usually rejects this. We'll drop it.
-            console.warn(`[AIClient] Dropping orphan tool result (ID: ${m.tool_call_id}) with no preceding call.`);
+        } else if (m.role === 'tool') {
+          if (!m.tool_call_id || !outstandingIds.has(m.tool_call_id)) {
+            // This is an orphan tool message with no call in this slice (e.g. harness_recovery or sliced context).
+            // Convert to system note so strict APIs (MiniMax 2013, OpenAI 400) accept it without failing.
+            console.warn(`[AIClient] Converting orphan tool result (ID: ${m.tool_call_id || 'unknown'}) to system note.`);
+            syncMessages.push({
+              role: 'system',
+              content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
+            });
             continue;
           }
           outstandingIds.delete(m.tool_call_id);
@@ -1432,7 +1445,7 @@ export class AIClient {
       }
     }
 
-    if (this.config.provider === 'minimax') {
+    if (this.config.provider === 'minimax' || this.config.provider === 'everfern') {
       processedMessages = processedMessages.map(m => {
         if (m.tool_call_id) {
           m.tool_call_id = String(m.tool_call_id).replace(/[^a-zA-Z0-9]/g, '');
@@ -1953,7 +1966,7 @@ export class AIClient {
         };
 
         try {
-          const res = await fetch(requestUrl, enhancedOptions);
+          const res = await nativeFetch(requestUrl, enhancedOptions);
           clearTimeout(timeoutId);
 
           if (res.status === 429 || (res.status >= 500 && res.status <= 599)) {
@@ -2044,7 +2057,7 @@ export class AIClient {
 
     // Local providers (LM Studio, everfern) use HuggingFace chat templates which reject
     // conversations ending with an assistant message.
-    const isLocalProvider = this.config.provider === 'lmstudio' || this.config.provider === 'everfern';
+    const isLocalProvider = this.config.provider === 'llamacpp' || this.config.provider === 'lmstudio' || this.config.provider === 'everfern';
     if (isLocalProvider) {
       processedMessages = this._sanitizeForLocalProvider(processedMessages);
     }
@@ -2360,7 +2373,7 @@ export class AIClient {
     let messages = this._mapMessagesForOpenAI(req.messages);
 
     // Local providers use HuggingFace chat templates that reject trailing assistant messages.
-    const isLocalProvider = this.config.provider === 'lmstudio' || this.config.provider === 'everfern';
+    const isLocalProvider = this.config.provider === 'llamacpp' || this.config.provider === 'lmstudio' || this.config.provider === 'everfern';
     if (isLocalProvider) {
       messages = this._sanitizeForLocalProvider(messages);
     }
@@ -2557,7 +2570,7 @@ export class AIClient {
 
   private async _openAICompatListModels(): Promise<string[]> {
     try {
-      const isLocal = this.isLocal() || this.config.provider === 'lmstudio' || this.config.baseUrl.includes('localhost') || this.config.baseUrl.includes('127.0.0.1');
+      const isLocal = this.isLocal() || this.config.provider === 'llamacpp' || this.config.provider === 'lmstudio' || this.config.baseUrl.includes('localhost') || this.config.baseUrl.includes('127.0.0.1');
       const retries = isLocal ? 0 : 2;
       const res = await this._fetchWithRetry(`${normalizeLocalUrl(this.config.baseUrl) ?? this.config.baseUrl}/models`, { headers: this._oaiHeaders }, retries);
       if (!res.ok) return [];
@@ -3509,7 +3522,7 @@ export class AIClient {
 
     try {
       // Route to /api/chat/completions which supports DOM context
-      const response = await fetch(`${apiBaseUrl}/api/chat/completions`, {
+      const response = await nativeFetch(`${apiBaseUrl}/api/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

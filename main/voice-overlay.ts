@@ -29,10 +29,14 @@ export class VoiceOverlayManager {
   private startListeningTimeout: NodeJS.Timeout | null = null;
 
   constructor() {
-    console.log('[VoiceOverlay] Initializing manager...');
-    this.initOverlayWindow();
-    this.setupHook();
+    console.log('[VoiceOverlay] Initializing manager (overlay window is created lazily)...');
     this.setupIpc();
+    this.setupHook();
+  }
+
+  private ensureWindow(): void {
+    if (this.overlayWindow && !this.overlayWindow.isDestroyed()) return;
+    this.initOverlayWindow();
   }
 
   private setupIpc() {
@@ -75,6 +79,7 @@ export class VoiceOverlayManager {
           }, 500);
         }
       } else {
+        this.ensureWindow();
         if (stateStr === 'listening') {
           this.isListening = true;
         } else {
@@ -193,6 +198,9 @@ export class VoiceOverlayManager {
       }
 
       this.overlayWindow.setIgnoreMouseEvents(true);
+      this.overlayWindow.on('closed', () => {
+        this.overlayWindow = null;
+      });
       console.log('[VoiceOverlay] Window initialized.');
     } catch (err) {
       console.error('[VoiceOverlay] Critical error initializing window:', err);
@@ -257,6 +265,7 @@ export class VoiceOverlayManager {
           if (!this.isListening) {
             console.log('[VoiceOverlay] Starting listening state...');
             this.isListening = true;
+            this.ensureWindow();
 
             if (this.overlayWindow && !this.overlayWindow.isDestroyed()) {
               this.overlayWindow.showInactive();

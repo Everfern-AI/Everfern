@@ -18,6 +18,7 @@ import type { AIClient } from '../../../lib/ai-client';
 import { setAgentContext, clearAgentContext } from '../../tools/pi-tools';
 import { redirectComputerUseCallsToNavis } from '../tool-routing';
 import { syncTaskPlan } from '../task-plan-helper';
+import { appendRunFinding } from '../run-findings';
 import {
   createHarnessConfig,
   preExecutionCheck,
@@ -91,24 +92,13 @@ function isCommandComplete(output: string): boolean {
          output.includes('Status: DONE') || output.includes('Exit code:');
 }
 
-async function recordFinding(toolName: string, args: any, result: any, workspaceDir: string, toolCallId?: string) {
+async function recordFinding(toolName: string, args: any, result: any, workspaceDir: string, toolCallId?: string, runner?: any) {
   try {
     if (!result?.success) return;
     const outputText = String(result?.output || '');
     if (outputText.startsWith('Unable to reach VLM') || outputText.toLowerCase().includes('econnrefused')) return;
 
     const findingsDir = path.join(os.homedir(), '.everfern');
-    try {
-      await fsPromises.mkdir(findingsDir, { recursive: true });
-    } catch {}
-    const findingsPath = path.join(findingsDir, 'findings.md');
-    let findingsContent = '';
-    
-    try {
-      findingsContent = await fsPromises.readFile(findingsPath, 'utf-8');
-    } catch {
-      findingsContent = `# Project Research Findings\n\n`;
-    }
 
     const dateStr = new Date().toISOString().split('T')[0];
     let sectionHeader = ``;
@@ -139,9 +129,8 @@ async function recordFinding(toolName: string, args: any, result: any, workspace
     }
 
     if (sectionHeader) {
-      findingsContent += `\n${sectionHeader}\n${sectionBody}\n`;
-      await fsPromises.writeFile(findingsPath, findingsContent, 'utf-8');
-      console.log(`[Findings] Updated findings.md with entry for ${toolName}`);
+      appendRunFinding(runner, `${sectionHeader}\n${sectionBody}`);
+      console.log(`[Findings] Recorded this run's finding for ${toolName}`);
 
       if (toolCallId) {
         try {
@@ -268,13 +257,36 @@ export const createExecuteToolsNode = (
         const stepId = `${rollbackTaskId}:${tool.name}:${tool.id}`;
         const preCheck = preExecutionCheck(stepId, tool.name, tool.args);
         if (!preCheck.shouldProceed && preCheck.recoveryAction) {
+          const reason = preCheck.recoveryAction.message || preCheck.recoveryAction.reason || 'Blocked by harness security or recovery policy';
           harnessRecoveryActions.push({
             toolName: tool.name,
             stepId,
             recoveryAction: preCheck.recoveryAction,
             blocked: true
           });
-          console.log(`[Harness] ⛔ Blocked ${tool.name}: ${preCheck.recoveryAction.reason}`);
+          console.log(`[Harness] ⛔ Blocked ${tool.name}: ${reason}`);
+
+          // Emit a valid tool response for this blocked tool so LLM tool call has matching response
+          newMessages.push({
+            role: 'tool',
+            tool_call_id: tool.id,
+            tool_name: tool.name,
+            name: tool.name,
+            content: `[Harness ⛔ BLOCKED] ${reason}`
+          });
+
+          newRecords.push({
+            toolName: tool.name,
+            args: tool.args,
+            result: {
+              success: false,
+              output: `[Harness ⛔ BLOCKED] ${reason}`,
+              error: 'blocked_by_harness'
+            },
+            id: tool.id,
+            timestamp: new Date().toISOString()
+          });
+
           continue;
         }
         validatedGroup.push(tool);
@@ -315,7 +327,7 @@ export const createExecuteToolsNode = (
         // Record findings for research/browser/file tools (awaited to ensure availability to the agent and prevent data loss)
         const workspaceDir = runner.workspaceDir || path.join(os.homedir(), '.everfern');
         if (rec.result?.success && ['web_search', 'web_fetch', 'read', 'write', 'edit', 'computer_use'].includes(rec.toolName)) {
-          await recordFinding(rec.toolName, rec.args, rec.result, workspaceDir, rec.id);
+          await recordFinding(rec.toolName, rec.args, rec.result, workspaceDir, rec.id, runner);
         }
 
         // ── Harness Post-Execution ────────────────────────────────────
@@ -396,10 +408,7 @@ export const createExecuteToolsNode = (
               const content = `[Harness Rollback] Rolled back to phase "${targetPhase}": ${rollbackResult.stepsRolledBack} steps undone, ${rollbackResult.filesRestored} files restored.`;
               console.log(content);
               newMessages.push({
-                role: 'tool',
-                tool_call_id: 'harness_rollback',
-                tool_name: 'harness_rollback',
-                name: 'harness_rollback',
+                role: 'system',
                 content
               });
             }
@@ -410,10 +419,7 @@ export const createExecuteToolsNode = (
               const content = `[Harness Rollback] Rolled back ${rollbackResult.stepsRolledBack} steps: ${rollbackResult.filesRestored} files restored.`;
               console.log(content);
               newMessages.push({
-                role: 'tool',
-                tool_call_id: 'harness_rollback',
-                tool_name: 'harness_rollback',
-                name: 'harness_rollback',
+                role: 'system',
                 content
               });
             }
@@ -463,10 +469,7 @@ export const createExecuteToolsNode = (
         return `[Harness] ${prefix}: ${a.toolName} — ${a.recoveryAction.message}`;
       }).join('\n');
       newMessages.push({
-        role: 'tool',
-        tool_call_id: 'harness_recovery',
-        tool_name: 'harness_recovery',
-        name: 'harness_recovery',
+        role: 'system',
         content: recoverySummary
       });
     }

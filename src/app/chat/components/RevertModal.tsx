@@ -1,3 +1,4 @@
+import { useDialogFocus } from "@/lib/use-dialog-focus";
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -90,6 +91,7 @@ function truncatePath(p: string, maxLen = 60): string {
 }
 
 export default function RevertModal({ isOpen, onClose, onConfirm, conversationId, targetTimestamp }: RevertModalProps) {
+    const dialogRef = useDialogFocus<HTMLDivElement>(isOpen, onClose);
     const [preview, setPreview] = useState<RollbackPreview | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -187,7 +189,7 @@ export default function RevertModal({ isOpen, onClose, onConfirm, conversationId
                 zIndex: 1000,
                 padding: '20px'
             }}>
-                <motion.div
+                <motion.div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Revert changes"
                     initial={{ opacity: 0, scale: 0.95, y: 20 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95, y: 20 }}

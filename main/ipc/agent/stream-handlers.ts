@@ -28,6 +28,7 @@ function loadConfigSync() {
 function normalizeRequestedModel(providerType?: string, model?: string): string | undefined {
   if (!model) return model;
   if (providerType === 'ollama' && model.startsWith('ollama:')) return model.slice('ollama:'.length);
+  if (providerType === 'llamacpp' && model.startsWith('llamacpp:')) return model.slice('llamacpp:'.length);
   if (providerType === 'lmstudio' && model.startsWith('lmstudio:')) return model.slice('lmstudio:'.length);
   return model;
 }
@@ -62,11 +63,13 @@ export function registerStreamHandlers(): void {
     return { success: true };
   });
 
-  ipcMain.handle('acp:chat', async (_event, request: {
+  ipcMain.handle('acp:chat', async (event, request: {
     messages: any[],
     model?: string,
     providerType?: string,
-    conversationId?: string
+    conversationId?: string,
+    /** Set to stream this call on 'acp:chat-chunk' as {streamId, delta?, thought?}. */
+    streamId?: string
   }) => {
     let client = acpManager.getClient();
     const config = loadConfigSync();
@@ -82,6 +85,7 @@ export function registerStreamHandlers(): void {
           apiKey,
           vlm: (config?.vlm || undefined) as any,
           keys: config?.keys,
+          ...(request.providerType === 'llamacpp' && { baseUrl: config?.baseUrls?.llamacpp || (config?.provider === 'llamacpp' ? config.baseUrl : undefined) }),
         });
       } else if (requestedModel) {
         client.setModel(requestedModel);
@@ -90,10 +94,29 @@ export function registerStreamHandlers(): void {
 
     if (!client) return { error: 'No AI provider configured' };
 
+    // Streamed calls split the model's reasoning (sent between <think> and </think>) from its reply.
+    const streamId = request.streamId;
+    let inThink = false;
+    const onStreamChunk = streamId ? (chunk: string) => {
+      let rest = chunk;
+      while (rest) {
+        const tag = inThink ? '</think>' : '<think>';
+        const at = rest.indexOf(tag);
+        const piece = at < 0 ? rest : rest.slice(0, at);
+        if (piece) {
+          try { event.sender.send('acp:chat-chunk', inThink ? { streamId, thought: piece } : { streamId, delta: piece }); } catch { /* window closed */ }
+        }
+        if (at < 0) break;
+        inThink = !inThink;
+        rest = rest.slice(at + tag.length);
+      }
+    } : undefined;
+
     try {
       const response = await client.chat({
         messages: request.messages,
         model: requestedModel,
+        ...(onStreamChunk && { onStreamChunk }),
       });
       return { success: true, response };
     } catch (error) {
@@ -111,7 +134,9 @@ export function registerStreamHandlers(): void {
     apiKey?: string,
     assistantMessageId?: string,
     operatorMode?: boolean,
-    reasoningEffort?: string
+    reasoningEffort?: string,
+    /** Extra system instructions on top of the base prompt (a worker's brief). */
+    systemPromptAppend?: string
   }) => {
     (globalThis as any).lastChatMessages = request.messages;
     const streamSender = event.sender;
@@ -124,7 +149,9 @@ export function registerStreamHandlers(): void {
       const currentProvider = activeConfigForRequest?.provider;
       if (request.providerType !== currentProvider || !client) {
         const apiKey = config?.keys?.[request.providerType] || request.apiKey || '';
-        const baseUrl = request.providerType === 'lmstudio'
+        const baseUrl = request.providerType === 'llamacpp'
+          ? (config?.baseUrls?.llamacpp || (config?.provider === 'llamacpp' ? config.baseUrl : undefined) || 'http://localhost:8080/v1')
+          : request.providerType === 'lmstudio'
           ? (config?.lmstudioBaseUrl || config?.baseUrls?.lmstudio || 'http://localhost:1234/v1')
           : request.providerType === 'ollama'
             ? (config?.ollamaBaseUrl || config?.baseUrls?.ollama || 'http://localhost:11434')
@@ -334,7 +361,8 @@ export function registerStreamHandlers(): void {
         }
       };
 
-      for await (const streamEvent of runner.runStream(userInput, history, requestedModel, request.conversationId, undefined, request.projectPath || request.projectId, false, request.assistantMessageId, false, !!request.operatorMode, request.reasoningEffort)) {
+      for await (const streamEvent of runner.runStream(userInput, history, requestedModel, request.conversationId, undefined, request.projectPath || request.projectId, false, request.assistantMessageId, false, !!request.operatorMode, request.reasoningEffort,
+        typeof request.systemPromptAppend === 'string' ? request.systemPromptAppend.slice(0, 40000) : undefined)) {
         (globalThis as any).lastStreamEvent = streamEvent;
         if (globalAbortManager.streamAborted) {
           flushBuffers();
@@ -409,6 +437,7 @@ export function registerStreamHandlers(): void {
             toolName: (streamEvent as any).toolName,
             toolCallId: (streamEvent as any).toolCallId,
             update: (streamEvent as any).update,
+            file: (streamEvent as any).file,
           });
         } else if (streamEvent.type === 'tool_call_start') {
           safeSend('acp:tool-call-start', { index: streamEvent.index, toolName: streamEvent.toolName });

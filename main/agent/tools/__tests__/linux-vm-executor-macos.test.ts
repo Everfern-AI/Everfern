@@ -68,10 +68,10 @@ describe('linux-vm-executor macOS support', () => {
       // For now, we document the expected behavior
       const expectedDockerCommands = [
         'docker info', // Check if Docker is running
-        'docker ps -a --filter name=everfern-ubuntu --format "{{.Names}}"', // Check if container exists
-        'docker run -d --name everfern-ubuntu -v /Users:/host/Users ubuntu:latest tail -f /dev/null', // Create container
-        'docker exec everfern-ubuntu apt-get update', // Install basic tools
-        'docker exec everfern-ubuntu apt-get install -y curl wget git python3 python3-pip nodejs npm'
+        'docker ps -a --filter name=everfern-alpine --format "{{.Names}}"', // Check if container exists
+        'docker run -d --name everfern-alpine -v /Users:/host/Users alpine:latest tail -f /dev/null', // Create container
+        'docker exec -u root everfern-alpine /bin/sh -c "apk update"', // Provision with apk
+        'docker exec -u root everfern-alpine /bin/sh -c "apk add bash python3 py3-pip nodejs npm ..."'
       ];
 
       // In a real test environment, these commands would be executed
@@ -80,8 +80,8 @@ describe('linux-vm-executor macOS support', () => {
 
     it('should handle container startup when stopped', async () => {
       // This test would verify container startup behavior
-      const expectedStartupCommand = 'docker start everfern-ubuntu';
-      expect(expectedStartupCommand).toBe('docker start everfern-ubuntu');
+      const expectedStartupCommand = 'docker start everfern-alpine';
+      expect(expectedStartupCommand).toBe('docker start everfern-alpine');
     });
 
     it('should handle Docker unavailability gracefully', async () => {

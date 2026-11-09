@@ -5,6 +5,9 @@ import { registerOllamaAudioHandlers, getOllamaBinary, launchNativeTerminalComma
 import { registerDispatchHandlers } from './dispatch-handlers';
 import { registerUpdateHandlers } from './update-handlers';
 import { registerWindowFsHandlers } from './window-fs-handlers';
+import { registerWorkerHandlers } from './worker-handlers';
+import { registerSheetHandlers } from './sheet-handlers';
+import { registerMigrationHandlers } from './migration-handlers';
 
 export {
   KNOWN_MODELS,
@@ -25,4 +28,7 @@ export function registerSystemHandlers(): void {
   registerDispatchHandlers();
   registerUpdateHandlers();
   registerWindowFsHandlers();
+  registerWorkerHandlers();
+  registerSheetHandlers();
+  registerMigrationHandlers();
 }

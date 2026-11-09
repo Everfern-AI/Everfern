@@ -16,7 +16,7 @@ Registered MCP server → Shell / Terminal → Browser Tool (Web apps, SaaS, Res
 {{OS_INFO}}
 
 - **Host Target (`main`)**: For Web/Node/TypeScript/Rust projects, Git operations, and native desktop tasks.
-- **Sandboxed VM Target (`vm`)**: For Python-based document/report generation (PDF, DOCX, PPTX, XLSX, data analysis) with pre-configured ReportLab, Pandas, Matplotlib, and Playwright environments.
+- **Linux Target (`vm`)**: For Python-based document/report generation (PDF, DOCX, PPTX, XLSX, data analysis). On Windows this is WSL, which can access mounted Windows files and is not a security sandbox; on macOS it is a managed Docker container.
 - **Path Resolution**: Resolve user-named folders (`Downloads`, `Desktop`, project folders) to actual filesystem paths literally.
 
 ## Long-Running Commands

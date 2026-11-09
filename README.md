@@ -81,7 +81,19 @@ https://github.com/user-attachments/assets/e9bd901e-67fb-4110-8ea6-053730d0be34
 
 ## Bring your own model
 
-Run fully offline with **Ollama** or **LM Studio**, or connect to **OpenAI, Anthropic, DeepSeek, Gemini, OpenRouter, Nvidia NIM, Mistral, Groq**, and more. Switch providers anytime — nothing else changes.
+Run fully offline with **Ollama**, **LM Studio**, or **llama.cpp**, or connect to **OpenAI, Anthropic, DeepSeek, Gemini, OpenRouter, Nvidia NIM, Mistral, Groq**, and more. Switch providers anytime — nothing else changes.
+
+To use llama.cpp, start a server with a GGUF model:
+
+```sh
+llama-server -m /path/to/model.gguf --port 8080 --jinja
+```
+
+Choose **Local → llama.cpp** in setup or Settings, use `http://localhost:8080/v1`
+(or your server's URL), refresh the model list, and select the loaded model.
+No API key is required for the default local server. Tool use depends on the model
+and its chat template; see the [llama.cpp server documentation](https://github.com/ggml-org/llama.cpp/tree/master/tools/server).
+
 
 <br/>
 

@@ -103,7 +103,7 @@ export class ACPManager {
       }
 
       // Clean up stale local baseUrl for cloud/online providers (Main Provider)
-      if (config.provider && !['ollama', 'lmstudio'].includes(config.provider)) {
+      if (config.provider && !['ollama', 'lmstudio', 'llamacpp'].includes(config.provider)) {
         if (config.baseUrl && (config.baseUrl.includes('localhost') || config.baseUrl.includes('127.0.0.1'))) {
           config = { ...config };
           delete config.baseUrl;
@@ -111,7 +111,7 @@ export class ACPManager {
       }
 
       // Clean up stale local baseUrl for cloud/online providers (VLM Provider)
-      if (vlmConfig?.provider && !['ollama', 'lmstudio'].includes(vlmConfig.provider)) {
+      if (vlmConfig?.provider && !['ollama', 'lmstudio', 'llamacpp'].includes(vlmConfig.provider)) {
         if (vlmConfig.baseUrl && (vlmConfig.baseUrl.includes('localhost') || vlmConfig.baseUrl.includes('127.0.0.1'))) {
           vlmConfig = { ...vlmConfig };
           delete vlmConfig.baseUrl;

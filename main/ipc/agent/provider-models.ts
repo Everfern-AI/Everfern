@@ -6,6 +6,7 @@ import { acpManager } from '../../acp/manager';
 import { AgentRunner } from '../../agent/runner/runner';
 import { AIClient } from '../../lib/ai-client';
 import { getAllModelsFlat, FlatModelEntry } from '../../lib/providers';
+import { applyOpenRouterCapabilities, getOpenRouterCatalog } from '../../lib/openrouter-model-capabilities';
 import { hydrateConfigWithIsolatedKeys } from '../../lib/vlm-config';
 
 function loadConfigSync() {
@@ -23,7 +24,7 @@ function loadConfigSync() {
 }
 
 function scopedLocalModelId(provider: string, model: string): string {
-  return provider === 'ollama' || provider === 'lmstudio' ? `${provider}:${model}` : model;
+  return provider === 'ollama' || provider === 'lmstudio' || provider === 'llamacpp' ? `${provider}:${model}` : model;
 }
 
 export function registerProviderModelHandlers(): void {
@@ -89,8 +90,8 @@ export function registerProviderModelHandlers(): void {
 
   ipcMain.handle('acp:list-models', async () => {
     try {
-      const config = acpManager.getActiveConfig() || loadConfigSync();
-      let providerType = config ? config.provider : 'everfern';
+      const config = { ...loadConfigSync(), ...acpManager.getActiveConfig() };
+      let providerType = config.provider || 'everfern';
       if ((providerType as string) === 'google') providerType = 'gemini';
 
       const activeModels = getAllModelsFlat().filter(m => m.providerType === providerType);
@@ -143,7 +144,24 @@ export function registerProviderModelHandlers(): void {
       }
 
       const merged = [...activeModels];
-      for (const om of [...ollamaModels, ...lmstudioModels]) {
+      let llamacppModels: FlatModelEntry[] = [];
+      try {
+        const client = new AIClient({
+          provider: 'llamacpp',
+          baseUrl: (config?.provider === 'llamacpp' ? config.baseUrl : undefined) || (config as any)?.baseUrls?.llamacpp,
+          apiKey: (config as any)?.keys?.llamacpp || (config?.provider === 'llamacpp' ? config.apiKey : undefined),
+        });
+        llamacppModels = (await client.listModels()).map(id => ({
+          id: scopedLocalModelId('llamacpp', id), name: id, provider: 'llama.cpp', providerType: 'llamacpp',
+        }));
+      } catch { /* A local server is optional. */ }
+      // Keep the configured model selectable while its server is temporarily offline.
+      if (providerType === 'llamacpp' && !llamacppModels.length && config.model) {
+        const model = config.model.replace(/^llamacpp:/, '');
+        llamacppModels.push({ id: scopedLocalModelId('llamacpp', model), name: model, provider: 'llama.cpp', providerType: 'llamacpp' });
+      }
+
+      for (const om of [...ollamaModels, ...lmstudioModels, ...llamacppModels]) {
          if (!merged.find(m => m.id === om.id && m.providerType === om.providerType)) merged.push(om);
       }
 
@@ -151,7 +169,8 @@ export function registerProviderModelHandlers(): void {
         merged.push({ id: 'everfern-1', name: 'Fern-1', provider: 'EverFern Cloud', providerType: 'everfern' as any });
       }
 
-      return { success: true, models: merged };
+      const catalog = await getOpenRouterCatalog();
+      return { success: true, models: applyOpenRouterCapabilities(merged, catalog) };
     } catch (error) {
       console.error('[acp:list-models] Error:', error);
       return { success: false, models: [], error: String(error) };

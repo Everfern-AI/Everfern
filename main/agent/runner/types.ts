@@ -119,6 +119,7 @@ export interface AgentRunnerConfig {
   requestPermission?: () => Promise<boolean>;
   /** Decoupled VLM configuration */
   vlm?: {
+    enabled?: boolean;
     engine: 'local' | 'online' | 'cloud';
     provider: string;
     model: string;

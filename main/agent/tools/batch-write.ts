@@ -35,7 +35,7 @@ export const batchWriteTool: AgentTool = {
     required: ['files'],
   },
 
-  async execute(args: Record<string, unknown>, onUpdate?: (msg: string) => void): Promise<ToolResult> {
+  async execute(args: Record<string, unknown>, onUpdate?: (msg: string) => void, emitEvent?: (event: any) => void, toolCallId?: string): Promise<ToolResult> {
     const files = args.files as FileEntry[];
     const root = args.root ? String(args.root) : undefined;
 
@@ -103,9 +103,27 @@ export const batchWriteTool: AgentTool = {
           filePath = path.resolve(filePath);
         }
         await fs.mkdir(path.dirname(filePath), { recursive: true });
+        onUpdate?.(`Creating ${file.path}…`);
+        emitEvent?.({
+          type: 'tool_update', toolName: 'batch_write', toolCallId,
+          update: `Creating ${file.path}…`,
+          file: { path: file.path, status: 'writing', bytes: Buffer.byteLength(file.content, 'utf8') },
+        });
         await fs.writeFile(filePath, file.content, 'utf8');
         results.push(`[${i + 1}/${files.length}] ✓ ${file.path}`);
-        onUpdate?.(`Wrote ${file.path}`);
+        const bytes = Buffer.byteLength(file.content, 'utf8');
+        onUpdate?.(`Created ${file.path} (${bytes.toLocaleString()} bytes)`);
+        emitEvent?.({
+          type: 'tool_update', toolName: 'batch_write', toolCallId,
+          update: `Created ${file.path} (${bytes.toLocaleString()} bytes)`,
+          file: {
+            path: file.path,
+            status: 'complete',
+            bytes,
+            preview: file.content.slice(0, 1_500),
+            truncated: file.content.length > 1_500,
+          },
+        });
 
         // Post-write: track the file operation for rollback
         // Requirements 4.1, 4.2, 4.3: Store snapshots after successful writes

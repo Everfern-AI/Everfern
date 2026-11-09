@@ -41,7 +41,7 @@ SEVERITY GUIDE:
 - high: Could cause significant failures (needs redesign)
 - critical: Could cause complete failure (must redesign)
 - **Mandatory Tool Preference (Navis)**: Ensure that for all web automation, browsing, search, comparing options, booking, or deep research, the plan uses `navis` (or `web_search`) and **never** falls back to `computer_use` (OS automation). Flag it as a **high/critical** severity issue if Vanguard's plan attempts to use `computer_use` for web-related operations, or tries to spawn multiple `navis` instances.
-- **Audit Traveler/Booking Details**: Ensure the plan includes a phase to gather traveler names, dates, or payment details if they are missing from the request context via `ask_user_question`. Flag as **critical** if the plan attempts to use placeholder info or bypasses the HITL form.
+- **Audit Booking Safety**: Ensure the plan gathers only non-sensitive search criteria and preferences via `ask_user_question`, then stops before identity documents, login secrets, payment entry, or final transaction submission. Flag plans that request payment/passport data or complete a transaction as **critical**.
 
 CONCERN TAGS:
 - edge-case: Unusual situations

@@ -17,6 +17,7 @@ import {
   initializeSessionPersistenceManager,
 } from '../../persistence/session-manager';
 import { loadSoul } from '../../personality-manager';
+import { readRunFindings } from '../run-findings';
 import { StreamingThoughtFilter, scrubReasoningTags } from '../../helpers/thinking';
 
 // ── State restoration types ───────────────────────────────────────────
@@ -361,7 +362,7 @@ export async function runAgentStep(
 
     // If a separate VLM provider is configured that is DIFFERENT from the main provider,
     // we should prefer the VLM for grounding tasks.
-    if (vlm?.model && vlm.provider !== mainProvider) {
+    if (vlm?.enabled === true && vlm?.model && vlm.provider !== mainProvider) {
       isVisionNative = false;
     }
 
@@ -370,7 +371,7 @@ export async function runAgentStep(
       state.currentIntent !== 'research' &&
       runner.shouldCaptureScreenshot(lastMsgContent);
 
-    if (iterations === 0 && vlm?.model && shouldUseDesktopVision) {
+    if (iterations === 0 && vlm?.enabled === true && vlm?.model && shouldUseDesktopVision) {
       // If native vision exists, keep main client but capture screenshot
       // If not, switch to VLM client
       if (!isVisionNative) {
@@ -452,27 +453,18 @@ export async function runAgentStep(
       console.warn('[AgentRuntime] Failed to inject SOUL.md:', soulErr);
     }
 
-    // Inject recent findings from findings.md for agent consumption across all specialized agent steps
+    // Inject only THIS run's findings; the global file leaked prior-task research.
     try {
-      const findingsPath = path.join(os.homedir(), '.everfern', 'findings.md');
-      if (fs.existsSync(findingsPath)) {
-        let findingsContent = fs.readFileSync(findingsPath, 'utf-8').trim();
-        if (findingsContent && findingsContent.length > 0) {
-          // Keep only the most recent research findings to avoid token bloat and cross-session contamination
-          if (findingsContent.length > 3000) {
-            findingsContent = '...\n' + findingsContent.slice(-3000);
-          }
-          let systemMsg = normalizedMessages.find(m => m.role === 'system');
-          if (!systemMsg) {
-            systemMsg = { role: 'system', content: '' };
-            normalizedMessages.unshift(systemMsg);
-          }
-          if (typeof systemMsg.content === 'string') {
-            if (!systemMsg.content.includes('RECENT RESEARCH FINDINGS')) {
-              systemMsg.content += `\n\n# RECENT RESEARCH FINDINGS\nBelow are recent research findings from tools (navis, web_search, computer_use):\n${findingsContent}\n`;
-              console.log(`[AgentRuntime] 📄 Injected findings.md context into ${nodeName} system prompt`);
-            }
-          }
+      const findingsContent = readRunFindings(runner);
+      if (findingsContent) {
+        let systemMsg = normalizedMessages.find(m => m.role === 'system');
+        if (!systemMsg) {
+          systemMsg = { role: 'system', content: '' };
+          normalizedMessages.unshift(systemMsg);
+        }
+        if (typeof systemMsg.content === 'string' && !systemMsg.content.includes("THIS RUN'S RESEARCH FINDINGS")) {
+          systemMsg.content += `\n\n# THIS RUN'S RESEARCH FINDINGS\nFindings collected during this task (newest first):\n${findingsContent}\n`;
+          console.log(`[AgentRuntime] Injected this run's findings into ${nodeName} system prompt`);
         }
       }
     } catch (findingsErr) {

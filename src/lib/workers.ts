@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { DEFAULT_APPS } from "./apps";
+import type { WorkerSchedule } from "./worker-schedule";
 
 /**
  * Worker store. Uses `electronAPI.workers` when the main process provides it, and
@@ -10,18 +11,25 @@ import { DEFAULT_APPS } from "./apps";
  */
 
 export type Tier = "lite" | "balanced" | "pro";
+export type Machine = "local" | "cloud";
 export type WorkerStatus = "draft" | "idle" | "running" | "paused";
 
 export type Worker = {
   id: string;
   name: string;
+  folder?: string;
   /** hue for the orb avatar */
   hue: number;
   tier: Tier;
   status: WorkerStatus;
   apps: string[];
   templateId?: string;
+  /** Where the worker's computer runs: the local Alpine VM or an EverFern Cloud VM. */
+  machine?: Machine;
+  /** The EverFern Cloud VM this worker uses when machine is "cloud". */
+  cloudVmId?: string;
   prompt: string;
+  schedule?: WorkerSchedule;
   createdAt: string;
 };
 
@@ -63,10 +71,21 @@ export function useWorkers() {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const list: Worker[] = api()?.list ? await api().list() : readLocal();
-      if (alive) {
-        setWorkers(list);
-        setReady(true);
+      try {
+        let list: Worker[] = api()?.list ? await api().list() : readLocal();
+        // One-time move of workers made in an earlier, browser-only build into the main-process store.
+        if (api()?.save && !list.length && readLocal().length) {
+          list = readLocal().map(worker => worker.status === 'running' ? { ...worker, status: 'paused' as const } : worker);
+          await Promise.all(list.map((w) => api().save(w)));
+          localStorage.removeItem(KEY);
+        }
+        if (alive) {
+          setWorkers(list);
+          setReady(true);
+        }
+      } catch (err) {
+        console.error('[useWorkers] failed', err);
+        if (alive) setReady(true);
       }
     })();
     return () => { alive = false; };

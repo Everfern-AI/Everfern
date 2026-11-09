@@ -12,6 +12,7 @@
  *     └────────── ChatHistoryStore ─────────────┘
  */
 
+import './lib/fetch-tls-fallback';
 import { app, BrowserWindow, ipcMain, dialog, protocol, net, clipboard, Notification, Menu, shell } from 'electron';
 
 // Handle squirrel startup events for Windows
@@ -34,9 +35,7 @@ if (process.platform === 'win32') {
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { acpManager } from './acp/manager';
-import { getComputerOverlayManager } from './computer-overlay';
-import type { ProviderType } from './acp/types';
+import { acpManager } from './acp/manager';import type { ProviderType } from './acp/types';
 import { ChatHistoryStore } from './store/history';
 import { scheduledTasksManager } from './scheduled-tasks';
 import { AgentRunner } from './agent/runner/runner';
@@ -93,6 +92,12 @@ process.on('unhandledRejection', (reason) => {
 const isAutoStartMode = process.argv.includes('--auto-start');
 console.log('[Startup] Auto-start mode:', isAutoStartMode);
 
+// ── Lite / low-memory mode ──────────────────────────────────────────
+// Set EVERFERN_LITE=1 to skip optional background services (scheduler,
+// extension bridge, agent gateway) that are not needed for normal chat use.
+const isLiteMode = process.env.EVERFERN_LITE === '1' || process.env.EVERFERN_LITE === 'true';
+console.log('[Startup] Lite mode:', isLiteMode);
+
 import { globalShortcut } from 'electron';
 import { memorySaveTool } from './agent/tools/memory-save';
 import { dbOps, closeDb } from './lib/db';
@@ -107,10 +112,8 @@ import { CommandRegistry } from './agent/tools/terminal/registry';
 import { initializePromptSync, watchPrompts } from './lib/prompt-sync';
 import { initializeOpenClawConfigs, loadSoul, loadAgents, saveGlobalSoul, saveGlobalAgents } from './agent/personality-manager';
 import { registerProjectsHandlers } from './ipc/projects';
-import { ensurePlaywrightChromium } from './lib/playwright-setup';
 import { ensureWSLSetup, ensureDockerContainer } from './agent/tools/linux-vm-executor';
 import { shutdownMCPTools } from './agent/tools/mcp';
-import { backgroundProcessor } from './agent/learning/background-processor';
 import { initializeUpdater } from './updater';
 import { toolApprovalStore } from './store/tool-approvals';
 
@@ -121,6 +124,17 @@ app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
 // NOTE: disable-application-cache is deprecated and causes grey screen on macOS — removed.
 // Suppress Chromium GPU blocklist — lets the GPU initialise even after a crash.
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
+
+// ── Memory tuning ───────────────────────────────────────────────────
+// Cap the V8 old-space heap so a runaway renderer cannot grow without bound.
+app.commandLine.appendSwitch('js-flags', '--max-old-space-size=1024');
+// Optional software rendering for machines where the GPU process is the
+// dominant memory consumer. Off by default (hardware acceleration is kept).
+if (process.env.EVERFERN_DISABLE_GPU === '1' || process.env.EVERFERN_DISABLE_GPU === 'true') {
+  console.log('[Startup] GPU acceleration disabled (EVERFERN_DISABLE_GPU).');
+  app.disableHardwareAcceleration();
+  app.commandLine.appendSwitch('disable-gpu');
+}
 
 // Clear any stale GPU / network cache directories left by a previous run.
 (function clearStaleCache() {
@@ -199,14 +213,17 @@ Your goal is to be the ultimate workplace companion.
   // Ensure system prompt exists
   ensureSystemPromptExists();
 
-  // Fire-and-forget: ensure WSL has python3 and .everfern/ venv set up at startup
+  // Fire-and-forget: top up the Alpine VM if it exists. Creating it is the user's
+  // choice (onboarding or Settings > Machine), so startup never downloads it.
   if (process.platform === 'win32') {
-    ensureWSLSetup().catch((err: any) =>
+    require('./agent/tools/alpine-vm').isAlpineInstalled()
+      .then((has: boolean) => (has ? ensureWSLSetup() : undefined))
+      .catch((err: any) =>
       console.error('[Startup] WSL setup failed (non-blocking):', err)
     );
   }
 
-  // Fire-and-forget: ensure Docker Ubuntu container is ready on macOS
+  // Fire-and-forget: ensure the Alpine Docker container is ready on macOS
   if (process.platform === 'darwin') {
     ensureDockerContainer().catch((err: any) =>
       console.warn('[Startup] Docker container pre-warm failed (non-blocking — Docker may not be running):', err)
@@ -272,7 +289,7 @@ function createWindow(): void {
 
   mainWindow = new BrowserWindow({
     width: 1400, height: 900,
-    minWidth: 800, minHeight: 600,
+    minWidth: 560, minHeight: 520,
     frame: false,
     icon: appIconPath || (appIcon ?? undefined),
     titleBarStyle: 'hidden',
@@ -283,8 +300,10 @@ function createWindow(): void {
       preload: path.join(__dirname, '../preload/preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      backgroundThrottling: false,
+      backgroundThrottling: true,
       webSecurity: true,
+      // Worker app windows are real <webview> browsers (see will-attach-webview guard below).
+      webviewTag: true,
     },
   });
 
@@ -442,6 +461,31 @@ function createWindow(): void {
     rendererCrashCount = 0;
   });
 
+  // Worker app windows: lock every <webview> down to a plain sandboxed web page.
+  // No preload, no node, http(s) only, and only per-worker persistent partitions.
+  mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) => {
+    delete (webPreferences as any).preload;
+    webPreferences.nodeIntegration = false;
+    webPreferences.contextIsolation = true;
+    webPreferences.sandbox = true;
+    const src = params.src || 'about:blank';
+    const okSrc = src === 'about:blank' || /^https?:\/\//i.test(src);
+    const okPartition = typeof params.partition === 'string' && params.partition.startsWith('persist:worker-');
+    if (!okSrc || !okPartition) {
+      console.warn('[Workers] Blocked webview attach:', src, params.partition);
+      event.preventDefault();
+    }
+  });
+  if (!(global as any).__workerWebviewGuard) (global as any).__workerWebviewGuard = app.on('web-contents-created', (_e, contents) => {
+    if (contents.getType() !== 'webview') return;
+    // Popups (OAuth etc.) open inside the same worker window instead of the user's browser.
+    contents.setWindowOpenHandler(({ url }) => {
+      if (/^https?:\/\//i.test(url)) contents.loadURL(url).catch(() => {});
+      return { action: 'deny' };
+    });
+    contents.on('will-navigate', (ev, url) => { if (!/^(https?:|about:)/i.test(url)) ev.preventDefault(); });
+  });
+
   // Open external links securely in default browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     try {
@@ -570,21 +614,40 @@ import { schedulerService } from './integrations/scheduler-service';
 app.whenReady().then(async () => {
   console.log('[App] App ready, starting initialization...');
 
+  // Cloud VM desktops are served through Daytona's preview proxy, which shows browsers a
+  // "Preview URL Warning" page first. Skip it for those hosts so the desktop loads in the app.
+  try {
+    const { session } = require('electron');
+    session.defaultSession.webRequest.onBeforeSendHeaders(
+      { urls: ['*://*.daytonaproxy01.eu/*', '*://*.daytonaproxy01.net/*', '*://*.proxy.daytona.works/*', '*://*.daytona.work/*', '*://*.daytona.app/*'] },
+      (details: any, callback: any) => callback({ requestHeaders: { ...details.requestHeaders, 'X-Daytona-Skip-Preview-Warning': 'true' } }),
+    );
+  } catch (e) {
+    console.warn('[App] Could not set the cloud VM preview header:', e);
+  }
+
   // Set up macOS application menu
   setupMacOSMenu();
 
-  // Start the scheduler service
-  schedulerService.start();
+  // ── Optional background services ──────────────────────────────────
+  // These listen on localhost and are only needed for scheduled tasks,
+  // the Navis extension, or the remote agent gateway. Skipped in lite mode.
+  if (!isLiteMode) {
+    // Start the scheduler service
+    schedulerService.start();
 
-  // Start the extension bridge server (localhost:4001)
-  bridgeServer.start();
+    // Start the extension bridge server (localhost:4001)
+    bridgeServer.start();
 
-  // Start the Agent Gateway Control Plane server (localhost:4002)
-  try {
-    const { agentGatewayServer } = require('./agent/gateway');
-    agentGatewayServer.start();
-  } catch (gatewayErr) {
-    console.error('[Startup] Failed to start Agent Gateway:', gatewayErr);
+    // Start the Agent Gateway Control Plane server (localhost:4002)
+    try {
+      const { agentGatewayServer } = require('./agent/gateway');
+      agentGatewayServer.start();
+    } catch (gatewayErr) {
+      console.error('[Startup] Failed to start Agent Gateway:', gatewayErr);
+    }
+  } else {
+    console.log('[Startup] Lite mode — skipping scheduler, extension bridge and agent gateway.');
   }
 
   // ── Initialize Prompt Synchronization System ──────────────────────
@@ -592,8 +655,8 @@ app.whenReady().then(async () => {
   initializePromptSync(true); // Force sync to ensure latest prompts are always loaded
   initializeOpenClawConfigs();
 
-  // ── Ensure Playwright Chromium is installed (non-blocking) ─────────
-  ensurePlaywrightChromium();
+  // Playwright Chromium is installed on first browser use (see navis/session.ts)
+  // instead of spawning `playwright install` at every startup.
 
   // Watch for prompt changes in development mode
   if (process.env.NODE_ENV === 'development') {
@@ -784,10 +847,12 @@ Your goal is to be the ultimate workplace companion.
   });
 
   // ── Overlay Managers (must come AFTER protocol handlers) ──────────
-  // Their constructors call loadURL('everfern-app://...') which requires
-  // the custom protocol to already be registered.
+  // The voice manager registers its IPC + global hotkey now, but both
+  // overlay windows are created lazily on first use to save a renderer
+  // process each at startup.
   voiceOverlayManager = new VoiceOverlayManager();
-  getComputerOverlayManager();
+  // The computer overlay singleton is created on demand by the stream
+  // handlers (getComputerOverlayManager()).
 
   // ── Create Main Window ─────────────────────────────────────────────
   createWindow();
@@ -858,14 +923,26 @@ Your goal is to be the ultimate workplace companion.
   }
 
   // ── Initialize Integration Services ─────────────────────────────────
+  // Only boot the Discord/Telegram stack when a bot is actually configured;
+  // otherwise leave it for integration-handlers to initialize on demand.
   try {
-    console.log('[App] Initializing integration services...');
-    await integrationService.initialize();
-    console.log('[App] Integration services initialized successfully');
+    const { loadIntegrationConfig } = require('./ipc/integration-handlers');
+    const integrationConfig = loadIntegrationConfig();
+    const hasConfiguredBot =
+      (integrationConfig.discord?.enabled && !!integrationConfig.discord?.botToken) ||
+      (integrationConfig.telegram?.enabled && !!integrationConfig.telegram?.botToken);
 
-    // Auto-start enabled and connected bots
-    await autoStartEnabledBots();
-    await initializeBotMessageHandler();
+    if (hasConfiguredBot) {
+      console.log('[App] Initializing integration services...');
+      await integrationService.initialize();
+      console.log('[App] Integration services initialized successfully');
+
+      // Auto-start enabled and connected bots
+      await autoStartEnabledBots();
+      await initializeBotMessageHandler();
+    } else {
+      console.log('[App] No bot configured — integration services deferred until needed.');
+    }
   } catch (error) {
     console.error('[App] Failed to initialize integration services:', error);
     // Don't block app startup if integration services fail
@@ -954,9 +1031,12 @@ app.on('before-quit', async (event) => {
   console.log('[App] Stopping extension bridge server...');
   await withShutdownTimeout('Extension bridge', () => bridgeServer.stop());
 
-  // Shutdown background processor
+  // Shutdown background processor (only if it was loaded on demand)
   console.log('[App] Shutting down background processor...');
-  await withShutdownTimeout('Background processor', () => backgroundProcessor.shutdown());
+  await withShutdownTimeout('Background processor', () => {
+    const { backgroundProcessor } = require('./agent/learning/background-processor');
+    return backgroundProcessor.shutdown();
+  });
 
   // Shutdown MCP tools
   console.log('[App] Shutting down MCP tools...');

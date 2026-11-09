@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { translateWindowsPathToLinux, translateMacOSPathToDocker, translateLinuxPathToHost } from '../linux-vm-executor';
+import { decodeWSLOutput, parseWSLDistroList, translateWindowsPathToLinux, translateMacOSPathToDocker, translateLinuxPathToHost } from '../linux-vm-executor';
 
 /**
  * Unit tests for linux-vm-executor module
@@ -18,6 +18,22 @@ describe('linux-vm-executor', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  describe('WSL distribution discovery', () => {
+    it('decodes the UTF-16 output used by Windows wsl.exe', () => {
+      const output = Buffer.from('\uFEFFUbuntu-24.04\r\nDebian\r\n', 'utf16le');
+      expect(parseWSLDistroList(decodeWSLOutput(output))).toEqual(['Ubuntu-24.04', 'Debian']);
+    });
+
+    it('accepts UTF-8 output and excludes Docker internal distributions', () => {
+      const output = Buffer.from('Ubuntu-22.04\nDocker-Desktop\nMy Linux\n', 'utf8');
+      expect(parseWSLDistroList(decodeWSLOutput(output))).toEqual(['Ubuntu-22.04', 'My Linux']);
+    });
+
+    it('normalizes a default-distribution marker without changing its real name', () => {
+      expect(parseWSLDistroList('* Ubuntu-24.04\r\n')).toEqual(['Ubuntu-24.04']);
+    });
   });
   describe('translateWindowsPathToLinux', () => {
     it('should translate C:\\ drive paths to /mnt/c/', () => {
@@ -139,7 +155,7 @@ describe('linux-vm-executor', () => {
   describe('translateLinuxPathToHost', () => {
     it('should translate normal absolute Linux paths to UNC host paths', () => {
       if (process.platform === 'win32') {
-        expect(translateLinuxPathToHost('/everfern/file.txt')).toBe('\\\\wsl.localhost\\Ubuntu\\everfern\\file.txt');
+        expect(translateLinuxPathToHost('/everfern/file.txt')).toBe('\\\\wsl.localhost\\EverFern-Alpine\\everfern\\file.txt');
       }
     });
 

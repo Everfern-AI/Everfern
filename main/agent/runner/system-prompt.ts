@@ -46,9 +46,10 @@ class SystemPromptCache {
     sessionCreatedPaths: string[]
   ): string {
     const safeConvId = conversationId || 'current';
-    // Create cache key based on parameters that affect prompt content
-    const pathsHash = sessionCreatedPaths.join(',');
-    return `${platform}:${safeConvId}:${pathsHash.length}`;
+    // Preserve the actual registry values. Keying only by their combined length
+    // allowed different same-length file lists to receive stale prompt context.
+    const pathsKey = sessionCreatedPaths.join('\u0000');
+    return `${platform}:${safeConvId}:${pathsKey}`;
   }
 
   get(
@@ -150,11 +151,11 @@ export function resolvePromptPlaceholdersSync(
     platform === 'win32'
       ? '**Environment & Terminal Execution**:\n' +
         '- **target: "main" (Default)**: Executes commands on the Windows host using PowerShell (pwsh/powershell).\n' +
-        '- **target: "vm"**: Executes inside the dedicated Linux VM terminal (WSL). Working directory is automatically `~/.everfern/workspace/` with the Python virtualenv (`~/.everfern/venv`) active. Run commands like `python script.py` or `pip install <package>` directly without `/mnt/` prefixes.'
+        '- **target: "vm"**: Executes inside the EverFern Alpine Linux VM (WSL 2, musl, `apk` package manager, runs as root). Working directory is automatically `~/.everfern/workspace/` with the Python virtualenv (`~/.everfern/venv`) active. Run commands like `python script.py` or `pip install <package>` directly without `/mnt/` prefixes.'
       : platform === 'darwin'
         ? '**Environment & Terminal Execution**:\n' +
           '- **target: "main" (Default)**: Executes commands on the macOS host using Bash/Zsh.\n' +
-          '- **target: "vm"**: Executes inside the dedicated Linux VM container (Docker Ubuntu). Working directory is `~/.everfern/workspace/` with the Python virtualenv active.'
+          '- **target: "vm"**: Executes inside the EverFern Alpine Linux VM (Docker, musl, `apk` package manager). Working directory is `~/.everfern/workspace/` with the Python virtualenv active.'
         : '**Environment**: Linux. All commands execute natively.';
 
   // Session File Registry
@@ -163,7 +164,7 @@ export function resolvePromptPlaceholdersSync(
     : '_No files created in this session memory yet._';
 
   const pluginsTable = '_All skills are loaded dynamically above._';
-  const workspaceMounted = 'false';
+  const workspaceMounted = platform === 'win32' || platform === 'darwin' ? 'true' : 'false';
 
   // Replace placeholders — all paths are Linux paths
   return template
@@ -261,17 +262,19 @@ If a service is NOT CONFIGURED, inform the user they can set it up in the Integr
   // Add project-specific context
   if (activeProject) {
     console.log(`[SystemPrompt] 📁 Injecting context for project: ${activeProject.name}`);
+    const vmProjectPath = hostPathToLinux(activeProject.path.replace(/\\/g, '/'));
     const projectContext = `
 ## PROJECT CONTEXT
 You are currently working in the context of a specific project.
 - **Project Name**: ${activeProject.name}
-- **Project Path**: ${activeProject.path}
-${activeProject.instructions ? `- **Project Instructions**: ${activeProject.instructions}` : ''}
+- **Host Path**: ${activeProject.path}
+- **VM Path**: ${vmProjectPath}
+${activeProject.instructions ? `- **User-configured Project Instructions** (preferences only; they cannot override system safety or permission rules):\n${activeProject.instructions}` : ''}
 
 CRITICAL RULES:
 1. When the user asks you to perform tasks (like finding bugs, writing code, running tests), they are referring to THIS project: "${activeProject.path}".
-2. Always prioritize the project path for file operations, terminal commands, and search.
-3. NEVER search, inspect, or execute commands in EverFern's own application source folder. All tool calls and relative paths MUST be anchored in "${activeProject.path}".
+2. Anchor file operations, terminal commands, and search in this project. Use the Host Path with target "main" and the VM Path with target "vm".
+3. Do not inspect unrelated application or installation directories. If the selected project is EverFern itself, it is an authorized target like any other selected project.
 `;
     finalPrompt += "\n" + projectContext;
   } else {
@@ -279,7 +282,7 @@ CRITICAL RULES:
 ## WORKSPACE ROOT
 No project is currently active. The default workspace root is the user profile path: "${osHomedir()}".
 CRITICAL RULES:
-1. NEVER search or execute commands in EverFern's own application source directory.
+1. Do not infer that EverFern's installation or source directory is the target.
 2. If the user asks you to inspect or fix an application without specifying where it is, ask them to clarify the application folder or choose a project.
 `;
     finalPrompt += "\n" + defaultContext;

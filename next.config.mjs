@@ -13,8 +13,10 @@ if (fs.existsSync(path.join(wasmNodejsPath, 'wasm.js'))) {
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  outputFileTracingRoot: __dirname,
   output: "export",
-  distDir: "out",
+  // Keep hot-reload caches separate from the static directory packaged by Tauri.
+  distDir: process.env.NODE_ENV === "development" ? ".next" : "out",
   trailingSlash: true,
   assetPrefix: '/',
   images: {

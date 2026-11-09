@@ -19,12 +19,14 @@ import { Skill, loadSkills, loadSkillsAsync } from './skills-loader';
 import { getSkillsPath } from '../../lib/skills-sync';
 import { lookupCache, saveCache } from '../../lib/cache';
 import { globalSessionManager } from '../../acp/control-plane/manager.core';
-import { getBaseTools } from './tools_manager';
+import { getBaseTools, guardWorkerTools } from './tools_manager';
+import { WORKER_SAFE_TOOLS, WORKER_ONLY_TOOLS } from './worker-tool-policy';
 import { loadPrompt } from '../../lib/prompt-sync';
 import { TelemetryLogger } from '../helpers/telemetry-logger';
 import { stateManager } from './state-manager';
 import { globalAbortManager, AbortError } from './abort-manager';
 import { toolApprovalStore } from '../../store/tool-approvals';
+import { clearRunFindings } from './run-findings';
 
 
 // Tool Imports
@@ -61,6 +63,8 @@ export class AgentRunner {
   public skills: Skill[] = [];
   public completionGateRetries: number = 0;
   public currentConversationId?: string;
+  /** Unique id for this agent run; scopes research findings so tasks never bleed together. */
+  public currentRunId?: string;
   /** Session key of the currently executing sub-agent (set by subagent-spawn.ts for depth tracking). */
   public currentAgentSessionKey?: string;
   /** Truncation metadata from the most recent tool-schema truncation (used by call_model to emit usage stats). */
@@ -135,13 +139,13 @@ export class AgentRunner {
         const piTools = await getPiCodingTools();
         if (!this.tools.find(t => t.name === piTools[0]?.name)) {
           console.log(`[AgentRunner] 🔄 Registering ${piTools.length} Pi coding tools and swarm tools...`);
-          this.tools.push(
+          this.tools.push(...guardWorkerTools([
             ...piTools,
             this.createSpawnAgentTool(),
             this.createSpawnSwarmTool(),
             this.createBroadcastSwarmFactTool(),
             this.createReadSwarmMemoryTool()
-          );
+          ], this));
           console.log(`[AgentRunner] ✅ Pi coding tools and swarm tools registered. Total tools: ${this.tools.length}`);
         }
       } catch (error) {
@@ -643,10 +647,16 @@ export class AgentRunner {
 
   public _buildToolDefinitions(): ToolDefinition[] {
     const toolDefs: ToolDefinition[] = [];
+    const isWorkerRun = String(this.currentConversationId || '').startsWith('worker-');
 
-    console.log(`[ToolDefinitions] Building tool definitions for ${this.tools.length} tools...`);
+    console.log(`[ToolDefinitions] Building tool definitions for ${this.tools.length} tools (${isWorkerRun ? 'worker' : 'chat'})...`);
 
     for (const t of this.tools) {
+      // Hard separation: a worker only sees worker-safe tools; the general
+      // "Ask EverFern" chat never sees the worker's desktop/Sheets tools.
+      if (isWorkerRun ? !WORKER_SAFE_TOOLS.has(t.name) : WORKER_ONLY_TOOLS.has(t.name)) {
+        continue;
+      }
       // Validate that tool has required properties
       if (!t.name || !t.description || !t.parameters) {
         console.warn(`[ToolDefinitions] Skipping tool with missing properties:`, {
@@ -721,6 +731,8 @@ export class AgentRunner {
     isBackground?: boolean,
     operatorMode?: boolean,
     reasoningEffort?: string,
+    /** Added after the system prompt (a worker's brief); it overrides the base prompt where they differ. */
+    systemPromptAppend?: string,
   ): AsyncGenerator<StreamEvent, void, unknown> {
     this.reasoningEffort = reasoningEffort;
     // Reset abort state for new execution
@@ -728,6 +740,10 @@ export class AgentRunner {
 
     const convId = conversationId || crypto.randomUUID();
     this.currentConversationId = convId;
+    // A fresh findings scope per run prevents a different task in the same worker
+    // from inheriting the previous task's Navis/web findings.
+    this.currentRunId = assistantMessageId || `${convId}-${Date.now()}`;
+    clearRunFindings(this);
 
     // UNITY: Ensure only one execution runs at a time for this conversation
     // This prevents clobbering state and "messages being wiped" due to race conditions
@@ -1261,6 +1277,7 @@ export class AgentRunner {
               this.telemetry.updateSpinner('Compiling system messages...');
               const preloadedPrompt = await getSlimSystemPromptAsync(platform, convId, [], this.skills, projectId);
               let promptText = systemPromptOverride || preloadedPrompt;
+              if (systemPromptAppend) promptText += '\n\n' + systemPromptAppend;
               if (this.reasoningEffort === 'ultra-delegate') {
                 promptText += "\n\nCRITICAL SYSTEM INSTRUCTION: You are in ULTRA DELEGATION MODE. You must aggressively delegate sub-tasks to independent specialized sub-agents by calling the `spawn_agent` tool. Break down any complex task into components and spawn sub-agents for them immediately. Do not attempt to execute multi-file edits, complex searches, or large terminal sequences yourself; instead, spawn dedicated sub-agents to handle these tasks in parallel and coordinate their results.";
               }
@@ -1407,6 +1424,10 @@ export class AgentRunner {
             } else if (isRateLimit) {
               const friendly = "You have reached your tier's daily output token limit or API rate limit (429 Too Many Requests). Your quota will reset at midnight, or you can upgrade to Pro / Max for higher limits.";
               eventQueue.push({ type: 'chunk', content: `\n\n⚠️ **API Error (429 Rate Limit Exceeded):** ${friendly}` });
+              missionTracker.fail(friendly);
+            } else if (/maximum context length|context length|context window|too many tokens/i.test(errorMsg)) {
+              const friendly = "The conversation exceeded the model's context window. Older context was trimmed to fit the model — please retry the task.";
+              eventQueue.push({ type: 'chunk', content: `\n\nContext trimmed: ${friendly}` });
               missionTracker.fail(friendly);
             } else if (/recursion\s+limit|recursionLimit|GraphRecursion/i.test(errorMsg)) {
               const friendly = 'The agent stopped because the execution graph repeated too many steps without reaching a completion state. I prevented the runaway loop; narrow the target files or ask me to continue from the latest checkpoint.';

@@ -10,11 +10,14 @@ import * as path from 'path';
 import * as os from 'os';
 import type { AgentTool, ToolResult } from '../../runner/types';
 import { NavisOrchestrator } from './agent/orchestrator';
+import { appendRunFinding } from '../../runner/run-findings';
 import { NavisExtensionOrchestrator } from './agent/extension-orchestrator';
 import { NavisEvent } from './logger';
 import { toolSettingsStore } from '../../../store/tool-settings';
 import { broadcastNavisCompanionProgress, getNavisCompanionStatus, prepareNavisMainProfileExtension } from './companion-extension';
 import { bridgeServer } from '../../../lib/extension-server';
+import { pickWorkerWindow } from './core/webview-registry';
+import { WorkerWindowAdapter } from './core/worker-window-adapter';
 
 import { checkToolPermission } from '../permission-checker';
 
@@ -59,60 +62,31 @@ function buildActionPayload(event: NavisEvent): { type: string; params: Record<s
   }
 }
 
-function writeFindingsFile(task: string, output: string, workspaceDir?: string, toolCallId?: string, isError = false) {
+function writeFindingsFile(task: string, output: string, workspaceDir?: string, toolCallId?: string, isError = false, runner?: any) {
   try {
     const today = new Date();
     const formattedDate = today.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-    
     const cleanTask = task.replace(/\r?\n/g, ' ').trim();
     const taskTitle = cleanTask.length > 80 ? cleanTask.slice(0, 80) + '...' : cleanTask;
-    
     const findingsDir = path.join(os.homedir(), '.everfern');
-    if (!fs.existsSync(findingsDir)) {
-      fs.mkdirSync(findingsDir, { recursive: true });
-    }
-
-    const title = `# Everfern Web Research Findings\n`;
+    if (!fs.existsSync(findingsDir)) fs.mkdirSync(findingsDir, { recursive: true });
     const entryHeader = `## [${formattedDate}] Research: ${taskTitle}`;
-    const entryBody = `* **Full Task**: ${cleanTask}\n* **Agent Status**: ${isError ? 'Failed' : 'Completed'}\n\n### Findings\n${output}\n\n---\n`;
+    const entryBody = `* **Full Task**: ${cleanTask}\n* **Agent Status**: ${isError ? 'Failed' : 'Completed'}\n\n### Findings\n${output}\n`;
 
-    // 1. Update/write the general findings.md (kept for general agent context injection)
-    const findingsPath = path.join(findingsDir, 'findings.md');
-    try {
-      let existingContent = '';
-      if (fs.existsSync(findingsPath)) {
-        existingContent = fs.readFileSync(findingsPath, 'utf8');
-      }
+    // Scope findings to this run, so a different task in the same worker does not
+    // inherit the previous task's research.
+    appendRunFinding(runner, `${entryHeader}\n${entryBody}`);
 
-      let bodyWithoutTitle = existingContent.trim();
-      const titleMatchStr = '# Everfern Web Research Findings';
-      if (bodyWithoutTitle.startsWith(titleMatchStr)) {
-        bodyWithoutTitle = bodyWithoutTitle.slice(titleMatchStr.length).trim();
-      }
-
-      const updatedContent = `${title}\n${entryHeader}\n${entryBody}\n\n${bodyWithoutTitle}`.trim() + '\n';
-      fs.writeFileSync(findingsPath, updatedContent, 'utf8');
-      console.log(`[Navis Tool] Successfully updated findings to ${findingsPath}`);
-    } catch (err) {
-      console.error('[Navis Tool] Failed to write global findings.md:', err);
-    }
-
-    // 2. Create/write tool-call-specific findings file (findings_${toolCallId}.md)
     if (toolCallId) {
       const specificFindingsPath = path.join(findingsDir, `findings_${toolCallId}.md`);
-      const specificContent = `${title}\n${entryHeader}\n${entryBody}\n`.trim() + '\n';
+      const specificContent = `# Everfern Web Research Findings\n${entryHeader}\n${entryBody}\n`;
       fs.writeFileSync(specificFindingsPath, specificContent, 'utf8');
-      console.log(`[Navis Tool] Successfully wrote specific findings to ${specificFindingsPath}`);
-
       if (workspaceDir && fs.existsSync(workspaceDir)) {
-        try {
-          const wsSpecificPath = path.join(workspaceDir, `findings_${toolCallId}.md`);
-          fs.writeFileSync(wsSpecificPath, specificContent, 'utf8');
-        } catch {}
+        try { fs.writeFileSync(path.join(workspaceDir, `findings_${toolCallId}.md`), specificContent, 'utf8'); } catch {}
       }
     }
   } catch (e) {
-    console.error('[Navis Tool] Failed to write findings.md:', e);
+    console.error('[Navis Tool] Failed to write findings:', e);
   }
 }
 
@@ -183,6 +157,10 @@ export function createNavisTool(orchestrator: NavisOrchestrator, runner?: any): 
           type: 'string',
           description: 'URL to start at (default: about:blank)',
         },
+        app: {
+          type: 'string',
+          description: 'Installed worker app ID to control, such as chrome, terminal, files or notion. Required for native VM apps; selects that app instead of the most recent window.',
+        },
       },
       required: ['task'],
     },
@@ -191,13 +169,20 @@ export function createNavisTool(orchestrator: NavisOrchestrator, runner?: any): 
       try {
         const safeArgs = args && typeof args === 'object' ? args : {};
         const task = typeof safeArgs.task === 'string' ? safeArgs.task.trim() : '';
+        // A fresh Navis run starts at its own URL. Without this it reused the
+        // previous task's page, so a new task continued the old one.
+        const startUrl = typeof safeArgs.startUrl === 'string' && safeArgs.startUrl.trim() ? safeArgs.startUrl.trim() : 'about:blank';
         const logger = orchestrator.getEventLogger();
         const toolStartTime = Date.now();
         const screenshots: any[] = [];
 
         console.log('[Navis Tool] 🚀 NAVIS TOOL EXECUTION STARTED');
 
-        const perm = await checkToolPermission('navis', args, onUpdate, emitEvent);
+        // A worker drives the browser windows on its own desktop, which the user set up for it:
+        // no permission prompt there. Everywhere else Navis still asks first.
+        const convId = runner?.currentConversationId;
+        const isWorkerRun = typeof convId === 'string' && convId.startsWith('worker-');
+        const perm = isWorkerRun ? { approved: true as const, error: undefined } : await checkToolPermission('navis', args, onUpdate, emitEvent);
         if (!perm.approved) {
           return {
             success: false,
@@ -232,6 +217,9 @@ export function createNavisTool(orchestrator: NavisOrchestrator, runner?: any): 
         });
 
         let currentStepNumber = -1;
+
+        // A worker's run drives the browser window on the worker's desktop, so you watch it work.
+        const workerWindow = pickWorkerWindow(runner?.currentConversationId, startUrl, typeof safeArgs.app === 'string' ? safeArgs.app : undefined);
 
         const unsubscribe = logger.on((event: NavisEvent) => {
           if (event.type === 'screenshot' && event.screenshotKey !== undefined) {
@@ -353,6 +341,7 @@ export function createNavisTool(orchestrator: NavisOrchestrator, runner?: any): 
             },
             metadata: event.metadata,
             navisReport: navisReportMd,
+            workerApp: workerWindow?.app,
           };
 
           broadcastNavisCompanionProgress(compactProgressData);
@@ -386,8 +375,41 @@ export function createNavisTool(orchestrator: NavisOrchestrator, runner?: any): 
                 : navisSettings.automationMode);
 
         try {
+          if (workerWindow) {
+            onUpdate?.("Using the worker's own browser window.");
+            const windowOrchestrator = new NavisExtensionOrchestrator(
+              orchestrator.getAIClient(),
+              logger,
+              orchestrator.getVisionClient() || undefined,
+              new WorkerWindowAdapter(workerWindow.driver, logger),
+            );
+            const r = await windowOrchestrator.run({
+              task,
+              maxSteps: safeArgs.maxSteps ?? navisSettings.maxSteps,
+              headless: false,
+              startUrl: startUrl,
+              useVision: Boolean(navisSettings.useVision),
+              onlyVision: Boolean(navisSettings.onlyVision),
+              forceVision: Boolean(safeArgs.forceVision) || ['terminal', 'files'].includes(workerWindow.app),
+              useChromeProfile: false,
+              selectedBrowserId: navisSettings.selectedBrowserId,
+              useIsolatedBrowser: false,
+              maxActionsPerStep: safeArgs.maxActionsPerStep,
+            });
+            writeFindingsFile(task, r.output, workspaceDir, toolCallId, !r.success, runner);
+            return {
+              success: r.success,
+              output: r.output,
+              data: { steps: r.steps, screenshots, automationMode: 'worker-window', workerApp: workerWindow.app },
+            };
+          }
+
+          if (isWorkerRun) {
+            return { success: false, output: "The worker's VM browser is not ready. Open its browser window and start the VM, then retry. The host browser was not opened.", data: { steps: 0, screenshots } };
+          }
+
           // Set the active session in the bridge server so the companion extension knows a task is running
-          bridgeServer.setSession(toolCallId || 'navis', safeArgs.startUrl || '', 'Navis Active');
+          bridgeServer.setSession(toolCallId || 'navis', startUrl || '', 'Navis Active');
 
           const shouldUseExtensionFirst =
             automationMode === 'extension-first';
@@ -396,12 +418,12 @@ export function createNavisTool(orchestrator: NavisOrchestrator, runner?: any): 
             const status = getNavisCompanionStatus();
             if (!status.connected) {
               onUpdate?.('Preparing Navis extension install folder for fast main-profile control...');
-              const extensionResult = await prepareNavisMainProfileExtension(navisSettings.selectedBrowserId || 'chrome', safeArgs.startUrl);
+              const extensionResult = await prepareNavisMainProfileExtension(navisSettings.selectedBrowserId || 'chrome', startUrl);
               onUpdate?.(extensionResult.message);
               if (!extensionResult.connected) {
                 const executionTime = Date.now() - toolStartTime;
                 console.log(`[Navis Tool] Extension not connected after ${executionTime}ms; stopping instead of profile-browser fallback.`);
-                writeFindingsFile(task, `Navis stopped: ${extensionResult.message}`, workspaceDir, toolCallId, true);
+                writeFindingsFile(task, `Navis stopped: ${extensionResult.message}`, workspaceDir, toolCallId, true, runner);
                 return {
                   success: false,
                   output: extensionResult.message,
@@ -430,7 +452,7 @@ export function createNavisTool(orchestrator: NavisOrchestrator, runner?: any): 
                 task,
                 maxSteps: safeArgs.maxSteps ?? navisSettings.maxSteps,
                 headless: safeArgs.headless ?? navisSettings.headless,
-                startUrl: safeArgs.startUrl,
+                startUrl: startUrl,
                 useVision: Boolean(navisSettings.useVision),
                 onlyVision: Boolean(navisSettings.onlyVision),
                 forceVision: Boolean(safeArgs.forceVision),
@@ -443,7 +465,7 @@ export function createNavisTool(orchestrator: NavisOrchestrator, runner?: any): 
               if (extensionResult.success || !extensionResult.output.includes('[EXTENSION_FALLBACK_REQUIRED]')) {
                 const executionTime = Date.now() - toolStartTime;
                 console.log(`[Navis Tool] ✅ extension-first run completed in ${executionTime}ms`);
-                writeFindingsFile(task, extensionResult.output, workspaceDir, toolCallId, !extensionResult.success);
+                writeFindingsFile(task, extensionResult.output, workspaceDir, toolCallId, !extensionResult.success, runner);
                 return {
                   success: extensionResult.success,
                   output: extensionResult.output,
@@ -452,15 +474,15 @@ export function createNavisTool(orchestrator: NavisOrchestrator, runner?: any): 
               }
 
               onUpdate?.('Extension-first path could not complete this action. Install/update the Navis extension or switch Navis to isolated browser mode.');
-              writeFindingsFile(task, extensionResult.output.replace('[EXTENSION_FALLBACK_REQUIRED]', 'Navis extension-first stopped:'), workspaceDir, toolCallId, true);
+              writeFindingsFile(task, extensionResult.output.replace('[EXTENSION_FALLBACK_REQUIRED]', 'Navis extension-first stopped:'), workspaceDir, toolCallId, true, runner);
               return {
                 success: false,
                 output: extensionResult.output.replace('[EXTENSION_FALLBACK_REQUIRED]', 'Navis extension-first stopped:'),
                 data: { steps: extensionResult.steps, screenshots, automationMode: 'extension-first' },
               };
             } else {
-              const extensionResult = await prepareNavisMainProfileExtension(navisSettings.selectedBrowserId || 'chrome', safeArgs.startUrl);
-              writeFindingsFile(task, `Navis stopped: ${extensionResult.message}`, workspaceDir, toolCallId, true);
+              const extensionResult = await prepareNavisMainProfileExtension(navisSettings.selectedBrowserId || 'chrome', startUrl);
+              writeFindingsFile(task, `Navis stopped: ${extensionResult.message}`, workspaceDir, toolCallId, true, runner);
               return {
                 success: false,
                 output: extensionResult.message,
@@ -482,7 +504,7 @@ export function createNavisTool(orchestrator: NavisOrchestrator, runner?: any): 
             task,
             maxSteps: safeArgs.maxSteps ?? navisSettings.maxSteps,
             headless: safeArgs.headless ?? navisSettings.headless,
-            startUrl: safeArgs.startUrl,
+            startUrl: startUrl,
             // Navis is DOM-first. The vision setting enables on-demand visual
             // grounding, but the orchestrator still uses DOM unless visual context
             // is requested or the DOM snapshot is weak.
@@ -498,7 +520,7 @@ export function createNavisTool(orchestrator: NavisOrchestrator, runner?: any): 
           console.log(`[Navis Tool] ✅ orchestrator.run() COMPLETED - Total execution time: ${executionTime}ms`);
           console.log(`[Navis Tool] ✅ NAVIS TOOL RETURNING RESULT TO MAIN AGENT - Success: ${result.success}, Steps: ${result.steps}`);
 
-          writeFindingsFile(task, result.output, workspaceDir, toolCallId);
+          writeFindingsFile(task, result.output, workspaceDir, toolCallId, false, runner);
 
           return {
             success: result.success,
@@ -509,7 +531,7 @@ export function createNavisTool(orchestrator: NavisOrchestrator, runner?: any): 
           const executionTime = Date.now() - toolStartTime;
           console.error(`[Navis Tool] ❌ NAVIS TOOL EXECUTION FAILED (${executionTime}ms):`, toolErr);
           logger.error(`[Navis Tool] ❌ NAVIS TOOL EXECUTION FAILED (${executionTime}ms): ${toolErr instanceof Error ? toolErr.message : String(toolErr)}`);
-          writeFindingsFile(task, `Navis execution failed: ${toolErr instanceof Error ? toolErr.message : String(toolErr)}`, workspaceDir, toolCallId, true);
+          writeFindingsFile(task, `Navis execution failed: ${toolErr instanceof Error ? toolErr.message : String(toolErr)}`, workspaceDir, toolCallId, true, runner);
           throw toolErr;
         } finally {
           bridgeServer.setSession(null);

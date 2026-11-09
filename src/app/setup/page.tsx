@@ -1,5 +1,6 @@
 "use client";
 
+import { useDialogFocus } from "@/lib/use-dialog-focus";
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
@@ -27,62 +28,67 @@ import {
     Download,
     Layers,
     Activity,
+    Package,
+    EyeOff,
+    ScanEye,
+    Trash2,
+    KeyRound,
+    Laptop,
+    AlertTriangle,
 } from "lucide-react";
 
 import { GlassShell } from "../components/onboarding/GlassShell";
 import LinuxVMSetupStep from "./LinuxVMSetupStep";
 import { useTheme } from "@/components/ThemeProvider";
-import { Lottie } from "lottie-react";
-import heartPixelAnimation from "../../../public/lottie/heart-pixel.json";
 
 // ── Provider Logos ────────────────
 
 const OpenAILogo = ({ size = 20 }: { size?: number }) => (
-    <Image src="/images/ai-providers/openai.svg" alt="OpenAI Logo" width={size} height={size} className="dark:invert opacity-90" />
+    <Image unoptimized src="/images/ai-providers/openai.svg" alt="OpenAI Logo" width={size} height={size} className="opacity-90" />
 );
 
 const AnthropicLogo = ({ size = 20 }: { size?: number }) => (
-    <Image src="/images/ai-providers/claude.svg" alt="Anthropic Logo" width={size} height={size} className="grayscale opacity-80" />
+    <Image unoptimized src="/images/ai-providers/claude.svg" alt="Anthropic Logo" width={size} height={size} className="grayscale opacity-80" />
 );
 
 const DeepSeekLogo = ({ size = 20 }: { size?: number }) => (
-    <Image src="/images/ai-providers/deepseek.svg" alt="DeepSeek Logo" width={size} height={size} className="grayscale opacity-80" />
+    <Image unoptimized src="/images/ai-providers/deepseek.svg" alt="DeepSeek Logo" width={size} height={size} className="grayscale opacity-80" />
 );
 
 const GeminiLogo = ({ size = 20 }: { size?: number }) => (
-    <Image src="/images/ai-providers/gemini.svg" alt="Gemini Logo" width={size} height={size} className="grayscale opacity-80" />
+    <Image unoptimized src="/images/ai-providers/gemini.svg" alt="Gemini Logo" width={size} height={size} className="grayscale opacity-80" />
 );
 
 const NvidiaLogo = ({ size = 20 }: { size?: number }) => (
-    <Image src="/images/ai-providers/nvidia.svg" alt="Nvidia Logo" width={size} height={size} className="grayscale opacity-80" />
+    <Image unoptimized src="/images/ai-providers/nvidia.svg" alt="Nvidia Logo" width={size} height={size} className="grayscale opacity-80" />
 );
 
 const OpenRouterLogo = ({ size = 20 }: { size?: number }) => (
-    <Image src="/images/ai-providers/openrouter.svg" alt="OpenRouter Logo" width={size} height={size} className="grayscale opacity-80" />
+    <Image unoptimized src="/images/ai-providers/openrouter.svg" alt="OpenRouter Logo" width={size} height={size} className="grayscale opacity-80" />
 );
 
 const MiniMaxLogo = ({ size = 20 }: { size?: number }) => (
-    <Image src="/images/ai-providers/minimax.svg" alt="MiniMax Logo" width={size} height={size} className="grayscale opacity-80" />
+    <Image unoptimized src="/images/ai-providers/minimax.svg" alt="MiniMax Logo" width={size} height={size} className="grayscale opacity-80" />
 );
 
 const OllamaLogo = ({ size = 20 }: { size?: number }) => (
-    <Image src="/images/ai-providers/ollama.svg" alt="Ollama Logo" width={size} height={size} className="dark:invert opacity-90" />
+    <Image unoptimized src="/images/ai-providers/ollama.svg" alt="Ollama Logo" width={size} height={size} className="opacity-90" />
 );
 
 const DeepgramLogo = ({ size = 20 }: { size?: number }) => (
-    <Image src="/images/ai-providers/Deepgram.svg" alt="Deepgram Logo" width={size} height={size} className="dark:invert opacity-90" />
+    <Image unoptimized src="/images/ai-providers/Deepgram.svg" alt="Deepgram Logo" width={size} height={size} className="opacity-90" />
 );
 
 const ElevenLabsLogo = ({ size = 20 }: { size?: number }) => (
-    <Image src="/images/ai-providers/elevenlabs.svg" alt="ElevenLabs Logo" width={size} height={size} className="grayscale opacity-80" />
+    <Image unoptimized src="/images/ai-providers/elevenlabs.svg" alt="ElevenLabs Logo" width={size} height={size} className="grayscale opacity-80" />
 );
 
 const LMStudioLogo = ({ size = 20 }: { size?: number }) => (
-    <Image src="/images/ai-providers/lm-studio.png" alt="LM Studio Logo" width={size} height={size} className="grayscale opacity-80" />
+    <Image unoptimized src="/images/ai-providers/lm-studio.png" alt="LM Studio Logo" width={size} height={size} className="grayscale opacity-80" />
 );
 
-const EverFernBglessLogo = ({ size = 20, isDark = false }: { size?: number; isDark?: boolean }) => (
-    <Image src={isDark ? "/images/logos/everfern-withoutbg.png" : "/images/logos/black-logo-withoutbg.png"} alt="EverFern Cloud" width={size} height={size} priority loading="eager" className={isDark ? "" : "dark:invert opacity-90"} />
+const EverFernBglessLogo = ({ size = 20, onLight = false }: { size?: number; isDark?: boolean; onLight?: boolean }) => (
+    <Image unoptimized src="/images/logos/black-logo-withoutbg.png" alt="EverFern Cloud" width={size} height={size} priority loading="eager" style={{ filter: onLight ? 'none' : 'brightness(0) invert(1)', objectFit: 'contain', flexShrink: 0 }} />
 );
 
 const PhosphorStar = ({ size = 24, color = "currentColor", weight = "fill" }: { size?: number; color?: string; weight?: "fill" | "regular" | "duotone" }) => {
@@ -370,9 +376,9 @@ function PipProgressBar({ pkg, pct, speed, eta }: {
 // ── Step Pills ────────────────
 function StepPills({ installStep }: { installStep: number }) {
     const steps = [
-        { icon: "📦", title: "Conda Env", desc: "Python 3.11" },
-        { icon: "🌐", title: "Clone Repo", desc: "Latest ShowUI" },
-        { icon: "🧱", title: "Dependencies", desc: "Torch & Vision" },
+        { icon: <Package size={18} />, title: "Conda Env", desc: "Python 3.11" },
+        { icon: <Globe size={18} />, title: "Clone Repo", desc: "Latest ShowUI" },
+        { icon: <Layers size={18} />, title: "Dependencies", desc: "Torch & Vision" },
     ];
     return (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
@@ -496,6 +502,7 @@ export default function SetupPage() {
     const [isSaving, setIsSaving] = useState(false);
     const [showMoreModal, setShowMoreModal] = useState(false);
     const [showCloudLoginModal, setShowCloudLoginModal] = useState(false);
+    const cloudDialogRef = useDialogFocus<HTMLDivElement>(showCloudLoginModal, () => setShowCloudLoginModal(false));
 
     const handleEverFernCloudSelect = (nextStep: number = 4) => {
         const cloudSession = localStorage.getItem("everfern_cloud_session") || localStorage.getItem("everfern_auth_token");
@@ -852,7 +859,7 @@ export default function SetupPage() {
             // Not signed in as cloud user — skip silently
         }
 
-        setTimeout(() => router.push("/chat"), 800);
+        setTimeout(() => router.push("/workers"), 800);
     };
 
     const handleInstallOllama = async () => {
@@ -946,13 +953,12 @@ export default function SetupPage() {
         if (step === 8) return 9;
         if (step === 9) return 10;
         if (step === 10) return 11;
-        if (step === 12) return 12;
-        return 12;
+        return 11;
     };
     const activeIndex = getActiveDotIndex();
 
     return (
-        <GlassShell photo="lake" progress={[activeIndex, 12]}>
+        <GlassShell photo="lake" progress={[activeIndex, 11]}>
             <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center" }}>
                 <AnimatePresence mode="wait">
 
@@ -993,8 +999,8 @@ export default function SetupPage() {
                                             aria-pressed={selected}
                                         >
                                             <div className="ef-tier-top">
-                                                <span className="ef-tier-icon">
-                                                    <opt.icon size={opt.id === "everfern" ? 24 : 15} />
+                                                <span className={`ef-tier-icon${opt.id === "everfern" ? " is-brand" : ""}`}>
+                                                    <opt.icon size={opt.id === "everfern" ? 26 : 15} />
                                                 </span>
                                                 {opt.tag && <span className="ef-tier-tag"><Sparkles size={12} /> {opt.tag}</span>}
                                             </div>
@@ -1115,7 +1121,7 @@ export default function SetupPage() {
                                     >
                                         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                                             <div style={{ width: 38, height: 38, borderRadius: 10, color: "#111", background: "rgba(255,255,255,0.92)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                                <EverFernBglessLogo size={18} />
+                                                <EverFernBglessLogo size={26} onLight />
                                             </div>
                                             <div style={{ textAlign: "left" }}>
                                                 <span style={{ fontWeight: 500, fontSize: 14, color: 'var(--color-text-primary)', display: "block" }}>EverFern Cloud</span>
@@ -1309,26 +1315,28 @@ export default function SetupPage() {
 
                                     {/* Offline Provider Banner */}
                                     {(!localProviderRunning && localProviderError) && (
-                                        <div style={{
-                                            padding: "14px 16px", borderRadius: 12, backgroundColor: "rgba(245, 158, 11, 0.08)",
-                                            border: "1px solid rgba(245, 158, 11, 0.25)", textAlign: "left", display: "flex", flexDirection: "column", gap: 8
+                                        <div role="alert" style={{
+                                            padding: "14px 16px", borderRadius: 14, background: "rgba(17,19,21,0.62)",
+                                            backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
+                                            boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.1)", textAlign: "left", display: "flex", flexDirection: "column", gap: 8
                                         }}>
-                                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                                                <span style={{ fontSize: 12.5, fontWeight: 600, color: "#d97706" }}>
-                                                    ⚠️ {provider === 'llamacpp' ? 'llama.cpp server is not reachable' : provider === 'lmstudio' ? "LM Studio Local Server is not reachable" : "Ollama is not running"}
+                                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                                                <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, fontWeight: 600, color: "#fff" }}>
+                                                    <AlertTriangle size={15} style={{ color: "#fbbf24", flexShrink: 0 }} />
+                                                    {provider === 'llamacpp' ? 'llama.cpp server is not reachable' : provider === 'lmstudio' ? "LM Studio Local Server is not reachable" : "Ollama is not running"}
                                                 </span>
                                                 <button
                                                     onClick={() => loadLocalModels(provider || 'ollama', apiKey)}
                                                     disabled={isLoadingLocalModels}
                                                     style={{
-                                                        padding: "4px 10px", borderRadius: 6, background: "rgba(245, 158, 11, 0.2)",
-                                                        border: "1px solid rgba(245, 158, 11, 0.3)", color: "#b45309", fontSize: 11, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 4
+                                                        padding: "6px 12px", borderRadius: 999, background: "#fff", border: 0,
+                                                        color: "#111315", fontSize: 12, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, flexShrink: 0
                                                     }}
                                                 >
-                                                    <RefreshCw size={11} className={isLoadingLocalModels ? "animate-spin" : ""} /> Retry
+                                                    <RefreshCw size={12} className={isLoadingLocalModels ? "animate-spin" : ""} /> Retry
                                                 </button>
                                             </div>
-                                            <p style={{ fontSize: 11.5, color: "var(--color-text-secondary)", margin: 0, lineHeight: 1.4 }}>
+                                            <p style={{ fontSize: 12.5, color: "rgba(255,255,255,0.82)", margin: 0, lineHeight: 1.5 }}>
                                                 {provider === 'llamacpp'
                                             ? 'Start llama-server -m /path/to/model.gguf --port 8080 --jinja, then refresh to select the loaded model.'
                                             : provider === 'lmstudio'
@@ -1419,7 +1427,7 @@ export default function SetupPage() {
                                                                     </span>
                                                                 </div>
                                                                 <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-                                                                    {m.size_gb ? `${m.size_gb} GB disk` : `${m.quantized_q4_vram_gb} GB VRAM`} • {m.isRunnable ? "✓ Fully Runnable" : "⚠️ Heavy for specs"}
+                                                                    {m.size_gb ? `${m.size_gb} GB disk` : `${m.quantized_q4_vram_gb} GB VRAM`} • {m.isRunnable ? "✓ Fully Runnable" : "Heavy for specs"}
                                                                 </div>
                                                             </div>
 
@@ -1610,12 +1618,13 @@ export default function SetupPage() {
                                     <div style={{ marginBottom: 36 }}>
                                         <div style={{
                                             width: 56, height: 56, borderRadius: 16,
-                                            background: "rgba(255,255,255,0.04)",
-                                            border: "1px solid rgba(255,255,255,0.1)",
+                                            background: "linear-gradient(145deg,rgba(255,255,255,0.16),rgba(255,255,255,0.04))",
+                                            border: "1px solid rgba(255,255,255,0.22)",
                                             display: "flex", alignItems: "center", justifyContent: "center",
-                                            color: "#60a5fa", margin: "40px auto 32px auto",
+                                            color: "#fff", margin: "40px auto 32px auto",
+                                            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.14),0 8px 24px -12px rgba(0,0,0,0.25)",
                                         }}>
-                                            <Cpu size={24} strokeWidth={1.5} />
+                                            <ScanEye size={28} strokeWidth={1.6} aria-hidden="true" />
                                         </div>
                                         <h2 className="ef-title">
                                             Vision AI Setup
@@ -1676,12 +1685,13 @@ export default function SetupPage() {
                                                 )}
                                                 <div style={{
                                                     width: 48, height: 48, borderRadius: 12,
-                                                    background: "rgba(255,255,255,0.04)",
-                                                    border: "1px solid rgba(255,255,255,0.07)",
+                                                    background: "linear-gradient(145deg,rgba(255,255,255,0.14),rgba(255,255,255,0.04))",
+                                                    border: "1px solid rgba(255,255,255,0.2)",
                                                     display: "flex", alignItems: "center", justifyContent: "center",
-                                                    color: "#71717a",
+                                                    color: "#fff",
+                                                    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.12),0 6px 16px -10px rgba(0,0,0,0.3)",
                                                 }}>
-                                                    <opt.icon size={opt.id === "everfern" ? 40 : 22} />
+                                                    {opt.id === 'everfern' ? <EverFernBglessLogo size={32} /> : <Cloud size={26} strokeWidth={1.7} aria-hidden="true" />}
                                                 </div>
                                                 <div style={{ textAlign: "center" }}>
                                                     <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 4, color: 'var(--color-text-primary)' }}>
@@ -1746,7 +1756,7 @@ export default function SetupPage() {
                                                     <div style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
                                                         <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: "uppercase", letterSpacing: "0.05em" }}>Host URL (Optional)</label>
                                                         <div style={{ position: "relative" }}>
-                                                            <input type="text" placeholder="Optional custom base URL" value={vlmCloudUrl} onChange={(e) => setVlmCloudUrl(e.target.value)}
+                                                            <input aria-label="Optional custom base URL" type="text" placeholder="Optional custom base URL" value={vlmCloudUrl} onChange={(e) => setVlmCloudUrl(e.target.value)}
                                                                 style={{ width: "100%", padding: "14px 18px 14px 46px", backgroundColor: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, color: 'var(--color-text-primary)', fontSize: 14, fontFamily: "monospace", outline: "none", transition: "all 0.2s", boxSizing: "border-box" }}
                                                                 onFocus={e => { e.target.style.borderColor = "rgba(255,255,255,0.2)"; e.target.style.backgroundColor = "rgba(255,255,255,0.06)"; }}
                                                                 onBlur={e => { e.target.style.borderColor = "rgba(255,255,255,0.1)"; e.target.style.backgroundColor = "rgba(255,255,255,0.04)"; }} />
@@ -1758,7 +1768,7 @@ export default function SetupPage() {
                                                     <div style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
                                                         <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: "uppercase", letterSpacing: "0.05em" }}>API Key</label>
                                                         <div style={{ position: "relative" }}>
-                                                            <input type="password" placeholder="sk-..." value={vlmCloudKey} onChange={(e) => setVlmCloudKey(e.target.value)}
+                                                            <input aria-label="sk-..." type="password" placeholder="sk-..." value={vlmCloudKey} onChange={(e) => setVlmCloudKey(e.target.value)}
                                                                 style={{ width: "100%", padding: "14px 18px 14px 46px", backgroundColor: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, color: 'var(--color-text-primary)', fontSize: 14, fontFamily: "monospace", outline: "none", transition: "all 0.2s", boxSizing: "border-box" }}
                                                                 onFocus={e => { e.target.style.borderColor = "rgba(255,255,255,0.2)"; e.target.style.backgroundColor = "rgba(255,255,255,0.06)"; }}
                                                                 onBlur={e => { e.target.style.borderColor = "rgba(255,255,255,0.1)"; e.target.style.backgroundColor = "rgba(255,255,255,0.04)"; }} />
@@ -1877,7 +1887,9 @@ export default function SetupPage() {
                                                 background: "rgba(255,255,255,0.04)",
                                                 border: "1px solid rgba(255,255,255,0.07)",
                                                 display: "flex", alignItems: "center", justifyContent: "center",
-                                                color: isSel ? "var(--color-text-primary)" : "#71717a",
+                                                color: "#ffffff",
+                                                filter: "brightness(0) invert(1)",
+                                                opacity: isSel ? 1 : 0.8,
                                             }}>
                                                 <opt.logo />
                                             </div>
@@ -1898,14 +1910,14 @@ export default function SetupPage() {
                             <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 16, marginBottom: 32 }}>
                                 {voiceProvider === "everfern" && (
                                     <div style={{ padding: "14px 18px", borderRadius: 14, backgroundColor: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", fontSize: 13, color: "var(--color-text-secondary)" }}>
-                                        🌿 <strong>EverFern Cloud Voice</strong> uses managed Deepgram Nova-2 with zero setup required.
+                                        <strong>EverFern Cloud Voice</strong> uses managed Deepgram Nova-2 with zero setup required.
                                     </div>
                                 )}
                                 {voiceProvider === "deepgram" && (
                                     <div style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
                                         <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: "uppercase", letterSpacing: "0.05em" }}>Deepgram API Key</label>
                                         <div style={{ position: "relative" }}>
-                                            <input type="password" placeholder="Leave blank to use EverFern Cloud Deepgram key..." value={voiceDeepgramKey} onChange={(e) => setVoiceDeepgramKey(e.target.value)}
+                                            <input aria-label="Leave blank to use EverFern Cloud Deepgram key..." type="password" placeholder="Leave blank to use EverFern Cloud Deepgram key..." value={voiceDeepgramKey} onChange={(e) => setVoiceDeepgramKey(e.target.value)}
                                                 style={{ width: "100%", padding: "14px 18px 14px 46px", backgroundColor: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, color: 'var(--color-text-primary)', fontSize: 14, fontFamily: "monospace", outline: "none", transition: "all 0.2s", boxSizing: "border-box" }}
                                                 onFocus={e => { e.target.style.borderColor = "rgba(255,255,255,0.2)"; e.target.style.backgroundColor = "rgba(255,255,255,0.06)"; }}
                                                 onBlur={e => { e.target.style.borderColor = "rgba(255,255,255,0.1)"; e.target.style.backgroundColor = "rgba(255,255,255,0.04)"; }} />
@@ -1917,7 +1929,7 @@ export default function SetupPage() {
                                     <div style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
                                         <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: "uppercase", letterSpacing: "0.05em" }}>ElevenLabs API Key</label>
                                         <div style={{ position: "relative" }}>
-                                            <input type="password" placeholder="sk_..." value={voiceElevenlabsKey} onChange={(e) => setVoiceElevenlabsKey(e.target.value)}
+                                            <input aria-label="sk_..." type="password" placeholder="sk_..." value={voiceElevenlabsKey} onChange={(e) => setVoiceElevenlabsKey(e.target.value)}
                                                 style={{ width: "100%", padding: "14px 18px 14px 46px", backgroundColor: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, color: 'var(--color-text-primary)', fontSize: 14, fontFamily: "monospace", outline: "none", transition: "all 0.2s", boxSizing: "border-box" }}
                                                 onFocus={e => { e.target.style.borderColor = "rgba(255,255,255,0.2)"; e.target.style.backgroundColor = "rgba(255,255,255,0.06)"; }}
                                                 onBlur={e => { e.target.style.borderColor = "rgba(255,255,255,0.1)"; e.target.style.backgroundColor = "rgba(255,255,255,0.04)"; }} />
@@ -2919,7 +2931,7 @@ export default function SetupPage() {
 
                             {referralSource === 'other' && (
                                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} style={{ marginBottom: 24, width: "100%" }}>
-                                    <input type="text" placeholder="Please specify where you found us..." value={referralOtherText} onChange={(e) => setReferralOtherText(e.target.value)}
+                                    <input aria-label="Please specify where you found us..." type="text" placeholder="Please specify where you found us..." value={referralOtherText} onChange={(e) => setReferralOtherText(e.target.value)}
                                         style={{ width: "100%", padding: "14px 18px", backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, color: "var(--color-text-primary)", fontSize: 14, outline: "none", boxSizing: "border-box" }}
                                         onFocus={e => e.target.style.borderColor = "rgba(255,255,255,0.2)"}
                                         onBlur={e => e.target.style.borderColor = "rgba(255,255,255,0.1)"}
@@ -2967,7 +2979,7 @@ export default function SetupPage() {
                                     justifyContent: "center",
                                 }}
                             >
-                                <Lottie src={heartPixelAnimation} autoplay loop style={{ width: 76, height: 76 }} />
+                                <Heart size={52} fill="currentColor" strokeWidth={1.5} aria-hidden="true" style={{ color: "#f36c8d" }} />
                             </div>
 
                             <h1 className="ef-title">
@@ -2990,7 +3002,7 @@ export default function SetupPage() {
                                 <div style={{ height: 1, backgroundColor: "rgba(255,255,255,0.08)", margin: "14px 0" }} />
                                 <p style={{ fontSize: 13, color: "#e11d48", fontWeight: 500, lineHeight: 1.6, margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
                                     <Heart size={15} color="#e11d48" fill="#e11d48" style={{ flexShrink: 0 }} />
-                                    <span>If you skip starring the repo, a developer&apos;s open-source soul dies a little inside 💔. A single click takes 2 seconds and keeps this project alive!</span>
+                                    <span>If you skip starring the repo, a developer&apos;s open-source soul dies a little inside. A single click takes 2 seconds and keeps this project alive!</span>
                                 </p>
                             </div>
 
@@ -3028,7 +3040,7 @@ export default function SetupPage() {
                                     onMouseEnter={e => e.currentTarget.style.opacity = "0.9"}
                                     onMouseLeave={e => e.currentTarget.style.opacity = "1"}
                                 >
-                                    {hasStarredRepo ? "Thank you! You're an absolute legend! ❤️" : "Star on GitHub (Save the dev's soul!)"}
+                                    {hasStarredRepo ? "Thank you! You're an absolute legend!" : "Star on GitHub (Save the dev's soul!)"}
                                     <ExternalLink size={15} style={{ opacity: 0.7 }} />
                                 </a>
                             </div>
@@ -3051,174 +3063,51 @@ export default function SetupPage() {
                                 <BackButton onClick={() => setStep(9)} />
                             </div>
 
-                            {/* Discord Logo */}
-                            <div style={{ width: 56, height: 56, margin: "0 auto 20px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                <DiscordIcon size={44} />
-                            </div>
-
-                            <h1 className="ef-title">
-                                Join our Discord
-                            </h1>
-                            <p style={{ fontSize: 14, color: "var(--color-text-tertiary)", lineHeight: 1.7, maxWidth: 360, marginBottom: 32 }}>
-                                Connect with the EverFern community. Get help, share feedback, and stay updated on new features.
-                            </p>
-
-                            <div style={{ display: "flex", flexDirection: "column", gap: 12, width: "100%", alignItems: "center", justifyContent: "center" }}>
+                            <div style={{
+                                width: "100%", boxSizing: "border-box", padding: "28px 24px", borderRadius: 20, marginBottom: 20,
+                                background: "linear-gradient(160deg, rgba(88,101,242,0.28), rgba(88,101,242,0.08))",
+                                border: "1px solid rgba(88,101,242,0.55)", boxShadow: "0 12px 40px rgba(88,101,242,0.25)",
+                                display: "flex", flexDirection: "column", alignItems: "center",
+                            }}>
+                                <div style={{ width: 72, height: 72, borderRadius: 20, background: "#5865F2", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 18, boxShadow: "0 8px 28px rgba(88,101,242,0.5)" }}>
+                                    <span style={{ filter: "brightness(0) invert(1)", display: "flex" }}><DiscordIcon size={40} /></span>
+                                </div>
+                                <h1 className="ef-title" style={{ marginBottom: 8 }}>Join our Discord</h1>
+                                <p style={{ fontSize: 14, color: "var(--color-text-secondary)", lineHeight: 1.65, maxWidth: 360, margin: "0 0 20px" }}>
+                                    Get help from the team, share feedback, see what workers others are building, and hear about new features first.
+                                </p>
                                 <a
                                     href="https://discord.gg/4zR2jk799a"
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     style={{
-                                        width: "100%",
-                                        padding: "16px",
-                                        backgroundColor: "var(--color-text-primary)",
-                                        color: "var(--color-bg-surface)",
-                                        borderRadius: 16,
-                                        fontWeight: 600,
-                                        fontSize: 15,
-                                        border: "none",
-                                        cursor: "pointer",
-                                        textDecoration: "none",
-                                        display: "flex",
-                                        alignItems: "center",
-                                        justifyContent: "center",
-                                        gap: 8,
-                                        transition: "all 0.2s"
+                                        width: "100%", height: 52, background: "#5865F2", color: "#ffffff", borderRadius: 999,
+                                        fontWeight: 700, fontSize: 15, textDecoration: "none", display: "flex", alignItems: "center",
+                                        justifyContent: "center", gap: 10, transition: "background 0.15s",
                                     }}
-                                    onMouseEnter={e => e.currentTarget.style.opacity = "0.85"}
-                                    onMouseLeave={e => e.currentTarget.style.opacity = "1"}
+                                    onMouseEnter={e => e.currentTarget.style.background = "#4752c4"}
+                                    onMouseLeave={e => e.currentTarget.style.background = "#5865F2"}
                                 >
-                                    Join Discord
+                                    <span style={{ filter: "brightness(0) invert(1)", display: "flex" }}><DiscordIcon size={20} /></span>
+                                    Join the EverFern Discord
+                                    <ExternalLink size={15} style={{ opacity: 0.8 }} />
                                 </a>
-                                <button onClick={() => setStep(12)} style={{ background: "none", border: "none", color: "var(--color-text-tertiary)", fontSize: 13, cursor: "pointer", textDecoration: "underline" }} onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-primary)'} onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}>
-                                    Skip
-                                </button>
-                            </div>
-                        </motion.div>
-                    )}
-
-                    {/* ── Step 12: Privacy & Security ── */}
-                    {step === 12 && (
-                        <motion.div
-                            key="step12"
-                            variants={pageVariants}
-                            initial="enter"
-                            animate="center"
-                            exit="exit"
-                            transition={pageTransition}
-                            className="glossy"
-                            style={{ width: "100%", maxWidth: 480, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}
-                        >
-                            <div style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 16 }}>
-                                <BackButton onClick={() => setStep(10)} />
                             </div>
 
-                            {/* Static Padlock SVG */}
-                            <div style={{ marginBottom: 36, width: 120, height: 130 }}>
-                                <svg width="120" height="130" viewBox="0 0 120 130" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    {/* Shackle */}
-                                    <path
-                                        d="M44 66 L44 50 Q44 36 60 36 Q76 36 76 50 L76 66"
-                                        stroke='var(--color-text-primary)' strokeWidth="6" strokeLinecap="round"
-                                        fill="none"
-                                    />
-                                    {/* Lock body */}
-                                    <rect x="38" y="64" width="44" height="32" rx="6" fill='var(--color-text-primary)' />
-                                    {/* Keyhole circle */}
-                                    <circle cx="60" cy="76" r="4" fill='var(--color-bg-base)' />
-                                    {/* Keyhole slot */}
-                                    <rect x="58" y="76" width="4" height="8" rx="2" fill='var(--color-bg-base)' />
-                                </svg>
-                            </div>
-
-                            {/* Title */}
-                            <h1 className="ef-title">
-                                Your privacy is protected
-                            </h1>
-
-                            {/* Subtitle */}
-                            <p style={{
-                                fontSize: 14,
-                                color: 'var(--color-text-tertiary)',
-                                lineHeight: 1.7,
-                                maxWidth: 360,
-                                marginBottom: 32,
-                            }}>
-                                {engine === "everfern" ? (
-                                    <>EverFern Cloud runs on our own self-hosted infrastructure. We <strong style={{ color: 'var(--color-text-primary)' }}>never send your data to third parties</strong>, host all models ourselves, and <strong style={{ color: 'var(--color-text-primary)' }}>don&apos;t store any of your conversations or code</strong>.  Your work stays yours.</>
-                                ) : (
-                                    <>All your API keys and credentials are stored <strong style={{ color: 'var(--color-text-primary)' }}>locally on your device</strong> and never leave your machine. EverFern doesn&apos;t collect, track, or transmit any of your data.</>
-                                )}
-                            </p>
-
-                            {/* Privacy feature pills */}
-                            <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%", marginBottom: 36 }}>
-                                {(engine === "everfern" ? [
-                                    { icon: "🏠", title: "Self-Hosted Models", desc: "All AI models run on our own infrastructure — no third-party APIs." },
-                                    { icon: "🚫", title: "Zero Data Sharing", desc: "We never send your data, code, or prompts to anyone." },
-                                    { icon: "🗑️", title: "No Data Storage", desc: "Conversations and code are processed in-memory and never saved on our servers." },
-                                ] : [
-                                    { icon: "🔑", title: "Local Key Storage", desc: "API keys are saved in ~/.everfern/config.json on your device only." },
-                                    { icon: "🛡️", title: "No Telemetry", desc: "EverFern doesn't collect analytics, usage data, or error reports." },
-                                    { icon: "💻", title: "Your Device, Your Data", desc: "All processing happens locally or directly with your chosen provider." },
-                                ]).map((feature, i) => (
-                                    <motion.div
-                                        key={i}
-                                        initial={{ opacity: 0, x: -12 }}
-                                        animate={{ opacity: 1, x: 0 }}
-                                        transition={{ delay: 0.8 + i * 0.15, duration: 0.35, ease: "easeOut" }}
-                                        style={{
-                                            display: "flex",
-                                            alignItems: "center",
-                                            gap: 14,
-                                            padding: "14px 18px",
-                                            borderRadius: 14,
-                                            background: "rgba(255,255,255,0.03)",
-                                            border: "1px solid rgba(255,255,255,0.08)",
-                                            textAlign: "left",
-                                        }}
-                                    >
-                                        <span style={{ fontSize: 20, flexShrink: 0 }}>{feature.icon}</span>
-                                        <div>
-                                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 2 }}>{feature.title}</div>
-                                            <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', lineHeight: 1.5 }}>{feature.desc}</div>
-                                        </div>
-                                    </motion.div>
-                                ))}
-                            </div>
-
-                            {/* Continue button */}
-                            <motion.button
-                                initial={{ opacity: 0, y: 8 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ delay: 1.3, duration: 0.35 }}
+                            <button
                                 onClick={handleSave}
                                 disabled={isSaving}
                                 style={{
-                                    width: "100%",
-                                    height: 52,
-                                    background: 'var(--color-text-primary)',
-                                    color: 'var(--color-bg-base)',
-                                    borderRadius: 999,
-                                    fontWeight: 600,
-                                    fontSize: 14,
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    gap: 8,
-                                    cursor: isSaving ? "wait" : "pointer",
-                                    border: "none",
-                                    transition: "background 0.15s",
-                                    letterSpacing: "0.01em",
-                                    opacity: isSaving ? 0.7 : 1,
+                                    width: "100%", height: 48, background: "transparent", color: "var(--color-text-primary)",
+                                    border: "1px solid rgba(255,255,255,0.14)", borderRadius: 999, fontWeight: 600, fontSize: 14,
+                                    display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                                    cursor: isSaving ? "wait" : "pointer", opacity: isSaving ? 0.7 : 1,
                                 }}
-                                onMouseEnter={e => !isSaving && (e.currentTarget.style.background = 'var(--color-text-primary)')}
-                                onMouseLeave={e => (e.currentTarget.style.background = 'var(--color-text-primary)')}
                             >
                                 {isSaving ? "Finishing setup..." : (<>Get Started <ArrowRight size={16} strokeWidth={2.5} /></>)}
-                            </motion.button>
+                            </button>
 
-                            <p style={{ fontSize: 11, color: "#a1a19e", marginTop: 18, lineHeight: 1.5 }}>
+                            <p style={{ fontSize: 11, color: "#a1a19e", marginTop: 16, lineHeight: 1.5 }}>
                                 By continuing you agree to the EverFern{" "}
                                 <span style={{ textDecoration: "underline", cursor: "pointer" }}>Terms of Service</span>{" "}
                                 and{" "}
@@ -3226,6 +3115,7 @@ export default function SetupPage() {
                             </p>
                         </motion.div>
                     )}
+
                 </AnimatePresence>
             </div>
 
@@ -3264,140 +3154,64 @@ export default function SetupPage() {
             {/* ── EverFern Cloud Sign In Required Modal ── */}
             <AnimatePresence>
                 {showCloudLoginModal && (
-                    <div style={{ position: "fixed", inset: 0, zIndex: 110, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.55)", backdropFilter: "blur(8px)", padding: "0 16px" }}>
+                    <motion.div
+                        key="cloud-login"
+                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        onClick={() => setShowCloudLoginModal(false)}
+                        style={{ position: "fixed", inset: 0, zIndex: 110, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(8,10,12,0.42)", backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)", padding: "0 16px" }}
+                    >
                         <motion.div
-                            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                            ref={cloudDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="cloud-login-title"
+                            onClick={e => e.stopPropagation()}
+                            initial={{ opacity: 0, scale: 0.96, y: 12 }}
                             animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                            transition={{ duration: 0.2 }}
+                            exit={{ opacity: 0, scale: 0.97, y: 8 }}
+                            transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
                             style={{
-                                width: "100%",
-                                maxWidth: 440,
-                                background: "var(--color-bg-elevated, #ffffff)",
-                                border: "1px solid var(--color-border, rgba(0,0,0,0.1))",
-                                borderRadius: 20,
-                                overflow: "hidden",
-                                boxShadow: "0 24px 48px rgba(0,0,0,0.25)",
-                                display: "flex",
-                                flexDirection: "column"
+                                position: "relative", width: "100%", maxWidth: 400, padding: "32px 28px 22px",
+                                borderRadius: 24, textAlign: "center", color: "#fff",
+                                background: "rgba(23,26,29,0.55)", backdropFilter: "blur(40px) saturate(1.4)", WebkitBackdropFilter: "blur(40px) saturate(1.4)",
+                                boxShadow: "inset 0 0.5px 0 rgba(255,255,255,0.3), 0 0 0 0.5px rgba(255,255,255,0.14), 0 40px 80px -30px rgba(0,0,0,0.7)",
                             }}
                         >
-                            <div style={{ height: 3, width: '100%', background: '#10b981' }} />
-                            <div style={{ padding: "24px 24px 20px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
-                                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-                                    <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                                        <div style={{
-                                            width: 60,
-                                            height: 60,
-                                            borderRadius: 16,
-                                            background: "rgba(16, 185, 129, 0.12)",
-                                            border: "1px solid rgba(16, 185, 129, 0.25)",
-                                            display: "flex",
-                                            alignItems: "center",
-                                            justifyContent: "center",
-                                            flexShrink: 0
-                                        }}>
-                                            <EverFernBglessLogo size={42} />
-                                        </div>
-                                        <div>
-                                            <h3 style={{ fontSize: 18, fontWeight: 600, color: "var(--color-text-primary, #111827)", margin: 0, letterSpacing: "-0.01em" }}>
-                                                Sign In Required
-                                            </h3>
-                                            <span style={{ fontSize: 12.5, color: "var(--color-text-tertiary, #6b7280)", marginTop: 2, display: "block" }}>
-                                                EverFern Cloud
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <button
-                                        onClick={() => setShowCloudLoginModal(false)}
-                                        style={{
-                                            color: "var(--color-text-tertiary, #6b7280)",
-                                            background: "none",
-                                            border: "none",
-                                            cursor: "pointer",
-                                            padding: 4,
-                                            borderRadius: 6,
-                                            display: "flex"
-                                        }}
-                                        onMouseEnter={e => (e.currentTarget.style.color = "var(--color-text-primary, #111827)")}
-                                        onMouseLeave={e => (e.currentTarget.style.color = "var(--color-text-tertiary, #6b7280)")}
-                                    >
-                                        <X size={18} />
-                                    </button>
-                                </div>
-
-                                <p style={{ fontSize: 13, color: "var(--color-text-secondary, #374151)", lineHeight: 1.6, margin: 0 }}>
-                                    You are currently in Guest mode. You must log in to your EverFern Cloud account to use EverFern Cloud models. Would you like to log in now?
-                                </p>
-
-                                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6 }}>
-                                    <button
-                                        onClick={() => {
-                                            setShowCloudLoginModal(false);
-                                            router.push("/auth");
-                                        }}
-                                        style={{
-                                            width: "100%",
-                                            height: 44,
-                                            borderRadius: 12,
-                                            background: "#10b981",
-                                            border: "none",
-                                            color: "#ffffff",
-                                            fontSize: 14,
-                                            fontWeight: 600,
-                                            cursor: "pointer",
-                                            display: "flex",
-                                            alignItems: "center",
-                                            justifyContent: "center",
-                                            gap: 8,
-                                            boxShadow: "0 2px 8px rgba(16, 185, 129, 0.25)",
-                                            transition: "all 0.15s ease"
-                                        }}
-                                        onMouseEnter={e => {
-                                            e.currentTarget.style.background = "#059669";
-                                            e.currentTarget.style.transform = "translateY(-1px)";
-                                        }}
-                                        onMouseLeave={e => {
-                                            e.currentTarget.style.background = "#10b981";
-                                            e.currentTarget.style.transform = "none";
-                                        }}
-                                    >
-                                        <Cloud size={16} />
-                                        Log In to EverFern Cloud
-                                    </button>
-
-                                    <button
-                                        onClick={() => setShowCloudLoginModal(false)}
-                                        style={{
-                                            width: "100%",
-                                            height: 40,
-                                            borderRadius: 12,
-                                            background: "rgba(255,255,255,0.04)",
-                                            border: "1px solid var(--color-border, rgba(0,0,0,0.1))",
-                                            color: "var(--color-text-secondary, #374151)",
-                                            fontSize: 13,
-                                            fontWeight: 500,
-                                            cursor: "pointer",
-                                            display: "flex",
-                                            alignItems: "center",
-                                            justifyContent: "center",
-                                            transition: "all 0.15s ease"
-                                        }}
-                                        onMouseEnter={e => {
-                                            e.currentTarget.style.background = "rgba(255,255,255,0.08)";
-                                            e.currentTarget.style.color = "var(--color-text-primary, #111827)";
-                                        }}
-                                        onMouseLeave={e => {
-                                            e.currentTarget.style.background = "rgba(255,255,255,0.04)";
-                                            e.currentTarget.style.color = "var(--color-text-secondary, #374151)";
-                                        }}
-                                    >
-                                        Stay as Guest & Choose Another Option
-                                    </button>
-                                </div>
+                            <button
+                                onClick={() => setShowCloudLoginModal(false)} aria-label="Close"
+                                style={{ position: "absolute", top: 14, right: 14, width: 28, height: 28, borderRadius: 999, border: 0, background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.7)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                                onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.18)"; e.currentTarget.style.color = "#fff"; }}
+                                onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.08)"; e.currentTarget.style.color = "rgba(255,255,255,0.7)"; }}
+                            >
+                                <X size={14} />
+                            </button>
+                            <div style={{ width: 56, height: 56, margin: "0 auto 18px", borderRadius: 18, display: "flex", alignItems: "center", justifyContent: "center", background: "radial-gradient(circle at 35% 30%, rgba(255,255,255,0.22), rgba(255,255,255,0.04) 70%)", boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.18)" }}>
+                                <EverFernBglessLogo size={30} isDark />
                             </div>
+                            <h3 id="cloud-login-title" style={{ fontSize: 21, fontWeight: 600, margin: 0, letterSpacing: "-0.02em" }}>
+                                Sign in to use EverFern Cloud
+                            </h3>
+                            <p style={{ fontSize: 13.5, color: "rgba(255,255,255,0.72)", lineHeight: 1.55, margin: "10px auto 24px", maxWidth: 300 }}>
+                                Cloud models need an EverFern account. You&apos;re in guest mode, so you can also pick a local or your own provider.
+                            </p>
+                            <button
+                                onClick={() => { setShowCloudLoginModal(false); router.push("/auth"); }}
+                                style={{ width: "100%", height: 44, borderRadius: 999, border: 0, background: "#fff", color: "#111315", fontSize: 14, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "transform 0.15s ease, background 0.15s ease" }}
+                                onMouseEnter={e => { e.currentTarget.style.background = "#eef1f3"; }}
+                                onMouseLeave={e => { e.currentTarget.style.background = "#fff"; }}
+                                onMouseDown={e => { e.currentTarget.style.transform = "scale(0.98)"; }}
+                                onMouseUp={e => { e.currentTarget.style.transform = "none"; }}
+                            >
+                                Sign in <ChevronRight size={16} />
+                            </button>
+                            <button
+                                onClick={() => setShowCloudLoginModal(false)}
+                                style={{ marginTop: 8, width: "100%", height: 40, borderRadius: 999, border: 0, background: "transparent", color: "rgba(255,255,255,0.72)", fontSize: 13, fontWeight: 500, cursor: "pointer" }}
+                                onMouseEnter={e => { e.currentTarget.style.color = "#fff"; e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}
+                                onMouseLeave={e => { e.currentTarget.style.color = "rgba(255,255,255,0.72)"; e.currentTarget.style.background = "transparent"; }}
+                            >
+                                Continue as guest
+                            </button>
                         </motion.div>
-                    </div>
+                    </motion.div>
                 )}
             </AnimatePresence>
         </GlassShell>

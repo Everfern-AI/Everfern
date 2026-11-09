@@ -30,6 +30,10 @@ const OllamaLogo = ({ size = 16 }: { size?: number }) => (
     <Image unoptimized src="/images/ai-providers/ollama.svg" alt="Ollama Logo" width={size} height={size} className="invert opacity-90" />
 );
 
+const LlamaCppLogo = ({ size = 16 }: { size?: number }) => (
+    <Image unoptimized src="/images/ai-providers/llamacpp.png" alt="llama.cpp" width={size} height={size} />
+);
+
 const LMStudioLogo = ({ size = 16 }: { size?: number }) => (
     <Image unoptimized src="/images/ai-providers/lm-studio.png" alt="LM Studio Logo" width={size} height={size} className="grayscale opacity-80" />
 );
@@ -55,6 +59,7 @@ export {
     OpenRouterLogo,
     OllamaLogo,
     LMStudioLogo,
+    LlamaCppLogo,
     HuggingFaceLogo,
     EverFernBglessLogo,
     MiniMaxLogo

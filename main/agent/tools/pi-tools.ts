@@ -552,7 +552,7 @@ async function withPiToolHooks(
 /**
  * Translates Linux-style paths in tool args to host-native paths.
  * Platform-specific:
- * - Windows: /mnt/c/... → C:\, /home/... → \\wsl.localhost\Ubuntu\...
+ * - Windows: /mnt/c/... → C:\, /home/... → \\wsl.localhost\EverFern-Alpine\...
  * - macOS: /host/Users/... → /Users/...
  * - Linux: pass-through (already native paths)
  */
@@ -585,7 +585,7 @@ function translateLinuxPathsToHostPaths(args: Record<string, unknown>): Record<s
       // Translate absolute Linux paths to WSL localhost UNC path
       if (p.startsWith('/')) {
         const relativePath = p.substring(1);
-        translated[key] = `\\\\wsl.localhost\\Ubuntu\\${relativePath.replace(/\//g, '\\')}`;
+        translated[key] = `\\\\wsl.localhost\\EverFern-Alpine\\${relativePath.replace(/\//g, '\\')}`;
         continue;
       }
 

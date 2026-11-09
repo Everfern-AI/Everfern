@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { SparklesIcon, PaperAirplaneIcon, PlayIcon } from '@heroicons/react/24/outline';
+import { SparklesIcon, PaperAirplaneIcon, PlayIcon, ExclamationTriangleIcon, AdjustmentsHorizontalIcon } from '@heroicons/react/24/outline';
 import { GraphicsCardIcon } from '@phosphor-icons/react';
 import { WaveformIcon } from './UIIcons';
 import { useTheme } from '@/components/ThemeProvider';
@@ -859,4 +859,75 @@ const CloudAuthLoginButton = ({
     );
 };
 
-export { ContextTokenRing, VoiceButton, RateLimitContinueButton, CloudAuthLoginButton };
+export const isVisionGroundingError = (content?: string | null): boolean => {
+    const text = (content || '').toLowerCase();
+    const isLocalVisionModel = /qwen3[-_:]?vl|vision grounding|local vision|ollama.*(?:vision|vl)/i.test(text);
+    const isUnavailable = /model.*not found|http 404|connection refused|failed to connect|ollama.*not (?:running|installed)|vision.*(?:failed|unavailable)/i.test(text);
+    return isLocalVisionModel && isUnavailable;
+};
+
+const VisionGroundingErrorCard = ({
+    content,
+    onOpenSettings,
+    onDisable,
+}: {
+    content?: string;
+    onOpenSettings: () => void;
+    onDisable?: () => void | Promise<void>;
+}) => {
+    if (!isVisionGroundingError(content)) return null;
+
+    return (
+        <motion.section
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+            role="status"
+            aria-live="polite"
+            style={{
+                marginTop: 14,
+                maxWidth: 560,
+                padding: 18,
+                borderRadius: 14,
+                border: '1px solid rgba(245, 158, 11, 0.34)',
+                background: 'color-mix(in srgb, var(--color-bg-elevated) 92%, #f59e0b 8%)',
+                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.08)',
+            }}
+        >
+            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                <div style={{ width: 34, height: 34, borderRadius: 10, display: 'grid', placeItems: 'center', flexShrink: 0, color: '#d97706', background: 'rgba(245, 158, 11, 0.13)' }}>
+                    <ExclamationTriangleIcon width={19} height={19} aria-hidden="true" />
+                </div>
+                <div style={{ minWidth: 0 }}>
+                    <h3 style={{ margin: '1px 0 5px', fontSize: 14, lineHeight: 1.35, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+                        Local Vision is unavailable
+                    </h3>
+                    <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.55, color: 'var(--color-text-secondary)' }}>
+                        The optional Ollama vision model is missing or offline. EverFern Cloud is still working; only screen grounding was interrupted.
+                    </p>
+                </div>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 15 }}>
+                <button
+                    type="button"
+                    onClick={onOpenSettings}
+                    style={{ minHeight: 36, padding: '8px 13px', borderRadius: 9, border: 'none', background: 'var(--color-text-primary)', color: 'var(--color-text-inverse)', fontSize: 12.5, fontWeight: 650, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}
+                >
+                    <AdjustmentsHorizontalIcon width={15} height={15} aria-hidden="true" />
+                    Configure Vision
+                </button>
+                {onDisable && (
+                    <button
+                        type="button"
+                        onClick={() => void onDisable()}
+                        style={{ minHeight: 36, padding: '8px 13px', borderRadius: 9, border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-text-primary)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}
+                    >
+                        Turn off Vision Grounding
+                    </button>
+                )}
+            </div>
+        </motion.section>
+    );
+};
+
+export { ContextTokenRing, VoiceButton, RateLimitContinueButton, CloudAuthLoginButton, VisionGroundingErrorCard };

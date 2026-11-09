@@ -9,12 +9,15 @@ import {
   Clock, AlertTriangle, CheckCircle, Link2, ExternalLink,
   Braces, ChevronDown, AlertCircle, ArrowUpRight, Play, Pause,
   BookOpen, PanelRightOpen, File as FileIcon, Folder, Plus, Image, Brain,
-  FileText, Loader2
+  FileText, Loader2, Code2
 } from 'lucide-react';
 import { FolderOpenIcon } from '@heroicons/react/24/outline';
 import { MarkdownViewer } from '../files/FileViewerModal';
 import ToolCallCodePane from './ToolCallCodePane';
 import { useTheme } from '@/components/ThemeProvider';
+import { normalizeToolName } from '@/lib/tool-utils';
+
+export { normalizeToolName } from '@/lib/tool-utils';
 
 /* ============================================================
    TYPES
@@ -22,6 +25,7 @@ import { useTheme } from '@/components/ThemeProvider';
 export const ToolType = {
   MCP_REGISTRY: 'mcp_registry',
   WEB_SEARCH: 'web_search',
+  WEB_FETCH: 'web_fetch',
   FERN: 'fern',
   MEMORY: 'memory',
   TERMINAL: 'terminal',
@@ -109,8 +113,8 @@ export function detectToolType(toolName: string | undefined | null): string {
   if (n === 'skill') return ToolType.SKILL;
   if (n === 'show_user_url' || n.includes('preview_live_url')) return ToolType.LIVE_PREVIEW;
   if (n === 'search_mcp_registry' || n.includes('mcp_registry')) return ToolType.MCP_REGISTRY;
+  if (n.includes('web_fetch') || n.includes('fetch_url') || n.includes('read_url')) return ToolType.WEB_FETCH;
   if (n.includes('web_search') || n.includes('remote_web_search') || n.includes('search')) return ToolType.WEB_SEARCH;
-  if (n.includes('web_fetch') || n.includes('fetch_url')) return ToolType.WEB_SEARCH;
   if (n === 'fern' || n === 'recall_fact' || n === 'remember_fact' || n === 'update_profile' || n.includes('memory') || n.includes('consolidator') || n.includes('confirm_preference') || n.includes('recall') || n.includes('remember')) return ToolType.MEMORY;
   if (n.includes('navis') || n.includes('browser') || n.includes('computer_use')) return ToolType.FERN;
   if (n.includes('run_command') || n.includes('bash') || n.includes('run_terminal') || n.includes('execute')) return ToolType.TERMINAL;
@@ -149,7 +153,7 @@ function getToolMeta(toolName: string | undefined | null) {
   if (n === 'visual_classification_sheet') return { Icon: Image, label: 'Visual Sheet' };
   if (n === 'analyze_image' || n.includes('analyze_image')) return { Icon: Image, label: 'Image Analysis' };
   if (n.includes('system_files')) return { Icon: FolderOpenIcon, label: 'File System', iconSize: 12 };
-  return { Icon: Braces, label: 'Generic Tool' };
+  return { Icon: Braces, label: normalizeToolName(toolName) || 'Tool' };
 }
 
 /* ============================================================
@@ -234,17 +238,17 @@ function PanelHeader({
             {agentName && (
               <>
                 <span style={{ fontSize: 13, fontWeight: 600, color: T.text, letterSpacing: '-0.015em', fontFamily: T.sans }}>{agentName}</span>
-                <span style={{ color: T.borderSubtle, fontSize: 12 }}>→</span>
+                <span style={{ color: 'var(--color-text-primary)', fontSize: 12, opacity: 0.9 }}>→</span>
               </>
             )}
-            <code style={{
-              fontSize: 11.5, fontFamily: T.mono, fontWeight: 700, color: 'var(--color-text-primary)',
+            <span style={{
+              fontSize: 12, fontFamily: T.sans, fontWeight: 600, color: 'var(--color-text-primary)',
               background: 'var(--color-bg-subtle)', border: '0.5px solid var(--color-border)',
               boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1), inset 0 -1px 0 rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.05)',
-              padding: '2px 8px', borderRadius: T.r6,
+              padding: '2px 8px', borderRadius: T.r6, letterSpacing: '-0.01em',
             }}>
-              {toolName}
-            </code>
+              {normalizeToolName(toolName)}
+            </span>
             {isStreaming && (
               <span style={{
                 fontSize: 10,
@@ -1158,7 +1162,7 @@ function NavisView({
           <EmptyState
             icon={CameraOff}
             title="No captures yet"
-            description={`${toolName} ran but didn't produce screenshots during this session.`}
+            description={`${normalizeToolName(toolName)} ran but didn't produce screenshots during this session.`}
             note="Frames appear here in real-time as actions execute."
           />
         </div>
@@ -1935,6 +1939,456 @@ function LivePreviewView({ url }: { url: string }) {
 }
 
 /* ============================================================
+   WEB FETCH VIEW
+   ============================================================ */
+function WebFetchView({
+  url = '',
+  title = '',
+  metadata = {},
+  contentType = '',
+  contentLength,
+  truncated = false,
+  output = '',
+  isError = false,
+}: {
+  url: string;
+  title?: string;
+  metadata?: Record<string, string>;
+  contentType?: string;
+  contentLength?: number;
+  truncated?: boolean;
+  output?: string;
+  isError?: boolean;
+}) {
+  const [viewMode, setViewMode] = useState<'reader' | 'raw'>('reader');
+  const [copiedUrl, setCopiedUrl] = useState(false);
+  const [copiedContent, setCopiedContent] = useState(false);
+
+  let domain = '';
+  if (url) {
+    try {
+      domain = new URL(url).hostname;
+    } catch {
+      domain = url;
+    }
+  }
+
+  const handleCopyUrl = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedUrl(true);
+      setTimeout(() => setCopiedUrl(false), 2000);
+    } catch {}
+  };
+
+  const handleCopyContent = async () => {
+    if (!output) return;
+    try {
+      await navigator.clipboard.writeText(output);
+      setCopiedContent(true);
+      setTimeout(() => setCopiedContent(false), 2000);
+    } catch {}
+  };
+
+  const handleOpenUrl = () => {
+    if (!url) return;
+    const safeUrl = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+    window.open(safeUrl, '_blank', 'noopener,noreferrer');
+  };
+
+  const displaySize = contentLength
+    ? contentLength > 1024 * 1024
+      ? `${(contentLength / (1024 * 1024)).toFixed(1)} MB`
+      : contentLength > 1024
+        ? `${(contentLength / 1024).toFixed(1)} KB`
+        : `${contentLength} chars`
+    : output
+      ? `${(output.length / 1024).toFixed(1)} KB`
+      : null;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+      {/* URL & Meta Header */}
+      <div style={{
+        padding: '16px 20px',
+        background: T.surface,
+        borderBottom: `1px solid ${T.border}`,
+        flexShrink: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12,
+      }}>
+        {/* Address bar */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          background: T.bg,
+          border: `1px solid ${T.border}`,
+          borderRadius: T.r10,
+          padding: '8px 12px',
+        }}>
+          {domain ? (
+            <img
+              src={getFaviconUrl(domain)}
+              alt=""
+              width={16}
+              height={16}
+              style={{ borderRadius: 3, flexShrink: 0 }}
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+          ) : (
+            <Globe size={16} color={T.textMuted} style={{ flexShrink: 0 }} />
+          )}
+
+          <span
+            style={{
+              fontSize: 12.5,
+              color: url ? T.text : T.textMuted,
+              fontFamily: T.mono,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              flex: 1,
+            }}
+            title={url}
+          >
+            {url || 'No URL specified'}
+          </span>
+
+          {url && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+              <button
+                type="button"
+                onClick={handleCopyUrl}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  padding: '4px 6px',
+                  borderRadius: T.r6,
+                  color: copiedUrl ? T.green : T.textSecondary,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  fontSize: 11,
+                  fontFamily: T.sans,
+                }}
+                title="Copy URL"
+              >
+                {copiedUrl ? <Check size={13} /> : <Copy size={13} />}
+                <span>{copiedUrl ? 'Copied' : 'Copy'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleOpenUrl}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  padding: 4,
+                  borderRadius: T.r6,
+                  color: T.textSecondary,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                }}
+                title="Open in external browser"
+              >
+                <ExternalLink size={13} />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Title and Badges */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            {title && (
+              <h3 style={{
+                margin: 0,
+                fontSize: 13.5,
+                fontWeight: 600,
+                color: T.text,
+                letterSpacing: '-0.015em',
+                fontFamily: T.sans,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}>
+                {title}
+              </h3>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            {isError ? (
+              <span style={{
+                fontSize: 10.5,
+                fontWeight: 700,
+                color: T.red,
+                background: T.redFaint,
+                border: '1px solid rgba(239,68,68,0.25)',
+                padding: '2px 8px',
+                borderRadius: 20,
+                fontFamily: T.sans,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+              }}>
+                <AlertCircle size={11} color={T.red} />
+                Failed
+              </span>
+            ) : (
+              <span style={{
+                fontSize: 10.5,
+                fontWeight: 700,
+                color: T.green,
+                background: T.greenFaint,
+                border: '1px solid rgba(34,197,94,0.25)',
+                padding: '2px 8px',
+                borderRadius: 20,
+                fontFamily: T.sans,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+              }}>
+                <Check size={11} color={T.green} />
+                Fetched
+              </span>
+            )}
+
+            {displaySize && (
+              <span style={{
+                fontSize: 10.5,
+                fontWeight: 600,
+                color: T.textMuted,
+                background: T.surfaceRaised,
+                border: `1px solid ${T.border}`,
+                padding: '2px 8px',
+                borderRadius: 20,
+                fontFamily: T.mono,
+              }}>
+                {displaySize}
+              </span>
+            )}
+
+            {contentType && (
+              <span style={{
+                fontSize: 10.5,
+                fontWeight: 600,
+                color: T.textMuted,
+                background: T.surfaceRaised,
+                border: `1px solid ${T.border}`,
+                padding: '2px 8px',
+                borderRadius: 20,
+                fontFamily: T.sans,
+              }}>
+                {contentType.split(';')[0]}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* View Mode Toggle & Copy Content */}
+        {!isError && output && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 4 }}>
+            <div style={{
+              display: 'inline-flex',
+              padding: 2,
+              background: T.bg,
+              border: `1px solid ${T.border}`,
+              borderRadius: T.r8,
+              gap: 2,
+            }}>
+              <button
+                type="button"
+                onClick={() => setViewMode('reader')}
+                style={{
+                  border: 'none',
+                  padding: '4px 10px',
+                  borderRadius: T.r6,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  fontFamily: T.sans,
+                  cursor: 'pointer',
+                  background: viewMode === 'reader' ? T.surfaceRaised : 'transparent',
+                  color: viewMode === 'reader' ? T.text : T.textMuted,
+                  boxShadow: viewMode === 'reader' ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5,
+                }}
+              >
+                <BookOpen size={12} />
+                Reader
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('raw')}
+                style={{
+                  border: 'none',
+                  padding: '4px 10px',
+                  borderRadius: T.r6,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  fontFamily: T.sans,
+                  cursor: 'pointer',
+                  background: viewMode === 'raw' ? T.surfaceRaised : 'transparent',
+                  color: viewMode === 'raw' ? T.text : T.textMuted,
+                  boxShadow: viewMode === 'raw' ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5,
+                }}
+              >
+                <Code2 size={12} />
+                Raw Text
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleCopyContent}
+              style={{
+                background: 'transparent',
+                border: `1px solid ${T.border}`,
+                borderRadius: T.r6,
+                padding: '4px 10px',
+                fontSize: 11,
+                fontWeight: 600,
+                color: copiedContent ? T.green : T.textSecondary,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                fontFamily: T.sans,
+              }}
+            >
+              {copiedContent ? <Check size={12} /> : <Copy size={12} />}
+              <span>{copiedContent ? 'Copied' : 'Copy Content'}</span>
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Main Content Area */}
+      <div style={{ flex: 1, overflowY: 'auto', background: T.bg, padding: '20px 24px' }}>
+        {truncated && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '10px 14px',
+            marginBottom: 16,
+            background: 'rgba(245,158,11,0.08)',
+            border: '1px solid rgba(245,158,11,0.25)',
+            borderRadius: T.r8,
+            color: T.amber,
+            fontSize: 12,
+            fontFamily: T.sans,
+          }}>
+            <AlertTriangle size={14} style={{ flexShrink: 0 }} />
+            <span>Content was truncated because the page exceeded 100,000 characters.</span>
+          </div>
+        )}
+
+        {isError ? (
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '40px 20px',
+            textAlign: 'center',
+          }}>
+            <div style={{
+              width: 48,
+              height: 48,
+              borderRadius: T.r12,
+              background: T.redFaint,
+              border: '1px solid rgba(239,68,68,0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 16,
+            }}>
+              <AlertCircle size={22} color={T.red} />
+            </div>
+            <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: T.text, fontFamily: T.sans }}>
+              Failed to Fetch Webpage
+            </h4>
+            <p style={{
+              margin: '0 0 16px',
+              fontSize: 12.5,
+              color: T.textSecondary,
+              fontFamily: T.sans,
+              maxWidth: 420,
+              lineHeight: 1.5,
+            }}>
+              {output || 'The remote server did not return a valid response.'}
+            </p>
+            {url && (
+              <button
+                type="button"
+                onClick={handleOpenUrl}
+                style={{
+                  background: T.surface,
+                  border: `1px solid ${T.border}`,
+                  borderRadius: T.r8,
+                  padding: '7px 14px',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: T.text,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  fontFamily: T.sans,
+                }}
+              >
+                <ExternalLink size={13} />
+                Open directly in browser
+              </button>
+            )}
+          </div>
+        ) : !output ? (
+          <EmptyState
+            icon={Globe}
+            title="No Content Fetched"
+            description={url ? `No content was extracted from ${url}.` : 'No URL was provided in this tool call.'}
+          />
+        ) : viewMode === 'raw' ? (
+          <pre style={{
+            margin: 0,
+            padding: '16px 18px',
+            fontFamily: T.mono,
+            fontSize: 12,
+            lineHeight: 1.7,
+            background: T.inkBg,
+            color: T.inkText,
+            borderRadius: T.r10,
+            border: `1px solid ${T.inkBorder}`,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+          }}>
+            {output}
+          </pre>
+        ) : (
+          <div style={{ color: T.text, lineHeight: 1.65, fontSize: 13.5 }}>
+            <MarkdownViewer content={output} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
    WEB SEARCH VIEW
    ============================================================ */
 function WebSearchView({ query, results = [], totalResults = 0 }: { query: string; results?: any[]; totalResults?: number }) {
@@ -2262,7 +2716,7 @@ function GenericView({ toolName, args, output }: { toolName: string; args?: any;
       {/* Subtitle bar */}
       <div style={{ padding: '18px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface, flexShrink: 0 }}>
         <h3 style={{ fontSize: 13.5, fontWeight: 600, color: T.text, margin: '0 0 4px', letterSpacing: '-0.015em', fontFamily: T.sans }}>
-          {toolName}
+          {normalizeToolName(toolName)}
         </h3>
         <p style={{ fontSize: 12, color: T.textMuted, margin: 0, fontFamily: T.sans }}>Tool execution details</p>
       </div>
@@ -2362,6 +2816,46 @@ function extractSkillData(tc: any) {
 /* ============================================================
    DATA EXTRACTION
    ============================================================ */
+export function extractWebFetchData(tc: any) {
+  try {
+    const args = tc.args || tc.arguments || {};
+    const data = tc.data || tc.result?.data || tc.result || {};
+    const output = tc.output || tc.result?.output || tc.result?.error || tc.error || '';
+
+    // Extract URL
+    let url = String(
+      args.url || args.Url || args.URL || args.targetUrl || args.target_url || args.link || args.uri || args.href ||
+      data.url || ''
+    ).trim();
+
+    // If url is still empty, try extracting from output (e.g. "**URL**: https://...")
+    if (!url && typeof output === 'string') {
+      const match = output.match(/\*\*URL\*\*:\s*(\S+)/i) || output.match(/Fetching\s+(\S+)/i);
+      if (match) url = match[1];
+    }
+
+    const title = data.title || tc.result?.title || '';
+    const metadata = data.metadata || tc.result?.metadata || {};
+    const contentType = data.contentType || tc.result?.contentType || '';
+    const contentLength = data.contentLength || tc.result?.contentLength;
+    const truncated = Boolean(data.truncated || tc.result?.truncated);
+    const isError = tc.status === 'failed' || tc.status === 'error' || Boolean(tc.error) || (typeof output === 'string' && output.trim().startsWith('Error'));
+
+    return {
+      url,
+      title,
+      metadata,
+      contentType,
+      contentLength,
+      truncated,
+      output,
+      isError,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function extractWebSearchData(tc: any) {
   try {
     const query = tc.args?.query || '';
@@ -2658,7 +3152,7 @@ function FileSystemView({ toolName, path, args, output }: { toolName: string; pa
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       <div style={{ padding: '18px 24px', borderBottom: `1px solid ${T.border}`, background: T.surface, flexShrink: 0 }}>
         <h3 style={{ fontSize: 13.5, fontWeight: 600, color: T.text, margin: '0 0 4px', letterSpacing: '-0.015em', fontFamily: T.sans }}>
-          {toolName}
+          {normalizeToolName(toolName)}
         </h3>
         {path && <p style={{ fontSize: 11.5, color: T.textSecondary, fontFamily: T.mono, wordBreak: 'break-all', margin: 0 }}>{path}</p>}
       </div>
@@ -3599,6 +4093,8 @@ export default function ToolDetailSidePanel({
       let extracted: any;
       if (type === ToolType.MCP_REGISTRY) {
         extracted = extractMcpRegistryData(toolCall);
+      } else if (type === ToolType.WEB_FETCH) {
+        extracted = extractWebFetchData(toolCall);
       } else if (type === ToolType.WEB_SEARCH) {
         extracted = extractWebSearchData(toolCall);
       } else if (type === ToolType.LIVE_PREVIEW) {
@@ -3851,6 +4347,7 @@ export default function ToolDetailSidePanel({
 
     if (toolType === ToolType.LIVE_PREVIEW) return <LivePreviewView {...toolData} />;
     if (toolType === ToolType.MCP_REGISTRY) return <McpRegistryView {...toolData} />;
+    if (toolType === ToolType.WEB_FETCH) return <WebFetchView {...toolData} />;
     if (toolType === ToolType.WEB_SEARCH) return <WebSearchView {...toolData} />;
     if (toolType === ToolType.FERN) return <NavisView {...toolData} toolName={toolCall?.toolName || 'Fern'} toolCall={toolCall} />;
     if (toolType === ToolType.MEMORY) return <MemoryView {...toolData} toolName={toolCall?.toolName || ''} />;

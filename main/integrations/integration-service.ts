@@ -6,9 +6,9 @@
  */
 
 import { EventEmitter } from 'events';
-import { BotIntegrationManager } from './bot-manager';
-import { TelegramPlatform } from './telegram-platform';
-import { DiscordPlatform } from './discord-platform';
+import type { BotIntegrationManager } from './bot-manager';
+import type { TelegramPlatform } from './telegram-platform';
+import type { DiscordPlatform } from './discord-platform';
 import { UserAuthenticationService } from './user-auth';
 import { UserPermissionManager } from './user-permissions';
 import { ConversationRouter } from './conversation-router';
@@ -395,7 +395,9 @@ export class IntegrationService extends EventEmitter {
     this.services.set('message-sync-service', this.messageSyncService);
     this.updateServiceStatus('message-sync-service', 'running');
 
-    // Bot Integration Manager
+    // Bot Integration Manager (Discord.js / Telegram are loaded on demand
+    // so environments with no configured bots don't pay for them at startup)
+    const { BotIntegrationManager } = require('./bot-manager') as typeof import('./bot-manager');
     this.botIntegrationManager = new BotIntegrationManager({
       enabled: true,
       platforms: {},
@@ -443,6 +445,7 @@ export class IntegrationService extends EventEmitter {
     // Configure Telegram if enabled
     if (this.config.telegram.enabled && this.config.telegram.botToken) {
       try {
+        const { TelegramPlatform } = require('./telegram-platform') as typeof import('./telegram-platform');
         const telegramPlatform = new TelegramPlatform({
           enabled: true,
           config: {
@@ -464,6 +467,7 @@ export class IntegrationService extends EventEmitter {
     // Configure Discord if enabled
     if (this.config.discord.enabled && this.config.discord.botToken && this.config.discord.applicationId) {
       try {
+        const { DiscordPlatform } = require('./discord-platform') as typeof import('./discord-platform');
         const discordPlatform = new DiscordPlatform({
           enabled: true,
           config: {

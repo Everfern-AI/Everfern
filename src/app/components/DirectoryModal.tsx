@@ -1,7 +1,9 @@
 "use client";
 
+import { useDialogFocus } from "@/lib/use-dialog-focus";
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useTheme } from "@/components/ThemeProvider";
 import {
     XMarkIcon,
     MagnifyingGlassIcon,
@@ -134,6 +136,7 @@ const SKILLS = [
 ];
 
 export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps) {
+    const dialogRef = useDialogFocus<HTMLDivElement>(isOpen, onClose);
     const [activeTab, setActiveTab] = useState<TabType>('mcp');
     const [searchQuery, setSearchQuery] = useState("");
     const [selectedMCP, setSelectedMCP] = useState<MCPConnector | null>(null);
@@ -252,25 +255,36 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
         } catch (e) { console.error('Failed to delete skill:', e); }
     };
 
-    // Light theme styling constants
+    const { theme } = useTheme();
+    const isDark = theme === 'dark';
+
+    // Theme-aware styling constants
     const colors = {
-        overlay: "rgba(0, 0, 0, 0.2)",
+        overlay: 'var(--scrim, rgba(0, 0, 0, 0.5))',
+        subOverlay: isDark ? "rgba(0, 0, 0, 0.65)" : "rgba(255, 255, 255, 0.8)",
         background: 'var(--color-bg-surface)',
         sidebarBg: 'var(--color-bg-subtle)',
         border: 'var(--color-border)',
         textPrimary: 'var(--color-text-primary)',
         textSecondary: 'var(--color-text-secondary)',
         textMuted: 'var(--color-text-tertiary)',
-        accent: "#000000",
-        accentHover: "rgba(0,0,0,0.05)",
+        accent: isDark ? "#ffffff" : "#000000",
+        accentHover: isDark ? "rgba(255, 255, 255, 0.08)" : "rgba(0, 0, 0, 0.05)",
         cardBg: 'var(--color-bg-surface)',
         cardHover: 'var(--color-bg-subtle)',
-        inputBg: 'var(--color-bg-surface)',
+        inputBg: isDark ? 'var(--color-bg-subtle)' : 'var(--color-bg-surface)',
+        badgeBg: isDark ? "rgba(255, 255, 255, 0.08)" : "rgba(0, 0, 0, 0.04)",
         buttonBg: 'var(--color-bg-surface)',
         buttonHover: 'var(--color-bg-base)',
         primaryButton: 'var(--color-text-primary)',
         primaryButtonText: 'var(--color-bg-surface)',
-        primaryButtonHover: "#333333"
+        primaryButtonHover: isDark ? "#d4d4d8" : "#333333",
+        modalShadow: isDark
+            ? "0 24px 48px rgba(0, 0, 0, 0.6)"
+            : "0 24px 48px rgba(0, 0, 0, 0.1)",
+        dialogShadow: isDark
+            ? "0 20px 40px rgba(0, 0, 0, 0.6)"
+            : "0 20px 40px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.05)",
     };
 
     const handleSaveMCP = (e: React.FormEvent) => {
@@ -305,9 +319,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                         style={{ position: "absolute", inset: 0, backgroundColor: colors.overlay, backdropFilter: "blur(2px)" }}
                     />
 
-                    <motion.div
-                        role="dialog"
-                        aria-modal="true"
+                    <motion.div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Extensions directory"
                         aria-labelledby="directory-modal-title"
                         initial={{ opacity: 0, scale: 0.95, y: 10 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -319,7 +331,8 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                             height: "min(600px, calc(100vh - 32px))",
                             backgroundColor: colors.background,
                             borderRadius: "16px",
-                            boxShadow: "0 20px 40px rgba(0,0,0,0.1), 0 0 0 1px rgba(0,0,0,0.05)",
+                            border: `1px solid ${colors.border}`,
+                            boxShadow: colors.dialogShadow,
                             display: "flex",
                             overflow: "hidden"
                         }}
@@ -358,7 +371,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                         }}
                                         onMouseEnter={(e) => {
                                             if (activeTab !== tab.id) {
-                                                e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.02)";
+                                                e.currentTarget.style.backgroundColor = colors.accentHover;
                                                 e.currentTarget.style.color = colors.textPrimary;
                                             }
                                         }}
@@ -540,8 +553,8 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                         }}
                                         onMouseEnter={e => {
                                             e.currentTarget.style.backgroundColor = colors.cardHover;
-                                            e.currentTarget.style.borderColor = "#d0d0d0";
-                                            e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.03)";
+                                            e.currentTarget.style.borderColor = isDark ? "rgba(255,255,255,0.2)" : "#d0d0d0";
+                                            e.currentTarget.style.boxShadow = isDark ? "0 4px 12px rgba(0,0,0,0.2)" : "0 4px 12px rgba(0,0,0,0.03)";
                                         }}
                                         onMouseLeave={e => {
                                             e.currentTarget.style.backgroundColor = colors.cardBg;
@@ -615,8 +628,8 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                         }}
                                         onMouseEnter={e => {
                                             e.currentTarget.style.backgroundColor = colors.cardHover;
-                                            e.currentTarget.style.borderColor = "#d0d0d0";
-                                            e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.03)";
+                                            e.currentTarget.style.borderColor = isDark ? "rgba(255,255,255,0.2)" : "#d0d0d0";
+                                            e.currentTarget.style.boxShadow = isDark ? "0 4px 12px rgba(0,0,0,0.2)" : "0 4px 12px rgba(0,0,0,0.03)";
                                         }}
                                         onMouseLeave={e => {
                                             e.currentTarget.style.backgroundColor = colors.cardBg;
@@ -642,7 +655,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                                     <div style={{
                                                         display: "flex", alignItems: "center", gap: "4px",
                                                         padding: "4px 8px", borderRadius: "6px",
-                                                        backgroundColor: "rgba(0,0,0,0.04)", color: colors.textSecondary,
+                                                        backgroundColor: colors.badgeBg, color: colors.textSecondary,
                                                         fontSize: "12px", fontWeight: 500
                                                     }}>
                                                         <CheckIcon width={14} height={14} />
@@ -747,7 +760,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                     style={{
                                         position: "absolute",
                                         inset: 0,
-                                        backgroundColor: "rgba(255, 255, 255, 0.8)",
+                                        backgroundColor: colors.subOverlay,
                                         backdropFilter: "blur(4px)",
                                         zIndex: 20,
                                         display: "flex",
@@ -766,7 +779,8 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                             width: "480px",
                                             backgroundColor: 'var(--color-bg-surface)',
                                             borderRadius: "16px",
-                                            boxShadow: "0 24px 48px rgba(0,0,0,0.1), 0 0 0 1px rgba(0,0,0,0.05)",
+                                            border: `1px solid ${colors.border}`,
+                                            boxShadow: colors.modalShadow,
                                             overflow: "hidden",
                                             display: "flex",
                                             flexDirection: "column"
@@ -938,7 +952,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                     style={{
                                         position: "absolute",
                                         inset: 0,
-                                        backgroundColor: "rgba(255, 255, 255, 0.8)",
+                                        backgroundColor: colors.subOverlay,
                                         backdropFilter: "blur(4px)",
                                         zIndex: 30,
                                         display: "flex",
@@ -957,7 +971,8 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                             width: "480px",
                                             backgroundColor: 'var(--color-bg-surface)',
                                             borderRadius: "16px",
-                                            boxShadow: "0 24px 48px rgba(0,0,0,0.1)",
+                                            border: `1px solid ${colors.border}`,
+                                            boxShadow: colors.modalShadow,
                                             overflow: "hidden",
                                             display: "flex",
                                             flexDirection: "column"
@@ -1042,7 +1057,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                                     padding: "24px",
                                                     borderRadius: "8px",
                                                     border: `2px dashed ${isDragOver ? colors.accent : colors.border}`,
-                                                    backgroundColor: isDragOver ? 'rgba(0,0,0,0.04)' : colors.inputBg,
+                                                    backgroundColor: isDragOver ? (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') : colors.inputBg,
                                                     color: colors.textSecondary,
                                                     fontSize: "14px",
                                                     display: "flex",
@@ -1066,7 +1081,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                                         <div>Drop SKILL.md file here</div>
                                                         <div style={{ fontSize: "12px" }}>or click to browse</div>
                                                         </React.Fragment>
-                                                )}
+                                                    )}
                                             </div>
                                             {skillResult && (
                                                 <div style={{ padding: "10px 14px", borderRadius: 8, backgroundColor: skillResult.success ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', color: skillResult.success ? '#16a34a' : '#dc2626', fontSize: 13 }}>
@@ -1085,8 +1100,11 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                                         color: colors.textPrimary,
                                                         fontSize: "13px",
                                                         fontWeight: 500,
-                                                        cursor: "pointer"
+                                                        cursor: "pointer",
+                                                        transition: "all 0.2s"
                                                     }}
+                                                    onMouseEnter={e => e.currentTarget.style.backgroundColor = colors.buttonHover}
+                                                    onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
                                                 >
                                                     Cancel
                                                 </button>
@@ -1103,7 +1121,14 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                                         fontSize: "13px",
                                                         fontWeight: 500,
                                                         cursor: isSavingSkill ? "not-allowed" : "pointer",
-                                                        opacity: isSavingSkill ? 0.6 : 1
+                                                        opacity: isSavingSkill ? 0.6 : 1,
+                                                        transition: "all 0.2s"
+                                                    }}
+                                                    onMouseEnter={e => {
+                                                        if (!isSavingSkill) e.currentTarget.style.backgroundColor = colors.primaryButtonHover;
+                                                    }}
+                                                    onMouseLeave={e => {
+                                                        if (!isSavingSkill) e.currentTarget.style.backgroundColor = colors.primaryButton;
                                                     }}
                                                 >
                                                     {isSavingSkill ? 'Saving...' : 'Save Skill'}

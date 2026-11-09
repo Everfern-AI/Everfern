@@ -10,7 +10,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { OVERLAY_SCRIPT } from './overlay';
 import { NavisLogger } from './logger';
-import { findChromiumExecutable } from '../../../lib/playwright-setup';
+import { findChromiumExecutable, ensurePlaywrightChromium } from '../../../lib/playwright-setup';
 import { getAvailableBrowsers, type BrowserInfo } from '../../../lib/browser-detector';
 
 let pwChromium: any = null;
@@ -756,6 +756,10 @@ export class BrowserSession {
 
       {
         const engine = resolvedBrowserInfo?.engine || 'chromium';
+        // Install Playwright Chromium on first browser use rather than at startup.
+        if (!resolvedBrowserInfo?.path && !findChromiumExecutable()) {
+          await ensurePlaywrightChromium();
+        }
         const executablePath = resolvedBrowserInfo?.path || findChromiumExecutable() || undefined;
 
         console.log(`[Navis] 🌐 Isolated browser mode (engine: ${engine})`);

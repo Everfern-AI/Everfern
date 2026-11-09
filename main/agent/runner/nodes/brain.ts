@@ -13,6 +13,7 @@ import { loadSoul, loadAgents } from '../../personality-manager';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { readRunFindings } from '../run-findings';
 
 type CompletionReason = 'task_complete' | 'waiting_for_user_input' | 'needs_hitl' | 'cannot_proceed';
 type RoutingDecision = 'continue_brain' | 'route_coding' | 'route_data_analyst' | 'route_web_explorer' | 'route_deep_research' | 'complete_task';
@@ -460,19 +461,13 @@ export const createBrainNode = (
       console.log('[Brain] 🏗️ Injected harness phase prompt into system prompt');
     }
 
-    // Inject recent findings from findings.md so the brain doesn't repeat navis/web_search work
+    // Inject only THIS run's findings. Reading the global findings.md leaked a
+    // previous task's research into every new task in the same worker.
     try {
-      const findingsPath = path.join(os.homedir(), '.everfern', 'findings.md');
-      if (fs.existsSync(findingsPath)) {
-        let findingsContent = fs.readFileSync(findingsPath, 'utf-8').trim();
-        if (findingsContent && findingsContent.length > 0) {
-          // Keep only the most recent research findings to avoid token bloat and cross-session contamination
-          if (findingsContent.length > 3000) {
-            findingsContent = '...\n' + findingsContent.slice(-3000);
-          }
-          systemPrompt += `\n\n# RECENT RESEARCH FINDINGS\nBelow are recent research findings from tools (navis, web_search, computer_use):\n${findingsContent}\n`;
-          console.log('[Brain] 📄 Injected findings.md context into system prompt');
-        }
+      const findingsContent = readRunFindings(runner);
+      if (findingsContent) {
+        systemPrompt += `\n\n# THIS RUN'S RESEARCH FINDINGS\nFindings collected during this task (newest first):\n${findingsContent}\n`;
+        console.log('[Brain] Injected this run\'s findings into system prompt');
       }
     } catch (findingsErr) {
       console.warn('[Brain] Failed to inject findings:', findingsErr);

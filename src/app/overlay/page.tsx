@@ -270,6 +270,7 @@ export default function OverlayPage() {
         {state !== 'idle' && (
           <motion.div
             key={state}
+            className="ef-narrative-panel"
             initial={{ opacity: 0, y: 30, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale }}
             exit={{ opacity: 0, y: 30, scale: 0.95, transition: { duration: 0.25, ease: 'easeIn' } }}
@@ -282,6 +283,9 @@ export default function OverlayPage() {
               flexDirection: (isCompleted || state === 'clarification' || state === 'history') ? 'column' : 'row',
               alignItems: (isCompleted || state === 'clarification' || state === 'history') ? 'stretch' : 'center',
               justifyContent: 'space-between',
+              maxWidth: 'calc(100vw - 32px)',
+              maxHeight: 'calc(100vh - 40px)',
+              overflowY: 'auto',
               width: isCompleted ? 740 : (state === 'clarification' || state === 'history') ? 600 : 500,
               minHeight: isCompleted ? 260 : state === 'clarification' ? clarificationMinHeight : state === 'history' ? 320 : state === 'error' ? 52 : 64,
               boxShadow,

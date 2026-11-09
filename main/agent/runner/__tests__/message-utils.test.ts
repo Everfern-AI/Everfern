@@ -148,4 +148,36 @@ describe('Cognitive History Consolidation (CHC)', () => {
       expect(consolidated[1].role).toBe('tool');
     });
   });
+
+  describe('normalizeMessage pseudo-tool sanitization', () => {
+    it('should convert harness_recovery tool messages into system messages', () => {
+      const { normalizeMessage } = require('../services/message-utils');
+      const input = {
+        role: 'tool',
+        tool_call_id: 'harness_recovery',
+        name: 'harness_recovery',
+        content: '[Harness] ⛔ BLOCKED: run_command — Command was blocked'
+      };
+
+      const normalized = normalizeMessage(input);
+      expect(normalized.role).toBe('system');
+      expect(normalized.content).toBe('[Harness] ⛔ BLOCKED: run_command — Command was blocked');
+      expect(normalized.tool_call_id).toBeUndefined();
+    });
+
+    it('should convert harness_rollback tool messages into system messages', () => {
+      const { normalizeMessage } = require('../services/message-utils');
+      const input = {
+        role: 'tool',
+        tool_call_id: 'harness_rollback',
+        name: 'harness_rollback',
+        content: '[Harness Rollback] Rolled back 2 steps'
+      };
+
+      const normalized = normalizeMessage(input);
+      expect(normalized.role).toBe('system');
+      expect(normalized.content).toBe('[Harness Rollback] Rolled back 2 steps');
+      expect(normalized.tool_call_id).toBeUndefined();
+    });
+  });
 });

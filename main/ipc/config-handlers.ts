@@ -9,6 +9,12 @@ export function normalizeVlmConfig(config: any) {
   if (!config?.vlm) return config;
 
   const vlm = { ...config.vlm };
+  // Vision grounding is an optional subsystem. Existing cloud configurations
+  // stay enabled; legacy local defaults stay off until the user verifies the
+  // Ollama model and explicitly enables them.
+  if (typeof vlm.enabled !== 'boolean') {
+    vlm.enabled = vlm.engine === 'cloud';
+  }
   const defaultModelForProvider = (provider: string) => {
     if (provider === 'openrouter') return 'qwen/qwen3-vl-235b-a22b-instruct';
     if (provider === 'minimax') return 'MiniMax-M3';
@@ -53,16 +59,20 @@ export function normalizeConfig(config: any) {
 
   config = normalizeVlmConfig(config);
 
-  if (config.provider && !['ollama', 'lmstudio'].includes(config.provider)) {
+  if (config.provider && !['ollama', 'lmstudio', 'llamacpp'].includes(config.provider)) {
     if (config.baseUrl && (config.baseUrl.includes('localhost') || config.baseUrl.includes('127.0.0.1'))) {
       delete config.baseUrl;
     }
   }
 
-  if (config.vlm?.provider && !['ollama', 'lmstudio'].includes(config.vlm.provider)) {
+  if (config.vlm?.provider && !['ollama', 'lmstudio', 'llamacpp'].includes(config.vlm.provider)) {
     if (config.vlm.baseUrl && (config.vlm.baseUrl.includes('localhost') || config.vlm.baseUrl.includes('127.0.0.1'))) {
       delete config.vlm.baseUrl;
     }
+  }
+
+  if (config.provider === 'llamacpp' && config.baseUrl) {
+    config.baseUrls = { ...config.baseUrls, llamacpp: config.baseUrl };
   }
 
   return config;

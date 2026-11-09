@@ -45,7 +45,7 @@ const CATEGORY_SIGNALS: Record<ToolCategory, string[]> = {
   skill:          ['skill', 'tutorial', 'guide', 'template', 'workflow', 'recipe'],
   config:         ['config', 'setting', 'preference', 'option', 'enable', 'disable', 'toggle'],
   ai:             ['model', 'prompt', 'llm', 'ai', 'generate', 'reply', 'respond', 'chat', 'conversation'],
-  data:           ['csv', 'json', 'excel', 'spreadsheet', 'database', 'sql', 'query', 'table', 'record', 'dataset', 'analyze', 'analytics', 'statistics', 'chart', 'graph', 'plot'],
+  data:           ['csv', 'json', 'excel', 'spreadsheet', 'sheets', 'sheet', 'database', 'sql', 'query', 'table', 'row', 'rows', 'cell', 'column', 'record', 'dataset', 'analyze', 'analytics', 'statistics', 'chart', 'graph', 'plot'],
 };
 
 /**
@@ -86,7 +86,7 @@ const TOOL_CATEGORY_MAP: Array<{ pattern: RegExp; category: ToolCategory }> = [
   // Config
   { pattern: /^(ask_user_question|local_permission|allow_file_delete|approve_actions|confirm)$/i,                                                                                                                                 category: 'config' },
   // Data
-  { pattern: /^(analyze_data|query_data|sql_query|dataframe|plot|chart|statistics)$/i,                                                                                                                                           category: 'data' },
+  { pattern: /^(analyze_data|query_data|sql_query|dataframe|plot|chart|statistics|sheets_)/i,                                                                                                                                     category: 'data' },
 ];
 
 /**
@@ -118,6 +118,7 @@ const ALWAYS_INCLUDE = new Set<string>([
   'memory_search',
   // Web / search
   'web_search',
+  'web_fetch',
   // Vision
   'analyze_image',
   // Subagent
@@ -130,6 +131,31 @@ const ALWAYS_INCLUDE = new Set<string>([
   'task_complete',
   'update_step',
   'execution_plan',
+  // EverFern worker primitives: never truncate, or a worker loses the very
+  // tools it needs to drive its desktop and write results.
+  'open_app',
+  'switch_app',
+  'list_apps',
+  'close_app',
+  'worker_bash',
+  'worker_exec',
+  'worker_read_file',
+  'worker_write_file',
+  'worker_list_files',
+  'worker_upload_files',
+  // Native Sheets app + in-app pixel automation
+  'sheets_read',
+  'sheets_write',
+  'sheets_append',
+  'sheets_clear',
+  'sheets_create',
+  'sheets_import',
+  'sheets_export',
+  'sheets_format',
+  'sheets_add_sheet',
+  'worker_click',
+  'worker_type',
+  'worker_describe',
 ]);
 
 

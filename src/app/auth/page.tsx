@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence, Variants } from "framer-motion";
-import { ChevronLeft, Loader2, ArrowRight, Cloud, Check } from "lucide-react";
+import { ChevronLeft, Loader2, ArrowRight, Check } from "lucide-react";
 import { GlassShell, GlassTitle, GlassPill, stagger, rise, EASE } from "../components/onboarding/GlassShell";
 
 const containerVariants: Variants = {
@@ -178,7 +178,7 @@ export default function AuthPage() {
                     console.error("Failed to auto-save config:", err);
                 }
             }
-            router.push("/chat");
+            router.push("/workers");
         } else {
             router.push("/setup");
         }
@@ -256,7 +256,7 @@ export default function AuthPage() {
 
                         <motion.div variants={rise} style={{ marginTop: 22, width: "100%" }}>
                             <button type="button" className="ef-pill ef-pill-light" style={{ width: "100%", height: 46, fontSize: 14.5 }} onClick={handleGoogleLogin} disabled={busy}>
-                                {isGoogleLoading ? <Loader2 size={16} className="animate-spin" /> : <Cloud size={16} />}
+                                {isGoogleLoading ? <Loader2 size={16} className="animate-spin" /> : <img src="/images/logos/black-logo-withoutbg.png" alt="" width={22} height={22} style={{ transform: "scale(1.3)" }} />}
                                 Sign in with EverFern Cloud
                             </button>
                         </motion.div>

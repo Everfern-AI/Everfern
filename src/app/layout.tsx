@@ -1,21 +1,22 @@
 import type { Metadata } from "next";
-import { Figtree, JetBrains_Mono, Fira_Code, Geist } from "next/font/google";
 import localFont from "next/font/local";
 import "./globals.css";
 import "./onboarding.css";
 import { cn } from "@/lib/utils";
+import { AppMotionProvider } from "@/components/AppMotionProvider";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import UpdateNotification from "@/components/UpdateNotification";
 import { AnnouncementPopup } from "@/components/AnnouncementPopup";
 import { MaterialSymbolsLoader } from "@/components/MaterialSymbolsLoader";
 import { SmoothScroll } from "@/components/SmoothScroll";
 
-const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
-
-const figtree = Figtree({
-  subsets: ["latin"],
-  variable: "--font-figtree",
-  weight: ["300", "400", "500", "600", "700", "800", "900"],
+const satoshi = localFont({
+  src: [
+    { path: "../../public/fonts/satoshi/Satoshi-Variable.woff2", weight: "300 900", style: "normal" },
+    { path: "../../public/fonts/satoshi/Satoshi-VariableItalic.woff2", weight: "300 900", style: "italic" },
+  ],
+  variable: "--font-sans",
+  display: "swap",
 });
 
 const loretta = localFont({
@@ -33,19 +34,6 @@ const loretta = localFont({
   ],
   variable: "--font-serif",
   display: "swap",
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ["latin"],
-  variable: "--font-mono",
-  weight: ["100", "200", "300", "400", "500", "600", "700", "800"],
-  style: ["normal", "italic"],
-});
-
-const firaCode = Fira_Code({
-  subsets: ["latin"],
-  variable: "--font-code",
-  weight: ["300", "400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
@@ -67,20 +55,12 @@ export default function RootLayout({
         "h-full",
         "antialiased",
         loretta.variable,
-        jetbrainsMono.variable,
-        firaCode.variable,
-        figtree.variable,
         "font-sans",
-        geist.variable
+        satoshi.variable
       )}
     >
       <head>
-        {/* EverFern v2 type: Satoshi (body) + General Sans (titles), Fontshare free license */}
-        <link rel="preconnect" href="https://api.fontshare.com" crossOrigin="" />
-        <link
-          rel="stylesheet"
-          href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&f[]=general-sans@500,600&display=swap"
-        />
+        <link rel="preload" href="/fonts/satoshi/Satoshi-Variable.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -107,7 +87,7 @@ export default function RootLayout({
       </head>
       <body suppressHydrationWarning className="min-h-full flex flex-col bg-background text-on-surface">
         <ThemeProvider>
-          {children}
+          <AppMotionProvider>{children}</AppMotionProvider>
           <MaterialSymbolsLoader />
           <SmoothScroll />
           <UpdateNotification />
