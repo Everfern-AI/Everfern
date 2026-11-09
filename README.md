@@ -1,6 +1,6 @@
 
 <div align="center">
-  <img src="public/images/banner.jpg" alt="EverFern" width="100%" />
+  <img src="public/images/banner.png" alt="EverFern" width="100%" />
 
   <h1>EverFern</h1>
   <p><b>The open-source Claude Cowork.</b> Free forever. Runs on your machine. No subscription.</p>
