@@ -39,7 +39,7 @@ fs.writeFileSync(path.join(app, 'package-lock.json'), JSON.stringify(runtimeLock
 execFileSync(process.execPath, [npm, 'prune', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: app, stdio: 'inherit' });
 // Drop native prebuilds for other platforms (prebuilds/android-x64, onnxruntime bin/napi-v3/linux/arm64, ...).
 // They are dead weight, and linuxdeploy aborts when ldd cannot read a foreign binary.
-const OSES = new Set(['aix', 'android', 'darwin', 'freebsd', 'ios', 'linux', 'linuxmusl', 'netbsd', 'openbsd', 'sunos', 'win32']);
+const OSES = new Set(['aix', 'android', 'darwin', 'freebsd', 'ios', 'linux', 'linuxmusl', 'musl', 'netbsd', 'openbsd', 'sunos', 'win32']);
 const ARCHES = new Set(['arm', 'arm64', 'armhf', 'armv7', 'ia32', 'loong64', 'mips64el', 'ppc64', 'riscv64', 's390x', 'universal', 'x64', 'x86']);
 const keepArch = (arch) => arch === process.arch || arch === 'universal' || (process.platform === 'darwin' && arch.includes(process.arch));
 let pruned = 0;
