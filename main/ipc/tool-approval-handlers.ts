@@ -2,6 +2,12 @@ import { ipcMain } from 'electron';
 import { toolApprovalStore } from '../store/tool-approvals';
 
 export function registerToolApprovalHandlers() {
+  ipcMain.handle('tool-approvals:list-conversation', () => toolApprovalStore.getConversationPolicies());
+  ipcMain.handle('tool-approvals:clear-conversation', () => {
+    toolApprovalStore.clearConversationPolicies();
+    return { success: true };
+  });
+
   ipcMain.handle('tool-approvals:get-all', async () => {
     return toolApprovalStore.getPolicies();
   });

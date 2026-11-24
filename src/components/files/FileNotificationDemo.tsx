@@ -154,7 +154,7 @@ export const debounce = (func, wait) => {
 
             {/* Features List */}
             <div className="mt-12 p-6 bg-gray-50 rounded-xl">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">✨ Enhanced Features</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Enhanced features</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-700">
                     <div className="flex items-center gap-2">
                         <span className="w-2 h-2 bg-emerald-500 rounded-full"></span>

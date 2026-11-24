@@ -11,8 +11,30 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
+import { execFile } from 'child_process';
 import { NotificationService, getNotificationService } from './notification-service';
 import { ValidationResult } from './input-validator';
+
+function nativeSecurityEnabled(): boolean {
+  return process.env.EVERFERN_SHELL === 'tauri' && !!process.env.EF_NATIVE_EXE;
+}
+
+function nativeSecurityOperation<T>(request: Record<string, unknown>): Promise<T | null> {
+  const executable = nativeSecurityEnabled() && process.env.EF_NATIVE_EXE;
+  if (!executable) return Promise.resolve(null);
+  return new Promise(resolve => {
+    const child = execFile(executable, ['--ef-security-monitor'], {
+      encoding: 'utf-8',
+      windowsHide: true,
+      timeout: 5000,
+      maxBuffer: 16 * 1024 * 1024,
+    }, (error, stdout) => {
+      if (error || !stdout) return resolve(null);
+      try { resolve(JSON.parse(stdout) as T); } catch { resolve(null); }
+    });
+    child.stdin?.end(JSON.stringify(request));
+  });
+}
 
 /**
  * Security event severity levels
@@ -199,24 +221,59 @@ export class SecurityMonitor extends EventEmitter {
     // Store event in memory
     this.events.set(event.id, event);
 
-    // Write to log file
-    await this.writeEventToLog(event);
+    // Rust owns durable event logging and alert policy in the Tauri build.
+    // The in-memory map and all EventEmitter/notification callbacks remain here.
+    const nativeEvent = nativeSecurityEnabled()
+      ? await nativeSecurityOperation<{
+          critical: boolean;
+          shouldAutoBlock: boolean;
+        }>({
+          operation: 'process_event',
+          event,
+          events: Array.from(this.events.values()),
+          alertConfig: this.alertConfig,
+          now: Date.now(),
+        })
+      : null;
+    if (!nativeEvent) await this.writeEventToLog(event, false);
 
     // Emit event
     this.emit('security-event', event);
 
     // Check for critical alerts
-    if (severity === 'critical' || this.isCriticalEvent(event)) {
+    if (nativeEvent?.critical ?? (severity === 'critical' || this.isCriticalEvent(event))) {
       await this.handleCriticalAlert(event);
     }
 
     // Check for auto-block conditions
-    if (userId && this.shouldAutoBlock(userId, type)) {
+    const shouldAutoBlock = nativeEvent?.shouldAutoBlock ?? (userId && this.shouldAutoBlock(userId, type));
+    if (userId && shouldAutoBlock) {
       await this.blockUser(userId, `Auto-blocked due to ${type}`);
     }
 
     // Send notifications if needed
-    if (this.shouldNotifyAdmins(event)) {
+    let shouldNotify = false;
+    if (nativeEvent) {
+      const nativeNotification = await nativeSecurityOperation<{
+        shouldNotifyAdmins: boolean;
+        notificationCounts: Record<string, number[]>;
+      }>({
+        operation: 'should_notify',
+        event,
+        notificationCounts: Object.fromEntries(this.notificationCounts),
+        alertConfig: this.alertConfig,
+        now: Date.now(),
+      });
+      if (nativeNotification) {
+        this.notificationCounts = new Map(Object.entries(nativeNotification.notificationCounts || {}));
+        shouldNotify = nativeNotification.shouldNotifyAdmins;
+      } else {
+        shouldNotify = this.shouldNotifyAdmins(event);
+      }
+    } else {
+      shouldNotify = this.shouldNotifyAdmins(event);
+    }
+    if (shouldNotify) {
       await this.notifyAdministrators(event);
     }
 
@@ -254,8 +311,14 @@ export class SecurityMonitor extends EventEmitter {
     validationResult: ValidationResult,
     metadata: Record<string, any> = {}
   ): Promise<SecurityEvent> {
-    const severity = this.mapRiskLevelToSeverity(validationResult.riskLevel);
-    const type = this.determineEventTypeFromValidation(validationResult);
+    const native = nativeSecurityEnabled()
+      ? await nativeSecurityOperation<{ severity: SecurityEventSeverity; type: SecurityEventType }>({
+          operation: 'validation_event',
+          validationResult,
+        })
+      : null;
+    const severity = native?.severity ?? this.mapRiskLevelToSeverity(validationResult.riskLevel);
+    const type = native?.type ?? this.determineEventTypeFromValidation(validationResult);
     const title = 'Input Validation Failed';
     const description = `Input validation failed for user ${userId}: ${validationResult.errors.join(', ')}`;
 

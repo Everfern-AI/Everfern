@@ -1,3 +1,20 @@
+import { scopePaths } from '../agent-scope';
+import { execFile } from 'child_process';
+
+function nativeGraphRoute<T = unknown>(mode: '--ef-brain-route' | '--ef-triage-route' | '--ef-decomposer-route' | '--ef-operator-route' | '--ef-tool-return-route' | '--ef-specialist-exit' | '--ef-approval-route' | '--ef-clarification-request' | '--ef-clarification-answer', input: object): Promise<T | null> | undefined {
+    const executable = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+    if (!executable) return;
+    return new Promise(resolve => {
+        const child = execFile(executable, [mode], {
+            encoding: 'utf8', windowsHide: true, timeout: 5000,
+        }, (error, output) => {
+            if (error) return resolve(null);
+            try { resolve(JSON.parse(output)); } catch { resolve(null); }
+        });
+        child.stdin?.once('error', () => resolve(null));
+        child.stdin?.end(JSON.stringify(input));
+    });
+}
 import { StateGraph, END, START, interrupt, GraphInterrupt } from '@langchain/langgraph';
 import { GraphState, GraphStateType, StreamEvent } from './state';
 import { createTriageNode } from './nodes/triage';
@@ -60,9 +77,44 @@ const getLatestUserText = (state: GraphStateType): string => {
   return '';
 };
 
-const isProjectScaleCodingRequest = (state: GraphStateType): boolean => {
-  return ['coding', 'build', 'fix'].includes(state.currentIntent);
+const SMALL_CODING_HINTS = /\b(typo|rename|one[- ]liner?|one line|quick fix|small fix|tweak|this (line|function|method|file|bug|error|test))\b/i;
+const BUILD_VERBS = /\b(build|create|make|scaffold|set ?up|bootstrap|implement|develop|generate|write)\b/i;
+const PROJECT_NOUNS = /\b(app|application|project|website|web ?site|dashboard|game|platform|saas|backend|frontend|full[- ]?stack|landing page|extension|plugin|cli|microservices?|monorepo|from scratch|end[- ]to[- ]end|boilerplate|starter)\b/i;
+
+/**
+ * Only multi-part coding work pays for the decomposer's extra model call. A bug fix or a
+ * single edit goes straight to the coding specialist. Previously every coding intent
+ * counted as project-scale, so the direct coding route was unreachable.
+ */
+export const isProjectScaleCodingText = (text: string): boolean => {
+  const t = (text || '').trim();
+  if (!t) return false;
+  if (SMALL_CODING_HINTS.test(t)) return false;
+  const listItems = t.split(/\r?\n/).filter(line => /^\s*(\d+[.)]|[-*•])\s+\S/.test(line)).length;
+  if (listItems >= 3) return true;
+  if (t.length > 700) return true;
+  return BUILD_VERBS.test(t) && PROJECT_NOUNS.test(t);
 };
+
+const isProjectScaleCodingRequest = (state: GraphStateType): boolean => {
+  if (!['coding', 'build', 'fix'].includes(state.currentIntent)) return false;
+  return isProjectScaleCodingText(getLatestUserText(state));
+};
+
+// Specialist tool sets, by the names tools_manager and pi-tools actually register.
+// The old lists named tools that do not exist (read_file, write_to_file, run_command,
+// python_execute...), which left the data analyst with no way to read or write files.
+export const CODING_TOOL_NAMES = new Set([
+  'read', 'write', 'edit', 'find', 'grep', 'ls', 'executePwsh', 'multi_file_edit', 'multi_replace_file_content',
+  'terminal_execute', 'terminal_status', 'spawn_agent', 'ask_user_question', 'todo_write', 'task_complete',
+  'present_files', 'show_user_url', 'preview_live_url', 'analyze_image', 'web_search', 'web_fetch', 'skill',
+]);
+export const DATA_TOOL_NAMES = new Set([
+  'read', 'write', 'edit', 'find', 'grep', 'ls', 'executePwsh', 'terminal_execute', 'terminal_status',
+  'visualize', 'create_artifact', 'edit_artifact', 'present_files', 'analyze_image',
+  'ask_user_question', 'todo_write', 'task_complete', 'skill',
+]);
+const WEB_TOOL_NAMES = new Set(['navis', 'web_search', 'web_fetch', 'ask_user_question', 'task_complete', 'present_files']);
 
 const INTERACTIVE_AUTOMATION_TOOLS = new Set<string>();
 
@@ -127,7 +179,10 @@ export const cleanCommandNarrative = (rawCmd: string): string => {
   return cmd.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
 };
 
-const compiledGraphCache = new Map<string, any>();
+// Per-runner cache: graph nodes close over `runner`, so a global cache handed every new chat
+// a graph bound to the first runner (wrong tools/abort state) and kept old runners alive.
+const compiledGraphCache = new WeakMap<object, Map<string, any>>();
+const GRAPHS_PER_RUNNER = 4;
 
 export const buildGraph = (
   runner: AgentRunner,
@@ -138,8 +193,13 @@ export const buildGraph = (
   // mid-session (e.g. fern-1 → claude) gets a fresh graph instead of reusing a
   // stale cached one compiled for a different provider configuration.
   const cacheKey = `${runner.client.provider}:${runner.client.model}:${runner.currentAgentSessionKey || 'default'}:${toolDefs.map(t => t.name).sort().join(',')}`;
-  if (compiledGraphCache.has(cacheKey)) {
-    return compiledGraphCache.get(cacheKey)!;
+  let runnerGraphs = compiledGraphCache.get(runner);
+  if (!runnerGraphs) {
+    runnerGraphs = new Map();
+    compiledGraphCache.set(runner, runnerGraphs);
+  }
+  if (runnerGraphs.has(cacheKey)) {
+    return runnerGraphs.get(cacheKey)!;
   }
 
   console.log(`[Graph] 🏗️  BUILDING AGENT EXECUTION GRAPH (with debate_chamber)`);
@@ -404,6 +464,22 @@ export const buildGraph = (
     return node(state);
   };
 
+  // A specialist that finished with a full text answer has already streamed that answer to the
+  // user. Sending it back to the brain made the brain write the answer again (two or three
+  // copies in one bubble), so finish the run instead. Multi-step plans still go back to the brain.
+  const specialistAnsweredUser = (state: GraphStateType, done: boolean | undefined): boolean => {
+    if (!done) return false;
+    if ((state.decomposedTask?.steps?.length ?? 0) > 1) return false;
+    const msgs = (state.messages || []) as any[];
+    const last = msgs[msgs.length - 1];
+    if (!last) return false;
+    const kind = typeof last._getType === 'function' ? last._getType() : last.role;
+    if (kind !== 'ai' && kind !== 'assistant') return false;
+    if ((last.tool_calls?.length ?? 0) > 0) return false;
+    const text = typeof last.content === 'string' ? last.content : '';
+    return text.trim().length >= 200;
+  };
+
   const brainNode = async (state: GraphStateType, config?: any) => {
     const ctx = getContext(config);
     // Guard: Check abort before node execution
@@ -429,7 +505,7 @@ ${plan.steps.map(s => `${s.id}: ${s.description} (Tool: ${s.tool})`).join('\n')}
 
 If a specialized agent failed to complete a step, identify the issue and use your tools to proceed.\n\n`;
 
-        const mainPrompt = loadPrompt('SYSTEM_PROMPT.md') || '';
+        const mainPrompt = loadPrompt(scopePaths().basePrompt) || '';
         systemPromptOverride = planContext + mainPrompt;
     }
 
@@ -446,8 +522,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
       throw new Error('Execution aborted by user (stop button clicked)');
     }
     const codingTools = toolDefs.filter(t => 
-      ['read_file', 'write_to_file', 'replace_file_content', 'multi_replace_file_content', 'grep_search', 'list_dir', 'run_command', 'terminal_execute', 'spawn_agent', 'ask_user_question', 'task_complete', 'view_file', 'executePwsh', 'grep', 'find', 'ls', 'read', 'write', 'edit', 'view_image', 'generate_image'].includes(t.name) || 
-      t.name.includes('mcp')
+      CODING_TOOL_NAMES.has(t.name) || t.name.startsWith('mcp__')
     );
     const node = createCodingSpecialistNode(ctx.runner, ctx.eventQueue, ctx.missionTracker, codingTools);
     return node(state);
@@ -460,8 +535,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
       throw new Error('Execution aborted by user (stop button clicked)');
     }
     const dataTools = toolDefs.filter(t => 
-      ['read_file', 'write_to_file', 'replace_file_content', 'multi_replace_file_content', 'list_dir', 'run_command', 'terminal_execute', 'ask_user_question', 'task_complete', 'view_file', 'executePwsh', 'grep_search', 'python_execute'].includes(t.name) || 
-      t.name.includes('mcp')
+      DATA_TOOL_NAMES.has(t.name) || t.name.startsWith('mcp__')
     );
     const node = createDataAnalystNode(ctx.runner, ctx.eventQueue, ctx.missionTracker, dataTools);
     return node(state);
@@ -474,7 +548,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
       throw new Error('Execution aborted by user (stop button clicked)');
     }
     const browserTools = toolDefs.filter(t => 
-      ['navis', 'browser_subagent', 'web_search', 'web_fetch', 'read_url_content', 'search_web', 'ask_user_question', 'spawn_agent', 'task_complete', 'view_file'].includes(t.name)
+      WEB_TOOL_NAMES.has(t.name) || t.name === 'spawn_agent'
     );
     const node = createWebExplorerNode(ctx.runner, ctx.eventQueue, ctx.missionTracker, browserTools);
     return node(state);
@@ -486,7 +560,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
       throw new Error('Execution aborted by user (stop button clicked)');
     }
     const browserTools = toolDefs.filter(t => 
-      ['navis', 'browser_subagent', 'web_search', 'web_fetch', 'read_url_content', 'search_web', 'ask_user_question', 'task_complete', 'view_file'].includes(t.name)
+      WEB_TOOL_NAMES.has(t.name)
     );
     const node = createDeepResearchNode(ctx.runner, ctx.eventQueue, ctx.missionTracker, browserTools);
     return node(state);
@@ -577,7 +651,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
     const askUserRecord = state.toolCallRecords?.find(r => r.toolName === 'ask_user_question');
     const reasoning = askUserRecord?.result?.output || 'Awaiting clarification...';
 
-    const interruptRequest = {
+    const fallbackRequest = () => ({
       id: askUserRecord?.id || crypto.randomUUID(),
       conversationId: conversationId || 'unknown',
       timestamp: new Date().toISOString(),
@@ -588,7 +662,10 @@ If a specialized agent failed to complete a step, identify the issue and use you
         reasoning,
       },
       options: []
-    };
+    });
+    const interruptRequest = await nativeGraphRoute<ReturnType<typeof fallbackRequest>>('--ef-clarification-request', {
+      conversationId, records: askUserRecord ? [askUserRecord] : [],
+    }) ?? fallbackRequest();
 
     // Register interruption in stateManager so runStream can find it upon resume
     const { stateManager } = await import('./state-manager');
@@ -612,7 +689,14 @@ If a specialized agent failed to complete a step, identify the issue and use you
     const answerStr = String(answer);
     console.log(`[ask_user_wait] Received user answer: ${answerStr}`);
 
-    const isHitlActionResponse = answerStr.includes('[HITL_APPROVED]') ||
+    const nativeAnswer = await nativeGraphRoute<Partial<GraphStateType>>(
+      '--ef-clarification-answer', {
+        answer: answerStr,
+        clarificationCount: (state as any).clarificationCount,
+        returningFromSpecialist: state.returningFromSpecialist,
+      },
+    );
+    const isHitlActionResponse = !nativeAnswer && (answerStr.includes('[HITL_APPROVED]') ||
                                  answerStr.includes('[HITL_APPROVED_ALWAYS]') ||
                                  answerStr.includes('[HITL_APPROVED_PREFIX]') ||
                                  answerStr.includes('[HITL_REJECTED]') ||
@@ -620,7 +704,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
                                  answerStr.includes('proceed once') ||
                                  answerStr.includes('Approve & Allow Always') ||
                                  answerStr.includes('Approve & Allow Prefix') ||
-                                 answerStr.includes('Reject — cancel');
+                                 answerStr.includes('Reject — cancel'));
 
     let formattedContent = answerStr;
     if (isHitlActionResponse) {
@@ -635,6 +719,10 @@ If a specialized agent failed to complete a step, identify the issue and use you
       stateManager.resumeFromInterrupt(conversationId, null);
     }
 
+    if (nativeAnswer) {
+      if (state.returningFromSpecialist === undefined) delete nativeAnswer.returningFromSpecialist;
+      return nativeAnswer;
+    }
     const userMessage = {
       role: 'user',
       content: formattedContent,
@@ -653,6 +741,30 @@ If a specialized agent failed to complete a step, identify the issue and use you
       // detect repeated clarification loops and break out after 3 consecutive asks.
       clarificationCount: ((state as any).clarificationCount || 0) + 1,
     };
+  };
+
+  const routeSpecialistExit = async (state: GraphStateType, done: boolean | undefined, coding = false) => {
+    const intent = state.currentIntent;
+    const last: any = state.messages?.[state.messages.length - 1];
+    const text = typeof last?.content === 'string' ? last.content : '';
+    const textOnlyStreak = state.codingTextOnlyStreak || 0;
+    const route = await nativeGraphRoute('--ef-specialist-exit', {
+      intent, done, coding, text, textOnlyStreak,
+      steps: state.decomposedTask?.steps?.length,
+      role: typeof last?._getType === 'function' ? last._getType() : last?.role,
+      toolCalls: last?.tool_calls?.length,
+    });
+    switch (route) {
+      case 'coding_specialist':
+      case 'operator_coordinator':
+      case 'memory_consolidator':
+      case 'brain':
+        return route;
+    }
+    const longAnswer = text.trim().length >= 200;
+    if (coding && !done && !longAnswer && textOnlyStreak <= 1) return 'coding_specialist';
+    if (intent === 'operator') return 'operator_coordinator';
+    return specialistAnsweredUser(state, done || (coding && longAnswer)) ? 'memory_consolidator' : 'brain';
   };
 
   const compiledGraph = new StateGraph(GraphState)
@@ -680,8 +792,17 @@ If a specialized agent failed to complete a step, identify the issue and use you
     // BUG-08 FIX: Removed unreachable code paths — coding/build/fix were matched
     // before the complexIntents check, making debate_chamber unreachable for those.
     // BUG-18 FIX: Added deep_research to edge map for consistency.
-    .addConditionalEdges('intent_classifier', (state) => {
+    .addConditionalEdges('intent_classifier', async (state) => {
         const intent = state.currentIntent || 'unknown';
+        const route = await nativeGraphRoute('--ef-triage-route', { intent, userText: getLatestUserText(state) });
+        switch (route) {
+            case 'operator_coordinator':
+            case 'brain':
+            case 'task_decomposer':
+            case 'coding_specialist':
+            case 'debate_chamber':
+                return route;
+        }
         if (intent === 'operator') {
             console.log('[Graph] 🔀 Operator intent detected → operator_coordinator');
             return 'operator_coordinator';
@@ -690,7 +811,7 @@ If a specialized agent failed to complete a step, identify the issue and use you
             console.log('[Graph] 🔀 Question or conversation intent detected → brain');
             return 'brain';
         }
-        if (['coding', 'build', 'fix'].includes(intent) && isProjectScaleCodingRequest(state)) {
+        if (isProjectScaleCodingRequest(state)) {
             console.log('[Graph] 🔀 Project-scale coding intent detected → task_decomposer');
             return 'task_decomposer';
         }
@@ -728,7 +849,9 @@ If a specialized agent failed to complete a step, identify the issue and use you
     }, {
         task_decomposer: 'task_decomposer'
     })
-    .addConditionalEdges('task_decomposer', (state) => {
+    .addConditionalEdges('task_decomposer', async (state) => {
+        const route = await nativeGraphRoute('--ef-decomposer-route', { intent: state.currentIntent });
+        if (route === 'coding_specialist' || route === 'brain' || route === 'global_planner') return route;
         console.log(`[Graph] 🔀 task_decomposer complete`);
         if (['coding', 'build', 'fix'].includes(state.currentIntent || '')) {
             console.log(`[Graph] ➡️ Decomposed coding project → coding_specialist`);
@@ -749,8 +872,20 @@ If a specialized agent failed to complete a step, identify the issue and use you
     .addEdge('global_planner', 'brain')
     .addEdge('memory_consolidator', END)
 
-    .addConditionalEdges('operator_coordinator', (state) => {
+    .addConditionalEdges('operator_coordinator', async (state) => {
         const routingDecision = state.routingDecision;
+        const route = await nativeGraphRoute('--ef-operator-route', {
+            decision: routingDecision?.decision, intent: state.currentIntent, userText: getLatestUserText(state),
+        });
+        switch (route) {
+            case 'task_decomposer':
+            case 'coding_specialist':
+            case 'data_analyst':
+            case 'web_explorer':
+            case 'deep_research':
+            case 'memory_consolidator':
+                return route;
+        }
         if (routingDecision) {
             console.log(`[Graph] 🔀 Operator routing decision: ${routingDecision.decision}`);
             switch (routingDecision.decision) {
@@ -777,18 +912,39 @@ If a specialized agent failed to complete a step, identify the issue and use you
     })
 
     // Brain is the central router - it decides whether to handle tasks itself or route to specialists
-    .addConditionalEdges('brain', (state) => {
+    .addConditionalEdges('brain', async (state) => {
         const hasTools = state.pendingToolCalls && state.pendingToolCalls.length > 0;
         const routingDecision = state.routingDecision;
         const completionSignal = state.completionSignal;
 
-        // Check if brain indicated need for HITL approval
+        const nativeRoute = nativeGraphRoute('--ef-brain-route', {
+            decision: routingDecision?.decision,
+            reason: completionSignal?.reason,
+            hasTools: Boolean(hasTools),
+            clarificationCount: Number((state as any).clarificationCount),
+        });
+        if (nativeRoute) {
+            const route = await nativeRoute;
+            switch (route) {
+                case 'pending_tools':
+                    return routePendingToolsWithAutomationApproval(state, 'Brain');
+                case 'hitl_approval':
+                case 'coding_specialist':
+                case 'data_analyst':
+                case 'web_explorer':
+                case 'deep_research':
+                case 'brain':
+                case 'memory_consolidator':
+                    return route;
+                case '__end__':
+                    return END;
+            }
+        }
+
         if (completionSignal?.reason === 'needs_hitl') {
             console.log('[Graph] 🔀 Brain completion signal: needs_hitl → hitl_approval');
             return 'hitl_approval';
         }
-
-        // If brain has tools to execute, execute them directly
         if (hasTools) {
             const route = routePendingToolsWithAutomationApproval(state, 'Brain');
             console.log(`[Graph] 🔀 Brain has tools → ${route}`);
@@ -889,24 +1045,17 @@ If a specialized agent failed to complete a step, identify the issue and use you
         }
 
         // No tool calls at all (text-only response).
-        // Give the specialist 2 grace passes to emit a tool call before deferring to brain.
-        // This handles the rare case where the model produces a bridging response
-        // without tools (e.g. "I'll now implement...") and needs another turn.
-        const noToolCount = state.codingSpecialistSelfLoopCount || 0;
-        if (noToolCount < 2 && !state.codingComplete) {
-            console.log(`[Graph] 🔄 Coding specialist: text-only response (grace pass ${noToolCount + 1}/2) → self-looping`);
-            return 'coding_specialist';
-        }
-
-        // Text-only after 2 grace passes or codingComplete — return to coordinator
-        console.log('[Graph] 🔀 Coding specialist finished turn → ' + (state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain'));
-        return state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain';
+        // A short bridging line ("I'll now implement...") gets one more pass to emit its tool
+        // call. A long reply is the answer: looping on it streamed the same answer again.
+        // The streak counts only consecutive text-only passes, not earlier tool passes.
+        return routeSpecialistExit(state, state.codingComplete, true);
     }, {
         hitl_approval: 'hitl_approval',
         multi_tool_orchestrator: 'multi_tool_orchestrator',
         coding_specialist: 'coding_specialist',
         brain: 'brain',
         operator_coordinator: 'operator_coordinator',
+        memory_consolidator: 'memory_consolidator',
     })
 
 
@@ -920,14 +1069,14 @@ If a specialized agent failed to complete a step, identify the issue and use you
             return route;
         }
 
-        console.log('[Graph] 🔀 Data analyst finished turn (no pending tools) → ' + (state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain'));
-        return state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain';
+        return routeSpecialistExit(state, state.dataAnalysisComplete);
     }, {
         hitl_approval: 'hitl_approval',
         multi_tool_orchestrator: 'multi_tool_orchestrator',
         data_analyst: 'data_analyst',
         brain: 'brain',
         operator_coordinator: 'operator_coordinator',
+        memory_consolidator: 'memory_consolidator',
     })
 
     .addConditionalEdges('web_explorer', (state) => {
@@ -939,14 +1088,14 @@ If a specialized agent failed to complete a step, identify the issue and use you
             return route;
         }
 
-        console.log('[Graph] 🔀 Web explorer finished turn (no pending tools) → ' + (state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain'));
-        return state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain';
+        return routeSpecialistExit(state, state.webExplorerComplete);
     }, {
         hitl_approval: 'hitl_approval',
         multi_tool_orchestrator: 'multi_tool_orchestrator',
         brain: 'brain',
         web_explorer: 'web_explorer',
         operator_coordinator: 'operator_coordinator',
+        memory_consolidator: 'memory_consolidator',
         [END]: END,
     })
 
@@ -959,22 +1108,25 @@ If a specialized agent failed to complete a step, identify the issue and use you
             return route;
         }
 
-        console.log('[Graph] 🔀 Deep research finished turn (no pending tools) → ' + (state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain'));
-        return state.currentIntent === 'operator' ? 'operator_coordinator' : 'brain';
+        return routeSpecialistExit(state, state.deepResearchComplete);
     }, {
         hitl_approval: 'hitl_approval',
         multi_tool_orchestrator: 'multi_tool_orchestrator',
         deep_research: 'deep_research',
         brain: 'brain',
         operator_coordinator: 'operator_coordinator',
+        memory_consolidator: 'memory_consolidator',
     })
 
 
     // Tool execution flow - direct to orchestrator or HITL based on risk
 
 
-    .addConditionalEdges('hitl_approval', (state) => {
+    .addConditionalEdges('hitl_approval', async (state) => {
         const approved = state.hitlApprovalResult?.approved;
+        const route = await nativeGraphRoute('--ef-approval-route', { approved });
+        if (route === 'multi_tool_orchestrator' || route === 'brain') return route;
+        if (route === '__end__') return END;
         if (approved === true) {
           return 'multi_tool_orchestrator';
         } else if (approved === false) {
@@ -990,8 +1142,26 @@ If a specialized agent failed to complete a step, identify the issue and use you
 
     // After tool execution, route back to brain for coordination
     // UNLESS we are in the middle of a specialist workflow
-    .addConditionalEdges('multi_tool_orchestrator', (state) => {
+    .addConditionalEdges('multi_tool_orchestrator', async (state) => {
         const specialist = state.returningFromSpecialist;
+        const route = await nativeGraphRoute('--ef-tool-return-route', {
+            specialist,
+            intent: state.currentIntent,
+            messages: (state.messages || []).map((message: any) => ({
+                role: message.role || message.type || message._getType?.(),
+                name: message.name || message.tool_name || message.toolName || '',
+            })),
+        });
+        switch (route) {
+            case 'ask_user_wait':
+            case 'operator_coordinator':
+            case 'coding_specialist':
+            case 'data_analyst':
+            case 'web_explorer':
+            case 'deep_research':
+            case 'brain':
+                return route;
+        }
         console.log(`[Graph] 🔀 multi_tool_orchestrator complete. returningFromSpecialist: ${specialist || 'None'}`);
 
         if (wasAskUserQuestionExecutedInLastTurn(state)) {
@@ -1025,8 +1195,17 @@ If a specialized agent failed to complete a step, identify the issue and use you
         ask_user_wait: 'ask_user_wait',
     })
 
-    .addConditionalEdges('ask_user_wait', (state) => {
+    .addConditionalEdges('ask_user_wait', async (state) => {
         const specialist = state.returningFromSpecialist;
+        const route = await nativeGraphRoute('--ef-tool-return-route', { specialist });
+        switch (route) {
+            case 'coding_specialist':
+            case 'data_analyst':
+            case 'web_explorer':
+            case 'deep_research':
+            case 'brain':
+                return route;
+        }
         console.log(`[ask_user_wait] Routing after user answer. Specialist: ${specialist || 'None'}`);
         if (specialist) {
             switch (specialist) {
@@ -1050,6 +1229,9 @@ If a specialized agent failed to complete a step, identify the issue and use you
   const finalGraph = compiledGraph.compile({
     checkpointer: lightweightCheckpointer
   });
-  compiledGraphCache.set(cacheKey, finalGraph);
+  runnerGraphs.set(cacheKey, finalGraph);
+  while (runnerGraphs.size > GRAPHS_PER_RUNNER) {
+    runnerGraphs.delete(runnerGraphs.keys().next().value as string);
+  }
   return finalGraph;
 };

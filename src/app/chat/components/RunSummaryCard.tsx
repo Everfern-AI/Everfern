@@ -188,8 +188,6 @@ export const RunSummaryCard: React.FC<RunSummaryCardProps> = ({
             style={{
               fontSize: 11.5,
               fontWeight: 700,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
               color: "rgba(226,232,240,0.5)",
               marginBottom: 12,
             }}

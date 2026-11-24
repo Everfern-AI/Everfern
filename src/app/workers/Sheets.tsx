@@ -143,7 +143,7 @@ export function AppProductPage({
           <ArrowLeft size={13} />
           <span>All Apps</span>
         </button>
-        <span className="text-xs font-semibold tracking-wide text-white/70 uppercase">{app.name}</span>
+        <span className="text-xs font-semibold text-white/70">{app.name}</span>
         <button
           className="w-7 h-7 rounded-full flex items-center justify-center text-white/50 hover:text-white hover:bg-white/10 transition cursor-pointer"
           onClick={onClose}

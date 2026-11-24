@@ -19,12 +19,11 @@ interface ScheduledTasksPanelProps {
   projectId?: string;
   onAddTask: () => void;
   refreshTrigger?: number;
-  defaultExpanded?: boolean;
 }
 
-export default function ScheduledTasksPanel({ projectId, onAddTask, refreshTrigger, defaultExpanded = false }: ScheduledTasksPanelProps) {
+export default function ScheduledTasksPanel({ projectId, onAddTask, refreshTrigger }: ScheduledTasksPanelProps) {
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
-  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const fetchTasks = async () => {
@@ -62,28 +61,37 @@ export default function ScheduledTasksPanel({ projectId, onAddTask, refreshTrigg
 
   return (
     <div style={{ backgroundColor: "var(--color-bg-surface)", border: "1px solid var(--color-border)", borderRadius: 12, overflow: "hidden", boxShadow: '0 1px 6px var(--color-bg-overlay)' }}>
-      <div
+      <button
+        type="button"
+        onClick={() => setIsExpanded(!isExpanded)}
         style={{
           width: "100%",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
+          padding: "16px 20px",
           backgroundColor: "var(--color-text-primary)",
+          border: "none",
+          cursor: "pointer",
           transition: "opacity 0.2s"
         }}
         className="hover:opacity-90"
       >
-        <button type="button" aria-expanded={isExpanded} onClick={() => setIsExpanded(!isExpanded)} style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "16px 20px", background: "transparent", border: "none", cursor: "pointer" }}>
-          <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <ClockIcon className="w-5 h-5 text-[var(--color-bg-surface)]" style={{ opacity: 0.8 }} />
-            <span style={{ fontSize: 14, fontWeight: 600, color: "var(--color-bg-surface)", fontFamily: 'var(--font-sans)', letterSpacing: '0.01em' }}>Scheduled Tasks</span>
-          </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <ClockIcon className="w-5 h-5 text-[var(--color-bg-surface)]" style={{ opacity: 0.8 }} />
+          <span style={{ fontSize: 14, fontWeight: 600, color: "var(--color-bg-surface)", fontFamily: 'var(--font-sans)', letterSpacing: '0.01em' }}>Scheduled Tasks</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div
+            onClick={(e) => { e.stopPropagation(); onAddTask(); }}
+            style={{ padding: 6, borderRadius: 8, transition: 'background 0.2s', backgroundColor: 'var(--color-bg-overlay)' }}
+            className="hover:bg-white/10"
+          >
+            <PlusIcon className="w-5 h-5 text-[var(--color-bg-surface)]" />
+          </div>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-bg-surface)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s", opacity: 0.8 }}><polyline points="6 9 12 15 18 9"/></svg>
-        </button>
-        <button type="button" aria-label="Add scheduled task" onClick={onAddTask} style={{ width: 44, height: 44, marginRight: 12, borderRadius: 8, border: "none", backgroundColor: "transparent", color: "var(--color-bg-surface)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <PlusIcon className="w-5 h-5" />
-        </button>
-      </div>
+        </div>
+      </button>
 
       <AnimatePresence>
         {isExpanded && (
@@ -117,7 +125,7 @@ export default function ScheduledTasksPanel({ projectId, onAddTask, refreshTrigg
                           <ClockIcon className="w-3.5 h-3.5 flex-shrink-0" />
                           <span>{task.cron}</span>
                           {task.endsAt && (
-                            <span className="ml-1.5 px-2 py-0.5 bg-[var(--color-bg-subtle)] text-[9px] rounded uppercase font-bold text-[var(--color-text-secondary)]">
+                            <span className="ml-1.5 px-2 py-0.5 bg-[var(--color-bg-subtle)] text-[9px] rounded font-bold text-[var(--color-text-secondary)]">
                               Ends {new Date(task.endsAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
                             </span>
                           )}
@@ -131,7 +139,7 @@ export default function ScheduledTasksPanel({ projectId, onAddTask, refreshTrigg
                       </button>
                     </div>
                     {task.nextRun && (
-                      <div className="mt-3 pt-3 border-t border-[var(--color-border-subtle)] flex items-center gap-2 text-[10px] uppercase tracking-wider font-semibold text-[var(--color-accent)]">
+                      <div className="mt-3 pt-3 border-t border-[var(--color-border-subtle)] flex items-center gap-2 text-[10px]r font-semibold text-[var(--color-accent)]">
                         <PlayIcon className="w-3 h-3 flex-shrink-0" />
                         <span>Next Run: {new Date(task.nextRun).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                       </div>

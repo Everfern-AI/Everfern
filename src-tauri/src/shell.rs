@@ -1,5 +1,5 @@
-use std::path::{Path, PathBuf};
 use serde_json::{json, Value};
+use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
@@ -49,7 +49,7 @@ pub fn ef_window_control(
 ) -> Result<Value, String> {
     let target = label.as_deref().unwrap_or("main");
     let win = app
-        .get_webview_window(target)
+        .get_window(target)
         .ok_or_else(|| format!("Window '{target}' not found"))?;
 
     match action.as_str() {
@@ -104,6 +104,13 @@ pub fn ef_window_control(
         }
         "focus" => {
             win.set_focus().map_err(|e| e.to_string())?;
+            Ok(json!({ "success": true }))
+        }
+        // Bring the window back from the tray or the taskbar.
+        "restore" => {
+            let _ = win.unminimize();
+            win.show().map_err(|e| e.to_string())?;
+            let _ = win.set_focus();
             Ok(json!({ "success": true }))
         }
         "center" => {
@@ -167,13 +174,9 @@ pub fn ef_window_control(
 
 #[tauri::command]
 pub fn ef_get_displays(app: AppHandle) -> Result<Value, String> {
-    let main_win = app
-        .get_webview_window("main")
-        .ok_or("Main window not found")?;
+    let main_win = app.get_window("main").ok_or("Main window not found")?;
 
-    let monitors = main_win
-        .available_monitors()
-        .map_err(|e| e.to_string())?;
+    let monitors = main_win.available_monitors().map_err(|e| e.to_string())?;
 
     let primary = main_win.primary_monitor().ok().flatten();
 
@@ -227,7 +230,9 @@ pub fn validate_external_url(url: &str) -> Result<&str, String> {
 #[tauri::command]
 pub fn ef_open_external(app: AppHandle, url: String) -> Result<(), String> {
     let target = validate_external_url(&url)?;
-    app.opener().open_url(target, None::<&str>).map_err(|e| e.to_string())
+    app.opener()
+        .open_url(target, None::<&str>)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -236,7 +241,9 @@ pub fn ef_open_path(app: AppHandle, path: String) -> Result<(), String> {
     if !p.exists() {
         return Err("Path does not exist".into());
     }
-    app.opener().open_path(path, None::<&str>).map_err(|e| e.to_string())
+    app.opener()
+        .open_path(path, None::<&str>)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -248,12 +255,13 @@ pub fn ef_show_in_folder(path: String) -> Result<(), String> {
 
     #[cfg(windows)]
     {
-        use std::process::Command;
         use std::os::windows::process::CommandExt;
+        use std::process::Command;
         let mut cmd = Command::new("explorer.exe");
         cmd.arg(format!("/select,\"{}\"", path.replace('/', "\\")));
         cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-        cmd.spawn().map_err(|e| format!("Could not reveal path in Explorer: {e}"))?;
+        cmd.spawn()
+            .map_err(|e| format!("Could not reveal path in Explorer: {e}"))?;
         Ok(())
     }
 
@@ -283,47 +291,83 @@ pub fn ef_show_in_folder(path: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn ef_clipboard_read_text() -> Result<String, String> {
+    use std::process::Command;
+
+    let mut cmd = if cfg!(windows) {
+        let mut cmd = Command::new("powershell.exe");
+        cmd.args(["-NoProfile", "-Command", "Get-Clipboard -Raw"]);
+        cmd
+    } else if cfg!(target_os = "macos") {
+        Command::new("pbpaste")
+    } else {
+        let mut cmd = Command::new("xclip");
+        cmd.args(["-selection", "clipboard", "-o"]);
+        cmd
+    };
+
     #[cfg(windows)]
     {
-        use std::process::Command;
         use std::os::windows::process::CommandExt;
-        let mut cmd = Command::new("powershell.exe");
-        cmd.args(["-NoProfile", "-Command", "Get-Clipboard"]);
         cmd.creation_flags(0x0800_0000);
-        let output = cmd.output().map_err(|e| format!("Clipboard read error: {e}"))?;
-        let text = String::from_utf8_lossy(&output.stdout).trim_end().to_string();
-        Ok(text)
     }
 
-    #[cfg(not(windows))]
-    {
-        Err("Native clipboard not supported on this operating system".into())
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Clipboard read error: {e}"))?;
+    if !output.status.success() {
+        return Err(format!("Clipboard command failed: {}", output.status));
     }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let text = if cfg!(windows) {
+        text.strip_suffix("\r\n")
+            .or_else(|| text.strip_suffix('\n'))
+            .unwrap_or(&text)
+    } else {
+        &text
+    };
+    Ok(text.to_owned())
 }
 
 #[tauri::command]
 pub fn ef_clipboard_write_text(text: String) -> Result<(), String> {
-    #[cfg(windows)]
-    {
-        use std::process::{Command, Stdio};
-        use std::io::Write;
-        use std::os::windows::process::CommandExt;
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let mut cmd = if cfg!(windows) {
         let mut cmd = Command::new("powershell.exe");
         cmd.args(["-NoProfile", "-Command", "$input | Set-Clipboard"]);
-        cmd.stdin(Stdio::piped());
+        cmd
+    } else if cfg!(target_os = "macos") {
+        Command::new("pbcopy")
+    } else {
+        let mut cmd = Command::new("xclip");
+        cmd.args(["-selection", "clipboard"]);
+        cmd
+    };
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x0800_0000);
-        let mut child = cmd.spawn().map_err(|e| format!("Clipboard write error: {e}"))?;
-        if let Some(mut stdin) = child.stdin.take() {
-            let _ = stdin.write_all(text.as_bytes());
-        }
-        let _ = child.wait();
-        Ok(())
     }
 
-    #[cfg(not(windows))]
-    {
-        Err("Native clipboard not supported on this operating system".into())
+    let mut child = cmd
+        .stdin(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Clipboard write error: {e}"))?;
+    let written = child
+        .stdin
+        .take()
+        .expect("piped clipboard stdin")
+        .write_all(text.as_bytes());
+    let status = child
+        .wait()
+        .map_err(|e| format!("Clipboard write error: {e}"))?;
+    written.map_err(|e| format!("Clipboard write error: {e}"))?;
+    if !status.success() {
+        return Err(format!("Clipboard command failed: {status}"));
     }
+    Ok(())
 }
 
 // ── Native Dialogs ──────────────────────────────────────────────────────────
@@ -370,6 +414,91 @@ pub fn ef_pick_folder(
     Ok(folder_path.map(|p| p.to_string()))
 }
 
+/// Several files at once; an empty list when the dialog is cancelled.
+#[tauri::command]
+pub async fn ef_pick_files(app: AppHandle, title: Option<String>) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut builder = app.dialog().file();
+        #[cfg(any(windows, target_os = "macos"))]
+        if let Some(window) = app.get_webview_window("main") {
+            builder = builder.set_parent(&window);
+        }
+        if let Some(t) = title {
+            builder = builder.set_title(t);
+        }
+        builder
+            .blocking_pick_files()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|p| p.to_string())
+            .collect()
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn ef_open_file_picker(app: AppHandle, options: Option<Value>) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = (|| -> Result<Value, String> {
+            let _window = app.get_webview_window("main").ok_or("Main window not available")?;
+            let picker = app.dialog().file();
+            #[cfg(any(windows, target_os = "macos"))]
+            let picker = picker.set_parent(&_window);
+            let mut picker = picker;
+            let defaults = json!([
+                {"name":"All Files","extensions":["*"]},
+                {"name":"Images","extensions":["png","jpg","jpeg","webp","gif"]},
+                {"name":"Text & Documents","extensions":["txt","md","json","csv","js","ts","py","log","html","css"]}
+            ]);
+            let filters = options.as_ref().and_then(|value| value["filters"].as_array())
+                .unwrap_or_else(|| defaults.as_array().unwrap());
+            for filter in filters {
+                if let (Some(name), Some(extensions)) = (filter["name"].as_str(), filter["extensions"].as_array()) {
+                    let extensions: Vec<&str> = extensions.iter().filter_map(Value::as_str).collect();
+                    picker = picker.add_filter(name, &extensions);
+                }
+            }
+            let Some(file) = picker.blocking_pick_file() else {
+                return Ok(json!({"success": false, "canceled": true}));
+            };
+            let path = file.into_path().map_err(|error| error.to_string())?;
+            crate::data::files::import_attachment(&path, &crate::data::home()?.join(".everfern").join("attachments"))
+        })();
+        result.unwrap_or_else(|error| json!({"success": false, "error": error}))
+    }).await.map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn ef_open_folder_picker(app: AppHandle) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(_window) = app.get_webview_window("main") else {
+            return Value::Null;
+        };
+        let picker = app.dialog().file();
+        #[cfg(any(windows, target_os = "macos"))]
+        let picker = picker.set_parent(&_window);
+        let Some(selection) = picker.blocking_pick_folder() else {
+            return Value::Null;
+        };
+        let path = match selection.into_path() {
+            Ok(path) => path,
+            Err(error) => return json!({ "success": false, "error": error.to_string() }),
+        };
+        match path.metadata() {
+            Ok(metadata) if metadata.is_dir() => json!({
+                "success": true,
+                "path": path.to_string_lossy(),
+                "name": path.file_name().unwrap_or_default().to_string_lossy(),
+            }),
+            Ok(_) => json!({ "success": false, "error": "Selected path is not a folder." }),
+            Err(error) => json!({ "success": false, "error": error.to_string() }),
+        }
+    })
+    .await
+    .map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 pub fn ef_save_file(
     app: AppHandle,
@@ -398,6 +527,20 @@ pub fn ef_save_file(
     Ok(file_path.map(|p| p.to_string()))
 }
 
+pub fn pick_memory_backup(app: &AppHandle) -> Result<Option<PathBuf>, String> {
+    let picker = app
+        .dialog()
+        .file()
+        .set_title("Import & Merge Memory Graph")
+        .add_filter("Memory Files", &["json", "zip"])
+        .add_filter("JSON", &["json"])
+        .add_filter("ZIP Archive", &["zip"]);
+    picker
+        .blocking_pick_file()
+        .map(|file| file.into_path().map_err(|error| error.to_string()))
+        .transpose()
+}
+
 #[tauri::command]
 pub fn ef_message_box(
     app: AppHandle,
@@ -414,11 +557,7 @@ pub fn ef_message_box(
         _ => MessageDialogKind::Info,
     };
 
-    let builder = app
-        .dialog()
-        .message(message)
-        .title(title)
-        .kind(dialog_kind);
+    let builder = app.dialog().message(message).title(title).kind(dialog_kind);
 
     if ask.unwrap_or(false) {
         let buttons = MessageDialogButtons::OkCancelCustom(

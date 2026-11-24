@@ -1,7 +1,9 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
-import sharp from 'sharp';
+// sharp is loaded on first use, not at import.
+const loadSharp = (): typeof import('sharp') => require('sharp');
+import { hasNativeImage, nativeJpeg, nativeSvgToPng, runImageOps, type ImageResult } from '../../lib/native-image';
 import type { AgentTool, ToolResult } from '../runner/types';
 import type { AIClient, ChatMessage } from '../../lib/ai-client';
 import { doVisionChat, getVisionClient } from './analyze-image';
@@ -217,11 +219,23 @@ async function renderSheet(params: {
   const width = margin * 2 + columns * cellW + (columns - 1) * gapX;
   const height = headerH + rows * cellH + Math.max(0, rows - 1) * gapY + 38;
 
+  // Under the Tauri shell all thumbnails of a sheet are made in one native call.
+  const nativeThumbs = hasNativeImage()
+    ? await runImageOps(params.sheetImages.map(image => ({ op: 'thumb' as const, path: image.path, width: imageW, height: imageH })))
+        .catch((): ImageResult[] => params.sheetImages.map(() => ({ error: 'native thumbnails failed' })))
+    : null;
+
   const tileDataUrls: string[] = [];
   for (let idx = 0; idx < params.sheetImages.length; idx++) {
     const image = params.sheetImages[idx];
     try {
-      const thumb = await sharp(image.path, { animated: false, limitInputPixels: 90_000_000 })
+      if (nativeThumbs) {
+        const result = nativeThumbs[idx];
+        if (!result?.png) throw new Error(result?.error || 'no thumbnail');
+        tileDataUrls.push(`data:image/png;base64,${result.png}`);
+        continue;
+      }
+      const thumb = await loadSharp()(image.path, { animated: false, limitInputPixels: 90_000_000 })
         .rotate()
         .resize({
           width: imageW,
@@ -267,9 +281,11 @@ async function renderSheet(params: {
     gapY,
   });
 
-  const renderedBuffer = await sharp(overlay)
-    .png({ compressionLevel: 8 })
-    .toBuffer();
+  const renderedBuffer = hasNativeImage()
+    ? await nativeSvgToPng(overlay.toString('utf8'))
+    : await loadSharp()(overlay)
+      .png({ compressionLevel: 8 })
+      .toBuffer();
 
   await fs.writeFile(params.outputPath, renderedBuffer);
   return { width, height, pngBuffer: renderedBuffer };
@@ -491,7 +507,9 @@ export function createVisualClassificationSheetTool(mainClient: AIClient): Agent
         }
 
         const firstSheetJpegB64 = sheets[0]
-          ? (await sharp(sheets[0].path).jpeg({ quality: 88 }).toBuffer()).toString('base64')
+          ? (hasNativeImage()
+            ? await nativeJpeg(sheets[0].path, 88)
+            : await loadSharp()(sheets[0].path).jpeg({ quality: 88 }).toBuffer()).toString('base64')
           : undefined;
 
         const sheetLines = sheets

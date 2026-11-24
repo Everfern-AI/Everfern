@@ -192,7 +192,12 @@ Respond with ONLY the JSON object.`;
         try {
             const response = await client.chat({
                 messages: [{ role: 'user', content: prompt }],
-                model: 'openai/gpt-5.6-luna',
+                // The fast planner model only exists on OpenRouter-style routers. Forcing it on
+                // Ollama/OpenAI/Anthropic sent an unknown model, failed twice, and left a
+                // one-step "Execute" plan. Other providers use the user's own model.
+                ...(['openrouter', 'everfern'].includes(String((client as any).provider || '').toLowerCase())
+                    ? { model: 'openai/gpt-5.6-luna' }
+                    : {}),
                 temperature: attempt === 1 ? 0 : 0.1,
                 maxTokens: 2000,
                 agent: 'decomposer',

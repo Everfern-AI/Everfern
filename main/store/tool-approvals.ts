@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { execFileSync } from 'child_process';
 
 /**
  * Tool Approval Policy
@@ -82,10 +83,21 @@ export class ToolApprovalStore {
 
   constructor(filePath?: string) {
     this.filePath = filePath || POLICIES_FILE_PATH;
-    this.policies = this.load();
+    this.policies = this.nativeExecutable() ? [] : this.load();
   }
 
   private load(): ToolApprovalPolicy[] {
+    const native = this.nativeExecutable();
+    if (native) {
+      try {
+        return JSON.parse(execFileSync(native, ['--ef-approval-storage'], {
+          input: JSON.stringify({ operation: 'load' }),
+          encoding: 'utf8', windowsHide: true, timeout: 10000,
+        }));
+      } catch {
+        return [];
+      }
+    }
     if (!fs.existsSync(this.filePath)) {
       return [];
     }
@@ -115,10 +127,24 @@ export class ToolApprovalStore {
     );
   }
 
+  private nativeExecutable(): string | undefined {
+    if (this.filePath === POLICIES_FILE_PATH && process.env.EVERFERN_SHELL === 'tauri') {
+      return process.env.EF_NATIVE_EXE;
+    }
+  }
+
   /**
    * Add a new auto-approval policy
    */
   addPolicy(policy: Omit<ToolApprovalPolicy, 'id' | 'createdAt'>): ToolApprovalPolicy {
+    const native = this.nativeExecutable();
+    if (native && !policy.conversationId) {
+      const added = JSON.parse(execFileSync(native, ['--ef-approval-storage'], {
+        input: JSON.stringify({ operation: 'add', data: policy }),
+        encoding: 'utf8', windowsHide: true, timeout: 10000,
+      })) as ToolApprovalPolicy;
+      return added;
+    }
     const newPolicy: ToolApprovalPolicy = {
       ...policy,
       id: Math.random().toString(36).substring(2, 11),
@@ -172,6 +198,22 @@ export class ToolApprovalStore {
       }
     }
 
+    const native = this.nativeExecutable();
+    if (native) {
+      const policies = this.policies.filter(policy => policy.conversationId && policy.toolName === toolName);
+      const command = cmdTools.includes(toolName)
+        ? (args.command || args.CommandLine || args.cmd || '').trim()
+        : undefined;
+      try {
+        return JSON.parse(execFileSync(native, ['--ef-approval-storage'], {
+          input: JSON.stringify({ operation: 'matches-live', toolName, command, conversationId, policies }),
+          encoding: 'utf8', windowsHide: true, timeout: 10000,
+        })) === true;
+      } catch {
+        return false;
+      }
+    }
+
     for (const policy of this.policies) {
       if (policy.toolName !== toolName) continue;
       // Issue #15 Fix: Only apply session-scoped policies within their own session.
@@ -199,13 +241,43 @@ export class ToolApprovalStore {
    * List all policies
    */
   getPolicies(): ToolApprovalPolicy[] {
+    if (this.nativeExecutable()) {
+      return [...this.load(), ...this.policies];
+    }
     return [...this.policies];
+  }
+
+  getConversationPolicies(): ToolApprovalPolicy[] {
+    return this.policies.filter(policy => policy.conversationId);
+  }
+
+  clearConversationPolicies(): void {
+    this.policies = this.policies.filter(policy => !policy.conversationId);
   }
 
   /**
    * Update an existing policy by ID
    */
   updatePolicy(id: string, updates: Partial<Omit<ToolApprovalPolicy, 'id' | 'createdAt'>>): ToolApprovalPolicy | null {
+    const native = this.nativeExecutable();
+    if (native) {
+      const scoped = this.policies;
+      const local = scoped.find(policy => policy.id === id);
+      const dispatch = (operation: string, data: object) => JSON.parse(execFileSync(native, ['--ef-approval-storage'], {
+        input: JSON.stringify({ operation, data }),
+        encoding: 'utf8', windowsHide: true, timeout: 10000,
+      }));
+      const policy: ToolApprovalPolicy | null = local
+        ? { ...local, ...updates }
+        : dispatch('update', { id, updates }).policy;
+      if (!policy) return null;
+      if (local && !policy.conversationId) dispatch('promote', policy);
+      this.policies = [
+        ...scoped.filter(entry => entry.id !== id),
+        ...(policy.conversationId ? [policy] : []),
+      ];
+      return policy;
+    }
     const index = this.policies.findIndex(p => p.id === id);
     if (index === -1) return null;
 
@@ -221,6 +293,15 @@ export class ToolApprovalStore {
    * Delete a policy by ID
    */
   deletePolicy(id: string): void {
+    const native = this.nativeExecutable();
+    if (native) {
+      execFileSync(native, ['--ef-approval-storage'], {
+        input: JSON.stringify({ operation: 'delete', data: id }),
+        windowsHide: true, timeout: 10000,
+      });
+      this.policies = this.policies.filter(p => p.id !== id);
+      return;
+    }
     this.policies = this.policies.filter(p => p.id !== id);
     this.save();
   }
@@ -229,6 +310,15 @@ export class ToolApprovalStore {
    * Clear all policies
    */
   clearAllPolicies(): void {
+    const native = this.nativeExecutable();
+    if (native) {
+      execFileSync(native, ['--ef-approval-storage'], {
+        input: JSON.stringify({ operation: 'save', policies: [] }),
+        windowsHide: true, timeout: 10000,
+      });
+      this.policies = [];
+      return;
+    }
     this.policies = [];
     this.save();
   }

@@ -1,4 +1,3 @@
-import { useDialogFocus } from "@/lib/use-dialog-focus";
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -31,7 +30,6 @@ const FEEDBACK_OPTIONS_UP = [
 ];
 
 export default function MessageFeedbackModal({ isOpen, onClose, onSubmit, feedbackType }: MessageFeedbackModalProps) {
-    const dialogRef = useDialogFocus<HTMLDivElement>(isOpen, onClose);
     const [selectedReason, setSelectedReason] = useState<string>('');
     const [customReason, setCustomReason] = useState<string>('');
     const [dataToSend, setDataToSend] = useState<'current' | 'last_3' | 'all'>('current');
@@ -65,7 +63,7 @@ export default function MessageFeedbackModal({ isOpen, onClose, onSubmit, feedba
                 zIndex: 1000,
                 padding: '20px'
             }}>
-                <motion.div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Message feedback"
+                <motion.div
                     initial={{ opacity: 0, scale: 0.95, y: 20 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95, y: 20 }}

@@ -55,9 +55,9 @@ const STATUS_COLORS: Record<ExecutionStatus, string> = {
  */
 const STATUS_ICONS: Record<ExecutionStatus, string> = {
   pending: '⏳',
-  'in-progress': '⚙️',
-  completed: '✅',
-  failed: '❌',
+  'in-progress': '•',
+  completed: '·',
+  failed: '×',
   skipped: '⊘',
 };
 
@@ -314,7 +314,7 @@ function MemoryTimelineCard({
               {isRunning ? "Accessing EverFern Memory..." : opLabel}
             </span>
             {!isRunning && (
-              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${badgeClass}`}>
+              <span className={`text-[9px] font-bold px-1.5 py-0.5 roundedr ${badgeClass}`}>
                 {normalizeToolName(pill.toolName)}
               </span>
             )}
@@ -368,7 +368,7 @@ function MemoryTimelineCard({
                           </p>
                           <div className="flex items-center gap-1.5 flex-shrink-0 mt-0.5">
                             {fact.tags.map((tag) => (
-                              <span key={tag} className="text-[8.5px] font-bold px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 border border-gray-200/50 uppercase tracking-wide">
+                              <span key={tag} className="text-[8.5px] font-bold px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 border border-gray-200/50">
                                 {tag}
                               </span>
                             ))}
@@ -390,7 +390,7 @@ function MemoryTimelineCard({
 
             {isError && pill.error && (
               <div className="border-t border-gray-50 pt-1.5 mt-1">
-                <span className="text-[9px] font-bold text-red-400 uppercase tracking-wider font-sans">Failure Output</span>
+                <span className="text-[9px] font-bold text-red-400r font-sans">Failure Output</span>
                 <p className="text-xs text-red-700 font-mono break-all mt-0.5">{String(pill.error)}</p>
               </div>
             )}
@@ -419,7 +419,7 @@ function PillComponent({
   }
 
   const displayLabel = pill.label || normalizeToolName(pill.toolName);
-  const displayIcon = pill.icon || '⚙️';
+  const displayIcon = pill.icon || '•';
 
   return (
     <motion.button

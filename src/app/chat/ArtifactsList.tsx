@@ -1,6 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
+import { CodeBracketIcon, PhotoIcon, TableCellsIcon, DocumentTextIcon } from '@heroicons/react/24/outline';
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 
@@ -51,13 +52,11 @@ export default function ArtifactsList({ chatId, onSelect }: { chatId: string; on
     }
 
     const getFileIcon = (type: string) => {
-        if (type.includes('python') || type.includes('py')) return '🐍';
-        if (type.includes('html') || type.includes('html')) return '🌐';
-        if (type.includes('json')) return '{ }';
-        if (type.includes('image')) return '🖼️';
-        if (type.includes('pdf')) return '📄';
-        if (type.includes('csv') || type.includes('data')) return '📊';
-        return '📎';
+        const cls = { width: 16, height: 16 };
+        if (type.includes('python') || type.includes('py') || type.includes('json') || type.includes('html')) return <CodeBracketIcon {...cls} />;
+        if (type.includes('image')) return <PhotoIcon {...cls} />;
+        if (type.includes('csv') || type.includes('data')) return <TableCellsIcon {...cls} />;
+        return <DocumentTextIcon {...cls} />;
     };
 
     return (
@@ -67,7 +66,7 @@ export default function ArtifactsList({ chatId, onSelect }: { chatId: string; on
             transition={{ delay: 0.2 }}
             style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 10 }}
         >
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text-secondary)', }}>
                 Generated Artifacts
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

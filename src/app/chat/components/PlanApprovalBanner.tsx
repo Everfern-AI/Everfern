@@ -15,7 +15,7 @@ export const PlanApprovalBanner = () => (
             </svg>
         </div>
         <div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: '#16a34a', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>Plan Approved</div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#16a34a', marginBottom: 2 }}>Plan Approved</div>
             <div style={{ fontSize: 14, color: '#15803d', lineHeight: 1.5 }}>I have reviewed and approved your execution plan. Please proceed with the execution as planned.</div>
         </div>
     </div>

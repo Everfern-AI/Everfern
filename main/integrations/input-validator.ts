@@ -7,8 +7,46 @@
  */
 
 import crypto from 'crypto';
+import { spawnSync } from 'child_process';
 import { IncomingMessage, PlatformFile } from './platform-interface';
 import { SecurityMonitor, getSecurityMonitor } from './security-monitor';
+
+type NativeFileValidation = ValidationResult & {
+  rateLimitExceeded: boolean;
+  remaining: number;
+  blockedFileType: boolean;
+  suspiciousFilename: boolean;
+};
+
+interface NativeTextValidation {
+  textLength: number;
+  injection: { detected: boolean; patterns: string[] };
+  content: { clean: boolean; issues: string[]; severity: 'low' | 'medium' | 'high' };
+  urls: { safe: boolean; issues: string[]; severity: 'low' | 'medium' | 'high' };
+  sanitizedText: string;
+}
+
+function nativeIntegrationEnabled(): boolean {
+  return process.env.EVERFERN_SHELL === 'tauri' && !!process.env.EF_NATIVE_EXE;
+}
+
+function nativeIntegrationCall<T>(request: Record<string, unknown>): T | null {
+  const executable = nativeIntegrationEnabled() && process.env.EF_NATIVE_EXE;
+  if (!executable) return null;
+  try {
+    const response = spawnSync(executable, ['--ef-integration-validation'], {
+      input: JSON.stringify(request),
+      encoding: 'utf-8',
+      windowsHide: true,
+      timeout: 5000,
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    if (response.error || response.status !== 0 || !response.stdout) return null;
+    return JSON.parse(response.stdout) as T;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Validation result interface
@@ -183,14 +221,26 @@ export class InputValidator {
         };
       }
 
+      // The native validator owns deterministic content rules. Rate-limit state
+      // and SecurityMonitor callbacks stay in this adapter and are passed across.
+      const nativeEnabled = nativeIntegrationEnabled();
+      const nativeTextScan = nativeEnabled
+        ? nativeIntegrationCall<NativeTextValidation>({
+            operation: 'scan_text',
+            text: message.content.text,
+            config: this.contentFilterConfig,
+          })
+        : null;
+
       // 2. Message length validation
-      if (message.content.text.length > this.contentFilterConfig.maxMessageLength) {
-        errors.push(`Message too long (${message.content.text.length}/${this.contentFilterConfig.maxMessageLength})`);
+      const textLength = nativeTextScan?.textLength ?? message.content.text.length;
+      if (textLength > this.contentFilterConfig.maxMessageLength) {
+        errors.push(`Message too long (${textLength}/${this.contentFilterConfig.maxMessageLength})`);
         riskLevel = 'medium';
       }
 
       // 3. Injection attack detection
-      const injectionResult = this.detectInjectionAttacks(message.content.text);
+      const injectionResult = nativeTextScan?.injection ?? this.detectInjectionAttacks(message.content.text);
       if (injectionResult.detected) {
         // Log critical security event
         await this.securityMonitor.logSecurityEvent(
@@ -216,7 +266,7 @@ export class InputValidator {
       }
 
       // 4. Content filtering
-      const contentResult = this.filterContent(message.content.text);
+      const contentResult = nativeTextScan?.content ?? this.filterContent(message.content.text);
       if (!contentResult.clean) {
         warnings.push(...contentResult.issues);
         if (contentResult.severity === 'high') {
@@ -227,7 +277,29 @@ export class InputValidator {
       }
 
       // 5. File validation
-      const fileResults = await this.validateFiles(message.content.files, message.user.id, message.platform);
+      const fileRateLimits = nativeEnabled
+        ? message.content.files.map(() => this.checkRateLimit(message.user.id, 'file'))
+        : undefined;
+      const nativeFiles = nativeEnabled
+        ? nativeIntegrationCall<NativeFileValidation[]>({
+            operation: 'validate_files',
+            files: message.content.files,
+            config: this.contentFilterConfig,
+            fileRateLimits,
+          })
+        : null;
+      let fileResults: ValidationResult[];
+      if (nativeFiles) {
+        await this.logNativeFileEvents(nativeFiles, message.content.files, message.user.id, message.platform);
+        fileResults = nativeFiles;
+      } else {
+        fileResults = await this.validateFiles(
+          message.content.files,
+          message.user.id,
+          message.platform,
+          fileRateLimits
+        );
+      }
       if (fileResults.some(r => !r.valid)) {
         errors.push(...fileResults.flatMap(r => r.errors));
         riskLevel = 'high';
@@ -243,7 +315,7 @@ export class InputValidator {
       }
 
       // 6. URL validation
-      const urlResult = this.validateUrls(message.content.text);
+      const urlResult = nativeTextScan?.urls ?? this.validateUrls(message.content.text);
       if (!urlResult.safe) {
         // Log malicious URL detection
         if (urlResult.severity === 'high') {
@@ -276,7 +348,7 @@ export class InputValidator {
         ...message,
         content: {
           ...message.content,
-          text: this.sanitizeText(message.content.text),
+          text: nativeTextScan?.sanitizedText ?? this.sanitizeText(message.content.text),
           files: fileResults.map((result, index) =>
             result.valid && result.sanitized ? result.sanitized : message.content.files[index]
           ).filter((_, index) => fileResults[index]?.valid)
@@ -347,8 +419,20 @@ export class InputValidator {
       }
 
       // Validate signature
-      const expectedSignature = this.generateWebhookSignature(payload, timestamp);
-      const isValidSignature = this.compareSignatures(signature, expectedSignature);
+      const nativeVerification = nativeIntegrationCall<{ supported: boolean; valid: boolean }>({
+        operation: 'validate_webhook_signature',
+        payload,
+        signature,
+        timestamp,
+        hashAlgorithm: this.webhookConfig.hashAlgorithm,
+        secretKey: this.webhookConfig.secretKey,
+      });
+      const expectedSignature = nativeVerification?.supported
+        ? undefined
+        : this.generateWebhookSignature(payload, timestamp);
+      const isValidSignature = nativeVerification?.supported
+        ? nativeVerification.valid
+        : this.compareSignatures(signature, expectedSignature!);
 
       if (!isValidSignature) {
         // Log critical security event
@@ -399,6 +483,13 @@ export class InputValidator {
    * Sanitize text input
    */
   sanitizeText(text: string): string {
+    const native = nativeIntegrationCall<string>({
+      operation: 'sanitize_text',
+      text,
+      maxMessageLength: this.contentFilterConfig.maxMessageLength,
+    });
+    if (native !== null) return native;
+
     return text
       // Remove null bytes
       .replace(/\0/g, '')
@@ -534,16 +625,21 @@ export class InputValidator {
   /**
    * Validate file attachments
    */
-  private async validateFiles(files: PlatformFile[], userId: string, platform: string): Promise<ValidationResult[]> {
+  private async validateFiles(
+    files: PlatformFile[],
+    userId: string,
+    platform: string,
+    rateLimitResults?: Array<{ allowed: boolean; remaining: number }>
+  ): Promise<ValidationResult[]> {
     const results: ValidationResult[] = [];
 
-    for (const file of files) {
+    for (const [index, file] of files.entries()) {
       const errors: string[] = [];
       const warnings: string[] = [];
       let riskLevel: ValidationResult['riskLevel'] = 'low';
 
       // Check rate limit for files
-      const rateLimitResult = this.checkRateLimit(userId, 'file');
+      const rateLimitResult = rateLimitResults?.[index] ?? this.checkRateLimit(userId, 'file');
       if (!rateLimitResult.allowed) {
         // Log security event
         await this.securityMonitor.logSecurityEvent(
@@ -627,6 +723,55 @@ export class InputValidator {
     }
 
     return results;
+  }
+
+  private async logNativeFileEvents(
+    results: NativeFileValidation[],
+    files: PlatformFile[],
+    userId: string,
+    platform: string
+  ): Promise<void> {
+    for (const [index, result] of results.entries()) {
+      const file = files[index];
+      if (!file) continue;
+      if (result.rateLimitExceeded) {
+        await this.securityMonitor.logSecurityEvent(
+          'rate_limit_exceeded',
+          'high',
+          platform,
+          'File Upload Rate Limit Exceeded',
+          `User ${userId} exceeded file upload rate limit`,
+          { context: { rateLimitType: 'file', remaining: result.remaining, fileName: file.name } },
+          userId
+        );
+      }
+      if (result.blockedFileType) {
+        await this.securityMonitor.logSecurityEvent(
+          'file_upload_blocked',
+          'medium',
+          platform,
+          'File Type Blocked',
+          `Blocked file upload from user ${userId}: ${file.mimeType} not allowed`,
+          {
+            context: {
+              fileName: file.name,
+              mimeType: file.mimeType,
+              fileSize: file.size,
+              allowedTypes: this.contentFilterConfig.allowedFileTypes,
+            },
+          },
+          userId
+        );
+      }
+      if (result.suspiciousFilename) {
+        await this.securityMonitor.logSuspiciousActivity(
+          platform,
+          userId,
+          `Suspicious filename detected: ${file.name}`,
+          { fileName: file.name, mimeType: file.mimeType, fileSize: file.size }
+        );
+      }
+    }
   }
 
   /**

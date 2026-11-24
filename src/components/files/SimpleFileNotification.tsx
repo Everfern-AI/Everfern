@@ -118,7 +118,7 @@ export const SimpleFileNotification: React.FC<SimpleFileNotificationProps> = ({
               {filename}
           </div>
           <div className="flex items-center gap-2">
-              <span className="text-[11px] text-[var(--color-text-secondary)] font-bold uppercase tracking-widest leading-none">
+              <span className="text-[11px] text-[var(--color-text-secondary)] font-boldst leading-none">
                   {fileDetails.subtitle}
               </span>
               <div className="w-1 h-1 bg-[var(--color-border)] rounded-full" />

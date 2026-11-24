@@ -302,8 +302,6 @@ const Table = defineComponent({
                 fontWeight: 600,
                 color: '#374151',
                 fontSize: '12px',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
               }}>
                 {header}
               </th>
@@ -375,9 +373,9 @@ When asked to create visual content like dashboards, reports, or cards, use Open
     examples: [
       `root = Stack([
   Row([
-    StatCard("Total Revenue", "$48,352", "+12.5%", true, "💰"),
-    StatCard("Active Users", "3,287", "+8.2%", true, "👥"),
-    StatCard("Conversion", "3.24%", "-0.5%", false, "📊")
+    StatCard("Total Revenue", "$48,352", "+12.5%", true),
+    StatCard("Active Users", "3,287", "+8.2%", true),
+    StatCard("Conversion", "3.24%", "-0.5%", false)
   ], "16px"),
   Card("Recent Activity", [
     TextContent("User signups increased 15% this week", "medium"),

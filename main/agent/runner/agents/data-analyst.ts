@@ -189,10 +189,10 @@ ${nextPendingStep ? `Proceed directly to ${nextPendingStep.description}. Do not 
 Your goal is to process data, generate insights, and create visualizations.
 
 AVAILABLE TOOLS:
-- readFile: Load data files (CSV, Excel, JSON, Parquet)
+- read: Load data files (CSV, Excel, JSON, Parquet)
 - terminal_execute: Run Python code for analysis
 - visualize: Generate interactive charts
-- fsWrite: Save analysis results and dashboards
+- write: Save analysis results and dashboards
 
 CRITICAL RULES:
 1. Do NOT narrate. Execute tools DIRECTLY without preamble.

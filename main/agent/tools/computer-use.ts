@@ -13,7 +13,8 @@ import type { AgentTool, ToolResult as AgentToolResult } from "../runner/types";
 import { AIClient, ChatMessage } from "../../lib/ai-client";
 import { globalAbortManager } from "../runner/abort-manager";
 import DesktopOverlay from "./desktop-overlay";
-import { checkToolPermission } from "./permission-checker";
+import { checkToolPermission, grantHandoff } from "./permission-checker";
+import { createNativeRobot, hasNativeInput, nativeScreenshot, type NativeScreenshot } from "../../lib/native-input";
 
 // ── Pruning & Caching Constants & Types ─────────────────────────────────────
 
@@ -84,13 +85,27 @@ export function isIrreversibleAction(actionName: string, args: Record<string, an
 
 // ── Optional native deps ─────────────────────────────────────────────────────
 
-let robot: any = null;
-try { robot = require("@jitsi/robotjs"); }
-catch { console.warn("[ComputerUse] robotjs unavailable"); }
+// Loaded on first use so the main process doesn't pay for them at startup.
+// Under the Tauri shell on Windows the shell does input and screenshots itself
+// (lib/native-input), so neither addon is loaded there.
+let robotMod: any = undefined;
+function getRobot(): any {
+  if (robotMod === undefined && hasNativeInput()) robotMod = createNativeRobot();
+  if (robotMod === undefined) {
+    try { robotMod = require("@jitsi/robotjs"); }
+    catch { robotMod = null; console.warn("[ComputerUse] robotjs unavailable"); }
+  }
+  return robotMod;
+}
 
-let sharp: typeof import("sharp") | null = null;
-try { sharp = require("sharp"); }
-catch { console.warn("[ComputerUse] sharp unavailable — cursor circle disabled"); }
+let sharpMod: typeof import("sharp") | null | undefined = undefined;
+function getSharp(): typeof import("sharp") | null {
+  if (sharpMod === undefined) {
+    try { sharpMod = require("sharp"); }
+    catch { sharpMod = null; console.warn("[ComputerUse] sharp unavailable — cursor circle disabled"); }
+  }
+  return sharpMod ?? null;
+}
 
 // Removed screenshot-desktop import - using native desktopCapturer
 
@@ -622,7 +637,7 @@ class ComputerUseTool {
     }
 
     // Configure mouse delay after robotjs availability check
-    if (!robot) {
+    if (!getRobot()) {
       const hint = process.platform === 'linux'
         ? 'On Linux, run: npm run rebuild:electron'
         : process.platform === 'darwin'
@@ -631,7 +646,7 @@ class ComputerUseTool {
       console.warn(`[ComputerUse] robotjs unavailable — OS automation (click/type/scroll) will be disabled. ${hint}`);
     } else {
       try {
-        robot.setMouseDelay(20);
+        getRobot().setMouseDelay(20);
         console.log("[ComputerUse] robotjs initialized with 20ms mouse delay");
       } catch (err) {
         console.error("[ComputerUse] Failed to set mouse delay:", err);
@@ -746,7 +761,7 @@ class ComputerUseTool {
     if (has(/^(?:click|left_click|mouse_click)/i, text)) {
       const coords = extractCoords(text);
       if (coords) {
-        if (!robot) {
+        if (!getRobot()) {
           throw new Error(`robotjs unavailable - cannot execute click`);
         }
         const [rx, ry] = this.absoluteXy(coords);
@@ -797,16 +812,16 @@ class ComputerUseTool {
     // ── 7. drag(start_box=..., end_box=...) or drag([x1,y1], [x2,y2]) ──
     if (has(/^drag\s*\(/i, text)) {
       const coordMatches = [...text.matchAll(/\(?\s*(-?\d+)\s*,\s*(-?\d+)\s*\)?/g)];
-      if (coordMatches.length >= 2 && robot) {
+      if (coordMatches.length >= 2 && getRobot()) {
         const p1: [number, number] = [parseInt(coordMatches[0][1], 10), parseInt(coordMatches[0][2], 10)];
         const p2: [number, number] = [parseInt(coordMatches[1][1], 10), parseInt(coordMatches[1][2], 10)];
         const [sx, sy] = this.absoluteXy(p1);
         const [ex, ey] = this.absoluteXy(p2);
-        robot.moveMouse(sx, sy);
-        robot.mouseToggle("down", "left");
+        getRobot().moveMouse(sx, sy);
+        getRobot().mouseToggle("down", "left");
         await sleep(0.15);
-        robot.moveMouse(ex, ey);
-        robot.mouseToggle("up", "left");
+        getRobot().moveMouse(ex, ey);
+        getRobot().mouseToggle("up", "left");
         console.log(`[ComputerUse] Drag from (${sx},${sy}) to (${ex},${ey})`);
       } else {
         console.warn(`[ComputerUse] drag: could not parse coordinates from: ${text}`);
@@ -817,7 +832,7 @@ class ComputerUseTool {
     // ── 8. hover(coordinate: [x, y]) / mouse_move ──
     if (has(/^(?:hover|move_to|mouse_move)\s*\(/i, text)) {
       const coords = extractCoords(text);
-      if (coords && robot) {
+      if (coords && getRobot()) {
         const [rx, ry] = this.absoluteXy(coords);
         this.moveMouse(rx, ry);
         console.log(`[ComputerUse] Hover to (${rx},${ry})`);
@@ -865,7 +880,7 @@ class ComputerUseTool {
   // ── Action handlers ─────────────────────────────────────────────────────────
 
   private async mouseMove(p: any) {
-    if (!robot) {
+    if (!getRobot()) {
       throw new Error(`robotjs unavailable - cannot execute mouse_move`);
     }
     const [x, y] = this.absoluteXy(p.coordinate);
@@ -881,7 +896,7 @@ class ComputerUseTool {
   }
 
   private async leftClick(p: any) {
-    if (!robot) {
+    if (!getRobot()) {
       throw new Error(`robotjs unavailable - cannot execute left_click`);
     }
     if (p.coordinate) {
@@ -921,7 +936,7 @@ class ComputerUseTool {
   }
 
   private async rightClick(p: any) {
-    if (!robot) {
+    if (!getRobot()) {
       throw new Error(`robotjs unavailable - cannot execute right_click`);
     }
     if (p.coordinate) {
@@ -948,7 +963,7 @@ class ComputerUseTool {
   }
 
   private async middleClick(p: any) {
-    if (!robot) {
+    if (!getRobot()) {
       throw new Error(`robotjs unavailable - cannot execute middle_click`);
     }
     if (p.coordinate) {
@@ -975,7 +990,7 @@ class ComputerUseTool {
   }
 
   private async doubleClick(p: any) {
-    if (!robot) {
+    if (!getRobot()) {
       throw new Error(`robotjs unavailable - cannot execute double_click`);
     }
     const [x, y] = this.absoluteXy(p.coordinate);
@@ -991,16 +1006,16 @@ class ComputerUseTool {
   }
 
   private async tripleClick(p: any) {
-    if (!robot) {
+    if (!getRobot()) {
       throw new Error(`robotjs unavailable - cannot execute triple_click`);
     }
     const [x, y] = this.absoluteXy(p.coordinate);
     console.log(`[Triple Click] Target=(${x}, ${y})`);
     try {
-      robot.moveMouse(x, y);
-      robot.mouseClick("left");
-      robot.mouseClick("left");
-      robot.mouseClick("left");
+      getRobot().moveMouse(x, y);
+      getRobot().mouseClick("left");
+      getRobot().mouseClick("left");
+      getRobot().mouseClick("left");
       console.log(`[Triple Click] Executed successfully`);
       return { status: "ok", detail: `Triple click at (${x}, ${y}).` };
     } catch (err) {
@@ -1010,13 +1025,13 @@ class ComputerUseTool {
   }
 
   private async leftClickDrag(p: any) {
-    if (!robot) {
+    if (!getRobot()) {
       throw new Error(`robotjs unavailable - cannot execute left_click_drag`);
     }
     const [x, y] = this.absoluteXy(p.coordinate);
     console.log(`[Drag] Target=(${x}, ${y})`);
     try {
-      robot.dragMouse(x, y);
+      getRobot().dragMouse(x, y);
       console.log(`[Drag] Executed successfully`);
       return { status: "ok", detail: `Drag to (${x}, ${y}).` };
     } catch (err) {
@@ -1026,7 +1041,7 @@ class ComputerUseTool {
   }
 
   private async scroll(p: any) {
-    if (!robot) {
+    if (!getRobot()) {
       throw new Error(`robotjs unavailable - cannot execute scroll`);
     }
     if (p.coordinate) {
@@ -1038,7 +1053,7 @@ class ComputerUseTool {
     console.log(`[Scroll] Scrolling ${pixels} pixels vertically`);
     try {
       const amount = Math.round(pixels / 100) || (pixels > 0 ? 1 : -1);
-      robot.scrollMouse(0, amount);
+      getRobot().scrollMouse(0, amount);
       console.log(`[Scroll] Executed successfully`);
       return { status: "ok", detail: `Scroll ${pixels} vertically.` };
     } catch (err) {
@@ -1048,7 +1063,7 @@ class ComputerUseTool {
   }
 
   private async hscroll(p: any) {
-    if (!robot) {
+    if (!getRobot()) {
       throw new Error(`robotjs unavailable - cannot execute hscroll`);
     }
     if (p.coordinate) {
@@ -1060,7 +1075,7 @@ class ComputerUseTool {
     console.log(`[HScroll] Scrolling ${pixels} pixels horizontally`);
     try {
       const amount = Math.round(pixels / 100) || (pixels > 0 ? 1 : -1);
-      robot.scrollMouse(amount, 0);
+      getRobot().scrollMouse(amount, 0);
       console.log(`[HScroll] Executed successfully`);
       return { status: "ok", detail: `Scroll ${pixels} horizontally.` };
     } catch (err) {
@@ -1070,13 +1085,13 @@ class ComputerUseTool {
   }
 
   private async typeAction(p: any) {
-    if (!robot) {
+    if (!getRobot()) {
       throw new Error(`robotjs unavailable - cannot execute type`);
     }
     if (p.text == null) throw new Error("text is required for action=type.");
     console.log(`[Type] Typing "${String(p.text).substring(0, 50)}"`);
     try {
-      robot.typeString(p.text);
+      getRobot().typeString(p.text);
 
       // Update overlay status
       if (this.overlay) {
@@ -1092,7 +1107,7 @@ class ComputerUseTool {
   }
 
   private async keyAction(p: any) {
-    if (!robot) {
+    if (!getRobot()) {
       throw new Error(`robotjs unavailable - cannot execute key`);
     }
     const keys: string[] = p.keys || [];
@@ -1115,7 +1130,7 @@ class ComputerUseTool {
   }
 
   private async holdAction(p: any) {
-    if (!robot) throw new Error("robotjs unavailable");
+    if (!getRobot()) throw new Error("robotjs unavailable");
     const keys: string[] = p.keys || [];
     const holdTime = p.hold_time;
 
@@ -1126,12 +1141,12 @@ class ComputerUseTool {
 
     if (p.coordinate) {
       const [x, y] = this.absoluteXy(p.coordinate);
-      robot.moveMouse(x, y);
-      robot.mouseToggle("down", "left");
+      getRobot().moveMouse(x, y);
+      getRobot().mouseToggle("down", "left");
       console.log(`[Hold] Holding left mouse button at (${x}, ${y})`);
       if (holdTime) {
         await new Promise(r => setTimeout(r, holdTime));
-        robot.mouseToggle("up", "left");
+        getRobot().mouseToggle("up", "left");
         return { status: "ok", detail: `Held left mouse button for ${holdTime}ms at (${x}, ${y})` };
       }
       return { status: "ok", detail: `Holding left mouse button at (${x}, ${y})` };
@@ -1141,14 +1156,14 @@ class ComputerUseTool {
 
     for (const k of keys) {
       const key = KEY_MAP[k.toLowerCase()] ?? k.toLowerCase();
-      robot.keyToggle(key, "down");
+      getRobot().keyToggle(key, "down");
     }
 
     if (holdTime) {
       await new Promise(r => setTimeout(r, holdTime));
       for (const k of keys) {
         const key = KEY_MAP[k.toLowerCase()] ?? k.toLowerCase();
-        robot.keyToggle(key, "up");
+        getRobot().keyToggle(key, "up");
       }
       return { status: "ok", detail: `Held keys ${keys} for ${holdTime}ms` };
     }
@@ -1157,11 +1172,11 @@ class ComputerUseTool {
   }
 
   private async releaseAction(p: any) {
-    if (!robot) throw new Error("robotjs unavailable");
+    if (!getRobot()) throw new Error("robotjs unavailable");
     const keys: string[] = p.keys || [];
 
     if (p.coordinate || (!keys.length && !p.keys)) {
-      robot.mouseToggle("up", "left");
+      getRobot().mouseToggle("up", "left");
       return { status: "ok", detail: "Released left mouse button" };
     }
 
@@ -1171,13 +1186,13 @@ class ComputerUseTool {
     };
     for (const k of keys) {
       const key = KEY_MAP[k.toLowerCase()] ?? k.toLowerCase();
-      robot.keyToggle(key, "up");
+      getRobot().keyToggle(key, "up");
     }
     return { status: "ok", detail: `Released keys ${keys}` };
   }
 
   private async dragAction(p: any) {
-    if (!robot) throw new Error("robotjs unavailable");
+    if (!getRobot()) throw new Error("robotjs unavailable");
     if (!p.start_coordinate || !p.coordinate) {
       throw new Error("start_coordinate and coordinate (target) are required for drag");
     }
@@ -1188,16 +1203,16 @@ class ComputerUseTool {
     console.log(`[Drag] Dragging from (${sx}, ${sy}) to (${ex}, ${ey})`);
     
     try {
-      robot.moveMouse(sx, sy);
-      robot.mouseToggle("down", "left");
+      getRobot().moveMouse(sx, sy);
+      getRobot().mouseToggle("down", "left");
       await new Promise(r => setTimeout(r, 200)); // Small pause to ensure drag is registered
-      robot.dragMouse(ex, ey);
-      robot.mouseToggle("up", "left");
+      getRobot().dragMouse(ex, ey);
+      getRobot().mouseToggle("up", "left");
       
       return { status: "ok", detail: `Dragged from (${sx}, ${sy}) to (${ex}, ${ey})` };
     } catch (err) {
       console.error(`[Drag] Error:`, err);
-      robot.mouseToggle("up", "left"); // Safety release
+      getRobot().mouseToggle("up", "left"); // Safety release
       throw err;
     }
   }
@@ -1216,13 +1231,13 @@ class ComputerUseTool {
   // ── OS automation ────────────────────────────────────────────────────────────
 
   public moveMouse(x: number, y: number): void {
-    if (!robot) {
+    if (!getRobot()) {
       console.warn("[Move] robotjs unavailable");
       return;
     }
     try {
       console.log(`[Move] Moving to (${x}, ${y})`);
-      robot.moveMouse(x, y);
+      getRobot().moveMouse(x, y);
 
       // Update overlay cursor position
       if (this.overlay) {
@@ -1237,22 +1252,22 @@ class ComputerUseTool {
   }
 
   public click(x?: number, y?: number, button: "left" | "right" | "middle" = "left"): void {
-    if (!robot) {
+    if (!getRobot()) {
       console.warn("[Click] robotjs unavailable");
       return;
     }
     try {
       console.log(`[Click] Clicking ${button} at (${x ?? "current"}, ${y ?? "current"})`);
       if (x !== undefined && y !== undefined) {
-        robot.moveMouse(x, y);
+        getRobot().moveMouse(x, y);
 
         // Update overlay cursor with click animation
         if (this.overlay) {
           this.overlay.moveCursor(x, y, true);
         }
       }
-      robot.mouseToggle("down", button);
-      robot.mouseToggle("up",   button);
+      getRobot().mouseToggle("down", button);
+      getRobot().mouseToggle("up",   button);
       console.log(`[Click] Successfully clicked ${button}`);
     } catch (err) {
       console.error(`[Click] Error clicking ${button}:`, err);
@@ -1261,14 +1276,14 @@ class ComputerUseTool {
   }
 
   public doubleClickAt(x: number, y: number): void {
-    if (!robot) {
+    if (!getRobot()) {
       console.warn("[DoubleClick] robotjs unavailable");
       return;
     }
     try {
       console.log(`[DoubleClick] Double-clicking at (${x}, ${y})`);
-      robot.moveMouse(x, y);
-      robot.mouseClick("left", true);
+      getRobot().moveMouse(x, y);
+      getRobot().mouseClick("left", true);
       console.log(`[DoubleClick] Successfully double-clicked`);
     } catch (err) {
       console.error(`[DoubleClick] Error double-clicking:`, err);
@@ -1277,7 +1292,7 @@ class ComputerUseTool {
   }
 
   public pressKeys(keys: string[]): void {
-    if (!robot) {
+    if (!getRobot()) {
       console.warn("[PressKeys] robotjs unavailable");
       return;
     }
@@ -1315,9 +1330,9 @@ class ComputerUseTool {
       const parts = normalizedKeys.map(k => KEY_MAP[k.toLowerCase()] ?? k.toLowerCase());
       console.log(`[PressKeys] Pressing keys: ${parts}`);
       if (parts.length === 1) {
-        robot.keyTap(parts[0]);
+        getRobot().keyTap(parts[0]);
       } else {
-        robot.keyTap(parts[parts.length - 1], parts.slice(0, -1));
+        getRobot().keyTap(parts[parts.length - 1], parts.slice(0, -1));
       }
       console.log(`[PressKeys] Successfully pressed keys`);
     } catch (err) {
@@ -1334,9 +1349,12 @@ class ComputerUseTool {
 
   private async attachScreenshot(payload: Record<string, any>): Promise<Record<string, any>> {
     const imgPath = path.join(this.screenshotDir, `${nowTs()}.png`);
+    // Downscale to IMAGE_MAX_WIDTH (1280) matching qwen.py for optimal vision recognition
+    const IMAGE_MAX_WIDTH = 1280;
 
-    // 1. Capture via Electron native API
+    // 1. Capture via Electron native API, or the Tauri shell (already shrunk, as PNG)
     let rawBuffer: Buffer;
+    let native: NativeScreenshot | null = null;
     let monLeft = 0, monTop = 0;
     let scaleFactor = 1;
     let logicalW = 1920, logicalH = 1080;
@@ -1354,18 +1372,24 @@ class ComputerUseTool {
       const physicalWidth = Math.floor(logicalW * scaleFactor);
       const physicalHeight = Math.floor(logicalH * scaleFactor);
 
-      const sources = await desktopCapturer.getSources({
-        types: ['screen'],
-        thumbnailSize: { width: physicalWidth, height: physicalHeight }
-      });
-      const source = sources[this.monitorIndex - 1] || sources[0];
-      
-      if (!source) {
-         throw new Error("No displays found via desktopCapturer");
+      if (hasNativeInput()) {
+        const index = displays[this.monitorIndex - 1] ? this.monitorIndex - 1 : 0;
+        native = await nativeScreenshot(index, { maxWidth: IMAGE_MAX_WIDTH });
+        rawBuffer = Buffer.from(native.png, "base64");
+      } else {
+        const sources = await desktopCapturer.getSources({
+          types: ['screen'],
+          thumbnailSize: { width: physicalWidth, height: physicalHeight }
+        });
+        const source = sources[this.monitorIndex - 1] || sources[0];
+
+        if (!source) {
+           throw new Error("No displays found via desktopCapturer");
+        }
+
+        rawBuffer = source.thumbnail.toPNG();
       }
-      
-      rawBuffer = source.thumbnail.toPNG();
-      
+
       // Async write to disk for history/logs (non-blocking)
       fs.writeFile(imgPath, rawBuffer, (err) => {
          if (err) console.warn("[ComputerUse] Failed to write history screenshot to disk:", err);
@@ -1376,21 +1400,24 @@ class ComputerUseTool {
     }
 
     // 2. Get physical dimensions from PNG header
-    const { width: rawW, height: rawH } = this.pngDimensions(rawBuffer);
+    const { width: rawW, height: rawH } = native
+      ? { width: native.physicalWidth, height: native.physicalHeight }
+      : this.pngDimensions(rawBuffer);
 
-    // 3. Downscale to IMAGE_MAX_WIDTH (1280) matching qwen.py for optimal vision recognition
-    const IMAGE_MAX_WIDTH = 1280;
+    // 3. Downscale (the Tauri shell already did)
     const downscaleRatio = rawW > IMAGE_MAX_WIDTH ? IMAGE_MAX_WIDTH / rawW : 1.0;
-    const newW = Math.round(rawW * downscaleRatio);
-    const newH = Math.round(rawH * downscaleRatio);
+    const newW = native ? native.width : Math.round(rawW * downscaleRatio);
+    const newH = native ? native.height : Math.round(rawH * downscaleRatio);
 
     // 4. Cursor position (in logical DIPs from robotjs)
-    const cursor = robot ? robot.getMousePos() : { x: 0, y: 0 };
+    const cursor = getRobot() ? getRobot().getMousePos() : { x: 0, y: 0 };
 
     let encoded: string;
-    if (sharp) {
+    if (native) {
+      encoded = native.png;
+    } else if (getSharp()) {
       try {
-        let sharpPipeline = sharp(rawBuffer);
+        let sharpPipeline = getSharp()!(rawBuffer);
         if (downscaleRatio < 1.0) {
           sharpPipeline = sharpPipeline.resize(newW, newH, { fit: 'inside' });
         }
@@ -1446,8 +1473,8 @@ class ComputerUseTool {
     const vp   = this.lastViewport;
     const left = vp?.monitor_left ?? 0;
     const top  = vp?.monitor_top  ?? 0;
-    const lw   = vp?.logical_width  ?? (robot ? robot.getScreenSize().width : 1920);
-    const lh   = vp?.logical_height ?? (robot ? robot.getScreenSize().height : 1080);
+    const lw   = vp?.logical_width  ?? (getRobot() ? getRobot().getScreenSize().width : 1920);
+    const lh   = vp?.logical_height ?? (getRobot() ? getRobot().getScreenSize().height : 1080);
 
     const x = left + Math.round((xn / 1000) * (lw - 1));
     const y = top  + Math.round((yn / 1000) * (lh - 1));
@@ -1509,6 +1536,22 @@ class ComputerUseTool {
     const width = Math.min(cropSizePhys, physW - left);
     const height = Math.min(cropSizePhys, physH - top);
 
+    if (hasNativeInput()) {
+      try {
+        const { screen } = require("electron");
+        const index = screen.getAllDisplays()[this.monitorIndex - 1] ? this.monitorIndex - 1 : 0;
+        const shot = await nativeScreenshot(index, { crop: [left, top, width, height] });
+        return {
+          status: "ok",
+          detail: `Zoomed 1:1 view around logical (${targetDIPX}, ${targetDIPY}), box [${left}, ${top}, ${width}, ${height}] physical.`,
+          screenshot: `data:image/png;base64,${shot.png}`,
+          zoom_box: { left, top, width, height }
+        };
+      } catch (e: any) {
+        return { status: "error", detail: `Zoom capture failed: ${e.message || e}` };
+      }
+    }
+
     let rawBuffer: Buffer;
     try {
       const { screen, desktopCapturer } = require("electron");
@@ -1524,8 +1567,8 @@ class ComputerUseTool {
     }
 
     let croppedBase64 = "";
-    if (sharp) {
-      const croppedBuffer = await sharp(rawBuffer)
+    if (getSharp()) {
+      const croppedBuffer = await getSharp()!(rawBuffer)
         .extract({ left, top, width, height })
         .webp({ quality: 90 })
         .toBuffer();
@@ -2617,8 +2660,8 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
         return `${kind} executed at screen pixel (${x},${y}).`;
       }
       if (kind === "type") {
-        if (robot) {
-          robot.typeString(action.text);
+        if (getRobot()) {
+          getRobot().typeString(action.text);
         }
         if (this.tool.overlay) {
           this.tool.overlay.setStatus(`Typed: "${String(action.text).substring(0, 30)}"`);
@@ -2639,8 +2682,8 @@ Return ONLY a numbered list of steps (e.g., "1. Action description"), one per li
         // robotjs convention: positive = down, negative = up
         // Invert sign to match qwen.py/pyautogui convention
         const amt = Number(action.amount ?? -3);
-        if (robot) {
-          robot.scrollMouse(0, -amt * 100);
+        if (getRobot()) {
+          getRobot().scrollMouse(0, -amt * 100);
         }
         return "Scrolled.";
       }
@@ -3280,6 +3323,16 @@ function createToolWithClient(
       const perm = await checkToolPermission('computer_use', args, onUpdate, emitEvent);
       if (!perm.approved) {
         return { success: false, output: perm.error || 'Permission denied by user for computer_use.' };
+      }
+
+      // The user chose the EverFern VM. Its desktop is driven through the VM's browser (Navis),
+      // so nothing touches this PC: hand the task over with the approval already given.
+      if (perm.target === 'vm') {
+        grantHandoff('navis', 'vm');
+        return {
+          success: false,
+          output: 'The user chose to run this in the EverFern VM, not on this PC. Computer use controls this PC only, so call the navis tool now with the same task; it is already approved and will run in the VM browser. Do not ask the user again.',
+        };
       }
 
       // Handle execute_actions from vision grounding

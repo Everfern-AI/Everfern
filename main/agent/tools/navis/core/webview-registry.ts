@@ -14,7 +14,7 @@ import { CloudVmDriver } from './cloud-vm-driver';
 import { LocalVmDriver } from './local-vm-driver';
 
 type Entry = { app: string; wcId: number; at: number };
-type VmEntry = { app: string; at: number; driver: CloudVmDriver };
+type VmEntry = { app: string; at: number; driver: CloudVmDriver; home?: string };
 type Vm = { vmId: string; apiUrl: string; token: string };
 
 const byWorker = new Map<string, Map<string, Entry>>();
@@ -25,7 +25,7 @@ export function registerWorkerLocalVm(partition: unknown, app: unknown, url: unk
   if (!key || !okApp(app) || typeof url !== 'string' || !/^https?:\/\//i.test(url)) return false;
   vmByWorker.delete(key);
   const apps = localByWorker.get(key) ?? new Map();
-  apps.set(app, { app, driver: apps.get(app)?.driver ?? new LocalVmDriver(url), at: Date.now(), url });
+  apps.set(app, { app, driver: apps.get(app)?.driver ?? new LocalVmDriver(url, key.slice('worker-'.length)), at: Date.now(), url });
   localByWorker.set(key, apps);
   return true;
 }
@@ -51,7 +51,7 @@ export function workerKeyForPartition(partition: unknown): string | null {
  */
 export function baseWorkerKey(conversationId: unknown): string | null {
   if (typeof conversationId !== 'string' || !conversationId.startsWith('worker-')) return null;
-  const m = conversationId.match(/^(worker-.+?)-run-\d{10,}$/);
+  const m = conversationId.match(/^(worker-.+?)-(?:run|auto)-\d{10,}$/);
   return m ? m[1] : conversationId;
 }
 
@@ -91,7 +91,7 @@ function okApiUrl(u: unknown): u is string {
 }
 
 /** A cloud worker's app window, showing its VM. The token is the user's EverFern session, kept in memory only. */
-export function registerWorkerCloudVm(partition: unknown, app: unknown, vmId: unknown, apiUrl: unknown, token: unknown): boolean {
+export function registerWorkerCloudVm(partition: unknown, app: unknown, vmId: unknown, apiUrl: unknown, token: unknown, homeUrl?: unknown): boolean {
   const key = workerKeyForPartition(partition);
   if (!key || !okApp(app) || typeof vmId !== 'string' || !/^[\w-]{1,64}$/.test(vmId) || !okApiUrl(apiUrl)) return false;
   if (typeof token !== 'string' || !token || token.length > 8192) return false;
@@ -106,7 +106,9 @@ export function registerWorkerCloudVm(partition: unknown, app: unknown, vmId: un
   // One driver per app window: each drives its own tab, the one that window shows.
   const vm = rec.vm;
   const driver = rec.apps.get(app)?.driver ?? new CloudVmDriver({ vmId, apiUrl: base, token: () => vm.token, app, worker: key.slice('worker-'.length) });
-  rec.apps.set(app, { app, at: Date.now(), driver });
+  // The app's own site; a later registration without one (Files, Terminal) keeps it.
+  const home = typeof homeUrl === 'string' && /^https?:\/\//i.test(homeUrl) ? homeUrl : rec.apps.get(app)?.home;
+  rec.apps.set(app, { app, at: Date.now(), driver, home });
   return true;
 }
 
@@ -128,7 +130,7 @@ const sameSite = (a: string, b: string) => Boolean(a && b && (a === b || a.endsW
  * site if there is one, otherwise the one the user used last. A cloud worker's
  * windows each show their own tab of its VM's browser, and drive that tab.
  */
-export function pickWorkerWindow(conversationId: unknown, startUrl?: string, app?: string): { app: string; driver: PageDriver } | null {
+export function pickWorkerWindow(conversationId: unknown, startUrl?: string, app?: string): { app: string; driver: PageDriver; home?: string } | null {
   if (typeof conversationId !== 'string') return null;
   const key = baseWorkerKey(conversationId) ?? conversationId;
   const want = hostOf(startUrl);
@@ -137,7 +139,7 @@ export function pickWorkerWindow(conversationId: unknown, startUrl?: string, app
     const apps = [...local.values()];
     const pick = app ? apps.find(e => e.app === app) : apps.find((e) => sameSite(hostOf(e.url), want)) ?? apps.sort((a, b) => b.at - a.at)[0];
     if (!pick) return null;
-    return { app: pick.app, driver: pick.driver };
+    return { app: pick.app, driver: pick.driver, home: pick.url };
   }
 
   const vm = vmByWorker.get(key);
@@ -147,7 +149,7 @@ export function pickWorkerWindow(conversationId: unknown, startUrl?: string, app
     const site = want.split('.').slice(-2, -1)[0] || '';
     const pick = app ? list.find(e => e.app === app) : list.find((e) => site && e.app === site) ?? list.sort((a, b) => b.at - a.at)[0];
     if (!pick) return null;
-    return { app: pick.app, driver: pick.driver };
+    return { app: pick.app, driver: pick.driver, home: pick.home };
   }
 
   // Workers may never fall back to Electron/host browser views.
@@ -163,4 +165,34 @@ export function pickWorkerWindow(conversationId: unknown, startUrl?: string, app
   const same = want ? live.find((e) => sameSite(hostOf(e.wc.getURL()), want)) : undefined;
   const pick = same ?? live.sort((a, b) => b.at - a.at)[0];
   return { app: pick.app, driver: new WebviewDriver(pick.wc) };
+}
+
+/** The app ids of a worker's open windows (on this computer, its local VM or its cloud VM). */
+export function workerWindowApps(conversationId: unknown): string[] {
+  const key = baseWorkerKey(conversationId);
+  if (!key) return [];
+  const out = new Set<string>();
+  for (const app of localByWorker.get(key)?.keys() ?? []) out.add(app);
+  for (const app of vmByWorker.get(key)?.apps.keys() ?? []) out.add(app);
+  for (const [app, e] of byWorker.get(key) ?? []) if (alive(e.wcId)) out.add(app);
+  return [...out];
+}
+
+/** Forgets a worker's window (the renderer closes the window itself). */
+export function closeWorkerWindow(conversationId: unknown, app: string): void {
+  const key = baseWorkerKey(conversationId);
+  if (!key) return;
+  localByWorker.get(key)?.delete(app);
+  if (!localByWorker.get(key)?.size) localByWorker.delete(key);
+  const vm = vmByWorker.get(key);
+  vm?.apps.delete(app);
+  if (vm && !vm.apps.size) vmByWorker.delete(key);
+  byWorker.get(key)?.delete(app);
+}
+
+/** Forgets every window of a worker (when it is deleted). */
+export function forgetWorkerWindows(workerKey: string): void {
+  localByWorker.delete(workerKey);
+  vmByWorker.delete(workerKey);
+  byWorker.delete(workerKey);
 }

@@ -125,7 +125,7 @@ export default function ScheduledTasksPanel({ projectId, onAddTask, refreshTrigg
                           <ClockIcon className="w-3.5 h-3.5 flex-shrink-0" />
                           <span>{task.cron}</span>
                           {task.endsAt && (
-                            <span className="ml-1.5 px-2 py-0.5 bg-[var(--color-bg-subtle)] text-[9px] rounded uppercase font-bold text-[var(--color-text-secondary)]">
+                            <span className="ml-1.5 px-2 py-0.5 bg-[var(--color-bg-subtle)] text-[9px] rounded font-bold text-[var(--color-text-secondary)]">
                               Ends {new Date(task.endsAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
                             </span>
                           )}
@@ -139,7 +139,7 @@ export default function ScheduledTasksPanel({ projectId, onAddTask, refreshTrigg
                       </button>
                     </div>
                     {task.nextRun && (
-                      <div className="mt-3 pt-3 border-t border-[var(--color-border-subtle)] flex items-center gap-2 text-[10px] uppercase tracking-wider font-semibold text-[var(--color-accent)]">
+                      <div className="mt-3 pt-3 border-t border-[var(--color-border-subtle)] flex items-center gap-2 text-[10px]r font-semibold text-[var(--color-accent)]">
                         <PlayIcon className="w-3 h-3 flex-shrink-0" />
                         <span>Next Run: {new Date(task.nextRun).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                       </div>

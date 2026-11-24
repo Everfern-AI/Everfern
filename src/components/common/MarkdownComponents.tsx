@@ -247,7 +247,7 @@ const MarkdownRenderer = memo(({ content, isStreaming: isStreamingProp }: { cont
             elements.push(
                 <div key={`table-${blockStartIndex}`} style={{ overflowX: 'auto', margin: '10px 0' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                        <thead><tr>{headers.map((h, j) => <th key={j} style={{ padding: '8px 12px', borderBottom: '1px solid var(--color-border)', textAlign: 'left', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{inlineRender(h, j)}</th>)}</tr></thead>
+                        <thead><tr>{headers.map((h, j) => <th key={j} style={{ padding: '8px 12px', borderBottom: '1px solid var(--color-border)', textAlign: 'left', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: 11, }}>{inlineRender(h, j)}</th>)}</tr></thead>
                         <tbody>{rows.map((row, ri) => <tr key={ri} style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>{row.map((cell, ci) => <td key={ci} style={{ padding: '8px 12px', color: 'var(--color-text-secondary)' }}>{inlineRender(cell, ci)}</td>)}</tr>)}</tbody>
                     </table>
                 </div>
@@ -265,8 +265,8 @@ const MarkdownRenderer = memo(({ content, isStreaming: isStreamingProp }: { cont
         if (h2) { elements.push(<h2 key={`h2-${blockStartIndex}`} style={{ fontSize: 20, fontWeight: 500, color: 'var(--color-text-primary)', margin: '12px 0 5px', fontFamily: 'var(--font-serif)' }}>{inlineRender(h2[1], i)}</h2>); i++; continue; }
         if (h3) { elements.push(<h3 key={`h3-${blockStartIndex}`} style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-secondary)', margin: '10px 0 4px' }}>{inlineRender(h3[1], i)}</h3>); i++; continue; }
         if (h4) { elements.push(<h4 key={`h4-${blockStartIndex}`} style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-tertiary)', margin: '10px 0 4px', letterSpacing: '0.01em' }}>{inlineRender(h4[1], i)}</h4>); i++; continue; }
-        if (h5) { elements.push(<h5 key={`h5-${blockStartIndex}`} style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-tertiary)', margin: '8px 0 3px', textTransform: 'uppercase', letterSpacing: '0.03em' }}>{inlineRender(h5[1], i)}</h5>); i++; continue; }
-        if (h6) { elements.push(<h6 key={`h6-${blockStartIndex}`} style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text-tertiary)', margin: '8px 0 3px', textTransform: 'uppercase', letterSpacing: '0.03em' }}>{inlineRender(h6[1], i)}</h6>); i++; continue; }
+        if (h5) { elements.push(<h5 key={`h5-${blockStartIndex}`} style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-tertiary)', margin: '8px 0 3px', }}>{inlineRender(h5[1], i)}</h5>); i++; continue; }
+        if (h6) { elements.push(<h6 key={`h6-${blockStartIndex}`} style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text-tertiary)', margin: '8px 0 3px', }}>{inlineRender(h6[1], i)}</h6>); i++; continue; }
 
         if (line.match(/^[\-\*] /)) {
             const items: string[] = [];

@@ -46,12 +46,18 @@ export interface LocalExecutionRequest {
   shellType: string;
   reason: string;
   conversationId: string;
+  /** Navis and Computer Use: let the user pick this PC or the EverFern VM. */
+  machineChoice?: boolean;
+  defaultTarget?: 'host' | 'vm';
 }
 
 export interface LocalExecutionResponse {
   requestId: string;
   approved: boolean;
   alwaysAllow: boolean;
+  allowPrefix?: boolean;
+  /** Where the approved task runs, when the request offered a machine choice. */
+  target?: 'host' | 'vm';
 }
 
 export interface ProviderMeta {
@@ -80,7 +86,18 @@ export interface FlatModelEntry {
 export type { SubAgentProgressEvent } from '../src/app/chat/types';
 export type { DebateStreamEvent, DebateDisplayData } from '../src/app/chat/types/debate-types';
 
+// The EverFern Cloud sign-in, decrypted by the main process. Loaded once, synchronously,
+// so pages that read it on their first render see it. Changes are written back encrypted.
+const secureSessionValues: Record<string, string> = (() => {
+  try { return ipcRenderer.sendSync('secure-session:load') || {}; } catch { return {}; }
+})();
+
 contextBridge.exposeInMainWorld('electronAPI', {
+  secureSession: {
+    getItem: (key: string): string | null => secureSessionValues[key] ?? null,
+    setItem: (key: string, value: string) => { secureSessionValues[key] = String(value); return ipcRenderer.invoke('secure-session:set', key, String(value)); },
+    removeItem: (key: string) => { delete secureSessionValues[key]; return ipcRenderer.invoke('secure-session:set', key, null); },
+  },
   // ── Window Controls ────────────────────────────────────────────
   window: {
     minimize:    () => ipcRenderer.invoke('window:minimize'),
@@ -129,9 +146,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     fetchMetadata: (url: string) => ipcRenderer.invoke('system:fetch-metadata', url),
     checkWSL:       () => ipcRenderer.invoke('system:checkWSL'),
     getWSLInfo:     () => ipcRenderer.invoke('system:getWSLInfo'),
-    startVMDesktop: (opts?: { openUrl?: string }) => ipcRenderer.invoke('system:startVMDesktop', opts),
-    openVMBrowser:  (url: string) => ipcRenderer.invoke('system:openVMBrowser', url),
+    startVMDesktop: (opts?: { openUrl?: string; app?: string }) => ipcRenderer.invoke('system:startVMDesktop', opts),
+    openVMBrowser:  (url: string, app?: string) => ipcRenderer.invoke('system:openVMBrowser', url, app),
     stopVMDesktop:  () => ipcRenderer.invoke('system:stopVMDesktop'),
+    prewarmVM:      (workerId?: string) => ipcRenderer.invoke('system:prewarmVM', workerId),
     checkDocker:    () => ipcRenderer.invoke('system:checkDocker'),
     installWSL:     () => ipcRenderer.invoke('system:installWSL'),
     setupDockerUbuntu: () => ipcRenderer.invoke('system:setupDockerUbuntu'),
@@ -233,10 +251,63 @@ contextBridge.exposeInMainWorld('electronAPI', {
     list:     ()                                => ipcRenderer.invoke('workers:list'),
     save:     (w: any)                          => ipcRenderer.invoke('workers:save', w),
     delete:   (id: string)                      => ipcRenderer.invoke('workers:delete', id),
+    chatLoad: (id: string)                      => ipcRenderer.invoke('workers:chat-load', id),
+    // Scheduled runs: the main process keeps the clock and sends each due worker here.
+    schedulerReady: () => ipcRenderer.send('workers:scheduler-ready'),
+    dueDone: (workerId: string) => ipcRenderer.send('workers:due-done', workerId),
+    onDue: (cb: (worker: any) => void) => {
+      const fn = (_e: unknown, worker: any) => cb(worker);
+      ipcRenderer.on('workers:due', fn);
+      return () => { ipcRenderer.removeListener('workers:due', fn); };
+    },
+    chatSave: (id: string, msgs: unknown[])     => ipcRenderer.invoke('workers:chat-save', id, msgs),
     vmStatus: ()                                => ipcRenderer.invoke('workers:vm-status'),
     vmExec:   (workerId: string, cmd: string)   => ipcRenderer.invoke('workers:vm-exec', workerId, cmd),
     vmLs:     (workerId: string, subpath?: string) => ipcRenderer.invoke('workers:vm-ls', workerId, subpath),
     vmRead:   (workerId: string, path: string)  => ipcRenderer.invoke('workers:vm-read', workerId, path),
+    vmWrite:  (workerId: string, path: string, content: string) => ipcRenderer.invoke('workers:vm-write', workerId, path, content),
+    vmImport: (workerId: string, subpath?: string) => ipcRenderer.invoke('workers:vm-import', workerId, subpath),
+    vmExport: (workerId: string, path: string) => ipcRenderer.invoke('workers:vm-export', workerId, path),
+    // Live Files: main watches the shown folder and says when it changes.
+    filesWatch:   (workerId: string, subpath?: string) => ipcRenderer.invoke('workers:files-watch', workerId, subpath),
+    filesUnwatch: (workerId: string) => ipcRenderer.invoke('workers:files-unwatch', workerId),
+    onFilesChanged: (cb: (ev: { workerId: string; subpath?: string }) => void) => {
+      const handler = (_e: any, ev: any) => cb(ev);
+      ipcRenderer.on('worker:files-changed', handler);
+      return () => { ipcRenderer.removeListener('worker:files-changed', handler); };
+    },
+    onFilesCommand: (cb: (cmd: any) => void) => {
+      const handler = (_e: any, cmd: any) => cb(cmd);
+      ipcRenderer.on('worker:files', handler);
+      return () => { ipcRenderer.removeListener('worker:files', handler); };
+    },
+    // Worker Terminal: a real PTY on the worker's computer.
+    ptyOpen:   (workerId: string, cols: number, rows: number) => ipcRenderer.invoke('workers:pty-open', workerId, cols, rows),
+    ptyWrite:  (id: string, data: string) => ipcRenderer.send('workers:pty-write', id, data),
+    ptyResize: (id: string, cols: number, rows: number) => ipcRenderer.send('workers:pty-resize', id, cols, rows),
+    ptyKill:   (id: string) => ipcRenderer.invoke('workers:pty-kill', id),
+    onPtyData: (cb: (ev: { id: string; data: string }) => void) => {
+      const handler = (_e: any, ev: any) => cb(ev);
+      ipcRenderer.on('worker:pty-data', handler);
+      return () => { ipcRenderer.removeListener('worker:pty-data', handler); };
+    },
+    onPtyExit: (cb: (ev: { id: string }) => void) => {
+      const handler = (_e: any, ev: any) => cb(ev);
+      ipcRenderer.on('worker:pty-exit', handler);
+      return () => { ipcRenderer.removeListener('worker:pty-exit', handler); };
+    },
+    onTerminalCommand: (cb: (cmd: any) => void) => {
+      const handler = (_e: any, cmd: any) => cb(cmd);
+      ipcRenderer.on('worker:terminal', handler);
+      return () => { ipcRenderer.removeListener('worker:terminal', handler); };
+    },
+    searchQuery: (query: string, reqId?: string) => ipcRenderer.invoke('search:query', query, reqId),
+    searchCancel: (id?: string) => ipcRenderer.invoke('search:cancel', id),
+    onSearchEvent: (cb: (ev: any) => void) => {
+      const handler = (_e: any, ev: any) => cb(ev);
+      ipcRenderer.on('worker:search', handler);
+      return () => { ipcRenderer.removeListener('worker:search', handler); };
+    },
     sheetLoad: (workerId: string)               => ipcRenderer.invoke('sheets:load', workerId),
     sheetSave: (workerId: string, data: any)    => ipcRenderer.invoke('sheets:save', workerId, data),
     onSheetCommand: (cb: (cmd: any) => void) => {
@@ -267,7 +338,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     browserStateSave: (scope: string, id: string, data: string, kind?: string) => ipcRenderer.invoke('workers:browser-state-save', scope, id, data, kind),
     registerWebview:   (partition: string, app: string, wcId: number) => ipcRenderer.invoke('workers:webview-register', partition, app, wcId),
     unregisterWebview: (partition: string, app: string, wcId: number) => ipcRenderer.invoke('workers:webview-unregister', partition, app, wcId),
-    registerCloudVm:   (partition: string, app: string, vmId: string, apiUrl: string, token: string) => ipcRenderer.invoke('workers:cloudvm-register', partition, app, vmId, apiUrl, token),
+    registerCloudVm:   (partition: string, app: string, vmId: string, apiUrl: string, token: string, homeUrl?: string) => ipcRenderer.invoke('workers:cloudvm-register', partition, app, vmId, apiUrl, token, homeUrl),
     registerLocalVm: (partition: string, app: string, url: string) => ipcRenderer.invoke('workers:localvm-register', partition, app, url),
     unregisterLocalVm: (partition: string, app: string) => ipcRenderer.invoke('workers:localvm-unregister', partition, app),
     unregisterCloudVm: (partition: string, app: string) => ipcRenderer.invoke('workers:cloudvm-unregister', partition, app),
@@ -282,7 +353,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     listTools:     ()            => ipcRenderer.invoke('acp:list-tools'),
     chat:          (req: any)   => ipcRenderer.invoke('acp:chat', req),
     stream:        (req: any)   => ipcRenderer.invoke('acp:stream', req),
-    stop:          ()            => ipcRenderer.invoke('acp:stop'),
+    stop:          (conversationId?: string) => ipcRenderer.invoke('acp:stop', conversationId),
+    /** Runs going in the main process, and ones that ended lately (done: true; end is the last chunk). */
+    active:        () => ipcRenderer.invoke('acp:active') as Promise<Array<{ conversationId: string; text: string; done: boolean; end?: string }>>,
     rollbackTurn:  (conversationId: string, timestamp: number) => ipcRenderer.invoke('agent:rollback-turn', conversationId, timestamp),
     getRollbackChanges: (conversationId: string, timestamp: number) => ipcRenderer.invoke('agent:get-rollback-changes', conversationId, timestamp),
     getRollbackPreview: (conversationId: string, timestamp: number) => ipcRenderer.invoke('agent:get-rollback-preview', conversationId, timestamp),
@@ -669,6 +742,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getModels: (providerType: string) => ipcRenderer.invoke('providers:get-models', providerType),
   },
 
+  // ── MCP servers ────────────────────────────────────────────────────
+  mcp: {
+    list: () => ipcRenderer.invoke('mcp:list'),
+    save: (config: any, previousName?: string) => ipcRenderer.invoke('mcp:save', config, previousName),
+    remove: (name: string) => ipcRenderer.invoke('mcp:remove', name),
+    setEnabled: (name: string, enabled: boolean) => ipcRenderer.invoke('mcp:set-enabled', name, enabled),
+    reconnect: (name: string) => ipcRenderer.invoke('mcp:reconnect', name),
+    importJson: (text: string) => ipcRenderer.invoke('mcp:import-json', text),
+    onChange: (cb: (status: any[]) => void) => {
+      const handler = (_e: any, status: any[]) => cb(status);
+      ipcRenderer.on('mcp:changed', handler);
+      return () => { ipcRenderer.removeListener('mcp:changed', handler); };
+    },
+  },
+
   // ── Tool Settings ──────────────────────────────────────────────────
   toolSettings: {
     get: () => ipcRenderer.invoke('tool-settings:get'),
@@ -816,9 +904,10 @@ export type ElectronAPI = {
     fetchMetadata: (url: string) => Promise<{ title?: string; description?: string; favicon?: string } | null>;
     checkWSL:       () => Promise<boolean>;
     getWSLInfo:     () => Promise<{ healthy: boolean; osName?: string; uptime?: string }>;
-    startVMDesktop: (opts?: { openUrl?: string }) => Promise<{ success: boolean; url?: string; error?: string }>;
-    openVMBrowser:  (url: string) => Promise<{ success: boolean }>;
+    startVMDesktop: (opts?: { openUrl?: string; app?: string }) => Promise<{ success: boolean; url?: string; error?: string }>;
+    openVMBrowser:  (url: string, app?: string) => Promise<{ success: boolean }>;
     stopVMDesktop:  () => Promise<{ success: boolean }>;
+    prewarmVM:      (workerId?: string) => Promise<{ success: boolean }>;
     checkDocker:    () => Promise<boolean>;
     installWSL:     () => Promise<{ success: boolean; warning?: string; error?: string }>;
     setupDockerUbuntu: () => Promise<{ success: boolean; error?: string }>;
@@ -1075,6 +1164,15 @@ export type ElectronAPI = {
   providers: {
     getAll: () => Promise<ProviderMeta[]>;
     getModels: (providerType: string) => Promise<FlatModelEntry[]>;
+  };
+  mcp: {
+    list: () => Promise<any[]>;
+    save: (config: any, previousName?: string) => Promise<{ success: boolean; data?: number; error?: string }>;
+    remove: (name: string) => Promise<{ success: boolean; error?: string }>;
+    setEnabled: (name: string, enabled: boolean) => Promise<{ success: boolean; error?: string }>;
+    reconnect: (name: string) => Promise<{ success: boolean; error?: string }>;
+    importJson: (text: string) => Promise<{ success: boolean; data?: string[]; error?: string }>;
+    onChange: (cb: (status: any[]) => void) => () => void;
   };
   toolSettings: {
     get: () => Promise<ToolSettingsConfig>;

@@ -1,4 +1,20 @@
 import { dbOps } from '../../lib/db';
+import { execFile } from 'child_process';
+import { currentScope } from '../../agent/agent-scope';
+
+function nativeProjectOperation<T>(operation: string, fields: object = {}): Promise<T> | undefined {
+  const executable = process.env.EF_NATIVE_EXE;
+  if (process.env.EVERFERN_SHELL !== 'tauri' || !executable) return undefined;
+  const payload = JSON.stringify({ ...fields, operation, scope: currentScope() });
+  return new Promise((resolve, reject) => {
+    const child = execFile(executable, ['--ef-project-lookup'], { windowsHide: true, maxBuffer: 16 * 1024 * 1024 }, (error, stdout) => {
+      if (error) return reject(error);
+      try { resolve(JSON.parse(stdout)); } catch (parseError) { reject(parseError); }
+    });
+    child.stdin?.once('error', reject);
+    child.stdin?.end(payload);
+  });
+}
 
 export interface Project {
   id: string;
@@ -17,6 +33,8 @@ export class ProjectsStore {
    */
   async list(): Promise<Project[]> {
     try {
+      const native = nativeProjectOperation<Project[]>('list');
+      if (native) return await native;
       const rows = await dbOps.all(`
         SELECT *
         FROM projects
@@ -45,6 +63,8 @@ export class ProjectsStore {
   async get(idOrPath: string): Promise<Project | null> {
     try {
       if (!idOrPath) return null;
+      const native = nativeProjectOperation<Project | null>('get', { id: idOrPath });
+      if (native) return await native;
       let row = await dbOps.get('SELECT * FROM projects WHERE id = ?', [idOrPath]);
       if (!row) {
         row = await dbOps.get('SELECT * FROM projects WHERE path = ?', [idOrPath]);
@@ -78,6 +98,8 @@ export class ProjectsStore {
    */
   async create(project: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>): Promise<{ success: boolean; project?: Project; error?: string }> {
     try {
+      const native = nativeProjectOperation<Awaited<ReturnType<ProjectsStore['create']>>>('create', { project });
+      if (native) return await native;
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
       const newProject: Project = {
@@ -137,6 +159,8 @@ export class ProjectsStore {
    */
   async update(id: string, updates: Partial<Project>): Promise<{ success: boolean; project?: Project; error?: string }> {
     try {
+      const native = nativeProjectOperation<Awaited<ReturnType<ProjectsStore['update']>>>('update', { id, updates });
+      if (native) return await native;
       const existing = await this.get(id);
       if (!existing) return { success: false, error: 'Project not found' };
 
@@ -168,6 +192,8 @@ export class ProjectsStore {
    */
   async toggleBookmark(id: string): Promise<{ success: boolean; isBookmarked: boolean; error?: string }> {
     try {
+      const native = nativeProjectOperation<Awaited<ReturnType<ProjectsStore['toggleBookmark']>>>('toggle-bookmark', { id });
+      if (native) return await native;
       const project = await this.get(id);
       if (!project) return { success: false, isBookmarked: false, error: 'Project not found' };
 
@@ -191,6 +217,8 @@ export class ProjectsStore {
    */
   async delete(id: string): Promise<{ success: boolean; error?: string }> {
     try {
+      const native = nativeProjectOperation<Awaited<ReturnType<ProjectsStore['delete']>>>('delete', { id });
+      if (native) return await native;
       await dbOps.run('DELETE FROM projects WHERE id = ?', [id]);
       return { success: true };
     } catch (err) {

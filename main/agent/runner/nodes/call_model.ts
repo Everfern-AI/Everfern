@@ -430,6 +430,9 @@ You do not need to use complex execution plans or tools for this interaction.`;
       },
       userConfirmation: state.userConfirmation,
     };
+    // The effort chosen for this run (chat effort picker, or a worker's tier) reaches the model.
+    const effort = (runner as any).reasoningEffort;
+    if (effort === 'low' || effort === 'medium' || effort === 'high' || effort === 'ultra') request.reasoningEffort = effort;
 
     const response = await client.chat(request);
     thoughtFilter.flush(
@@ -518,7 +521,7 @@ You do not need to use complex execution plans or tools for this interaction.`;
 
         if (shouldNudge && verifyIntentRetries < maxVerifyRetries) {
           verifyIntentRetries++;
-          let message = `SYSTEM REMINDER: You did not format your tool call correctly or failed to call a tool. If you are completing a task, you MUST use a tool (write, run_command, edit, etc).`;
+          let message = `SYSTEM REMINDER: You did not format your tool call correctly or failed to call a tool. If you are completing a task, you MUST use a tool (write, edit, terminal_execute, task_complete, etc.).`;
           if (parserResult.parseError) {
               message = `SYSTEM REMINDER: Your tool call failed to parse. ${parserResult.parseError}. Please output valid JSON.`;
           } else {
@@ -558,7 +561,7 @@ You do not need to use complex execution plans or tools for this interaction.`;
         verifyIntentRetries++;
         state.messages.push({
           role: 'system',
-          content: 'SYSTEM CONTINUE: You returned an empty response. You MUST proceed with the next step of your task. Call a tool (write, run_command, etc.) to continue.'
+          content: 'SYSTEM CONTINUE: You returned an empty response. You MUST proceed with the next step of your task. Call a tool (write, edit, terminal_execute, etc.) to continue.'
         } as any);
         response.toolCalls = [{
           id: 'call_nudge_' + crypto.randomUUID().substring(0, 8),

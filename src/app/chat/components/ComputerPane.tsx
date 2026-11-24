@@ -86,7 +86,7 @@ export const ComputerPane = ({ isOpen, onClose, data }: ComputerPaneProps) => {
                                 {agentLabel} is {viewMode === 'search' ? 'searching' : viewMode === 'terminal' ? 'executing' : 'browsing'}
                             </div>
                             <div className="inline-flex items-center gap-2 px-2.5 py-1 mt-1.5 rounded-lg bg-stone-50 border border-stone-100 max-w-full">
-                                <span className="text-[11px] text-stone-400 font-bold uppercase tracking-wider shrink-0">
+                                <span className="text-[11px] text-stone-400 font-boldr shrink-0">
                                     {viewMode === 'search' ? 'Query' : viewMode === 'terminal' ? 'Task' : 'URL'}
                                 </span>
                                 <span className="text-[11px] text-stone-600 font-medium truncate">
@@ -108,7 +108,7 @@ export const ComputerPane = ({ isOpen, onClose, data }: ComputerPaneProps) => {
                                 exit={{ opacity: 0, y: -10 }}
                                 className="flex flex-col gap-4"
                             >
-                                <div className="text-[13px] font-bold text-stone-400 uppercase tracking-widest mb-1">Search Results</div>
+                                <div className="text-[13px] font-bold text-stone-400st mb-1">Search Results</div>
                                 {data?.results?.map((res, i) => (
                                     <div key={i} className="bg-white p-4 rounded-2xl border border-stone-100 shadow-sm hover:border-blue-200 transition-all group cursor-pointer" onClick={() => window.open(res.url, '_blank')}>
                                         <div className="flex items-center gap-2 mb-1.5">
@@ -138,7 +138,7 @@ export const ComputerPane = ({ isOpen, onClose, data }: ComputerPaneProps) => {
                                     <div className="w-3 h-3 rounded-full bg-red-500/20 border border-red-500/50" />
                                     <div className="w-3 h-3 rounded-full bg-amber-500/20 border border-amber-500/50" />
                                     <div className="w-3 h-3 rounded-full bg-emerald-500/20 border border-emerald-500/50" />
-                                    <span className="text-stone-500 text-[10px] ml-2 font-bold uppercase tracking-tighter">Terminal Output</span>
+                                    <span className="text-stone-500 text-[10px] ml-2 font-bold tracking-tighter">Terminal Output</span>
                                 </div>
                                 <div className="flex-1 overflow-y-auto whitespace-pre-wrap leading-relaxed">
                                     <span className="text-stone-500 mr-2">$</span> 
@@ -208,7 +208,7 @@ export const ComputerPane = ({ isOpen, onClose, data }: ComputerPaneProps) => {
                                                     />
                                                 </div>
                                                 <div className="flex flex-col items-center gap-2">
-                                                    <span className="text-[10px] font-bold uppercase tracking-[0.3em]">Connecting to Virtual Session</span>
+                                                    <span className="text-[10px] font-bold">Connecting to Virtual Session</span>
                                                     <div className="flex gap-1">
                                                         {[0,1,2].map(i => (
                                                             <motion.div key={i} animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1.5, delay: i * 0.3 }} className="w-1.5 h-1.5 rounded-full bg-stone-300" />

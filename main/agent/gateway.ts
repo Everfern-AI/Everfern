@@ -2,7 +2,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { AgentRunner } from './runner/runner';
 import { getPooledAIClient } from '../lib/ai-client';
 import { acpManager } from '../acp/manager';
-import { globalAbortManager } from './runner/abort-manager';
+import { stopConversation } from './runner/abort-manager';
 import * as crypto from 'crypto';
 
 export class AgentGatewayServer {
@@ -30,7 +30,7 @@ export class AgentGatewayServer {
           if (type === 'run_task') {
             await this.handleRunTask(ws, requestId, data);
           } else if (type === 'abort_task') {
-            globalAbortManager.setAborted();
+            stopConversation();
             ws.send(JSON.stringify({ type: 'task_aborted', requestId }));
           }
         } catch (err: any) {

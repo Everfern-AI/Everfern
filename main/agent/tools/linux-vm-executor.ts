@@ -105,10 +105,16 @@ let _wslCmdCache: string | null = null;
 let _wslIdleTimeout: NodeJS.Timeout | null = null;
 const WSL_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 
-function resetWslIdleTimer() {
+/** Something still using the VM (the worker desktop stream, a prewarm). While it says yes, WSL is never shut down for idleness. */
+let _wslKeepAlive: (() => boolean) | null = null;
+export function setWslKeepAlive(check: (() => boolean) | null): void { _wslKeepAlive = check; }
+
+export function resetWslIdleTimer() {
   if (process.platform !== 'win32') return;
   if (_wslIdleTimeout) clearTimeout(_wslIdleTimeout);
   _wslIdleTimeout = setTimeout(() => {
+    // A worker's desktop is open: shutting WSL down now would make its next action a cold boot.
+    if (_wslKeepAlive?.()) { resetWslIdleTimer(); return; }
     console.log('[WSL] Idle for 10 minutes, shutting down WSL to save RAM...');
     const { exec } = require('child_process');
     exec('wsl.exe --shutdown', (err: any) => {
@@ -884,4 +890,57 @@ export function translateLinuxPathToHost(linuxPath: string): string {
     }
   }
   return linuxPath;
+}
+
+/**
+ * Starts a long-lived process in the Linux VM with piped stdio (for the worker
+ * Terminal's PTY bridge). Same VM and environment as runInLinuxVM, but streaming.
+ */
+export async function spawnInLinuxVM(command: string): Promise<import('child_process').ChildProcessWithoutNullStreams> {
+  const envExports = 'export VIRTUAL_ENV="$HOME/.everfern/venv" && export PATH="$HOME/.everfern/venv/bin:$HOME/.everfern/node_modules/.bin:$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" && export NODE_PATH="$HOME/.everfern/node_modules"';
+  const full = `${envExports} && ${command}`;
+  if (process.platform === 'win32') {
+    try { await ensureWSLSetup(); } catch { /* the bridge reports its own failure */ }
+    resetWslIdleTimer();
+    return spawn(getWslCmd(), await getTargetWSLArgs(['--exec', 'bash', '-c', full]), { windowsHide: true });
+  }
+  if (process.platform === 'darwin') {
+    await ensureDockerContainer();
+    return spawn('docker', ['exec', '-i', ALPINE_CONTAINER, 'bash', '-c', full]);
+  }
+  return spawn('bash', ['-c', full]);
+}
+
+/* ── Worker VM: never the host ──
+ * Workers run in EverFern's Alpine distro (Windows) or its Docker container (macOS and
+ * Linux). Unlike runInLinuxVM there is no host fallback, and on Linux the container is
+ * used instead of the host, so a worker's commands can never touch this computer. */
+
+export async function runInWorkerVM(command: string, onUpdate?: (chunk: string) => void): Promise<LinuxVMExecutionResult> {
+  try {
+    if (process.platform === 'win32') return await runInWSL(command, undefined, onUpdate);
+    if (process.platform === 'darwin' || process.platform === 'linux') return await runInDocker(command, undefined, onUpdate);
+    return { stdout: '', stderr: `Workers are not supported on ${process.platform}.`, exitCode: -1 };
+  } catch (error: any) {
+    return { stdout: '', stderr: `The worker VM is not available: ${error?.message || error}`, exitCode: -1 };
+  }
+}
+
+export async function spawnInWorkerVM(command: string): Promise<import('child_process').ChildProcessWithoutNullStreams> {
+  if (process.platform === 'win32') return spawnInLinuxVM(command);
+  if (process.platform !== 'darwin' && process.platform !== 'linux') throw new Error(`Workers are not supported on ${process.platform}.`);
+  await ensureDockerContainer();
+  const envExports = 'export VIRTUAL_ENV="$HOME/.everfern/venv" && export PATH="$HOME/.everfern/venv/bin:$HOME/.everfern/node_modules/.bin:$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" && export NODE_PATH="$HOME/.everfern/node_modules"';
+  return spawn('docker', ['exec', '-i', ALPINE_CONTAINER, 'bash', '-c', `${envExports} && ${command}`]);
+}
+
+/** Is the worker VM up? On Linux that is Docker, not the host. */
+export async function isWorkerVMAvailable(): Promise<{ available: boolean; reason?: string }> {
+  if (process.platform !== 'linux') return isLinuxVMAvailable();
+  try {
+    await execAsync('docker info', { timeout: 10000 });
+    return { available: true };
+  } catch (err: any) {
+    return { available: false, reason: `Workers on Linux run in Docker, which is not installed or not running. Error: ${err?.message || err}` };
+  }
 }

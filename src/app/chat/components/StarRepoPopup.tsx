@@ -1,4 +1,5 @@
 'use client';
+import { Star as LuStar } from "lucide-react";
 import React from 'react';
 import { motion } from 'framer-motion';
 import { useTheme } from '@/components/ThemeProvider';
@@ -59,7 +60,7 @@ export default function StarRepoPopup({ onClose, onStar }: { onClose: () => void
                     transition={{ duration: 2, repeat: Infinity, repeatDelay: 3 }}
                     style={{ fontSize: 44, marginBottom: 16, lineHeight: 1 }}
                 >
-                    ⭐
+                    <LuStar size={40} strokeWidth={1.5} color="var(--color-text-primary)" />
                 </motion.div>
 
                 <div style={{

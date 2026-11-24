@@ -187,7 +187,7 @@ export default function PermissionDialog() {
                                             fontWeight: 500,
                                         }}
                                     >
-                                        ⚠️ This is a sensitive operation. Only approve if you trust the current task.
+                                        This is a sensitive operation. Only approve if you trust the current task.
                                     </p>
                                 </div>
                             </div>

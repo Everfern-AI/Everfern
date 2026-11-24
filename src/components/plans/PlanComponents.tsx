@@ -205,7 +205,7 @@ const AgentWorkspaceCards = ({ plan, contextItems, setTooltip, currentNode, isLo
                             onClick={() => setContextExpanded(!contextExpanded)}
                             className="p-3 flex items-center justify-between cursor-pointer border-b border-stone-200 hover:bg-stone-50 transition-colors"
                         >
-                            <span className="text-[13px] font-bold text-stone-800 uppercase tracking-wide">Active Context</span>
+                            <span className="text-[13px] font-bold text-stone-800">Active Context</span>
                             <ChevronDownIcon className={`w-3.5 h-3.5 text-stone-400 transition-transform duration-200 ${contextExpanded ? 'rotate-180' : ''}`} />
                         </div>
                     )}
@@ -236,7 +236,7 @@ const AgentWorkspaceCards = ({ plan, contextItems, setTooltip, currentNode, isLo
                                                 {item.type === 'app' ? (
                                                     <div className="flex flex-col gap-4 flex-1 min-w-0 pt-1">
                                                         <div className="flex items-center justify-between mb-[-4px]">
-                                                            <span className="text-[11px] font-bold text-stone-700 uppercase tracking-wider">CURRENT CONTEXT</span>
+                                                            <span className="text-[11px] font-bold text-stone-700r">CURRENT CONTEXT</span>
                                                             <div className='flex items-center gap-1.5 bg-green-100 px-2 py-1 rounded-md'>
                                                                 <span className='text-[11px] font-semibold text-green-600'>Active</span>
                                                                 <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
@@ -260,7 +260,7 @@ const AgentWorkspaceCards = ({ plan, contextItems, setTooltip, currentNode, isLo
                                                         <div className='flex flex-col gap-5'>
                                                             {/* Context Details */}
                                                             <div className='flex flex-col gap-2.5'>
-                                                                <div className="text-[11px] font-bold text-stone-700 uppercase tracking-wider">CONTEXT DETAILS</div>
+                                                                <div className="text-[11px] font-bold text-stone-700r">CONTEXT DETAILS</div>
                                                                 <div className='flex flex-col gap-2.5 p-1'>
                                                                     <div className='flex items-center'>
                                                                         <div className="w-28 text-stone-500 text-[13px] flex items-center gap-2">
@@ -316,7 +316,7 @@ const AgentWorkspaceCards = ({ plan, contextItems, setTooltip, currentNode, isLo
                                                             {/* Permissions Array */}
                                                             <div className='flex flex-col gap-2.5'>
                                                                 <div className='flex justify-between items-center'>
-                                                                    <span className="text-[11px] font-bold text-stone-700 uppercase tracking-wider">PERMISSIONS</span>
+                                                                    <span className="text-[11px] font-bold text-stone-700r">PERMISSIONS</span>
                                                                     <span className="text-[11px] font-semibold text-stone-600 border border-stone-200 px-2.5 py-1 rounded-full">Manage</span>
                                                                 </div>
                                                                 <div className='flex flex-col gap-3 p-1'>
@@ -350,7 +350,7 @@ const AgentWorkspaceCards = ({ plan, contextItems, setTooltip, currentNode, isLo
                                                             {/* Recent Actions */}
                                                             <div className='flex flex-col gap-2.5'>
                                                                 <div className='flex justify-between items-center'>
-                                                                    <span className="text-[11px] font-bold text-stone-700 uppercase tracking-wider">RECENT ACTIONS</span>
+                                                                    <span className="text-[11px] font-bold text-stone-700r">RECENT ACTIONS</span>
                                                                     <span className="text-[11px] font-semibold text-stone-600 border border-stone-200 px-2.5 py-1 rounded-full">View all</span>
                                                                 </div>
                                                                 <div className='flex flex-col gap-3 p-1'>

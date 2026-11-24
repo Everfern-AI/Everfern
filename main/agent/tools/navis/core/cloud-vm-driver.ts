@@ -11,7 +11,7 @@
  */
 import { nativeImage } from 'electron';
 import { nativeCloudRequest } from '../../../../lib/native-cloud';
-import { VIEW, SELECT_FOCUSED, pageFrame, sleep, type PageDriver, type ClickOpts, type Modifier, type PagePoint } from './page-driver';
+import { VIEW, SELECT_FOCUSED, pageFrame, screenFrame, SCREEN_OF_PAGE, type ScreenBox, sleep, type PageDriver, type ClickOpts, type Modifier, type PagePoint } from './page-driver';
 
 type Call = { method: string; params?: Record<string, unknown> };
 /** app: the window this driver drives; with Browserbase each app window has its own tab. */
@@ -239,23 +239,18 @@ export class CloudVmDriver implements PageDriver {
     return `data:image/jpeg;base64,${scaled.toJPEG(quality).toString('base64')}`;
   }
 
-  /** The window shows the whole VM screen, so place the point by where the page sits on it.
+  /** The window shows the whole VM screen, so place the point by where the page sits on it
+   *  (below Chrome's tabs, address bar and any warning bar). Every web app on the VPS is a Chrome
+   *  window on that screen (the Browser and Chrome apps with full toolbars), so the same applies.
    *  A Browserbase live view shows just the page, so there the page's own frame is the window. */
   async frame(p: PagePoint) {
     if (!this.engine) await this.js('1').catch(() => {});
-    if (this.engine === 'browserbase' || (this.engine === 'vps' && this.target.app !== 'chrome')) return pageFrame(p);
-    if (!this.screen || Date.now() - this.screen.at > 60_000) {
-      const s = await this.js<{ left: number; top: number; sw: number; sh: number } | null>(
-        `(() => { const bx = Math.max(0, (outerWidth - innerWidth) / 2);
-          return { left: screenX + bx, top: screenY + Math.max(0, outerHeight - innerHeight - bx), sw: screen.width, sh: screen.height }; })()`,
-      ).catch(() => null);
+    if (this.engine === 'browserbase' || this.desktopState()) return pageFrame(p);
+    // Re-read often: a warning bar closing or the window resizing moves the page on the screen.
+    if (!this.screen || Date.now() - this.screen.at > 15_000) {
+      const s = await this.js<ScreenBox | null>(SCREEN_OF_PAGE).catch(() => null);
       this.screen = s && s.sw > 0 && s.sh > 0 ? { ...s, at: Date.now() } : null;
     }
-    const s = this.screen;
-    if (!s) return pageFrame(p);
-    return {
-      x: Math.round(Math.min(1, Math.max(0, (s.left + p.x) / s.sw)) * VIEW.w),
-      y: Math.round(Math.min(1, Math.max(0, (s.top + p.y) / s.sh)) * VIEW.h),
-    };
+    return this.screen ? screenFrame(p, this.screen) : pageFrame(p);
   }
 }

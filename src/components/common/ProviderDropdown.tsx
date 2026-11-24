@@ -190,8 +190,6 @@ const ProviderDropdown: React.FC<ProviderDropdownProps> = ({
                                                 fontSize: 11,
                                                 color: colors.textMuted,
                                                 fontWeight: 500,
-                                                textTransform: "uppercase",
-                                                letterSpacing: "0.05em"
                                             }}
                                         >
                                             Not configured

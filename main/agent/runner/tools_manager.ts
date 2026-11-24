@@ -33,10 +33,10 @@ import { previewLiveUrlTool, showUserUrlTool } from '../tools/preview-live-url';
 import { webFetchTool } from '../tools/webfetch';
 import { loadAllSynthesizedTools, synthesizeToolTool, synthesizeSkillTool } from '../tools/tool-synthesizer';
 import {
-  openAppTool,
-  switchAppTool,
-  listAppsTool,
-  closeAppTool,
+  createOpenAppTool,
+  createSwitchAppTool,
+  createListAppsTool,
+  createCloseAppTool,
   createWorkerBashTool,
   createWorkerReadFileTool,
   createWorkerWriteFileTool,
@@ -57,20 +57,30 @@ import {
   createWorkerTypeTool,
   createWorkerDescribeTool,
 } from '../tools/sheet-tools';
+import { createFilesActionTool, createTerminalRunTool } from '../tools/native-app-tools';
 import * as os from 'os';
 import * as fs from 'fs';
+import { resolveNativeToolProviderConfig } from '../../lib/native-provider-config';
 import * as path from 'path';
 
 export const getBaseTools = (runner: any): AgentTool[] => {
   const platform = os.platform();
   const config = runner.config;
   let clientConfig = runner.client?.getFullConfig?.() as any || {};
-  if (!clientConfig.vlm) {
+  let nativeConfig: Record<string, any> | undefined;
+  try {
+    nativeConfig = resolveNativeToolProviderConfig<Record<string, any>>(clientConfig);
+  } catch {
+    // A missing native helper must not prevent assembling the tool list.
+  }
+  if (!nativeConfig && !clientConfig.vlm) {
     try {
       const home = process.env.USERPROFILE ?? process.env.HOME ?? '';
       const diskConfigPath = path.join(home, '.everfern', 'config.json');
-      if (fs.existsSync(diskConfigPath)) {
-        const diskConfig = JSON.parse(fs.readFileSync(diskConfigPath, 'utf-8'));
+      const diskConfig = fs.existsSync(diskConfigPath)
+        ? JSON.parse(fs.readFileSync(diskConfigPath, 'utf-8'))
+        : undefined;
+      if (diskConfig) {
         clientConfig = {
           ...diskConfig,
           ...clientConfig,
@@ -80,7 +90,7 @@ export const getBaseTools = (runner: any): AgentTool[] => {
       }
     } catch {}
   }
-  const mainConfig = hydrateVlmApiKey(clientConfig);
+  const mainConfig = nativeConfig ?? hydrateVlmApiKey(clientConfig);
 
   if (!runner.navisOrchestrator && runner.client) {
     // Check if we need a separate vision client for Navis
@@ -192,10 +202,10 @@ export const getBaseTools = (runner: any): AgentTool[] => {
     previewLiveUrlTool,
     showUserUrlTool,
     // EverFern Worker primitives
-    openAppTool,
-    switchAppTool,
-    listAppsTool,
-    closeAppTool,
+    createOpenAppTool(runner),
+    createSwitchAppTool(runner),
+    createListAppsTool(runner),
+    createCloseAppTool(runner),
     createWorkerBashTool(runner),
     createWorkerReadFileTool(runner),
     createWorkerWriteFileTool(runner),
@@ -214,6 +224,9 @@ export const getBaseTools = (runner: any): AgentTool[] => {
     createWorkerClickTool(runner),
     createWorkerTypeTool(runner),
     createWorkerDescribeTool(runner),
+    // AI-native Files and Terminal: named ops, replayed on screen with a cursor
+    createFilesActionTool(runner),
+    createTerminalRunTool(runner),
   );
 
   // Add dynamically connected MCP tools

@@ -62,7 +62,7 @@ const DEFAULT_TOOL_SETTINGS: ToolSettingsConfig = {
 // ── Shared sub-components (matching SettingsPage style) ───────────────────────
 
 const Label = ({ children }: { children: React.ReactNode }) => (
-    <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8, margin: '0 0 8px' }}>
+    <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-tertiary)', marginBottom: 8, margin: '0 0 8px' }}>
         {children}
     </p>
 );
@@ -150,7 +150,7 @@ const WebSearchConfigPanel = ({ config, onChange }: WebSearchConfigPanelProps) =
                                 style={{
                                     padding: '14px 16px',
                                     borderRadius: 12,
-                                    border: `1.5px solid ${isSelected ? 'var(--color-text-primary)' : 'var(--color-border)'}`,
+                                    border: `1.5px solid ${isSelected ? 'var(--ef-selected-border, var(--color-text-primary))' : 'var(--color-border)'}`,
                                     backgroundColor: isSelected ? 'var(--color-bg-subtle)' : 'var(--color-bg-surface)',
                                     cursor: 'pointer',
                                     transition: 'all 0.15s ease-out',
@@ -249,7 +249,7 @@ const WebSearchConfigPanel = ({ config, onChange }: WebSearchConfigPanelProps) =
                                     style={{
                                         padding: '14px 16px',
                                         borderRadius: 12,
-                                        border: `1.5px solid ${currentProvider === 'exa' ? 'var(--color-text-primary)' : 'var(--color-border)'}`,
+                                        border: `1.5px solid ${currentProvider === 'exa' ? 'var(--ef-selected-border, var(--color-text-primary))' : 'var(--color-border)'}`,
                                         backgroundColor: currentProvider === 'exa' ? 'var(--color-bg-subtle)' : 'var(--color-bg-surface)',
                                         cursor: 'pointer',
                                         transition: 'all 0.15s ease-out',
@@ -281,7 +281,7 @@ const WebSearchConfigPanel = ({ config, onChange }: WebSearchConfigPanelProps) =
                                     style={{
                                         padding: '14px 16px',
                                         borderRadius: 12,
-                                        border: `1.5px solid ${currentProvider === 'firecrawl' ? 'var(--color-text-primary)' : 'var(--color-border)'}`,
+                                        border: `1.5px solid ${currentProvider === 'firecrawl' ? 'var(--ef-selected-border, var(--color-text-primary))' : 'var(--color-border)'}`,
                                         backgroundColor: currentProvider === 'firecrawl' ? 'var(--color-bg-subtle)' : 'var(--color-bg-surface)',
                                         cursor: 'pointer',
                                         transition: 'all 0.15s ease-out',
@@ -365,7 +365,7 @@ const ToolConfigPanel = ({ title, icon, apiLabel, config, onChange }: ToolConfig
                                 style={{
                                     padding: '14px 16px',
                                     borderRadius: 12,
-                                    border: `1.5px solid ${isSelected ? 'var(--color-text-primary)' : 'var(--color-border)'}`,
+                                    border: `1.5px solid ${isSelected ? 'var(--ef-selected-border, var(--color-text-primary))' : 'var(--color-border)'}`,
                                     backgroundColor: isSelected ? 'var(--color-bg-subtle)' : 'var(--color-bg-surface)',
                                     cursor: 'pointer',
                                     transition: 'all 0.15s ease-out',

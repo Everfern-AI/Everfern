@@ -60,7 +60,9 @@ function inert(name) {
 
 // ── Transport ──────────────────────────────────────────────────────────────
 const TOKEN = process.env.EF_SIDECAR_TOKEN || crypto.randomBytes(16).toString('hex');
-const clients = new Set();
+const clients = new Set(); // sockets from the main window
+const winClients = new Map(); // overlay window id -> Set of sockets
+const winOutbox = new Map(); // overlay window id -> messages queued until it connects
 const pendingShell = new Map();
 const outbox = []; // messages queued until the webview connects
 let shellSeq = 0;
@@ -73,6 +75,19 @@ function broadcast(msg) {
   for (const ws of clients) if (ws.readyState === 1) ws.send(text);
 }
 
+/** Send to one overlay window's page (queued until it connects). */
+function sendToWindow(id, msg) {
+  const set = winClients.get(id);
+  const text = encode(msg);
+  if (!set || set.size === 0) {
+    const q = winOutbox.get(id) || [];
+    q.push(text); if (q.length > 500) q.shift();
+    winOutbox.set(id, q);
+    return;
+  }
+  for (const ws of set) if (ws.readyState === 1) ws.send(text);
+}
+
 /** Ask the webview to do something only the Tauri shell can do. */
 function shell(op, ...args) {
   const id = ++shellSeq;
@@ -80,6 +95,16 @@ function shell(op, ...args) {
     pendingShell.set(id, resolve);
     broadcast({ t: 'shell', id, op, args });
     setTimeout(() => { if (pendingShell.delete(id)) resolve(undefined); }, op === 'cloudRequest' ? 155000 : 10 * 60 * 1000);
+  });
+}
+
+/** Ask an overlay window's page to run a shell op (only 'eval' is used). */
+function shellToWindow(winId, op, ...args) {
+  const id = ++shellSeq;
+  return new Promise((resolve) => {
+    pendingShell.set(id, resolve);
+    sendToWindow(winId, { t: 'shell', id, op, args });
+    setTimeout(() => { if (pendingShell.delete(id)) resolve(undefined); }, 60000);
   });
 }
 
@@ -96,6 +121,18 @@ function startServer() {
   wss.on('connection', (ws, req) => {
     const url = new URL(req.url || '/', 'http://x');
     if (url.searchParams.get('token') !== TOKEN) { ws.close(4001, 'bad token'); return; }
+    const winId = Number(url.searchParams.get('win') || 0);
+    if (winId) {
+      // An overlay window's page (computer / voice / desktop overlay, debug window).
+      ws.__win = winId;
+      if (!winClients.has(winId)) winClients.set(winId, new Set());
+      winClients.get(winId).add(ws);
+      for (const text of (winOutbox.get(winId) || []).splice(0)) ws.send(text);
+      winOutbox.delete(winId);
+      ws.on('close', () => { const set = winClients.get(winId); if (set) set.delete(ws); });
+      ws.on('message', (data) => onMessage(ws, data.toString()));
+      return;
+    }
     clients.add(ws);
     log('webview connected');
     for (const text of outbox.splice(0)) ws.send(text);
@@ -115,7 +152,7 @@ function startServer() {
 
 function makeEvent(ws) {
   return {
-    sender: mainWebContents(),
+    sender: ws && ws.__win ? ((BrowserWindow.fromId(ws.__win) || {}).webContents || mainWebContents()) : mainWebContents(),
     senderFrame: { url: '' },
     frameId: 0,
     processId: 0,
@@ -146,6 +183,11 @@ async function onMessage(ws, text) {
   } else if (msg.t === 'shell-result') {
     const resolve = pendingShell.get(msg.id);
     if (resolve) { pendingShell.delete(msg.id); resolve(msg.value); }
+  } else if (ws && ws.__win && (msg.t === 'window-state' || msg.t === 'close-requested' || msg.t === 'shortcut')) {
+    // Only the main window reports these.
+  } else if (msg.t === 'overlay-closed') {
+    const w = BrowserWindow.fromId(Number(msg.id));
+    if (w && !w._isMain) { w._created = false; w.destroy(); }
   } else if (msg.t === 'window-state') {
     const w = mainWindow();
     if (w) Object.assign(w._state, msg.state || {});
@@ -264,23 +306,28 @@ class WebContents extends EventEmitter {
     this._url = '';
   }
   send(channel, ...args) {
-    // Only the main window has a real webview. Overlay windows are not ported yet.
-    if (this._win._isMain && !this._win._destroyed) broadcast({ t: 'event', channel, args });
+    if (this._win._destroyed) return;
+    if (this._win._isMain) broadcast({ t: 'event', channel, args });
+    else if (this._win._created) sendToWindow(this._win.id, { t: 'event', channel, args });
   }
   isDestroyed() { return this._win._destroyed; }
   isLoading() { return false; }
   isCrashed() { return false; }
   getURL() { return this._url; }
   getTitle() { return 'EverFern'; }
-  loadURL(u) { this._url = u; return Promise.resolve(); }
+  loadURL(u) { this._url = u; return this._win._isMain || !this._win._load ? Promise.resolve() : this._win._load(u); }
   loadFile(f) { this._url = `file://${f}`; return Promise.resolve(); }
-  reload() { if (this._win._isMain) shell('reload'); }
+  reload() { if (this._win._isMain) shell('reload'); else if (this._win._ov) this._win._ov('reload'); }
   reloadIgnoringCache() { this.reload(); }
-  openDevTools() { if (this._win._isMain) shell('devtools'); }
+  openDevTools() { if (this._win._isMain) shell('devtools'); else if (this._win._ov) this._win._ov('devtools'); }
   closeDevTools() {}
   isDevToolsOpened() { return false; }
   toggleDevTools() { this.openDevTools(); }
-  executeJavaScript(code) { return this._win._isMain ? shell('eval', String(code)) : Promise.resolve(undefined); }
+  executeJavaScript(code) {
+    if (this._win._isMain) return shell('eval', String(code));
+    if (!this._win._created) return Promise.resolve(undefined);
+    return this._win._chain.then(() => shellToWindow(this._win.id, 'eval', String(code)));
+  }
   insertCSS() { return Promise.resolve(''); }
   setWindowOpenHandler() {}
   setZoomFactor() {}
@@ -310,8 +357,45 @@ class BrowserWindow extends EventEmitter {
     this._destroyed = false;
     this._state = { visible: opts.show !== false, maximized: false, minimized: false, focused: false, fullscreen: false, alwaysOnTop: !!opts.alwaysOnTop };
     this._bounds = { x: opts.x || 0, y: opts.y || 0, width: opts.width || 800, height: opts.height || 600 };
+    this._created = false;
+    this._chain = Promise.resolve();
+    this._extra = { ignoreMouseEvents: false, contentProtection: false };
     this.webContents = new WebContents(this);
     windows.push(this);
+  }
+
+  // Every BrowserWindow other than the main one becomes its own Tauri window
+  // (ef_overlay in src-tauri/src/overlay.rs). Calls are queued so they arrive in order.
+  _ov(op, args) {
+    if (this._isMain || !this._created) return Promise.resolve();
+    this._chain = this._chain.then(() => shell('overlay', this.id, op, args || {})).catch(() => {});
+    return this._chain;
+  }
+  _load(u) {
+    const o = this._opts || {};
+    const args = {
+      url: String(u), x: o.x, y: o.y, width: this._bounds.width, height: this._bounds.height,
+      title: o.title, frame: o.frame !== false, transparent: !!o.transparent, alwaysOnTop: this._state.alwaysOnTop,
+      skipTaskbar: !!o.skipTaskbar, focusable: o.focusable !== false, resizable: o.resizable !== false,
+      hasShadow: o.hasShadow !== false, show: this._state.visible,
+      ignoreMouseEvents: this._extra.ignoreMouseEvents, contentProtection: this._extra.contentProtection,
+    };
+    if (o.x === undefined || o.y === undefined) { delete args.x; delete args.y; }
+    if (/^data:/i.test(args.url)) {
+      // data: pages are served by the shell on efov:// so the bridge (and require('electron')) works there.
+      const comma = args.url.indexOf(',');
+      const meta = args.url.slice(5, comma);
+      const body = args.url.slice(comma + 1);
+      args.html = /;base64/i.test(meta) ? Buffer.from(body, 'base64').toString('utf8') : decodeURIComponent(body);
+      delete args.url;
+    }
+    if (this._created) this._ov('destroy');
+    this._created = true;
+    this._chain = this._chain
+      .then(() => shell('overlay', this.id, 'create', args))
+      .then(() => { this._rendererConnected(); })
+      .catch((e) => log('overlay create failed', e && e.message));
+    return this._chain.then(() => undefined);
   }
   static getAllWindows() { return windows.filter((w) => !w._destroyed); }
   static getFocusedWindow() { const m = mainWindow(); return m && m._state.focused ? m : null; }
@@ -331,12 +415,17 @@ class BrowserWindow extends EventEmitter {
       this.emit('ready-to-show');
     });
   }
-  _op(op, ...args) { if (this._isMain && !this._destroyed) shell('window', op, ...args); }
+  _op(op, ...args) {
+    if (this._destroyed) return;
+    if (this._isMain) { shell('window', op, ...args); return; }
+    if (op === 'show') this._ov(this._opts.focusable === false ? 'showInactive' : 'focus');
+    else this._ov(op, { value: args[0] });
+  }
 
   loadURL(u) { return this.webContents.loadURL(u); }
   loadFile(f) { return this.webContents.loadFile(f); }
   show() { this._state.visible = true; this._op('show'); }
-  showInactive() { this.show(); }
+  showInactive() { if (this._isMain) this.show(); else { this._state.visible = true; this._ov('showInactive'); } }
   hide() { this._state.visible = false; this._op('hide'); }
   focus() { this._state.focused = true; this._op('focus'); }
   blur() {}
@@ -354,6 +443,10 @@ class BrowserWindow extends EventEmitter {
   destroy() {
     if (this._destroyed) return;
     this._destroyed = true;
+    if (!this._isMain && this._created) {
+      this._chain = this._chain.then(() => shell('overlay', this.id, 'destroy', {})).catch(() => {});
+      this._created = false;
+    }
     this.emit('closed');
     this.webContents.emit('destroyed');
   }
@@ -370,21 +463,21 @@ class BrowserWindow extends EventEmitter {
   setTitle(t) { this._op('setTitle', String(t)); }
   getTitle() { return 'EverFern'; }
   setAlwaysOnTop(v) { this._state.alwaysOnTop = !!v; this._op('setAlwaysOnTop', !!v); }
-  setBounds(b) { Object.assign(this._bounds, b); }
+  setBounds(b) { Object.assign(this._bounds, b); this._ov('setBounds', { ...this._bounds }); }
   getBounds() { return { ...this._bounds }; }
   getContentBounds() { return { ...this._bounds }; }
-  setSize(w, h) { this._bounds.width = w; this._bounds.height = h; }
+  setSize(w, h) { this._bounds.width = w; this._bounds.height = h; this._ov('setBounds', { width: w, height: h }); }
   getSize() { return [this._bounds.width, this._bounds.height]; }
   getContentSize() { return this.getSize(); }
-  setPosition(x, y) { this._bounds.x = x; this._bounds.y = y; }
+  setPosition(x, y) { this._bounds.x = x; this._bounds.y = y; this._ov('setBounds', { x, y }); }
   getPosition() { return [this._bounds.x, this._bounds.y]; }
-  center() {}
+  center() { this._ov('center'); }
   setMinimumSize() {}
   setMaximumSize() {}
   setResizable() {}
   setMovable() {}
   setSkipTaskbar() {}
-  setIgnoreMouseEvents() {}
+  setIgnoreMouseEvents(v) { this._extra.ignoreMouseEvents = !!v; this._ov('setIgnoreMouseEvents', { value: !!v }); }
   setFocusable() {}
   setOpacity() {}
   setBackgroundColor() {}
@@ -394,7 +487,7 @@ class BrowserWindow extends EventEmitter {
   setAutoHideMenuBar() {}
   removeMenu() {}
   setVisibleOnAllWorkspaces() {}
-  setContentProtection() {}
+  setContentProtection(v) { this._extra.contentProtection = !!v; this._ov('setContentProtection', { value: !!v }); }
   setProgressBar() {}
   setOverlayIcon() {}
   setThumbarButtons() { return true; }
@@ -519,8 +612,21 @@ const clipboard = {
 
 // ── Display info (the webview reports the real values when it connects) ─────
 const displayInfo = { width: 1920, height: 1080, scaleFactor: 1 };
+// Real monitor layout from the shell exe (src-tauri/src/capture.rs), cached briefly.
+let nativeDisplays = null, nativeDisplaysAt = 0;
+function readNativeDisplays(fresh) {
+  if (!process.env.EF_NATIVE_EXE) return null;
+  if (!fresh && nativeDisplays && Date.now() - nativeDisplaysAt < 2000) return nativeDisplays;
+  try {
+    const out = JSON.parse(execFileSync(process.env.EF_NATIVE_EXE, ['--ef-displays'], { windowsHide: true, timeout: 5000 }).toString('utf8'));
+    if (out && Array.isArray(out.displays) && out.displays.length) { nativeDisplays = out; nativeDisplaysAt = Date.now(); }
+  } catch (e) { log('display query failed', e.message); }
+  return nativeDisplays;
+}
 const screen = Object.assign(new EventEmitter(), {
-  getPrimaryDisplay: () => ({
+  getAllDisplays() { const n = readNativeDisplays(); return n ? n.displays : [this.getFallbackDisplay()]; },
+  getPrimaryDisplay() { const n = readNativeDisplays(); return n ? (n.displays.find((d) => d.primary) || n.displays[0]) : this.getFallbackDisplay(); },
+  getFallbackDisplay: () => ({
     id: 1,
     bounds: { x: 0, y: 0, width: displayInfo.width, height: displayInfo.height },
     workArea: { x: 0, y: 0, width: displayInfo.width, height: displayInfo.height - 48 },
@@ -529,10 +635,18 @@ const screen = Object.assign(new EventEmitter(), {
     scaleFactor: displayInfo.scaleFactor,
     rotation: 0,
   }),
-  getAllDisplays() { return [this.getPrimaryDisplay()]; },
-  getDisplayNearestPoint() { return this.getPrimaryDisplay(); },
-  getDisplayMatching() { return this.getPrimaryDisplay(); },
-  getCursorScreenPoint: () => ({ x: 0, y: 0 }),
+  getDisplayNearestPoint(p) {
+    const inside = (d) => p && p.x >= d.bounds.x && p.y >= d.bounds.y && p.x < d.bounds.x + d.bounds.width && p.y < d.bounds.y + d.bounds.height;
+    return this.getAllDisplays().find(inside) || this.getPrimaryDisplay();
+  },
+  getDisplayMatching(r) { return this.getDisplayNearestPoint(r && { x: r.x + (r.width || 0) / 2, y: r.y + (r.height || 0) / 2 }); },
+  getCursorScreenPoint() {
+    const n = readNativeDisplays(true); // the cursor moves; always ask
+    if (!n) return { x: 0, y: 0 };
+    const c = n.cursor;
+    const d = n.displays.find((x) => c.x >= x.physical.x && c.y >= x.physical.y && c.x < x.physical.x + x.physical.width && c.y < x.physical.y + x.physical.height) || n.displays[0];
+    return { x: Math.round(d.bounds.x + (c.x - d.physical.x) / d.scaleFactor), y: Math.round(d.bounds.y + (c.y - d.physical.y) / d.scaleFactor) };
+  },
   dipToScreenPoint: (p) => p,
   screenToDipPoint: (p) => p,
 });
@@ -601,7 +715,26 @@ const nativeImage = {
 
 // ── Not ported yet: harmless stand-ins ─────────────────────────────────────
 const session = { defaultSession: inert('session.defaultSession'), fromPartition: () => inert('session'), fromPath: () => inert('session') };
-const desktopCapturer = { getSources: async () => [] };
+// Screens are captured by the shell exe (GDI BitBlt, one PNG per monitor). Window sources are not ported.
+const desktopCapturer = {
+  async getSources(opts = {}) {
+    const types = opts.types || ['screen'];
+    if (!types.includes('screen') || !process.env.EF_NATIVE_EXE) return [];
+    const size = opts.thumbnailSize || { width: 150, height: 150 };
+    const displays = screen.getAllDisplays();
+    return Promise.all(displays.map((d, i) => new Promise((resolve) => {
+      const source = { id: 'screen:' + i + ':0', name: displays.length > 1 ? 'Screen ' + (i + 1) : 'Entire Screen', display_id: String(d.id), appIcon: null };
+      if (!size.width || !size.height) { resolve({ ...source, thumbnail: makeImage() }); return; }
+      require('child_process').execFile(process.env.EF_NATIVE_EXE, ['--ef-capture', String(i)],
+        { encoding: 'buffer', windowsHide: true, maxBuffer: 512 * 1024 * 1024, timeout: 20000 },
+        (err, stdout) => {
+          if (err) log('screen capture failed', err.message);
+          const phys = d.physical || { width: d.bounds.width, height: d.bounds.height };
+          resolve({ ...source, thumbnail: err ? makeImage() : makeImage(stdout, { width: phys.width, height: phys.height }) });
+        });
+    })));
+  },
+};
 const powerMonitor = Object.assign(new EventEmitter(), { getSystemIdleTime: () => 0, getSystemIdleState: () => 'active', isOnBatteryPower: () => false, onBatteryPower: false });
 const powerSaveBlocker = { start: () => 1, stop() {}, isStarted: () => false };
 const systemPreferences = Object.assign(new EventEmitter(), {

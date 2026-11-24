@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import "./onboarding.css";
+import "./route-transition.css";
 import { cn } from "@/lib/utils";
 import { AppMotionProvider } from "@/components/AppMotionProvider";
 import { ThemeProvider } from "@/components/ThemeProvider";
@@ -9,6 +10,7 @@ import UpdateNotification from "@/components/UpdateNotification";
 import { AnnouncementPopup } from "@/components/AnnouncementPopup";
 import { MaterialSymbolsLoader } from "@/components/MaterialSymbolsLoader";
 import { SmoothScroll } from "@/components/SmoothScroll";
+import { WorkerScheduleHost } from "@/components/WorkerScheduleHost";
 
 const satoshi = localFont({
   src: [
@@ -81,12 +83,22 @@ export default function RootLayout({
                 document.documentElement.classList.add('font-default');
               }
             } catch (_) {}
+            try {
+              // Workers <-> Chat after a full page load: play the arrival from the first paint.
+              const enter = sessionStorage.getItem('ef-route-enter');
+              if (enter === 'to-chat' || enter === 'to-workers') {
+                sessionStorage.removeItem('ef-route-enter');
+                document.documentElement.setAttribute('data-ef-enter', enter);
+                setTimeout(function () { document.documentElement.removeAttribute('data-ef-enter'); }, 450);
+              }
+            } catch (_) {}
           `,
           }}
         />
       </head>
       <body suppressHydrationWarning className="min-h-full flex flex-col bg-background text-on-surface">
         <ThemeProvider>
+          <WorkerScheduleHost />
           <AppMotionProvider>{children}</AppMotionProvider>
           <MaterialSymbolsLoader />
           <SmoothScroll />

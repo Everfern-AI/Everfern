@@ -29,7 +29,7 @@ export default function TasksPanel({ tasks, path }: TasksPanelProps) {
                 style={{ padding: 0, margin: 0, marginBottom: isExpanded ? 16 : 0, outline: 'none' }}
             >
                 <span 
-                    className="text-xs font-semibold text-stone-500 dark:text-stone-400 tracking-wide uppercase"
+                    className="text-xs font-semibold text-stone-500 dark:text-stone-400"
                     style={{ lineHeight: '1.5', display: 'inline-block' }}
                 >
                     Progress

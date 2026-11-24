@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { hydrateNativeVlm } from './native-provider-config';
 
 type MutableConfig = {
   provider?: string;
@@ -40,8 +41,19 @@ function vlmProviderAliases(provider: string): string[] {
   return Array.from(aliases);
 }
 
-export function hydrateVlmApiKey(config: MutableConfig, configDir = everfernConfigDir()): MutableConfig {
+export function hydrateVlmApiKey(config: MutableConfig, configDir?: string): MutableConfig {
   if (!config?.vlm?.provider || config.vlm.apiKey?.trim()) return config;
+  if (configDir === undefined) {
+    try {
+      const native = hydrateNativeVlm<NonNullable<MutableConfig['vlm']>>(config);
+      if (native !== undefined) {
+        if (native) config.vlm = native;
+        return config;
+      }
+    } catch {
+      // Use the same profile files if the native helper is unavailable.
+    }
+  }
 
   const keys = {
     ...readIsolatedKeys(configDir),

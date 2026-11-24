@@ -12,6 +12,7 @@
  * - Cleanup coordination: Sub-agents (200ms) → Tool calls (100ms) → Browser (500ms) → Streaming (immediate)
  */
 
+import { AsyncLocalStorage } from 'async_hooks';
 import { getSubagentSpawner } from './subagent-spawn';
 import { toolCallRegistry } from './tool-call-registry';
 import { BrowserSession } from '../tools/navis/session';
@@ -141,6 +142,17 @@ export class AbortSignalManager {
     this._cleanupErrors = [];
 
     const phases: CleanupPhaseStatus[] = [];
+
+    // Sub-agents, tool calls and browser sessions are tracked process-wide. While another
+    // conversation (a worker, or the main chat) is still running, tearing them down would
+    // kill its work too, so only the streaming phase runs.
+    if (activeConversationCount() > 1) {
+      const now = Date.now();
+      return {
+        success: true, errors: [], completedPhases: 1, totalPhases: 1, elapsedMs: 0,
+        phases: [{ phase: 'streaming', completed: true, startTime: now, endTime: now, durationMs: 0, error: null }],
+      };
+    }
 
     // Phase 1: Sub-agents (200ms max)
     const subAgentPhase = await this.executeCleanupPhase(
@@ -351,11 +363,56 @@ export class AbortSignalManager {
   }
 }
 
+/* ── One abort state per conversation ──
+ * Every conversation (the main chat, each worker run) gets its own manager. Code
+ * running inside a conversation (runner, tools, sub-agents) reaches it through
+ * `globalAbortManager`, which resolves to the manager of the current async context,
+ * so stopping one worker never stops another run, and starting a run never clears
+ * another run's stop. Code outside any conversation gets a shared fallback. */
+const conversationStore = new AsyncLocalStorage<AbortSignalManager>();
+const managers = new Map<string, AbortSignalManager>();
+const active = new Map<string, number>();
+const fallbackManager = new AbortSignalManager();
+
+export function abortManagerFor(conversationId: string): AbortSignalManager {
+  let m = managers.get(conversationId);
+  if (!m) { m = new AbortSignalManager(); managers.set(conversationId, m); }
+  return m;
+}
+
+/** Runs `fn` (a whole stream) as conversation `conversationId`, tracked as active until it settles. */
+export async function runInConversation<T>(conversationId: string, fn: () => Promise<T>): Promise<T> {
+  const m = abortManagerFor(conversationId);
+  active.set(conversationId, (active.get(conversationId) ?? 0) + 1);
+  try {
+    return await conversationStore.run(m, fn);
+  } finally {
+    const n = (active.get(conversationId) ?? 1) - 1;
+    if (n > 0) active.set(conversationId, n);
+    else { active.delete(conversationId); managers.delete(conversationId); }
+  }
+}
+
+export function activeConversationCount(): number { return active.size; }
+export function activeConversationIds(): string[] { return [...active.keys()]; }
+
+/** Stops one conversation; with no id, every conversation that is not a worker run (the chat's stop button). */
+export function stopConversation(conversationId?: string): void {
+  if (conversationId) { managers.get(conversationId)?.setAborted(); return; }
+  for (const [id, m] of managers) if (!id.startsWith('worker-')) m.setAborted();
+  fallbackManager.setAborted();
+}
+
 /**
- * Global abort signal manager instance
- * This provides a centralized abort state that can be accessed across the system
+ * The abort state of the conversation this code runs in (see above).
  */
-export const globalAbortManager = new AbortSignalManager();
+export const globalAbortManager: AbortSignalManager = new Proxy({} as AbortSignalManager, {
+  get(_t, prop) {
+    const m = conversationStore.getStore() ?? fallbackManager;
+    const v = (m as any)[prop];
+    return typeof v === 'function' ? v.bind(m) : v;
+  },
+});
 
 /**
  * AbortError class for consistent error handling

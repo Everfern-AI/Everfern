@@ -4,6 +4,7 @@
  * EverFern Cloud VMs (Daytona, via api.everfern.app). Shared by Settings > Machine,
  * worker onboarding and the worker's Browser window.
  */
+import { secureSession } from "./secure-session";
 
 export const LANDING_URL = process.env.NEXT_PUBLIC_LANDING_URL || "https://everfern.app";
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://api.everfern.app";
@@ -15,10 +16,10 @@ export type Paywall = { reason: string; error: string; plan: string; limits?: Li
 export function cloudToken(): string {
   if (typeof window === "undefined") return "";
   try {
-    const s = JSON.parse(localStorage.getItem("everfern_cloud_session") || "null");
-    return s?.accessToken || localStorage.getItem("everfern_auth_token") || "";
+    const s = JSON.parse(secureSession.getItem("everfern_cloud_session") || "null");
+    return s?.accessToken || secureSession.getItem("everfern_auth_token") || "";
   } catch {
-    return localStorage.getItem("everfern_auth_token") || "";
+    return secureSession.getItem("everfern_auth_token") || "";
   }
 }
 
@@ -71,10 +72,15 @@ export async function ensureCloudVm(opts: { preferId?: string; name?: string; wo
       vm = (r.data.vm as CloudVm) ?? { ...vm, status: "starting" };
     }
     // Wait (briefly) for it to come up so the desktop can open straight away.
-    for (let i = 0; i < 30 && vm.status !== "started"; i++) {
-      await wait(2000);
+    // Poll fast at first (a warm machine is up in a second or two), then back off; about 60 s in all.
+    for (let i = 0, waited = 0; waited < 60000 && vm.status !== "started"; i++) {
+      const step = Math.min(600 + i * 300, 2000);
+      await wait(step);
+      waited += step;
       const r = await cloudFetch("/api/cloud-vms");
-      const now = (r.data?.vms ?? []).find((v: CloudVm) => v.id === vm!.id);
+      // A blip while it boots is not a failure: try again on the next tick.
+      if (!r.data?.vms) continue;
+      const now = (r.data.vms as CloudVm[]).find((v: CloudVm) => v.id === vm!.id);
       if (!now) return { error: "Your cloud VM disappeared while starting." };
       vm = now;
       if (vm.status === "error") return { error: "Your cloud VM failed to start." };
@@ -83,6 +89,49 @@ export async function ensureCloudVm(opts: { preferId?: string; name?: string; wo
   } catch {
     return { error: "Couldn't reach EverFern Cloud." };
   }
+}
+
+/**
+ * Starts a worker's stopped cloud VM in the background, before the user opens one of
+ * its windows, so the desktop request finds it running instead of hitting 409 and
+ * waiting out the boot. Never creates a VM; one start request per VM per minute.
+ */
+const prewarmedAt = new Map<string, number>();
+/**
+ * Gives back the cloud machine a deleted worker was using. A shared machine is unassigned;
+ * a VM that was created for this worker (its worker_id matches) is deleted, so it stops
+ * using the plan's VM slots and minutes. A VM the user made themselves is only unassigned.
+ * Returns a message for anything that could not be released.
+ */
+export async function releaseCloudVm(workerId: string, vmId?: string): Promise<string | undefined> {
+  const problems: string[] = [];
+  try {
+    const r = await cloudFetch('/api/cloud-machines/assign', { method: 'DELETE', body: JSON.stringify({ worker_id: workerId }) });
+    if (!r.ok && r.status !== 404) problems.push(r.data?.error || `unassign failed (${r.status})`);
+  } catch (e) { problems.push(e instanceof Error ? e.message : String(e)); }
+  if (vmId && !vmId.startsWith('vps-')) {
+    try {
+      const list = await cloudFetch('/api/cloud-vms');
+      const vm = (list.data?.vms as CloudVm[] | undefined)?.find((v) => v.id === vmId);
+      if (vm && vm.worker_id === workerId) {
+        const r = await cloudFetch(`/api/cloud-vms/${encodeURIComponent(vmId)}`, { method: 'DELETE' });
+        if (!r.ok && r.status !== 404) problems.push(r.data?.error || `VM delete failed (${r.status})`);
+      } else if (!list.ok) problems.push(list.data?.error || `could not check the VM (${list.status})`);
+    } catch (e) { problems.push(e instanceof Error ? e.message : String(e)); }
+  }
+  return problems.length ? `Cloud machine not fully released: ${problems.join('; ')}` : undefined;
+}
+
+export async function prewarmCloudVm(vmId?: string): Promise<void> {
+  if (!vmId) return;
+  const last = prewarmedAt.get(vmId) ?? 0;
+  if (Date.now() - last < 60_000) return;
+  prewarmedAt.set(vmId, Date.now());
+  try {
+    const list = await cloudFetch("/api/cloud-vms");
+    const vm = (list.data?.vms ?? []).find((v: CloudVm) => v.id === vmId);
+    if (vm && (vm.status === "stopped" || vm.status === "archived")) await cloudFetch(`/api/cloud-vms/${vmId}/start`, { method: "POST" });
+  } catch { /* the window's own boot path still starts it */ }
 }
 
 /* ── VM browser cookies, kept on this computer ──────────────────────
@@ -95,7 +144,7 @@ const workersApi = () => (typeof window !== "undefined" ? (window as any).electr
 /** One cookie jar per EverFern account on this computer. */
 function stateScope(): string | null {
   try {
-    const s = JSON.parse(localStorage.getItem("everfern_cloud_session") || "null");
+    const s = JSON.parse(secureSession.getItem("everfern_cloud_session") || "null");
     const id = String(s?.user?.id ?? "");
     return /^[A-Za-z0-9-]{1,64}$/.test(id) ? id : null;
   } catch {
@@ -205,6 +254,11 @@ export async function cloudDesktopUrl(vmId: string, open?: string, app?: string,
       const s = await ensureCloudVm({ preferId: vmId });
       if ("error" in s) return { error: s.error };
       if ("paywall" in s) return { error: s.paywall.error };
+      r = await req();
+    }
+    // Just booted: its desktop service can answer "not ready" for a few seconds. Retry, backing off.
+    for (let i = 0; i < 4 && [502, 503, 504].includes(r.status); i++) {
+      await new Promise((res) => setTimeout(res, 800 * (i + 1)));
       r = await req();
     }
     if (r.ok && r.data.url) {

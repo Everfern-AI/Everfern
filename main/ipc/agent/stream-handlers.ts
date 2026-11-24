@@ -3,24 +3,36 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { AgentRunner } from '../../agent/runner/runner';
-import { globalAbortManager } from '../../agent/runner/abort-manager';
+import { activeConversationIds, globalAbortManager, runInConversation, stopConversation } from '../../agent/runner/abort-manager';
+import { runInScope, scopeOf } from '../../agent/agent-scope';
+
+/** Reply text streamed so far per running conversation, so a reloaded page can pick a run back up. */
+const liveText = new Map<string, string>();
+/** The last chunk of each conversation (its "[Error: ...]" when it failed). */
+const liveEnd = new Map<string, string>();
+/** Runs that ended lately, kept a while so a page reloaded mid-run can still show the result. */
+const recentRuns = new Map<string, { text: string; end: string; at: number }>();
+const RECENT_MS = 15 * 60_000;
 import { acpManager } from '../../acp/manager';
 import { AIClient } from '../../lib/ai-client';
 import { hydrateConfigWithIsolatedKeys } from '../../lib/vlm-config';
+import { loadNativeProviderConfig } from '../../lib/native-provider-config';
 import { dbOps } from '../../lib/db';
 import { reflectAndRemember } from '../../store/memory-manager';
 import { showPermissionNotification } from '../../lib/permission-notification';
 
 function loadConfigSync() {
   try {
+    const native = loadNativeProviderConfig<any>();
+    if (native !== undefined) return native;
     const configDir = path.join(os.homedir(), '.everfern');
     const configPath = path.join(configDir, 'config.json');
     if (fs.existsSync(configPath)) {
       const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
       return hydrateConfigWithIsolatedKeys(config, configDir);
     }
-  } catch (err) {
-    console.error('[Config] Error loading config:', err);
+  } catch {
+    console.error('[Config] Error loading provider configuration');
   }
   return null;
 }
@@ -58,8 +70,9 @@ function extractCleanNarrative(explicitNarrative?: string, rawThought?: string):
 }
 
 export function registerStreamHandlers(): void {
-  ipcMain.handle('acp:stop', () => {
-    globalAbortManager.setAborted();
+  // With a conversation id only that run stops (a worker's pause); without one, the chat's stop.
+  ipcMain.handle('acp:stop', (_e, conversationId?: unknown) => {
+    stopConversation(typeof conversationId === 'string' && conversationId ? conversationId : undefined);
     return { success: true };
   });
 
@@ -113,18 +126,43 @@ export function registerStreamHandlers(): void {
     } : undefined;
 
     try {
+      // A text-only call (the worker planner): without this, GPT-5 and Gemini on EverFern Cloud get
+      // the computer-use tools and may answer "open the flight site" with a tool call and no text.
       const response = await client.chat({
         messages: request.messages,
         model: requestedModel,
+        noTools: true,
         ...(onStreamChunk && { onStreamChunk }),
       });
-      return { success: true, response };
+      return { success: true, response, provider: client.provider, model: requestedModel || client.model };
     } catch (error) {
-      return { success: false, error: String(error) };
+      return { success: false, error: String(error), provider: client.provider, model: requestedModel || client.model };
     }
   });
 
-  ipcMain.handle('acp:stream', async (event, request: {
+  ipcMain.handle('acp:stream', (event, request: any) => {
+    const id = String(request?.conversationId || `chat-${Date.now()}`);
+    // A worker run and a chat turn are different agents: the scope picks the prompt, database and memory.
+    return runInScope(scopeOf(id), () => runInConversation(id, () => streamOne(event, request))).finally(() => {
+      if (activeConversationIds().includes(id)) return; // another stream on the same id is still going
+      const now = Date.now();
+      for (const [k, r] of recentRuns) if (now - r.at > RECENT_MS) recentRuns.delete(k);
+      recentRuns.set(id, { text: liveText.get(id) ?? '', end: liveEnd.get(id) ?? '', at: now });
+      liveText.delete(id); liveEnd.delete(id);
+    });
+  });
+
+  // The runs going in this process, with their reply so far, and the ones that ended lately
+  // (done: true). After a page reload the renderer has lost its listeners, but the agent kept
+  // running here; this lets the page reattach, or show the result of a run that ended meanwhile.
+  ipcMain.handle('acp:active', () => [
+    ...activeConversationIds().map((conversationId) => ({ conversationId, text: liveText.get(conversationId) ?? '', done: false })),
+    ...[...recentRuns].filter(([, r]) => Date.now() - r.at <= RECENT_MS)
+      .map(([conversationId, r]) => ({ conversationId, text: r.text, end: r.end, done: true })),
+  ]);
+}
+
+async function streamOne(event: Electron.IpcMainInvokeEvent, request: {
     messages: any[],
     model?: string,
     conversationId?: string,
@@ -137,7 +175,7 @@ export function registerStreamHandlers(): void {
     reasoningEffort?: string,
     /** Extra system instructions on top of the base prompt (a worker's brief). */
     systemPromptAppend?: string
-  }) => {
+  }): Promise<void> {
     (globalThis as any).lastChatMessages = request.messages;
     const streamSender = event.sender;
     const config = loadConfigSync();
@@ -207,6 +245,7 @@ export function registerStreamHandlers(): void {
     const flushBuffers = () => {
       if (chunkBuffer) {
         try { streamSender.send('acp:stream-chunk', { delta: chunkBuffer, done: false, conversationId: request.conversationId, assistantMessageId: request.assistantMessageId }); } catch (e) {}
+        if (request.conversationId) liveText.set(request.conversationId, (liveText.get(request.conversationId) ?? '') + chunkBuffer);
         chunkBuffer = '';
       }
       if (thoughtBuffer) {
@@ -224,6 +263,7 @@ export function registerStreamHandlers(): void {
 
     const safeSend = (channel: string, data: any) => {
       flushBuffers();
+      if (channel === 'acp:stream-chunk' && data?.done && request.conversationId) liveEnd.set(request.conversationId, String(data.delta ?? ''));
       if (data === undefined) {
         console.warn(`[IPC] Skipping undefined data for channel ${channel}`);
         return;
@@ -504,7 +544,7 @@ export function registerStreamHandlers(): void {
             });
           }
 
-          safeSend('acp:stream-chunk', { delta: '', done: true });
+          safeSend('acp:stream-chunk', { delta: '', done: true, conversationId: request.conversationId });
           await saveDraft();
           reflectAndRemember(history, userInput, fullResponse, client);
         } else if (streamEvent.type === 'subagent-progress') {
@@ -524,7 +564,8 @@ export function registerStreamHandlers(): void {
               }
             }
           }
-          safeSend('acp:sub-agent-progress', progressPayload);
+          // Tagged with its run, so a worker only shows progress from its own run.
+          safeSend('acp:sub-agent-progress', progressPayload && typeof progressPayload === 'object' ? { ...progressPayload, conversationId: progressPayload.conversationId ?? request.conversationId } : progressPayload);
         } else if (streamEvent.type === 'local_execution_request') {
           const req = streamEvent as any;
           safeSend('acp:local-execution-request', {
@@ -534,6 +575,8 @@ export function registerStreamHandlers(): void {
             reason: req.reason,
             conversationId: req.conversationId,
             isHitlApproval: req.isHitlApproval,
+            machineChoice: req.machineChoice,
+            defaultTarget: req.defaultTarget,
           });
           try {
             showPermissionNotification({
@@ -573,5 +616,4 @@ export function registerStreamHandlers(): void {
 
       safeSend('acp:stream-chunk', { delta: `\n\n[Error: ${String(error)}]`, done: true, conversationId: request.conversationId, assistantMessageId: request.assistantMessageId });
     }
-  });
 }

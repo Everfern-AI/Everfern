@@ -1,4 +1,4 @@
-import { spawn } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -222,12 +222,23 @@ function runCapture(cmd: string, args: string[], timeoutMs: number): Promise<{ c
  * mirroring how the Linux VM installs its core Python deps.
  * Returns { ok, message }.
  */
-export async function ensureOcrDeps(): Promise<{ ok: boolean; message: string }> {
+export async function ensureOcrDeps(nativeResult?: { ok: boolean; message: string }): Promise<{ ok: boolean; message: string }> {
   const venvDir = getOcrVenvDir();
   const pythonBin = getOcrPythonBin();
 
   try {
-    if (!fs.existsSync(pythonBin)) {
+    const total = OCR_PY_DEPS.length;
+    const failed: string[] = [];
+    if (nativeResult && !nativeResult.ok) return nativeResult;
+    if (!nativeResult) {
+    const native = process.env.EVERFERN_SHELL === 'tauri' ? process.env.EF_NATIVE_EXE : undefined;
+    if (!fs.existsSync(pythonBin) && native) {
+      emitOcrProgress(4, 'Bootstrap', 'Creating the OCR Python environment...');
+      const result = await runCapture(native, ['--ef-ocr-bootstrap'], 155000);
+      if (result.code !== 0) {
+        return { ok: false, message: result.stderr.trim() || 'Failed to create OCR venv.' };
+      }
+    } else if (!fs.existsSync(pythonBin)) {
       if (fs.existsSync(venvDir)) {
         try {
           fs.rmSync(venvDir, { recursive: true, force: true });
@@ -263,51 +274,58 @@ export async function ensureOcrDeps(): Promise<{ ok: boolean; message: string }>
       return { ok: false, message: 'OCR venv missing Python binary.' };
     }
 
-    // Check if pip is present in the virtual environment.
-    // In some environments (e.g. minimal host Python or ensurepip missing), python -m venv
-    // creates an environment without pip.
-    emitOcrProgress(18, 'Preparing', 'Checking pip in the OCR environment...');
-    let pipCheck = await runCapture(pythonBin, ['-m', 'pip', '--version'], 15000);
-    if (pipCheck.code !== 0) {
-      emitOcrProgress(20, 'Bootstrap', 'Bootstrapping pip into virtual environment...');
-      console.log('[OCR] pip missing in venv, running ensurepip...');
-      await runCapture(pythonBin, ['-m', 'ensurepip', '--default-pip'], 60000);
-      pipCheck = await runCapture(pythonBin, ['-m', 'pip', '--version'], 15000);
-
+    if (native) {
+      emitOcrProgress(18, 'Preparing', 'Preparing pip in the OCR environment...');
+      const result = await runCapture(native, ['--ef-ocr-pip'], 405000);
+      if (result.code !== 0) {
+        return { ok: false, message: result.stderr.trim() || 'Failed to prepare OCR pip.' };
+      }
+    } else {
+      // Check if pip is present in the virtual environment.
+      // In some environments (e.g. minimal host Python or ensurepip missing), python -m venv
+      // creates an environment without pip.
+      emitOcrProgress(18, 'Preparing', 'Checking pip in the OCR environment...');
+      let pipCheck = await runCapture(pythonBin, ['-m', 'pip', '--version'], 15000);
       if (pipCheck.code !== 0) {
-        emitOcrProgress(24, 'Bootstrap', 'Downloading get-pip.py...');
-        console.log('[OCR] ensurepip unavailable or failed, downloading get-pip.py...');
-        const getPipScript = path.join(venvDir, 'get-pip.py');
-        try {
-          await downloadFile('https://bootstrap.pypa.io/get-pip.py', getPipScript);
-          if (fs.existsSync(getPipScript)) {
-            await runCapture(pythonBin, [getPipScript, '--no-warn-script-location'], 120000);
-            try { fs.unlinkSync(getPipScript); } catch {}
-          }
-        } catch (dlErr: any) {
-          console.warn('[OCR] Failed to download or run get-pip.py:', dlErr?.message || dlErr);
-        }
+        emitOcrProgress(20, 'Bootstrap', 'Bootstrapping pip into virtual environment...');
+        console.log('[OCR] pip missing in venv, running ensurepip...');
+        await runCapture(pythonBin, ['-m', 'ensurepip', '--default-pip'], 60000);
         pipCheck = await runCapture(pythonBin, ['-m', 'pip', '--version'], 15000);
+  
+        if (pipCheck.code !== 0) {
+          emitOcrProgress(24, 'Bootstrap', 'Downloading get-pip.py...');
+          console.log('[OCR] ensurepip unavailable or failed, downloading get-pip.py...');
+          const getPipScript = path.join(venvDir, 'get-pip.py');
+          try {
+            await downloadFile('https://bootstrap.pypa.io/get-pip.py', getPipScript);
+            if (fs.existsSync(getPipScript)) {
+              await runCapture(pythonBin, [getPipScript, '--no-warn-script-location'], 120000);
+              try { fs.unlinkSync(getPipScript); } catch {}
+            }
+          } catch (dlErr: any) {
+            console.warn('[OCR] Failed to download or run get-pip.py:', dlErr?.message || dlErr);
+          }
+          pipCheck = await runCapture(pythonBin, ['-m', 'pip', '--version'], 15000);
+        }
+  
+        if (pipCheck.code !== 0) {
+          return {
+            ok: false,
+            message: 'The OCR environment exists, but pip could not be installed (ensurepip and get-pip.py failed). Please reinstall Python with pip enabled from python.org.',
+          };
+        }
       }
-
-      if (pipCheck.code !== 0) {
-        return {
-          ok: false,
-          message: 'The OCR environment exists, but pip could not be installed (ensurepip and get-pip.py failed). Please reinstall Python with pip enabled from python.org.',
-        };
+  
+      emitOcrProgress(30, 'Preparing', 'Upgrading pip in the OCR environment...');
+      const upgrade = await runCapture(pythonBin, ['-m', 'pip', 'install', '--upgrade', 'pip'], 120000);
+      if (upgrade.code !== 0) {
+        // Not fatal — continue to install deps.
+        console.warn('[OCR] pip upgrade failed (non-fatal):', upgrade.stderr);
       }
-    }
-
-    emitOcrProgress(30, 'Preparing', 'Upgrading pip in the OCR environment...');
-    const upgrade = await runCapture(pythonBin, ['-m', 'pip', 'install', '--upgrade', 'pip'], 120000);
-    if (upgrade.code !== 0) {
-      // Not fatal — continue to install deps.
-      console.warn('[OCR] pip upgrade failed (non-fatal):', upgrade.stderr);
+  
     }
 
     // Install packages one at a time so we can report real per-package progress.
-    const total = OCR_PY_DEPS.length;
-    let failed: string[] = [];
     for (let i = 0; i < total; i++) {
       const pkg = OCR_PY_DEPS[i];
       const progressBase = 30;
@@ -315,7 +333,9 @@ export async function ensureOcrDeps(): Promise<{ ok: boolean; message: string }>
       const startPercent = Math.round(progressBase + (i / total) * progressSpan);
       const endPercent = Math.round(progressBase + ((i + 1) / total) * progressSpan);
       emitOcrProgress(startPercent, 'Installing', `Installing ${pkg} (${i + 1} of ${total})...`);
-      const res = await runCapture(pythonBin, ['-m', 'pip', 'install', '--no-input', pkg], 1200000);
+      const res = native
+        ? await runCapture(native, ['--ef-ocr-package', pkg], 1205000)
+        : await runCapture(pythonBin, ['-m', 'pip', 'install', '--no-input', pkg], 1200000);
       if (res.code !== 0) {
         failed.push(pkg);
         console.warn(`[OCR] Failed to install ${pkg}:`, res.stderr.slice(-500));
@@ -325,6 +345,7 @@ export async function ensureOcrDeps(): Promise<{ ok: boolean; message: string }>
 
     if (failed.length === total) {
       return { ok: false, message: `OCR dependency install failed: ${failed.join(', ')}` };
+    }
     }
 
     // Check for native Tesseract binary
@@ -384,7 +405,7 @@ export async function ensureOcrDeps(): Promise<{ ok: boolean; message: string }>
 
     emitOcrProgress(99, 'Finalizing', 'Verifying the OCR environment...');
     emitOcrProgress(100, 'Done', 'OCR dependencies ready.');
-    return { ok: true, message: failed.length > 0
+    return nativeResult ?? { ok: true, message: failed.length > 0
       ? `OCR dependencies installed (${total - failed.length}/${total}). Skipped: ${failed.join(', ')}`
       : 'OCR dependencies ready.' };
   } catch (e) {
@@ -401,6 +422,26 @@ export async function runOcrPdf(
   engine: OcrEngine = 'ocrmypdf',
   backend: OcrBackend = 'auto',
 ): Promise<OcrRunResult> {
+  const native = process.env.EVERFERN_SHELL === 'tauri' ? process.env.EF_NATIVE_EXE : undefined;
+  if (native) {
+    try {
+      const stdout = await new Promise<string>((resolve, reject) => {
+        const child = execFile(native, ['--ef-ocr-pdf'], {
+          encoding: 'utf8',
+          maxBuffer: 64 * 1024 * 1024,
+          windowsHide: true,
+        }, (error, output) => {
+          if (error) reject(error);
+          else resolve(output);
+        });
+        child.stdin?.once('error', reject);
+        child.stdin?.end(JSON.stringify({ pdfPath, engine, backend }));
+      });
+      return JSON.parse(stdout);
+    } catch (error) {
+      return { status: 'error', text: '', engine, backend, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
   if (!isOcrReady()) {
     return { status: 'skipped', text: '', engine, backend, error: 'OCR environment not installed.' };
   }

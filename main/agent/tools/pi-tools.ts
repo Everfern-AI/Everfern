@@ -10,6 +10,8 @@ import { runInLinuxVM, isLinuxVMAvailable } from './linux-vm-executor';
 import { getRollbackManager } from '../persistence/rollback-manager';
 import * as fs from 'fs';
 import * as path from 'path';
+import { execFile } from 'child_process';
+import { hasNativeTools, runNativeTool } from '../../lib/native-tool';
 import { UnifiedExecutor } from './unified-executor';
 import { taskCompleteTool } from './task-complete';
 
@@ -72,7 +74,7 @@ async function parseDocxFile(filePath: string): Promise<{ success: boolean; text
 // Global map to store pending local execution request resolvers
 // Maps requestId -> resolver function
 // Export for testing and IPC handler access
-export function getLocalExecutionResolvers(): Map<string, (response: { approved: boolean; alwaysAllow: boolean; allowPrefix?: boolean }) => void> {
+export function getLocalExecutionResolvers(): Map<string, (response: { approved: boolean; alwaysAllow: boolean; allowPrefix?: boolean; target?: 'host' | 'vm' }) => void> {
   if (!(globalThis as any).__everfern_localExecutionResolvers) {
     (globalThis as any).__everfern_localExecutionResolvers = new Map();
   }
@@ -153,6 +155,73 @@ export function performSmartReplace(content: string, oldString: string, newStrin
   }
 
   return { success: false, updatedContent: content, error: `Could not find target content in file:\n${oldString.slice(0, 150)}...` };
+}
+
+type SmartReplaceResult = ReturnType<typeof performSmartReplace>;
+
+function runNativeSmartReplace(request: Record<string, unknown>): Promise<SmartReplaceResult | null> | undefined {
+  const executable = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+  if (!executable) return;
+  // JS String.replace expands replacement tokens such as $&, $$, and $'. Keep those
+  // edge cases on the original implementation until the Rust port expands them too.
+  if (typeof request.newString === 'string' && request.newString.includes('$')) return Promise.resolve(null);
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = (result: SmartReplaceResult | null) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+    const child = execFile(executable, ['--ef-smart-replace'], {
+      encoding: 'utf8', windowsHide: true, timeout: 10000, maxBuffer: 128 * 1024 * 1024,
+    }, (error, output) => {
+      if (error) return finish(null);
+      try {
+        const result = JSON.parse(output);
+        if (typeof result?.success !== 'boolean' || typeof result?.updatedContent !== 'string') return finish(null);
+        finish(result as SmartReplaceResult);
+      } catch { finish(null); }
+    });
+    child.stdin?.once('error', () => finish(null));
+    child.stdin?.end(JSON.stringify(request));
+  });
+}
+
+async function performSmartReplaceDesktop(content: string, oldString: string, newString: string): Promise<SmartReplaceResult> {
+  const native = await runNativeSmartReplace({ content, oldString, newString });
+  return native ?? performSmartReplace(content, oldString, newString);
+}
+
+async function performSmartReplaceBatchDesktop(
+  content: string,
+  edits: Array<{ oldString: string; newString: string }>,
+): Promise<{ updatedContent: string; results: SmartReplaceResult[] } | null> {
+  const executable = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+  if (!executable || edits.some(edit => typeof edit.oldString !== 'string' || typeof edit.newString !== 'string' || edit.newString.includes('$'))) return null;
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = (result: { updatedContent: string; results: SmartReplaceResult[] } | null) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+    const child = execFile(executable, ['--ef-smart-replace'], {
+      encoding: 'utf8', windowsHide: true, timeout: 15000, maxBuffer: 128 * 1024 * 1024,
+    }, (error, output) => {
+      if (error) return finish(null);
+      try {
+        const result = JSON.parse(output);
+        if (typeof result?.updatedContent !== 'string' || !Array.isArray(result?.results)
+          || result.results.length !== edits.length
+          || result.results.some((item: any) => typeof item?.success !== 'boolean' || typeof item?.updatedContent !== 'string')) {
+          return finish(null);
+        }
+        finish(result as { updatedContent: string; results: SmartReplaceResult[] });
+      } catch { finish(null); }
+    });
+    child.stdin?.once('error', () => finish(null));
+    child.stdin?.end(JSON.stringify({ operation: 'batch', content, edits }));
+  });
 }
 
 // File tool names that run on the host and need Linux→Windows path translation
@@ -327,6 +396,23 @@ async function executeHostGrep(
   const maxFileBytes = normalizeDurationMs(args.maxFileBytes ?? args.max_file_bytes, 1_500_000);
   const caseSensitive = Boolean(args.caseSensitive ?? args.case_sensitive);
   const regexRequested = args.regex !== false && args.literal !== true;
+
+  // Under Tauri the walk runs in Rust. It returns null for a pattern it cannot run
+  // the way JavaScript would (lookaround, backreferences), and we search here instead.
+  if (hasNativeTools()) {
+    onUpdate?.(`grep: searching "${pattern}" in ${searchPath} (timeout ${Math.round(timeoutMs / 1000)}s)`);
+    const native = await runNativeTool<ToolResult>('--ef-grep', {
+      pattern, searchPath, timeoutMs, maxResults, maxFileBytes, caseSensitive, regex: regexRequested,
+    }, { timeoutMs: timeoutMs + 15_000, maxBuffer: 64 * 1024 * 1024 });
+    if (native) {
+      const summary: any = native.data ?? {};
+      const files = Number(summary.filesSearched ?? 0);
+      const found = Array.isArray(summary.matches) ? summary.matches.length : 0;
+      onUpdate?.(`grep: searched ${files} file${files === 1 ? '' : 's'}, found ${found} match${found === 1 ? '' : 'es'} in ${path.basename(searchPath) || searchPath}`);
+      return native;
+    }
+  }
+
   const matcher = buildGrepMatcher(pattern, caseSensitive, regexRequested);
   const startedAt = Date.now();
   const deadline = startedAt + timeoutMs;
@@ -436,7 +522,8 @@ async function executeHostGrep(
         continue;
       }
       if (entry.isFile()) {
-        searchFile(fullPath);
+        // Awaited so the summary below counts every file and the result limit holds.
+        await searchFile(fullPath);
       }
     }
 
@@ -1431,8 +1518,48 @@ function adaptTool(
 
 let loadedCodingTools: AgentTool[] | null = null;
 
-// File read cache: path → { content, mtime }
+// File read cache: `${path}|${offset}|${limit}` → { content, mtime }. Bounded by entry count
+// and total characters; it used to hold every file the agent ever read, whole, forever.
 const fileReadCache = new Map<string, { content: string; mtime: number }>();
+const FILE_CACHE_MAX_ENTRIES = 64;
+const FILE_CACHE_MAX_CHARS = 4_000_000;
+const FILE_CACHE_MAX_ENTRY_CHARS = 256_000;
+let fileReadCacheChars = 0;
+
+function fileCacheDelete(key: string): void {
+  const prev = fileReadCache.get(key);
+  if (prev) {
+    fileReadCacheChars -= prev.content.length;
+    fileReadCache.delete(key);
+  }
+}
+
+export function fileCacheSet(key: string, content: string, mtime: number): void {
+  fileCacheDelete(key);
+  if (content.length > FILE_CACHE_MAX_ENTRY_CHARS) return;
+  fileReadCache.set(key, { content, mtime });
+  fileReadCacheChars += content.length;
+  while (fileReadCache.size > FILE_CACHE_MAX_ENTRIES || fileReadCacheChars > FILE_CACHE_MAX_CHARS) {
+    fileCacheDelete(fileReadCache.keys().next().value as string);
+  }
+}
+
+export function fileCacheGet(key: string, mtime: number): string | undefined {
+  const hit = fileReadCache.get(key);
+  if (!hit) return undefined;
+  if (hit.mtime !== mtime) {
+    fileCacheDelete(key);
+    return undefined;
+  }
+  // Refresh recency.
+  fileReadCache.delete(key);
+  fileReadCache.set(key, hit);
+  return hit.content;
+}
+
+export function getFileReadCacheStats(): { entries: number; chars: number } {
+  return { entries: fileReadCache.size, chars: fileReadCacheChars };
+}
 
 /**
  * Get current agent context for rollback tracking.
@@ -1572,17 +1699,32 @@ async function withRollbackTracking(
         let currentContent = contentBefore;
         let appliedCount = 0;
         const errors: string[] = [];
-
-        for (let i = 0; i < edits.length; i++) {
-          const item = edits[i];
-          const oldStr = item.oldString || item.old_string || item.TargetContent || item.search || '';
-          const newStr = item.newString || item.new_string || item.ReplacementContent || item.replace || '';
-          const res = performSmartReplace(currentContent, oldStr, newStr);
-          if (res.success) {
-            currentContent = res.updatedContent;
-            appliedCount++;
-          } else {
-            errors.push(`Chunk ${i + 1}: ${res.error || 'not found'}`);
+        const chunks = edits.map((item: any) => ({
+          oldString: item.oldString || item.old_string || item.TargetContent || item.search || '',
+          newString: item.newString || item.new_string || item.ReplacementContent || item.replace || '',
+        }));
+        const nativeBatch = chunks.every((chunk: any) => typeof chunk.oldString === 'string' && typeof chunk.newString === 'string')
+          ? await performSmartReplaceBatchDesktop(contentBefore, chunks)
+          : null;
+        if (nativeBatch) {
+          currentContent = nativeBatch.updatedContent;
+          for (let i = 0; i < nativeBatch.results.length; i++) {
+            const res = nativeBatch.results[i];
+            if (res.success) appliedCount++;
+            else errors.push(`Chunk ${i + 1}: ${res.error || 'not found'}`);
+          }
+        } else {
+          for (let i = 0; i < edits.length; i++) {
+            const item = edits[i];
+            const oldStr = item.oldString || item.old_string || item.TargetContent || item.search || '';
+            const newStr = item.newString || item.new_string || item.ReplacementContent || item.replace || '';
+            const res = performSmartReplace(currentContent, oldStr, newStr);
+            if (res.success) {
+              currentContent = res.updatedContent;
+              appliedCount++;
+            } else {
+              errors.push(`Chunk ${i + 1}: ${res.error || 'not found'}`);
+            }
           }
         }
 
@@ -1618,7 +1760,7 @@ async function withRollbackTracking(
           const oldStr = (args.oldString || args.old_string || args.TargetContent || args.search || '') as string;
           const newStr = (args.newString || args.new_string || args.ReplacementContent || args.replace || '') as string;
           if (oldStr) {
-            const smartRes = performSmartReplace(contentBefore, oldStr, newStr);
+            const smartRes = await performSmartReplaceDesktop(contentBefore, oldStr, newStr);
             if (smartRes.success) {
               await fs.promises.writeFile(filePath, smartRes.updatedContent, 'utf-8');
               result = {
@@ -1772,21 +1914,20 @@ function withReadCache(executor: (toolCallId: string, params: any) => Promise<an
     try {
       const fs = require('fs');
       const stat = await fs.promises.stat(path);
-      const cached = fileReadCache.get(path);
+      // offset/limit select different slices of the same file; key on them too.
+      const key = `${path}|${params.offset ?? ''}|${params.limit ?? ''}`;
+      const cached = fileCacheGet(key, stat.mtimeMs);
 
-      if (cached && cached.mtime === stat.mtimeMs) {
-        return { content: [{ type: 'text', text: cached.content }] };
+      if (cached !== undefined) {
+        return { content: [{ type: 'text', text: cached }] };
       }
 
       const result = await executor(toolCallId, params);
 
-      if (result.content && !result.isError) {
-        const content = Array.isArray(result.content)
-          ? result.content.filter((c: any) => c.type === 'text').map((c: any) => c.text).join('\n')
-          : '';
-        if (content) {
-          fileReadCache.set(path, { content, mtime: stat.mtimeMs });
-        }
+      // Only cache pure-text results; an image read would come back without its image.
+      if (Array.isArray(result.content) && !result.isError && result.content.every((c: any) => c.type === 'text')) {
+        const content = result.content.map((c: any) => c.text).join('\n');
+        if (content) fileCacheSet(key, content, stat.mtimeMs);
       }
 
       return result;
@@ -1935,6 +2076,72 @@ export const multiReplaceFileContentTool: AgentTool = {
   }
 };
 
+/**
+ * The package's `resolveToCwd`: its read/ls/find tools resolve against process.cwd(),
+ * after dropping a leading `@`, normalizing Unicode spaces and expanding `~`.
+ */
+function resolvePackageToolPath(value: unknown): string {
+  let p = typeof value === 'string' ? value : '';
+  if (p.startsWith('@')) p = p.slice(1);
+  p = p.replace(/[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g, ' ');
+  if (p === '~') p = os.homedir();
+  else if (p.startsWith('~/')) p = os.homedir() + p.slice(1);
+  return path.isAbsolute(p) ? p : path.resolve(process.cwd(), p);
+}
+
+type PackageToolExecutor = (toolCallId: string, params: any) => Promise<any>;
+
+/**
+ * Under Tauri, the package's `read` and `find` run in Rust (`--ef-fs-tool`) with the
+ * same output. Rust answers null for what it leaves to the package (images,
+ * unreadable files, invalid globs, unusual arguments), and the package runs.
+ */
+function withNativeFsTool(
+  tool: 'read' | 'find',
+  request: (params: any) => Record<string, unknown>,
+  fallback: PackageToolExecutor,
+): PackageToolExecutor {
+  return async (toolCallId, params) => {
+    if (hasNativeTools()) {
+      const native = await runNativeTool<any>('--ef-fs-tool', { tool, ...request(params) });
+      if (native) {
+        if (typeof native.error === 'string') throw new Error(native.error);
+        return { content: native.content, details: native.details ?? undefined };
+      }
+    }
+    return fallback(toolCallId, params);
+  };
+}
+
+type NativeLsSnapshot = { exists: boolean; isDir: boolean; entries: { name: string; dir: boolean | null }[] };
+
+/**
+ * `ls` reads the folder in Rust in one call, then runs the package's own `ls` over
+ * that snapshot (its `operations` option), so sorting and wording are unchanged.
+ */
+function withNativeLs(m: any): PackageToolExecutor {
+  return async (toolCallId, params) => {
+    if (hasNativeTools() && typeof m.createLsToolDefinition === 'function') {
+      const dirPath = resolvePackageToolPath(params?.path || '.');
+      const snap = await runNativeTool<NativeLsSnapshot>('--ef-fs-tool', { tool: 'ls', dirPath });
+      if (snap) {
+        const kinds = new Map(snap.entries.map((e) => [path.join(dirPath, e.name), e.dir]));
+        const operations = {
+          exists: () => snap.exists,
+          stat: (p: string) => {
+            const isDir = p === dirPath ? snap.isDir : kinds.get(p);
+            if (isDir === undefined || isDir === null) throw new Error(`ENOENT: no such file or directory, stat '${p}'`);
+            return { isDirectory: () => isDir };
+          },
+          readdir: () => snap.entries.map((e) => e.name),
+        };
+        return m.createLsToolDefinition(process.cwd(), { operations }).execute(toolCallId, params);
+      }
+    }
+    return m.lsTool.execute(toolCallId, params);
+  };
+}
+
 export async function getPiCodingTools(): Promise<AgentTool[]> {
   if (loadedCodingTools) return loadedCodingTools;
 
@@ -1973,13 +2180,33 @@ export async function getPiCodingTools(): Promise<AgentTool[]> {
     };
   };
 
+  const readExecutor = withNativeFsTool(
+    'read',
+    (params) => ({
+      absolutePath: resolvePackageToolPath(params?.path),
+      path: params?.path,
+      offset: params?.offset,
+      limit: params?.limit,
+    }),
+    m.readTool.execute,
+  );
+  const findExecutor = withNativeFsTool(
+    'find',
+    (params) => ({
+      pattern: params?.pattern,
+      searchPath: resolvePackageToolPath(params?.path || '.'),
+      limit: params?.limit,
+    }),
+    m.findTool.execute,
+  );
+
   loadedCodingTools = [
-    adaptTool(m.readToolDefinition, withWorkspacePaths(withReadCache(m.readTool.execute))),
+    adaptTool(m.readToolDefinition, withWorkspacePaths(withReadCache(readExecutor))),
     adaptTool(m.writeToolDefinition, withWorkspacePaths(writeExecutorWithTracking)),
     adaptTool(m.editToolDefinition, withWorkspacePaths(editExecutorWithTracking)),
-    adaptTool(m.findToolDefinition, withWorkspacePaths(m.findTool.execute)),
+    adaptTool(m.findToolDefinition, withWorkspacePaths(findExecutor)),
     adaptTool(m.grepToolDefinition, withWorkspacePaths(m.grepTool.execute)),
-    adaptTool(m.lsToolDefinition, withWorkspacePaths(m.lsTool.execute)),
+    adaptTool(m.lsToolDefinition, withWorkspacePaths(withNativeLs(m))),
     adaptTool(
       m.bashToolDefinition,
       (toolCallId: string, params: any) =>
@@ -2005,4 +2232,5 @@ export async function getPiCodingTools(): Promise<AgentTool[]> {
 export function resetPiCodingToolsCache() {
   loadedCodingTools = null;
   fileReadCache.clear();
+  fileReadCacheChars = 0;
 }

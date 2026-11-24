@@ -1,4 +1,5 @@
 'use client';
+import { FileText as LuFileText, FileType as LuFileType, Globe as LuGlobe, Sheet as LuSheet, Presentation as LuPresentation, Code as LuCode } from "lucide-react";
 import React, { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -24,32 +25,14 @@ interface Artifact {
 
 interface ArtifactsPanelProps {
     isOpen: boolean;
+    /** Width of the sidebar to leave visible, so Artifacts opens beside it like the other views. */
+    leftInset?: number;
     onClose: () => void;
     activeChatId?: string | null;
     onApprovePlan?: (planContent: string) => void;
     selectedFileName?: string | null;
     projectPath?: string | null;
 }
-
-// CU-STRM-02: theme-aware syntax-highlight palette. Roles map to globals.css
-// tokens (CSS vars are valid in inline styles) so highlight colors follow the
-// active light/dark theme; the low-contrast hardcoded comment gray is gone.
-// keyword/property/boolean keep their hex: globals.css has NO fuchsia/purple
-// semantic token (--color-accent is teal and reserved for function/attr/key).
-const SYNTAX_COLORS = {
-    keyword: '#d946ef',
-    string: 'var(--color-success)',        // was #16a34a
-    number: 'var(--color-info)',           // was #2563eb
-    comment: 'var(--color-text-tertiary)', // was #8a8886
-    function: 'var(--color-accent)',       // was #0891b2
-    tag: 'var(--color-error)',             // was #dc2626
-    attr: 'var(--color-accent)',
-    property: '#d946ef',
-    value: 'var(--color-info)',
-    selector: 'var(--color-error)',
-    key: 'var(--color-accent)',
-    boolean: '#d946ef',
-};
 
 // ── 1. MARKDOWN VIEWER ──────────────────────────────────────────────
 export function MarkdownViewer({ content }: { content: string }) {
@@ -135,7 +118,7 @@ export function MarkdownViewer({ content }: { content: string }) {
                             <thead>
                                 <tr>
                                     {headers.map((h, j) => (
-                                        <th key={j} style={{ padding: '8px 12px', borderBottom: '1px solid var(--color-border)', textAlign: 'left', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }} dangerouslySetInnerHTML={{ __html: formatInline(h) }} />
+                                        <th key={j} style={{ padding: '8px 12px', borderBottom: '1px solid var(--color-border)', textAlign: 'left', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: 11, }} dangerouslySetInnerHTML={{ __html: formatInline(h) }} />
                                     ))}
                                 </tr>
                             </thead>
@@ -157,7 +140,7 @@ export function MarkdownViewer({ content }: { content: string }) {
             if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
                 const content = line.trim().substring(2);
                 elements.push(
-                    <li key={`li-${i}`} style={{ margin: '4px 0 4px 20px', fontSize: 14, color: 'var(--color-text-primary)' }}
+                    <li key={`li-${i}`} style={{ marginLeft: 20, margin: '4px 0', fontSize: 14, color: 'var(--color-text-primary)' }}
                         dangerouslySetInnerHTML={{ __html: formatInline(content) }}
                     />
                 );
@@ -345,8 +328,7 @@ function PPTViewer({ filename, filePath }: { filename: string; filePath?: string
     if (error || slides.length === 0) {
         return (
             <div style={{ display: 'flex', flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--color-error)', backgroundColor: 'var(--color-bg-subtle)', padding: 24, textAlign: 'center', width: '100%', minHeight: 400 }}>
-                <span style={{ fontSize: 32, marginBottom: 16 }}>⚠️</span>
-                <div style={{ fontWeight: 600, marginBottom: 8, color: 'var(--color-error)' }}>Failed to View PowerPoint</div>
+                                <div style={{ fontWeight: 600, marginBottom: 8, color: 'var(--color-error)' }}>Couldn't open this presentation</div>
                 <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', maxWidth: 400, margin: '0 auto' }}>{error || "No slide content found."}</div>
             </div>
         );
@@ -756,7 +738,7 @@ export function PDFViewer({ filename, content, filePath }: { filename: string; c
                                     overflow: 'hidden',
                                     padding: '6px 0',
                                 }}>
-                                    <div style={{ padding: '6px 14px 8px', fontSize: 11, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase' }}>
+                                    <div style={{ padding: '6px 14px 8px', fontSize: 11, fontWeight: 700, color: 'var(--color-text-tertiary)', }}>
                                         Open with
                                     </div>
                                     {apps.length === 0 ? (
@@ -877,7 +859,7 @@ const INSPIRATION_TEMPLATES = [
     h1 { margin: 0; font-size: 24px; font-weight: 700; }
     .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 24px 0; }
     .card { background: #161922; border: 1px solid #232736; border-radius: 14px; padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
-    .card .label { font-size: 12px; color: #9ca3af; text-transform: uppercase; font-weight: 600; }
+    .card .label { font-size: 12px; color: #9ca3af; font-weight: 600; }
     .card .val { font-size: 28px; font-weight: 700; margin-top: 8px; color: #fff; }
     .trend { font-size: 12px; color: #10b981; font-weight: 600; margin-top: 4px; }
   </style>
@@ -989,7 +971,7 @@ All subprocess executions pass through strict environment isolation with explici
     .stat { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 24px; padding-top: 20px; border-top: 1px solid #282d3d; }
     .stat-box { background: #0c0e14; border: 1px solid #282d3d; border-radius: 10px; padding: 14px; text-align: center; }
     .stat-val { font-size: 24px; font-weight: 700; color: #06b6d4; }
-    .stat-label { font-size: 11px; color: #9ca3af; text-transform: uppercase; margin-top: 4px; }
+    .stat-label { font-size: 11px; color: #9ca3af; margin-top: 4px; }
   </style>
 </head>
 <body>
@@ -1023,9 +1005,9 @@ All subprocess executions pass through strict environment isolation with explici
       document.getElementById('ltvCac').textContent = ratio.toFixed(2) + 'x';
       document.getElementById('payback').textContent = payback.toFixed(1) + ' mo';
       const status = document.getElementById('status');
-      if (ratio >= 3 && payback <= 12) { status.textContent = '🌟 Elite'; status.style.color = '#10b981'; }
-      else if (ratio >= 2) { status.textContent = '✅ Healthy'; status.style.color = '#06b6d4'; }
-      else { status.textContent = '⚠️ Risk'; status.style.color = '#f59e0b'; }
+      if (ratio >= 3 && payback <= 12) { status.textContent = 'Elite'; status.style.color = '#10b981'; }
+      else if (ratio >= 2) { status.textContent = 'Healthy'; status.style.color = '#06b6d4'; }
+      else { status.textContent = 'Risk'; status.style.color = '#f59e0b'; }
     }
   </script>
 </body>
@@ -1036,13 +1018,13 @@ All subprocess executions pass through strict environment isolation with explici
 // Syntax highlighting helper
 const getSyntaxHighlightingColors = (language: string, token: string): string => {
     const colorMap: Record<string, Record<string, string>> = {
-        javascript: { keyword: SYNTAX_COLORS.keyword, string: SYNTAX_COLORS.string, number: SYNTAX_COLORS.number, comment: SYNTAX_COLORS.comment, function: SYNTAX_COLORS.function },
-        typescript: { keyword: SYNTAX_COLORS.keyword, string: SYNTAX_COLORS.string, number: SYNTAX_COLORS.number, comment: SYNTAX_COLORS.comment, function: SYNTAX_COLORS.function },
-        python: { keyword: SYNTAX_COLORS.keyword, string: SYNTAX_COLORS.string, number: SYNTAX_COLORS.number, comment: SYNTAX_COLORS.comment, function: SYNTAX_COLORS.function },
-        html: { tag: SYNTAX_COLORS.tag, attr: SYNTAX_COLORS.attr, string: SYNTAX_COLORS.string, comment: SYNTAX_COLORS.comment },
-        css: { property: SYNTAX_COLORS.property, value: SYNTAX_COLORS.value, selector: SYNTAX_COLORS.selector, comment: SYNTAX_COLORS.comment },
-        json: { key: SYNTAX_COLORS.key, string: SYNTAX_COLORS.string, number: SYNTAX_COLORS.number, boolean: SYNTAX_COLORS.boolean },
-        sql: { keyword: SYNTAX_COLORS.keyword, string: SYNTAX_COLORS.string, number: SYNTAX_COLORS.number, comment: SYNTAX_COLORS.comment },
+        javascript: { keyword: '#d946ef', string: '#16a34a', number: '#2563eb', comment: '#8a8886', function: '#0891b2' },
+        typescript: { keyword: '#d946ef', string: '#16a34a', number: '#2563eb', comment: '#8a8886', function: '#0891b2' },
+        python: { keyword: '#d946ef', string: '#16a34a', number: '#2563eb', comment: '#8a8886', function: '#0891b2' },
+        html: { tag: '#dc2626', attr: '#0891b2', string: '#16a34a', comment: '#8a8886' },
+        css: { property: '#d946ef', value: '#2563eb', selector: '#dc2626', comment: '#8a8886' },
+        json: { key: '#0891b2', string: '#16a34a', number: '#2563eb', boolean: '#d946ef' },
+        sql: { keyword: '#d946ef', string: '#16a34a', number: '#2563eb', comment: '#8a8886' },
     };
     return colorMap[language]?.[token] || 'var(--color-text-primary)';
 };
@@ -1063,43 +1045,43 @@ const detectLanguage = (filename: string): string => {
 export const SyntaxHighlighter = ({ code, language }: { code: string; language: string }) => {
     const colorSchemes: Record<string, Record<string, string>> = {
         python: {
-            keyword: SYNTAX_COLORS.keyword,
-            string: SYNTAX_COLORS.string,
-            number: SYNTAX_COLORS.number,
-            comment: SYNTAX_COLORS.comment,
-            function: SYNTAX_COLORS.function,
+            keyword: '#d946ef',
+            string: '#16a34a',
+            number: '#2563eb',
+            comment: '#8a8886',
+            function: '#0891b2',
         },
         javascript: {
-            keyword: SYNTAX_COLORS.keyword,
-            string: SYNTAX_COLORS.string,
-            number: SYNTAX_COLORS.number,
-            comment: SYNTAX_COLORS.comment,
-            function: SYNTAX_COLORS.function,
+            keyword: '#d946ef',
+            string: '#16a34a',
+            number: '#2563eb',
+            comment: '#8a8886',
+            function: '#0891b2',
         },
         typescript: {
-            keyword: SYNTAX_COLORS.keyword,
-            string: SYNTAX_COLORS.string,
-            number: SYNTAX_COLORS.number,
-            comment: SYNTAX_COLORS.comment,
-            function: SYNTAX_COLORS.function,
+            keyword: '#d946ef',
+            string: '#16a34a',
+            number: '#2563eb',
+            comment: '#8a8886',
+            function: '#0891b2',
         },
         html: {
-            tag: SYNTAX_COLORS.tag,
-            attr: SYNTAX_COLORS.attr,
-            string: SYNTAX_COLORS.string,
-            comment: SYNTAX_COLORS.comment,
+            tag: '#dc2626',
+            attr: '#0891b2',
+            string: '#16a34a',
+            comment: '#8a8886',
         },
         css: {
-            property: SYNTAX_COLORS.property,
-            value: SYNTAX_COLORS.value,
-            selector: SYNTAX_COLORS.selector,
-            comment: SYNTAX_COLORS.comment,
+            property: '#d946ef',
+            value: '#2563eb',
+            selector: '#dc2626',
+            comment: '#8a8886',
         },
         json: {
-            key: SYNTAX_COLORS.key,
-            string: SYNTAX_COLORS.string,
-            number: SYNTAX_COLORS.number,
-            boolean: SYNTAX_COLORS.boolean,
+            key: '#0891b2',
+            string: '#16a34a',
+            number: '#2563eb',
+            boolean: '#d946ef',
         },
     };
 
@@ -1170,7 +1152,7 @@ export const SyntaxHighlighter = ({ code, language }: { code: string; language: 
     );
 };
 
-export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprovePlan, selectedFileName, projectPath }: ArtifactsPanelProps) {
+export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprovePlan, selectedFileName, projectPath, leftInset }: ArtifactsPanelProps) {
     const [activeTab, setActiveTab] = useState<'inspiration' | 'yours' | 'sites' | 'terminal'>('yours');
     const [artifacts, setArtifacts] = useState<Artifact[]>([]);
     const [sites, setSites] = useState<{id: string; chatId: string; name: string; lastEdited: number; size: number; path: string}[]>([]);
@@ -1199,7 +1181,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
     const loadProcesses = useCallback(async () => {
         try {
             setProcessesLoading(true);
-            const results = await (window as any).electronAPI?.terminal?.listProcesses?.();
+            const results = await (window as any).electronAPI.terminal.listProcesses();
             setProcesses(results || []);
         } catch (e) {
             console.error('Failed to load terminal processes', e);
@@ -1292,7 +1274,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
 
     const handleSelectArtifactByName = async (name: string) => {
         if (!activeChatId) return;
-        const content = await (window as any).electronAPI?.artifacts?.read?.(activeChatId, name, projectPath);
+        const content = await (window as any).electronAPI?.artifacts.read(activeChatId, name, projectPath);
         if (content !== null) {
             setSelectedCode({ name, content, chatId: activeChatId });
             setActiveTab('yours');
@@ -1301,7 +1283,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
 
     const loadArtifacts = async () => {
         try {
-            const results = await (window as any).electronAPI?.artifacts?.list?.(undefined, projectPath); // No chatId = load all for this project/global
+            const results = await (window as any).electronAPI?.artifacts.list(undefined, projectPath); // No chatId = load all for this project/global
             // Filter out exec/ temp files (Python scripts, shell scripts, JS/TS temp files)
             const EXEC_EXTS = ['.py', '.sh', '.bat', '.ps1', '.js', '.ts', '.tsx', '.jsx'];
             const filtered = (results || []).filter((a: any) => {
@@ -1317,7 +1299,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
 
     const loadSites = async (chatId: string) => {
         try {
-            const results = await (window as any).electronAPI?.sites?.list?.(chatId);
+            const results = await (window as any).electronAPI.sites.list(chatId);
             const sitesList = results || [];
             setSites(sitesList.map((s: any) => ({
                 id: s.id,
@@ -1335,7 +1317,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
 
     const loadAllSites = async () => {
         try {
-            const results = await (window as any).electronAPI?.sites?.list?.();
+            const results = await (window as any).electronAPI.sites.list();
             const sitesList = results || [];
             setSites(sitesList.map((s: any) => ({
                 id: s.id,
@@ -1472,21 +1454,21 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                     transition={{ type: "spring", damping: 25, stiffness: 250 }}
                     style={{
                         position: "fixed",
-                        top: 0, left: 0, right: 0, bottom: 0,
+                        top: 0, left: leftInset ?? 0, right: 0, bottom: 0,
+                        transition: "left 0.3s ease",
                         backgroundColor: "var(--color-bg-base)",
                         zIndex: 9999,
                         display: "flex",
                         flexDirection: "column",
                         color: "var(--color-text-primary)",
                         overflowY: "auto",
-                        padding: "clamp(48px, 5vw, 60px) clamp(16px, 6vw, 80px)"
+                        padding: "60px 80px"
                     }}
                 >
                     <button
-                        type="button"
-                        aria-label="Close artifacts"
                         onClick={onClose}
-                        style={{ position: "absolute", top: 16, right: "clamp(16px, 4vw, 40px)", background: "transparent", border: "none", color: "var(--color-text-tertiary)", cursor: "pointer", padding: 8, borderRadius: "50%" }}
+                        aria-label="Close artifacts"
+                        style={{ position: "absolute", top: 44, right: 40, background: "transparent", border: "none", color: "var(--color-text-tertiary)", cursor: "pointer", padding: 8, borderRadius: "50%" }}
                         onMouseEnter={e => e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"}
                         onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
                     >
@@ -1621,7 +1603,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                                         padding: '6px 0',
                                                     }}
                                                 >
-                                                    <div style={{ padding: '6px 14px 8px', fontSize: 11, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                                                    <div style={{ padding: '6px 14px 8px', fontSize: 11, fontWeight: 700, color: 'var(--color-text-tertiary)', }}>
                                                         Open with
                                                     </div>
 
@@ -1707,7 +1689,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                             {/* Plan notice */}
                             {isPlanFile && (
                                 <div style={{ marginBottom: 16, padding: "12px 16px", backgroundColor: "rgba(234,179,8,0.08)", border: "1px solid rgba(234,179,8,0.25)", borderRadius: 10, fontSize: 13, color: "#fbbf24", lineHeight: 1.5 }}>
-                                    ✍️ <strong>Review this plan carefully.</strong> You can edit any step before approving. Click <strong>Approve &amp; Execute</strong> when ready.
+                                    Review the plan. You can edit any step before you choose <strong>Approve &amp; Execute</strong>.
                                 </div>
                             )}
 
@@ -1866,13 +1848,13 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                         {artifacts.length === 0 ? (
                                             <div className="glossy" style={{ backgroundColor: "var(--color-bg-subtle)", border: "1px dashed var(--color-border)", borderTop: "1px solid var(--glossy-highlight)", boxShadow: "var(--glossy-inner), var(--glossy-outer)", borderRadius: 16, padding: "40px", textAlign: "center", gridColumn: "1 / -1" }}>
                                                 <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)" }}>No artifacts in this chat yet</div>
-                                                <p style={{ color: "var(--color-text-tertiary)", fontSize: 13, marginTop: 8, maxWidth: 300, margin: "8px auto" }}>Tell the AI to generate a report, PDF, dashboard, or code file to see it here.</p>
+                                                <p style={{ color: "var(--color-text-tertiary)", fontSize: 13, marginTop: 8, maxWidth: 300, margin: "8px auto" }}>Reports, PDFs, dashboards and code files EverFern creates in this chat show up here.</p>
                                                 <button 
                                                     onClick={() => loadArtifacts()}
                                                     className="glossy"
                                                     style={{ marginTop: 20, padding: "8px 16px", backgroundColor: "var(--color-text-primary)", color: "var(--color-bg-base)", borderTop: "1px solid var(--glossy-highlight)", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", border: "none" }}
                                                 >
-                                                    Refresh Artifacts
+                                                    Check again
                                                 </button>
                                             </div>
                                         ) : artifacts.map((a, idx) => {
@@ -1912,7 +1894,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                                         {/* Badge */}
                                                         <div style={{ position: "absolute", top: 12, right: 12, zIndex: 2, display: "flex", gap: 6 }}>
                                                             {a.name === 'execution_plan.md' && (
-                                                                <div style={{ padding: "3px 8px", backgroundColor: "rgba(234,179,8,0.1)", border: "1px solid rgba(234,179,8,0.3)", borderRadius: 6, fontSize: 10, fontWeight: 700, color: "#854d0e", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                                                                <div style={{ padding: "3px 8px", backgroundColor: "rgba(234,179,8,0.1)", border: "1px solid rgba(234,179,8,0.3)", borderRadius: 6, fontSize: 10, fontWeight: 700, color: "#854d0e", }}>
                                                                     Awaiting Approval
                                                                 </div>
                                                             )}
@@ -2001,8 +1983,8 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                                 >
                                                     {/* Site preview */}
                                                     <div style={{ flex: 1, backgroundColor: "var(--color-bg-subtle)", overflow: "hidden", position: "relative" }}>
-                                                        <iframe
-                                                            src={`everfern-site://${site.chatId}/index.html`}
+                                                        <iframe 
+                                                            srcDoc={`<html><head><style>body{margin:0;padding:16px;font-family:system-ui}</style></head><body><p style="color:var(--color-text-tertiary);font-size:12px">Loading preview...</p></body></html>`}
                                                             style={{ width: "100%", height: "100%", border: "none", backgroundColor: "var(--color-bg-subtle)" }}
                                                             title="Preview"
                                                             sandbox="allow-scripts"
@@ -2301,12 +2283,12 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                 {/* Type selector */}
                                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
                                     {[
-                                        { ext: 'md' as const, label: 'Markdown', icon: '📄', color: '#6366f1' },
-                                        { ext: 'pdf' as const, label: 'PDF Report', icon: '📑', color: '#ef4444' },
-                                        { ext: 'html' as const, label: 'Web App', icon: '🌐', color: '#8b5cf6' },
-                                        { ext: 'csv' as const, label: 'Spreadsheet', icon: '📊', color: '#10b981' },
-                                        { ext: 'pptx' as const, label: 'Slides', icon: '📽️', color: '#f59e0b' },
-                                        { ext: 'py' as const, label: 'Code Script', icon: '💻', color: '#3b82f6' },
+                                        { ext: 'md' as const, label: 'Markdown', icon: LuFileText, color: '#6366f1' },
+                                        { ext: 'pdf' as const, label: 'PDF Report', icon: LuFileType, color: '#ef4444' },
+                                        { ext: 'html' as const, label: 'Web App', icon: LuGlobe, color: '#8b5cf6' },
+                                        { ext: 'csv' as const, label: 'Spreadsheet', icon: LuSheet, color: '#10b981' },
+                                        { ext: 'pptx' as const, label: 'Slides', icon: LuPresentation, color: '#f59e0b' },
+                                        { ext: 'py' as const, label: 'Code Script', icon: LuCode, color: '#3b82f6' },
                                     ].map(t => (
                                         <button
                                             key={t.ext}
@@ -2330,7 +2312,7 @@ export default function ArtifactsPanel({ isOpen, onClose, activeChatId, onApprov
                                                 transition: "all 0.15s"
                                             }}
                                         >
-                                            <span style={{ fontSize: 20 }}>{t.icon}</span>
+                                            <t.icon size={20} strokeWidth={1.5} color={t.color} />
                                             <span style={{ fontSize: 11.5, fontWeight: 600, color: "var(--color-text-primary)" }}>{t.label}</span>
                                         </button>
                                     ))}

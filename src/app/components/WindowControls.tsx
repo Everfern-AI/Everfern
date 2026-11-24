@@ -1,49 +1,42 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 
 /**
- * Traffic-light window controls: close (red), minimize (yellow), maximize (green).
- * Each dot has a thin darker rim and shows its glyph while the group is hovered.
- * Hidden on macOS where Electron provides native traffic lights.
+ * Windows/Linux caption buttons: minimize, maximize, close, in the platform's order and shape.
+ * Close turns red on hover, like the system title bar. Hidden on macOS, where Electron draws the native ones.
  */
 export default function WindowControls() {
-    const [hover, setHover] = useState(false);
     const isMac = typeof window !== "undefined" && /Mac|iPhone|iPod|iPad/.test(navigator.userAgent);
     if (isMac) return null;
 
     const win = () => (window as any).electronAPI?.window;
-    const dots = [
-        { label: "Close", bg: "#ff5f57", rim: "#e0443e", glyph: "#4d0000", onClick: () => win()?.close?.(), path: "M3.5 3.5l5 5M8.5 3.5l-5 5" },
-        { label: "Minimize", bg: "#febc2e", rim: "#dea123", glyph: "#5a3a00", onClick: () => win()?.minimize?.(), path: "M3 6h6" },
-        { label: "Maximize", bg: "#28c840", rim: "#1aab29", glyph: "#003a00", onClick: () => win()?.maximize?.(), path: "M6 3v6M3 6h6" },
+    const buttons = [
+        { label: "Minimize", onClick: () => win()?.minimize?.(), path: "M1 5.5h9", danger: false },
+        { label: "Maximize", onClick: () => win()?.maximize?.(), path: "M1.5 1.5h8v8h-8z", danger: false },
+        { label: "Close", onClick: () => win()?.close?.(), path: "M1 1l9 9M10 1l-9 9", danger: true },
     ];
 
+    // A same-width spacer holds the buttons' place in the header; the buttons sit flush in the window's top-right corner.
     return (
-        <div
-            onMouseEnter={() => setHover(true)}
-            onMouseLeave={() => setHover(false)}
-            style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px", WebkitAppRegion: "no-drag", zIndex: 9999 } as any}
-        >
-            {dots.map((d) => (
+        <>
+        <div aria-hidden style={{ width: 138, flexShrink: 0 }} />
+        <div className="ef-caption-dock">
+            {buttons.map((b) => (
                 <button
-                    key={d.label}
+                    key={b.label}
                     type="button"
-                    onClick={d.onClick}
-                    aria-label={d.label}
-                    title={d.label}
-                    style={{
-                        width: 13, height: 13, borderRadius: "50%", padding: 0, cursor: "pointer",
-                        display: "grid", placeItems: "center", flexShrink: 0,
-                        background: d.bg, border: `0.5px solid ${d.rim}`,
-                        boxShadow: "0 0.5px 1px rgba(0,0,0,0.12)",
-                    }}
+                    onClick={b.onClick}
+                    aria-label={b.label}
+                    title={b.label}
+                    className={b.danger ? "ef-caption-btn ef-caption-close" : "ef-caption-btn"}
                 >
-                    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden style={{ opacity: hover ? 1 : 0, transition: "opacity 0.12s" }}>
-                        <path d={d.path} stroke={d.glyph} strokeWidth="1.3" strokeLinecap="round" fill="none" />
+                    <svg width="11" height="11" viewBox="0 0 11 11" aria-hidden>
+                        <path d={b.path} stroke="currentColor" strokeWidth="1" fill="none" shapeRendering="crispEdges" />
                     </svg>
                 </button>
             ))}
         </div>
+        </>
     );
 }

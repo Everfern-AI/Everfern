@@ -30,6 +30,14 @@ export function logoUrl(domain: string, px: number) {
   return `https://img.logo.dev/${domain}?token=${TOKEN}&size=${size}&format=png&fallback=404`;
 }
 
+/** "https://app.example.com/x" -> "example.com", for logo lookups. */
+function hostOf(url: string) {
+  try {
+    const parts = new URL(url).hostname.replace(/^www\./, "").split(".");
+    return parts.slice(-2).join(".");
+  } catch { return undefined; }
+}
+
 export function AppLogo({
   app,
   size = 30,
@@ -44,7 +52,10 @@ export function AppLogo({
   style?: React.CSSProperties;
 }) {
   const def = typeof app === "string" ? APPS[app] : app;
-  const [failed, setFailed] = useState(false);
+  // Each source that fails to load moves on to the next: product mark, simpleicons, logo.dev, tile, initial.
+  const [failedSrc, setFailedSrc] = useState<Set<string>>(() => new Set());
+  const fail = (k: string) => setFailedSrc((f) => (f.has(k) ? f : new Set(f).add(k)));
+  const ok = (k: string) => !failedSrc.has(k);
   const r = radius ?? Math.round(size * 0.28);
   const box: React.CSSProperties = {
     width: size,
@@ -70,10 +81,20 @@ export function AppLogo({
     </span>;
   }
 
-  if (['files', 'browser', 'websearch', 'search'].includes(def.id)) {
-    return <span className={className} style={{ ...box, background: 'linear-gradient(#fff,#fafafa)', boxShadow: '0 1px 2px #00000012, inset 0 0 0 1px #00000005' }} aria-label={def.name} role="img">
+  // EverFern's own apps: drawn glyphs on a white tile.
+  const ownTile: Record<string, string> = { files: 'files', browser: 'browser', websearch: 'websearch', search: 'websearch', sheets: 'sheets', write: 'write', slides: 'slides' };
+  if (ownTile[def.id]) {
+    return <span className={className} style={{ ...box, background: 'linear-gradient(#fff,#f7f8f9)', boxShadow: '0 1px 2px #00000014, inset 0 0 0 1px #00000008' }} aria-label={def.name} role="img">
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={`/images/logos/${def.id === 'files' ? 'files' : 'browser'}.svg`} alt="" draggable={false} style={{ width: '100%', height: '100%' }} />
+      <img src={`/images/logos/${ownTile[def.id]}.svg`} alt="" draggable={false} style={{ width: '100%', height: '100%' }} />
+    </span>;
+  }
+
+  // Full-colour product marks (Microsoft 365): drawn bare, on a white tile.
+  if (def.img && ok("img")) {
+    return <span className={className} style={{ ...box, background: 'linear-gradient(#fff,#f7f8f9)', boxShadow: '0 1px 2px #00000014, inset 0 0 0 1px #00000008' }} aria-label={def.name} role="img">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={def.img} alt="" draggable={false} onError={() => fail("img")} style={{ width: '70%', height: '70%', objectFit: 'contain' }} />
     </span>;
   }
 
@@ -86,27 +107,20 @@ export function AppLogo({
     );
   }
 
-  if (def.icon && !failed) {
+  if (def.icon && ok("icon")) {
     return (
       <span className={className} style={{ ...box, background: def.iconBg ?? "#fff" }} aria-label={def.name} role="img">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={`https://cdn.simpleicons.org/${def.icon}${def.iconBg ? "/white" : ""}`} alt="" draggable={false} onError={() => setFailed(true)}
+        <img src={`https://cdn.simpleicons.org/${def.icon}${def.iconBg ? "/white" : ""}`} alt="" draggable={false} onError={() => fail("icon")}
           style={{ width: "62%", height: "62%", objectFit: "contain" }} />
       </span>
     );
   }
 
-  if (def.tile) {
-    const Icon = ICONS[def.tile.icon];
-    return (
-      <span className={className} style={{ ...box, background: def.tile.bg, color: def.tile.fg ?? "#fff" }} aria-label={def.name} role="img">
-        <Icon size={Math.round(size * 0.54)} strokeWidth={2} />
-      </span>
-    );
-  }
-
-  const src = def.domain ? logoUrl(def.domain, size) : null;
-  if (src && !failed) {
+  // No domain on file: the app's own web address still names its brand.
+  const domain = def.domain ?? (def.url ? hostOf(def.url) : undefined);
+  const src = domain ? logoUrl(domain, size) : null;
+  if (src && ok("logo")) {
     return (
       <span className={className} style={{ ...box, background: "#fff" }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -117,9 +131,36 @@ export function AppLogo({
           height={size}
           loading="lazy"
           draggable={false}
-          onError={() => setFailed(true)}
+          onError={() => fail("logo")}
           style={{ width: "100%", height: "100%", objectFit: "contain" }}
         />
+      </span>
+    );
+  }
+
+  // logo.dev doesn't know every site: fall back to the site's own favicon before an initial.
+  if (domain && ok("fav")) {
+    return (
+      <span className={className} style={{ ...box, background: "#fff" }} aria-label={def.name} role="img">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=128`}
+          alt=""
+          loading="lazy"
+          draggable={false}
+          onError={() => fail("fav")}
+          onLoad={(e) => { if (e.currentTarget.naturalWidth <= 16 && size > 24) fail("fav"); }}
+          style={{ width: "72%", height: "72%", objectFit: "contain" }}
+        />
+      </span>
+    );
+  }
+
+  if (def.tile) {
+    const Icon = ICONS[def.tile.icon];
+    return (
+      <span className={className} style={{ ...box, background: def.tile.bg, color: def.tile.fg ?? "#fff" }} aria-label={def.name} role="img">
+        <Icon size={Math.round(size * 0.54)} strokeWidth={2} />
       </span>
     );
   }

@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { execFile } from 'child_process';
 import { assertSafeSegment, resolveWithin } from '../lib/path-guard';
 
 export interface SiteMeta {
@@ -13,6 +14,21 @@ export interface SiteMeta {
 }
 
 const SITES_DIR = path.join(os.homedir(), '.everfern', 'sites');
+
+function nativeSiteFile<T>(operation: 'list' | 'read' | 'write' | 'delete', chatId?: string, filename?: string, content?: string): Promise<T> | undefined {
+  const executable = process.env.EF_NATIVE_EXE;
+  if (process.env.EVERFERN_SHELL !== 'tauri' || !executable) return undefined;
+  return new Promise((resolve, reject) => {
+    const child = execFile(executable, ['--ef-site-files'], {
+      windowsHide: true, maxBuffer: 64 * 1024 * 1024,
+    }, (error, stdout) => {
+      if (error) return reject(error);
+      try { resolve(JSON.parse(stdout)); } catch (parseError) { reject(parseError); }
+    });
+    child.stdin?.once('error', reject);
+    child.stdin?.end(JSON.stringify({ operation, chatId, filename, content }));
+  });
+}
 
 /**
  * Helper to check if file/dir exists asynchronously
@@ -30,6 +46,8 @@ async function exists(p: string): Promise<boolean> {
  * Lists all generated sites/reports.
  */
 export async function listSites(chatId?: string): Promise<SiteMeta[]> {
+  const native = nativeSiteFile<SiteMeta[]>('list', chatId);
+  if (native) return native.catch(() => []);
   if (!(await exists(SITES_DIR))) return [];
 
   const results: SiteMeta[] = [];
@@ -76,6 +94,8 @@ export async function listSites(chatId?: string): Promise<SiteMeta[]> {
  * Reads a site file (usually index.html).
  */
 export async function readSiteFile(chatId: string, filename: string): Promise<string | null> {
+  const native = nativeSiteFile<string | null>('read', chatId, filename);
+  if (native) return native;
   const p = resolveWithin(SITES_DIR, assertSafeSegment(chatId, 'site name'), filename);
   if (!(await exists(p))) return null;
   try {
@@ -90,6 +110,8 @@ export async function readSiteFile(chatId: string, filename: string): Promise<st
  */
 export async function writeSiteFile(chatId: string, filename: string, content: string): Promise<{ success: boolean; error?: string }> {
   try {
+    const native = nativeSiteFile<{ success: boolean; error?: string }>('write', chatId, filename, content);
+    if (native) return await native;
     const dir = resolveWithin(SITES_DIR, assertSafeSegment(chatId, 'site name'));
     if (!(await exists(dir))) await fs.promises.mkdir(dir, { recursive: true });
     await fs.promises.writeFile(resolveWithin(dir, filename), content, 'utf-8');
@@ -104,6 +126,8 @@ export async function writeSiteFile(chatId: string, filename: string, content: s
  */
 export async function deleteSite(chatId: string, filename?: string): Promise<{ success: boolean }> {
   try {
+    const native = nativeSiteFile<{ success: boolean }>('delete', chatId, filename);
+    if (native) return await native;
     const site = assertSafeSegment(chatId, 'site name');
     const p = filename ? resolveWithin(SITES_DIR, site, filename) : resolveWithin(SITES_DIR, site);
     if (await exists(p)) {

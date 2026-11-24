@@ -1,5 +1,6 @@
 "use client";
 
+import { Zap as LuZap } from "lucide-react";
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -23,7 +24,6 @@ import { Loader } from '@/components/ui/animated-loading-svg-text-shimmer';
 import { SimpleFileNotification } from './SimpleFileNotification';
 import { GradientBorderSystem } from './GradientBorderSystem';
 import { CursorOverlaySystem } from './CursorOverlaySystem';
-import { normalizeToolName } from '@/lib/tool-utils';
 
 // ── Utility Functions ────────────────────────────────────────────────────────
 /**
@@ -271,7 +271,7 @@ function MultiFileDiffView({ args, output }: { args: any; output?: string }) {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
-              <span style={{ color: 'var(--color-green, #22c55e)', fontSize: 11 }}>⚡</span>
+              <LuZap size={11} strokeWidth={2} color="var(--color-green, #22c55e)" />
               <span style={{ fontWeight: 600, color: 'var(--color-text-primary)', fontSize: 11.5 }}>{file.fileName}</span>
               <span style={{ color: 'var(--color-text-tertiary)', fontSize: 10.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {file.filePath}
@@ -389,7 +389,7 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({ result, index }) =>
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.2, delay: index * 0.03 }}
             onClick={() => window.open(result.url, '_blank')}
-            className="flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--color-bg-hover)] transition-colors cursor-pointer border-b border-[var(--color-border-subtle)] last:border-0"
+            className="flex items-center gap-3 px-4 py-2.5 hover:bg-[#f8fafc] transition-colors cursor-pointer border-b border-[#f1f5f9] last:border-0"
         >
             <div className="flex shrink-0 items-center justify-center w-5 h-5">
                 <img
@@ -404,12 +404,12 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({ result, index }) =>
             </div>
 
             <div className="flex-1 min-w-0">
-                <div className="text-[13px] font-medium text-[var(--color-text-secondary)] truncate leading-none py-0.5">
+                <div className="text-[13px] font-medium text-[#334155] truncate leading-none py-0.5">
                     {title}
                 </div>
             </div>
 
-            <div className="text-[12px] text-[var(--color-text-tertiary)] font-normal shrink-0">
+            <div className="text-[12px] text-[#94a3b8] font-normal shrink-0">
                 {domain}
             </div>
         </motion.article>
@@ -442,7 +442,7 @@ const ToolCallTag = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay;
                     border: looksLikeTerminal ? '1.5px solid rgba(0,0,0,0.15)' : running ? '1.5px solid rgba(0,0,0,0.1)' : errored ? '1.5px solid rgba(239,68,68,0.2)' : '1.5px solid rgba(34,197,94,0.2)',
                 }}>
                     {running ? (
-                        <Loader size={8} strokeWidth={2} className="text-[var(--color-text-tertiary)]" />
+                        <Loader size={8} strokeWidth={2} className="text-zinc-500" />
                     ) : errored ? (
                         <XMarkIcon width={10} height={10} color="#ef4444" strokeWidth={3} />
                     ) : looksLikeTerminal ? (
@@ -493,7 +493,7 @@ const ToolCallTag = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay;
                     tabIndex={0}
                     role="button"
                     aria-pressed={isSelected}
-                    aria-label={`Tool: ${tc.label || normalizeToolName(tc.toolName)}`}
+                    aria-label={`Tool: ${tc.label || tc.toolName}`}
                     style={{
                         display: 'flex', alignItems: 'center', gap: 8,
                         padding: '7px 12px', borderRadius: 10,
@@ -750,7 +750,7 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
         >
             {/* Vertical branch line */}
             {!isLast && (
-                <div className="absolute left-[7px] top-5 bottom-[-4px] w-0.5 bg-[var(--color-border)] z-0" />
+                <div className="absolute left-[7px] top-5 bottom-[-4px] w-0.5 bg-[#e5e7eb] z-0" />
             )}
 
             <div
@@ -769,11 +769,11 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                 tabIndex={0}
                 role="button"
                 aria-pressed={isSelected}
-                aria-label={isSkill ? `Skill - ${skillName || normalizeToolName(tc.toolName)}` : `Tool: ${tc.label || tc.displayName || normalizeToolName(tc.toolName)}`}
+                aria-label={isSkill ? `Skill - ${skillName || tc.toolName}` : `Tool: ${tc.label || tc.displayName || tc.toolName}`}
                 className={`flex items-center gap-3 relative z-1 ${hasOutput ? 'cursor-pointer' : 'cursor-default'} px-3 py-2 rounded-lg transition-all ${
                     isSelected
-                        ? 'bg-[var(--color-bg-active)] border border-indigo-200'
-                        : 'hover:bg-[var(--color-bg-hover)]'
+                        ? 'bg-indigo-50 border border-indigo-200'
+                        : 'hover:bg-gray-50'
                 }`}
                 style={{
                     outline: 'none',
@@ -787,7 +787,7 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                 }}
             >
                 {/* Status Icon / Globe for Search */}
-                <div className="flex items-center justify-center w-4 h-4 bg-[var(--color-bg-elevated)]">
+                <div className="flex items-center justify-center w-4 h-4 bg-white">
                     {isSearchTool ? (
                         <img src="/assets/tool-search.svg" className="w-[18px] h-[18px] opacity-75" alt="Search" />
                     ) : statusIcon}
@@ -795,15 +795,15 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
  
                 {/* Title and Results Count */}
                 <div className="flex items-center gap-2 flex-1 overflow-hidden">
-                    {!isSearchTool && <span className="flex items-center text-[var(--color-text-secondary)]">{iconToDisplay}</span>}
+                    {!isSearchTool && <span className="flex items-center text-[#6b7280]">{iconToDisplay}</span>}
                     <div className="flex-1 flex items-center justify-between overflow-hidden">
-                        <span className={`text-[15px] overflow-hidden text-ellipsis whitespace-nowrap font-normal tracking-[-0.01em] ${isSearchTool ? 'text-[var(--color-text-tertiary)]' : isError ? 'text-[#ef4444]' : 'text-[var(--color-text-primary)]'}`}
+                        <span className={`text-[15px] overflow-hidden text-ellipsis whitespace-nowrap font-normal tracking-[-0.01em] ${isSearchTool ? 'text-[#888888]' : isError ? 'text-[#ef4444]' : 'text-[#111111]'}`}
                             style={{ fontFamily: "'Matter', sans-serif" }}>
-                            {isSkill ? `Skill - ${skillName || tc.label || normalizeToolName(tc.toolName)}` : (tc.label || tc.displayName || normalizeToolName(tc.toolName))}
+                            {isSkill ? `Skill - ${skillName || tc.label || tc.toolName}` : (tc.label || tc.displayName || tc.toolName)}
                         </span>
 
                         {isSearchTool && Array.isArray(tc.data?.results) && (
-                            <span className="text-[13px] text-[var(--color-text-tertiary)] font-normal ml-auto shrink-0 pr-1">
+                            <span className="text-[13px] text-[#888888] font-normal ml-auto shrink-0 pr-1">
                                 {tc.data.results.length} results
                             </span>
                         )}
@@ -815,7 +815,7 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                 {hasOutput && (
                     <motion.span
                         animate={{ rotate: expanded ? 0 : 90 }}
-                        className="flex shrink-0 text-[var(--color-text-tertiary)]"
+                        className="flex shrink-0 text-[#9ca3af]"
                     >
                         <ChevronUpIcon width={14} height={14} strokeWidth={2.5} />
                     </motion.span>
@@ -825,11 +825,11 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                 {isTerminal && hasOutput && !expanded && (
                     <div className="flex items-center gap-1.5">
                         {isError ? (
-                            <div className="text-[11px] text-red-600 bg-[var(--color-error-dim)] px-1.5 py-0.5 rounded font-medium animate-pulse">
+                            <div className="text-[11px] text-red-600 bg-red-100 px-1.5 py-0.5 rounded font-medium animate-pulse">
                                 Failed
                             </div>
                         ) : (
-                            <div className="text-[11px] text-emerald-600 bg-[var(--color-success-dim)] px-1.5 py-0.5 rounded font-medium">
+                            <div className="text-[11px] text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded font-medium">
                                 output
                             </div>
                         )}
@@ -851,10 +851,10 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                             <div className="flex flex-col gap-4 pb-1">
                                 {queries.length > 0 && (
                                     <div>
-                                        <div className="text-[13px] text-[var(--color-text-secondary)] font-medium mb-2" style={{ fontFamily: "'Matter', sans-serif" }}>Querying</div>
+                                        <div className="text-[13px] text-[#6b7280] font-medium mb-2" style={{ fontFamily: "'Matter', sans-serif" }}>Querying</div>
                                         <div className="flex flex-wrap gap-2">
                                             {queries.map((q, i) => (
-                                                <div key={i} className="flex items-center gap-1.5 px-3 py-1.5 rounded-[20px] bg-[var(--color-bg-subtle)] border border-transparent text-[13px] text-[var(--color-text-secondary)] font-medium cursor-default transition-all duration-150 hover:bg-[var(--color-bg-active)]"
+                                                <div key={i} className="flex items-center gap-1.5 px-3 py-1.5 rounded-[20px] bg-[#f3f4f6] border border-transparent text-[13px] text-[#374151] font-medium cursor-default transition-all duration-150 hover:bg-[#e5e7eb]"
                                                     style={{ fontFamily: "'Matter', sans-serif" }}>
                                                     <img src="/assets/tool-search.svg" className="w-3.5 h-3.5 opacity-70" alt="Search" />
                                                     {q}
@@ -865,10 +865,10 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
                                 )}
                                 {docs.length > 0 && (
                                     <div>
-                                        <div className="text-[13px] text-[var(--color-text-secondary)] font-medium mb-2" style={{ fontFamily: "'Matter', sans-serif" }}>Reading</div>
+                                        <div className="text-[13px] text-[#6b7280] font-medium mb-2" style={{ fontFamily: "'Matter', sans-serif" }}>Reading</div>
                                         <div className="flex flex-wrap gap-2 items-center">
                                             {docs.slice(0, 2).map((d, i) => (
-                                                <div key={i} className="flex items-center gap-1.5 px-3 py-1.5 rounded-[20px] bg-[var(--color-bg-subtle)] border border-transparent text-[13px] text-[var(--color-text-secondary)] font-medium cursor-pointer transition-all duration-150 hover:bg-[var(--color-bg-active)]"
+                                                <div key={i} className="flex items-center gap-1.5 px-3 py-1.5 rounded-[20px] bg-[#f3f4f6] border border-transparent text-[13px] text-[#374151] font-medium cursor-pointer transition-all duration-150 hover:bg-[#e5e7eb]"
                                                     style={{ fontFamily: "'Matter', sans-serif" }}>
                                                     <DocumentTextIcon width={14} height={14} color='var(--color-text-primary)' strokeWidth={2} />
                                                     {d}
@@ -935,8 +935,8 @@ const ToolCallRow = ({ tc, isLast, onClick, isSelected }: { tc: ToolCallDisplay,
 const scrollbarStyles = `
   .custom-scrollbar::-webkit-scrollbar { width: 6px; }
   .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-  .custom-scrollbar::-webkit-scrollbar-thumb { background: var(--color-bg-active); border-radius: 10px; }
-  .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: var(--color-text-tertiary); }
+  .custom-scrollbar::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 10px; }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #d1d5db; }
 `;
 
 
@@ -1105,7 +1105,7 @@ const ComputerUseResultCard = ({ tc }: { tc: ToolCallDisplay }) => {
                     </div>
 
                     <div className="flex items-center flex-wrap gap-3 text-xs">
-                        <div className="flex items-center gap-1.5 text-[var(--color-text-secondary)] bg-[var(--color-bg-subtle)] border border-[var(--color-border)] px-3 py-1.5 rounded-[20px]">
+                        <div className="flex items-center gap-1.5 text-[#4b5563] bg-[#f9fafb] border border-[#e5e7eb] px-3 py-1.5 rounded-[20px]">
                             <span className="font-medium">Tool used</span>
                             <div className={`flex items-center gap-1 text-white px-2 py-0.5 rounded-xl text-[11px] font-semibold ${finalStatus === 'executing' ? 'bg-[#3b82f6]' : finalStatus === 'error' ? 'bg-[#ef4444]' : 'bg-[#22c55e]'}`}>
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -1117,12 +1117,12 @@ const ComputerUseResultCard = ({ tc }: { tc: ToolCallDisplay }) => {
                             </div>
                         </div>
                         {finalStatus !== 'executing' && (
-                            <div className="flex items-center gap-1.5 text-[var(--color-text-secondary)] bg-[var(--color-bg-subtle)] border border-[var(--color-border)] px-3 py-1.5 rounded-[20px]">
+                            <div className="flex items-center gap-1.5 text-[#4b5563] bg-[#f9fafb] border border-[#e5e7eb] px-3 py-1.5 rounded-[20px]">
                                 <span>Duration</span>
-                                <span className="font-semibold text-[var(--color-text-primary)]">{(tc.durationMs ? tc.durationMs / 1000 : 2.3).toFixed(1)}s</span>
+                                <span className="font-semibold text-[#111827]">{(tc.durationMs ? tc.durationMs / 1000 : 2.3).toFixed(1)}s</span>
                             </div>
                         )}
-                        <div className="flex items-center gap-1.5 text-[var(--color-text-secondary)] bg-[var(--color-bg-subtle)] border border-[var(--color-border)] px-3 py-1.5 rounded-[20px]">
+                        <div className="flex items-center gap-1.5 text-[#4b5563] bg-[#f9fafb] border border-[#e5e7eb] px-3 py-1.5 rounded-[20px]">
                             <span>Status</span>
                             <span className={`font-semibold ${finalStatus === 'executing' ? 'text-[#3b82f6]' : finalStatus === 'error' ? 'text-[#ef4444]' : 'text-[#22c55e]'}`}>
                                 {finalStatus === 'executing' ? 'Executing...' : finalStatus === 'error' ? 'Error' : 'Success'}
@@ -1167,32 +1167,32 @@ export const LiveToolCallCard = ({ toolName, partialArguments, isStreaming }: Li
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
                 transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                className="rounded-2xl border border-indigo-100 overflow-hidden mb-4 shadow-lg shadow-indigo-500/5 ring-1 ring-indigo-500/10 bg-[var(--color-bg-surface)]"
+                className="rounded-2xl border border-indigo-100 overflow-hidden mb-4 shadow-lg shadow-indigo-500/5 ring-1 ring-indigo-500/10 bg-white"
             >
                 {/* Header */}
-                <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-[var(--color-navis-active-bg)] via-[var(--color-bg-surface)] to-[var(--color-bg-surface)] border-b border-indigo-50">
+                <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-indigo-50/50 via-white to-white border-b border-indigo-50">
                     <div className="relative">
                         <div className="absolute inset-0 bg-indigo-400 rounded-full animate-ping opacity-20" />
-                        <div className="relative flex items-center justify-center w-6 h-6 bg-[var(--color-navis-active-bg)] rounded-full text-indigo-600">
+                        <div className="relative flex items-center justify-center w-6 h-6 bg-indigo-50 rounded-full text-indigo-600">
                             <DocumentTextIcon width={14} height={14} strokeWidth={2.5} />
                         </div>
                     </div>
 
                     <div className="flex flex-col min-w-0">
-                        <span className="text-[13px] font-bold text-[var(--color-text-primary)] flex items-center gap-1.5 leading-none">
+                        <span className="text-[13px] font-bold text-slate-800 flex items-center gap-1.5 leading-none">
                             {fileName || 'Initializing File...'}
                         </span>
                         {directory && (
-                            <span className="text-[10px] text-[var(--color-text-tertiary)] font-mono truncate max-w-[250px] mt-0.5">
+                            <span className="text-[10px] text-slate-400 font-mono truncate max-w-[250px] mt-0.5">
                                 {directory}
                             </span>
                         )}
                     </div>
 
-                    <span className={`ml-auto text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                    <span className={`ml-auto text-[9px] font-bold px-2 py-0.5 rounded-full ${
                         actionType === 'edit'
-                            ? 'text-purple-600 bg-[var(--color-navis-active-bg)] border border-purple-100 animate-pulse'
-                            : 'text-indigo-600 bg-[var(--color-navis-active-bg)] border border-indigo-100 animate-pulse'
+                            ? 'text-purple-600 bg-purple-50 border border-purple-100 animate-pulse'
+                            : 'text-indigo-600 bg-indigo-50 border border-indigo-100 animate-pulse'
                     }`}>
                         {actionType === 'edit' ? 'Streaming Edit' : 'Streaming Write'}
                     </span>
@@ -1213,9 +1213,9 @@ export const LiveToolCallCard = ({ toolName, partialArguments, isStreaming }: Li
                             </div>
                         </div>
                     ) : (
-                        <div className="flex flex-col items-center justify-center py-8 px-4 text-center bg-[var(--color-bg-subtle)]">
+                        <div className="flex flex-col items-center justify-center py-8 px-4 text-center bg-slate-50/50">
                             <Loader size={16} strokeWidth={2.5} className="text-indigo-500 mb-2" />
-                            <span className="text-xs text-[var(--color-text-tertiary)] font-mono">
+                            <span className="text-xs text-slate-400 font-mono">
                                 Waiting for code stream...
                             </span>
                         </div>
@@ -1239,24 +1239,24 @@ export const LiveToolCallCard = ({ toolName, partialArguments, isStreaming }: Li
             transition={{ type: "spring", stiffness: 400, damping: 30 }}
             className={`rounded-2xl border overflow-hidden mb-4 transition-all duration-300 ${
                 isStreaming
-                    ? 'border-[var(--color-border)] shadow-lg shadow-indigo-500/5 ring-1 ring-indigo-500/10'
-                    : 'border-emerald-200 shadow-sm bg-[var(--color-success-dim)]'
+                    ? 'border-[#e2e8f0] shadow-lg shadow-indigo-500/5 ring-1 ring-indigo-500/10'
+                    : 'border-emerald-200 shadow-sm bg-emerald-50/30'
             }`}
         >
             {/* Header */}
             <div className={`flex items-center gap-3 px-4 py-3 ${
-                isStreaming ? 'bg-gradient-to-r from-[var(--color-navis-active-bg)] to-[var(--color-bg-surface)]' : 'bg-[var(--color-success-dim)]'
+                isStreaming ? 'bg-gradient-to-r from-indigo-50/50 to-white' : 'bg-emerald-50/50'
             }`}>
                 <div className="relative">
                     {isStreaming ? (
                         <>
                             <div className="absolute inset-0 bg-indigo-400 rounded-full animate-ping opacity-20" />
-                            <div className="relative flex items-center justify-center w-5 h-5 bg-[var(--color-navis-active-hover)] rounded-full">
+                            <div className="relative flex items-center justify-center w-5 h-5 bg-indigo-100 rounded-full">
                                 <Loader size={12} strokeWidth={2.5} className="text-indigo-600" />
                             </div>
                         </>
                     ) : (
-                        <div className="flex items-center justify-center w-5 h-5 bg-[var(--color-success-dim)] rounded-full">
+                        <div className="flex items-center justify-center w-5 h-5 bg-emerald-100 rounded-full">
                             <CheckIcon width={12} height={12} className="text-emerald-600" strokeWidth={3} />
                         </div>
                     )}
@@ -1264,19 +1264,19 @@ export const LiveToolCallCard = ({ toolName, partialArguments, isStreaming }: Li
 
                 <div className="flex flex-col gap-0.5">
                     <span className={`text-[13px] font-bold tracking-tight ${
-                        isStreaming ? 'text-[var(--color-text-primary)]' : 'text-emerald-900'
+                        isStreaming ? 'text-slate-900' : 'text-emerald-900'
                     }`}>
                         {displayName}
                     </span>
                     {isStreaming && (
-                        <span className="text-[10px] text-indigo-500 font-bold uppercase tracking-widest animate-pulse">
+                        <span className="text-[10px] text-indigo-500 font-boldst animate-pulse">
                             Constructing Tool Call
                         </span>
                     )}
                 </div>
 
                 {!isStreaming && (
-                    <span className="ml-auto text-[11px] text-emerald-600 font-medium bg-[var(--color-success-dim)] px-2 py-0.5 rounded-full">
+                    <span className="ml-auto text-[11px] text-emerald-600 font-medium bg-emerald-100/50 px-2 py-0.5 rounded-full">
                         Ready
                     </span>
                 )}
@@ -1285,8 +1285,8 @@ export const LiveToolCallCard = ({ toolName, partialArguments, isStreaming }: Li
             {/* Arguments Container */}
             {partialArguments && (
                 <div className="relative group">
-                    <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[var(--color-border)] to-transparent opacity-50" />
-                    <pre className="m-0 px-5 py-4 text-[12px] font-mono leading-relaxed text-[var(--color-text-secondary)] bg-[var(--glass-bg)] backdrop-blur-sm overflow-x-auto whitespace-pre-wrap max-h-[300px] custom-scrollbar selection:bg-[var(--color-navis-active-bg)]">
+                    <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent opacity-50" />
+                    <pre className="m-0 px-5 py-4 text-[12px] font-mono leading-relaxed text-slate-700 bg-white/80 backdrop-blur-sm overflow-x-auto whitespace-pre-wrap max-h-[300px] custom-scrollbar selection:bg-indigo-100">
                         <code className="relative">
                             {partialArguments}
                             {isStreaming && (
@@ -1299,7 +1299,7 @@ export const LiveToolCallCard = ({ toolName, partialArguments, isStreaming }: Li
                     </pre>
 
                     {/* Decorative mono label */}
-                    <div className="absolute bottom-2 right-4 px-1.5 py-0.5 rounded border border-[var(--color-border-subtle)] bg-[var(--color-bg-subtle)] text-[9px] font-mono text-[var(--color-text-tertiary)] uppercase tracking-tighter opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="absolute bottom-2 right-4 px-1.5 py-0.5 rounded border border-slate-100 bg-slate-50/50 text-[9px] font-mono text-slate-400 tracking-tighter opacity-0 group-hover:opacity-100 transition-opacity">
                         JSON PARAMS
                     </div>
                 </div>

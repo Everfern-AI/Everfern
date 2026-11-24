@@ -16,7 +16,7 @@ const DEFAULT_PDF_OCR_SETTINGS: PdfOcrConfig = {
 };
 
 const Label = ({ children }: { children: React.ReactNode }) => (
-    <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8, margin: '0 0 8px' }}>
+    <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-tertiary)', marginBottom: 8, margin: '0 0 8px' }}>
         {children}
     </p>
 );
@@ -118,7 +118,7 @@ export default function PdfOcrPanel() {
             </div>
 
             <p style={{ fontSize: 12.5, color: 'var(--color-text-secondary)', lineHeight: 1.55, margin: '0 0 16px' }}>
-                When you attach a PDF, EverFern processes it locally so the AI gets the content automatically — no need for the AI to invoke Python to scan the file. <strong>OCRmyPDF</strong> produces searchable text and sidecar extraction using Tesseract. <strong>Vision Send</strong> takes a screenshot of each page and sends the images to the AI instead.
+                When you attach a PDF, EverFern reads it locally, so the AI gets the text without running a script. <strong>OCRmyPDF</strong> produces searchable text and sidecar extraction using Tesseract. <strong>Vision Send</strong> takes a screenshot of each page and sends the images to the AI instead.
             </p>
 
             {/* Engine selector */}

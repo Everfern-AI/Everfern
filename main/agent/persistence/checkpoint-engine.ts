@@ -12,7 +12,9 @@
  */
 
 import * as crypto from 'crypto';
+import { execFile } from 'child_process';
 import { dbOps } from '../../lib/db';
+import { currentScope } from '../agent-scope';
 import {
   serializeStateToJson,
   deserializeStateFromJsonAsync,
@@ -96,6 +98,43 @@ export interface IncrementalCheckpoint {
  */
 export const AGENT_CHECKPOINTS_TABLE = 'agent_checkpoints';
 
+type NativeCheckpointResult = { handled: boolean; value?: any };
+
+/** Use Rust's checkpoint store in the Tauri shell; Electron keeps its SQL path. */
+function runNativeCheckpointOperation(
+  operation: string,
+  args: Record<string, unknown> = {}
+): Promise<NativeCheckpointResult> | undefined {
+  const executable = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+  if (!executable) return;
+
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = (result: NativeCheckpointResult) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+
+    const child = execFile(executable, ['--ef-agent-checkpoints'], {
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 35000,
+      maxBuffer: 128 * 1024 * 1024,
+    }, (error, output) => {
+      if (error) return finish({ handled: false });
+      try {
+        finish({ handled: true, value: JSON.parse(output) });
+      } catch {
+        finish({ handled: false });
+      }
+    });
+
+    child.stdin?.once('error', () => finish({ handled: false }));
+    child.stdin?.end(JSON.stringify({ operation, scope: currentScope(), ...args }));
+  });
+}
+
 // ── Schema initializer ────────────────────────────────────────────────
 
 /**
@@ -151,6 +190,12 @@ export class CheckpointEngine {
    */
   async initialize(): Promise<void> {
     if (this.initialized) return;
+    const native = await runNativeCheckpointOperation('ensure');
+    if (native?.handled) {
+      this.initialized = true;
+      console.log('[CheckpointEngine] Initialized — Rust agent_checkpoints table ready');
+      return;
+    }
     await ensureAgentCheckpointsTable();
     this.initialized = true;
     console.log('[CheckpointEngine] Initialized — agent_checkpoints table ready');
@@ -235,23 +280,27 @@ export class CheckpointEngine {
       const timestamp = Date.now();
 
       // Store delta checkpoint in database (marked as deltaOnly: true)
-      await dbOps.run(
-        `INSERT INTO ${AGENT_CHECKPOINTS_TABLE}
-           (id, task_id, step_number, timestamp, state_json, state_hash,
-            delta_only, previous_checkpoint_id, compressed)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          id,
-          taskId,
-          stepNumber,
-          timestamp,
-          deltaJson,
-          stateHash,
-          1, // deltaOnly = true
-          previousCheckpoint.id,
-          0, // not compressed for now (delta is usually small)
-        ]
-      );
+      const checkpoint = {
+        id,
+        taskId,
+        stepNumber,
+        timestamp,
+        stateJson: deltaJson,
+        stateHash,
+        deltaOnly: true,
+        previousCheckpointId: previousCheckpoint.id,
+        compressed: false,
+      } satisfies Checkpoint;
+      const native = await runNativeCheckpointOperation('insert', { checkpoint });
+      if (!native?.handled) {
+        await dbOps.run(
+          `INSERT INTO ${AGENT_CHECKPOINTS_TABLE}
+             (id, task_id, step_number, timestamp, state_json, state_hash,
+              delta_only, previous_checkpoint_id, compressed)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [id, taskId, stepNumber, timestamp, deltaJson, stateHash, 1, previousCheckpoint.id, 0]
+        );
+      }
 
       console.log(
         `[CheckpointEngine] Delta checkpoint created: id=${id} task=${taskId} step=${stepNumber} previous=${previousCheckpoint.id}`
@@ -473,6 +522,10 @@ export class CheckpointEngine {
    * Used during delta reconstruction.
    */
   private async getCheckpointById(checkpointId: string): Promise<Checkpoint | null> {
+    const native = await runNativeCheckpointOperation('get', { id: checkpointId });
+    if (native?.handled) {
+      return native.value ? rowToCheckpoint(native.value as Record<string, unknown>) : null;
+    }
     const row = await dbOps.get(
       `SELECT * FROM ${AGENT_CHECKPOINTS_TABLE} WHERE id = ?`,
       [checkpointId]
@@ -498,15 +551,20 @@ export class CheckpointEngine {
     }
 
     try {
-      const compressed = await this._compressStateJson(checkpoint.stateJson);
+      const native = await runNativeCheckpointOperation('compress', { id: checkpoint.id });
+      const compressed = native?.handled && typeof native.value === 'string'
+        ? native.value
+        : await this._compressStateJson(checkpoint.stateJson);
 
       // Update database to mark as compressed
-      await dbOps.run(
-        `UPDATE ${AGENT_CHECKPOINTS_TABLE}
-         SET state_json = ?, compressed = 1
-         WHERE id = ?`,
-        [compressed, checkpoint.id]
-      );
+      if (!native?.handled || typeof native.value !== 'string') {
+        await dbOps.run(
+          `UPDATE ${AGENT_CHECKPOINTS_TABLE}
+           SET state_json = ?, compressed = 1
+           WHERE id = ?`,
+          [compressed, checkpoint.id]
+        );
+      }
 
       console.log(`[CheckpointEngine] Checkpoint ${checkpoint.id} compressed`);
 
@@ -533,6 +591,10 @@ export class CheckpointEngine {
   async getLatestCheckpoint(taskId: string): Promise<Checkpoint | null> {
     await this.initialize();
 
+    const native = await runNativeCheckpointOperation('latest', { taskId });
+    if (native?.handled) {
+      return native.value ? rowToCheckpoint(native.value as Record<string, unknown>) : null;
+    }
     const row = await dbOps.get(
       `SELECT * FROM ${AGENT_CHECKPOINTS_TABLE}
        WHERE task_id = ?
@@ -557,6 +619,10 @@ export class CheckpointEngine {
   ): Promise<Checkpoint | null> {
     await this.initialize();
 
+    const native = await runNativeCheckpointOperation('at-step', { taskId, stepNumber });
+    if (native?.handled) {
+      return native.value ? rowToCheckpoint(native.value as Record<string, unknown>) : null;
+    }
     const row = await dbOps.get(
       `SELECT * FROM ${AGENT_CHECKPOINTS_TABLE}
        WHERE task_id = ? AND step_number = ?
@@ -582,6 +648,10 @@ export class CheckpointEngine {
   ): Promise<Checkpoint[]> {
     await this.initialize();
 
+    const native = await runNativeCheckpointOperation('list', { taskId, limit });
+    if (native?.handled && Array.isArray(native.value)) {
+      return native.value.map((row: Record<string, unknown>) => rowToCheckpoint(row));
+    }
     const rows = await dbOps.all(
       `SELECT * FROM ${AGENT_CHECKPOINTS_TABLE}
        WHERE task_id = ?
@@ -609,6 +679,9 @@ export class CheckpointEngine {
     await this.initialize();
 
     try {
+      const native = await runNativeCheckpointOperation('prune', { taskId, keepCount });
+      if (native?.handled && typeof native.value === 'number') return native.value;
+
       // Get checkpoints to delete (all except last N ordered by step_number DESC, timestamp DESC)
       const oldCheckpoints = await dbOps.all(
         `SELECT id FROM ${AGENT_CHECKPOINTS_TABLE}
@@ -650,6 +723,9 @@ export class CheckpointEngine {
    * Requirement 12.3: Automatic compression when storage exceeds 1GB
    */
   private async _getCheckpointStorageSize(taskId: string): Promise<number> {
+    const native = await runNativeCheckpointOperation('size', { taskId });
+    if (native?.handled && typeof native.value === 'number') return native.value;
+
     const result = await dbOps.get(
       `SELECT COALESCE(SUM(LENGTH(state_json)), 0) as total_bytes
        FROM ${AGENT_CHECKPOINTS_TABLE}
@@ -691,12 +767,15 @@ export class CheckpointEngine {
       );
 
       // Get oldest uncompressed checkpoints
-      const uncompressedCheckpoints = await dbOps.all(
-        `SELECT * FROM ${AGENT_CHECKPOINTS_TABLE}
-         WHERE task_id = ? AND compressed = 0
-         ORDER BY timestamp ASC`,
-        [taskId]
-      );
+      const native = await runNativeCheckpointOperation('uncompressed', { taskId });
+      const uncompressedCheckpoints = native?.handled && Array.isArray(native.value)
+        ? native.value as Record<string, unknown>[]
+        : await dbOps.all(
+            `SELECT * FROM ${AGENT_CHECKPOINTS_TABLE}
+             WHERE task_id = ? AND compressed = 0
+             ORDER BY timestamp ASC`,
+            [taskId]
+          );
 
       let compressed = 0;
 
@@ -746,6 +825,67 @@ export class CheckpointEngine {
   ): Promise<(Checkpoint | FailedCheckpoint)[]> {
     await this.initialize();
 
+    if (process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE) {
+      const checkpoints: (Checkpoint | FailedCheckpoint)[] = [];
+      const persisted: Checkpoint[] = [];
+
+      for (const state of states) {
+        try {
+          const { json: stateJson, compressed } = await serializeStateToJson(state);
+          const checkpoint: Checkpoint = {
+            id: generateCheckpointId(),
+            taskId,
+            stepNumber: (state as unknown as { iterations?: number }).iterations ?? 0,
+            timestamp: Date.now(),
+            stateJson,
+            stateHash: computeHash(stateJson),
+            deltaOnly: false,
+            previousCheckpointId: null,
+            compressed,
+          };
+          persisted.push(checkpoint);
+          checkpoints.push(checkpoint);
+        } catch (error) {
+          console.error('[CheckpointEngine] Failed to create checkpoint in batch:', error);
+          checkpoints.push(this._failedCheckpoint(state, taskId));
+        }
+      }
+
+      const native = await runNativeCheckpointOperation('batch-insert', { checkpoints: persisted });
+      if (native?.handled) {
+        console.log(`[CheckpointEngine] Batch created ${checkpoints.length} checkpoints for task ${taskId}`);
+        return checkpoints;
+      }
+
+      // If the native command is unavailable, retain the Electron SQL transaction path.
+      try {
+        await dbOps.run('BEGIN TRANSACTION');
+        for (let index = 0; index < checkpoints.length; index++) {
+          const checkpoint = checkpoints[index];
+          if ('failed' in checkpoint) continue;
+          try {
+            await dbOps.run(
+              `INSERT INTO ${AGENT_CHECKPOINTS_TABLE}
+                 (id, task_id, step_number, timestamp, state_json, state_hash,
+                  delta_only, previous_checkpoint_id, compressed)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [checkpoint.id, checkpoint.taskId, checkpoint.stepNumber, checkpoint.timestamp,
+                checkpoint.stateJson, checkpoint.stateHash, 0, null, checkpoint.compressed ? 1 : 0]
+            );
+          } catch (error) {
+            console.error('[CheckpointEngine] Failed to create checkpoint in batch:', error);
+            checkpoints[index] = this._failedCheckpoint(states[index], taskId);
+          }
+        }
+        await dbOps.run('COMMIT');
+        console.log(`[CheckpointEngine] Batch created ${checkpoints.length} checkpoints for task ${taskId}`);
+      } catch (error) {
+        console.error('[CheckpointEngine] Batch write transaction failed:', error);
+        await dbOps.run('ROLLBACK').catch(() => {});
+      }
+      return checkpoints;
+    }
+
     const checkpoints: (Checkpoint | FailedCheckpoint)[] = [];
 
     try {
@@ -787,6 +927,21 @@ export class CheckpointEngine {
     }
 
     return checkpoints;
+  }
+
+  private _failedCheckpoint(state: GraphStateType, taskId: string): FailedCheckpoint {
+    return {
+      id: `failed-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      taskId,
+      stepNumber: (state as unknown as { iterations?: number }).iterations ?? 0,
+      timestamp: Date.now(),
+      stateJson: '',
+      stateHash: '',
+      deltaOnly: false,
+      previousCheckpointId: null,
+      compressed: false,
+      failed: true,
+    };
   }
 
   // ── Integrity verification ──────────────────────────────────────────
@@ -843,32 +998,7 @@ export class CheckpointEngine {
     // Generate a unique checkpoint ID
     const id = generateCheckpointId();
     const timestamp = Date.now();
-
-    // Persist to database asynchronously (non-blocking relative to agent execution)
-    // Requirement 12.2: Asynchronous I/O for database writes
-    await dbOps.run(
-      `INSERT INTO ${AGENT_CHECKPOINTS_TABLE}
-         (id, task_id, step_number, timestamp, state_json, state_hash,
-          delta_only, previous_checkpoint_id, compressed)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id,
-        taskId,
-        stepNumber,
-        timestamp,
-        stateJson,
-        stateHash,
-        deltaOnly ? 1 : 0,
-        previousCheckpointId,
-        compressed ? 1 : 0,
-      ]
-    );
-
-    console.debug(
-      `[CheckpointEngine] Checkpoint created: id=${id} task=${taskId} step=${stepNumber} compressed=${compressed}`
-    );
-
-    return {
+    const checkpoint: Checkpoint = {
       id,
       taskId,
       stepNumber,
@@ -879,6 +1009,26 @@ export class CheckpointEngine {
       previousCheckpointId,
       compressed,
     };
+
+    // Persist to database asynchronously (non-blocking relative to agent execution)
+    // Requirement 12.2: Asynchronous I/O for database writes
+    const native = await runNativeCheckpointOperation('insert', { checkpoint });
+    if (!native?.handled) {
+      await dbOps.run(
+        `INSERT INTO ${AGENT_CHECKPOINTS_TABLE}
+           (id, task_id, step_number, timestamp, state_json, state_hash,
+            delta_only, previous_checkpoint_id, compressed)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, taskId, stepNumber, timestamp, stateJson, stateHash,
+          deltaOnly ? 1 : 0, previousCheckpointId, compressed ? 1 : 0]
+      );
+    }
+
+    console.debug(
+      `[CheckpointEngine] Checkpoint created: id=${id} task=${taskId} step=${stepNumber} compressed=${compressed}`
+    );
+
+    return checkpoint;
   }
 
   /**

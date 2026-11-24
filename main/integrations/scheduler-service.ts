@@ -9,6 +9,7 @@ import { AgentRunner } from '../agent/runner/runner';
 import { getPooledAIClient } from '../lib/ai-client';
 import { ChatHistoryStore } from '../store/history';
 import * as crypto from 'crypto';
+import { execFileSync } from 'child_process';
 
 export class SchedulerService {
   private interval: NodeJS.Timeout | null = null;
@@ -19,6 +20,7 @@ export class SchedulerService {
    * Start the scheduler.
    */
   start() {
+    if (process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE) return;
     if (this.interval) return;
 
     console.log('[Scheduler] Starting scheduler service...');
@@ -47,9 +49,9 @@ export class SchedulerService {
     try {
       const tasks = await scheduledTasksStore.list();
       const now = new Date();
-
       for (const task of tasks) {
         if (!task.enabled) continue;
+
 
         // Check if task has expired
         if (task.endsAt && new Date() > new Date(task.endsAt)) {
@@ -58,19 +60,33 @@ export class SchedulerService {
           continue;
         }
 
-        if (this.shouldRun(task, now)) {
-          if (!this.runningTasks.has(task.id)) {
-            // Do not await, let it run in background to allow other tasks to start
-            this.runTask(task).catch(err => console.error('[Scheduler] runTask error:', err));
-          } else {
-            console.log(`[Scheduler] ⏳ Task ${task.id} is already running, skipping this interval.`);
-          }
-        }
+        if (this.shouldRun(task, now)) this.dispatchDueTask(task);
       }
     } catch (err) {
       console.error('[Scheduler] Error checking tasks:', err);
     } finally {
       this.isRunning = false;
+    }
+  }
+
+  private dispatchDueTask(task: ScheduledTask): void {
+    if (!this.runningTasks.has(task.id)) {
+      this.runTask(task).catch(err => console.error('[Scheduler] runTask error:', err));
+    } else {
+      console.log(`[Scheduler] Task ${task.id} is already running, skipping this interval.`);
+    }
+  }
+
+  dispatchNativeTasks(tasks: Pick<ScheduledTask, 'id' | 'updatedAt'>[]): void {
+    for (const task of tasks) {
+      if (this.runningTasks.has(task.id)) continue;
+      const preparation = scheduledTasksStore.prepareNativeRun(task);
+      if (!preparation) continue;
+      this.runningTasks.add(task.id);
+      void (async () => {
+        const prepared = await preparation.finally(() => this.runningTasks.delete(task.id));
+        if (prepared) await this.runTask(prepared.task, 1, prepared.conversationId);
+      })().catch(error => console.error('[Scheduler] Failed to prepare scheduled run:', error));
     }
   }
 
@@ -106,6 +122,15 @@ export class SchedulerService {
    * Static so it can be used by the Store or other services.
    */
   public static calculateNextRun(cron: string, lastRun?: Date, startsAt?: string): Date {
+    const executable = process.env.EF_NATIVE_EXE;
+    if (process.env.EVERFERN_SHELL === 'tauri' && executable) {
+      const response = execFileSync(executable, ['--ef-task-next-run'], {
+        input: JSON.stringify({ cron, lastRun, startsAt }),
+        encoding: 'utf8',
+        windowsHide: true,
+      });
+      return new Date(JSON.parse(response));
+    }
     const now = new Date();
     let baseDate: Date;
 
@@ -196,7 +221,7 @@ export class SchedulerService {
     return next;
   }
 
-  private async runTask(task: ScheduledTask, attempt: number = 1) {
+  private async runTask(task: ScheduledTask, attempt: number = 1, preparedConversationId?: string) {
     if (this.runningTasks.has(task.id) && attempt === 1) return;
     this.runningTasks.add(task.id);
     
@@ -204,18 +229,19 @@ export class SchedulerService {
 
     try {
       // 1. Create a new conversation for this task
-      const conversationId = `scheduled-${task.id}-${Date.now()}`;
-      const historyStore = new ChatHistoryStore();
-      
-      await historyStore.save({
-        id: conversationId,
-        title: `Scheduled: ${task.name || task.description}`,
-        projectId: task.projectId,
-        provider: 'ollama',
-        messages: [],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      });
+      const nativeId = preparedConversationId;
+      const conversationId = nativeId ?? `scheduled-${task.id}-${Date.now()}`;
+      if (!nativeId) {
+        await new ChatHistoryStore().save({
+          id: conversationId,
+          title: `Scheduled: ${task.name || task.description}`,
+          projectId: task.projectId,
+          provider: 'ollama',
+          messages: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+      }
 
       // 2. Initialize AgentRunner
       const client = getPooledAIClient({ provider: 'ollama', model: 'llama3' });
@@ -223,7 +249,7 @@ export class SchedulerService {
 
       // 3. Update next run time IMMEDIATELY to prevent double execution 
       // if the checkTasks interval hits again before updating
-      if (attempt === 1) {
+      if (attempt === 1 && !preparedConversationId) {
         const now = new Date();
         const nextRun = SchedulerService.calculateNextRun(task.cron, now, task.startsAt);
         await scheduledTasksStore.updateRunTimes(task.id, now.toISOString(), nextRun.toISOString());
@@ -236,7 +262,7 @@ export class SchedulerService {
 
       (async () => {
         try {
-          const stream = runner.runStream(task.prompt, [], client.model, conversationId, undefined, task.projectId, false, undefined, true);
+          const stream = runner.runStream(task.prompt, [], client.model, conversationId, undefined, task.projectId ?? undefined, false, undefined, true);
           for await (const event of stream) {
             // Processing...
           }
@@ -246,7 +272,12 @@ export class SchedulerService {
           console.error(`[Scheduler] ❌ Task failed: ${task.name || task.description}`, err);
           this.runningTasks.delete(task.id);
           
-          if (attempt < MAX_RETRIES) {
+          const retry = scheduledTasksStore.prepareNativeRetry(task, attempt + 1);
+          if (retry) {
+            void retry.then(id => {
+              if (id) return this.runTask(task, attempt + 1, id);
+            }).catch(error => console.error('[Scheduler] Failed to prepare scheduled retry:', error));
+          } else if (attempt < MAX_RETRIES) {
             const delayMs = Math.pow(2, attempt) * 5000; // 10s, 20s
             console.log(`[Scheduler] 🔄 Retrying task ${task.id} in ${delayMs}ms (Attempt ${attempt + 1}/${MAX_RETRIES})...`);
             setTimeout(() => this.runTask(task, attempt + 1), delayMs);

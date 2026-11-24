@@ -13,6 +13,7 @@ import * as os from 'os';
 import { acpManager } from '../acp/manager';
 import { AIClient } from './ai-client';
 import { dbOps } from './db';
+import { nativeHistoryOperation } from '../store/history';
 
 interface TitleOptions {
   providerType?: string;
@@ -93,6 +94,19 @@ function getClient(options?: TitleOptions): AIClient | null {
   return null;
 }
 
+async function saveGeneratedTitle(conversationId: string, title: string): Promise<void> {
+  const native = nativeHistoryOperation<{ success: boolean; error?: string }>('updateTitle', { id: conversationId, title });
+  if (native) {
+    const result = await native;
+    if (!result.success) throw new Error(result.error || 'Could not save generated title');
+    return;
+  }
+  await dbOps.run(
+    'UPDATE conversations SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+    [title, conversationId]
+  );
+}
+
 async function generateTitle(conversationId: string, firstMessage: string, options?: TitleOptions): Promise<void> {
   if (!conversationId || !firstMessage || firstMessage.trim().length === 0) return;
 
@@ -100,10 +114,7 @@ async function generateTitle(conversationId: string, firstMessage: string, optio
   const cleanInput = firstMessage.replace(/\[Shared folder context\][\s\S]*$/i, '').trim();
   if (!cleanInput) {
     try {
-      await dbOps.run(
-        `UPDATE conversations SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-        ['Shared Workspace', conversationId]
-      );
+      await saveGeneratedTitle(conversationId, 'Shared Workspace');
       const windows = BrowserWindow.getAllWindows();
       for (const window of windows) {
         if (!window.isDestroyed()) {
@@ -148,10 +159,7 @@ async function generateTitle(conversationId: string, firstMessage: string, optio
     if (!title || title.length < 2) return;
 
     // Update the title in the central SQLite DB
-    await dbOps.run(
-      `UPDATE conversations SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-      [title, conversationId]
-    );
+    await saveGeneratedTitle(conversationId, title);
 
     console.log(`[ChatTitle] ✅ Auto-titled conversation ${conversationId}: "${title}"`);
 

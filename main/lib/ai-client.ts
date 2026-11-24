@@ -14,7 +14,7 @@
 import { DebugEmitter } from './debug';
 import OpenAI from 'openai';
 import { nativeFetch } from './native-fetch';
-import { CLOUD_MODEL_MAP } from './providers';
+import { CLOUD_MODEL_MAP, DEFAULT_CHAT_MODELS } from './providers';
 
 // ── Local URL Normalization ─────────────────────────────────────────
 
@@ -212,6 +212,8 @@ export interface ChatRequest {
   reasoningEffort?: 'low' | 'medium' | 'high' | 'ultra' | 'ultra-delegate';
   /** Agent/node name sent to EverFern Cloud for backend model routing (e.g. 'navis', 'coding_specialist', 'web_explorer') */
   agent?: string;
+  /** Plain text call: never add the computer-use tools, so the model must answer in text. */
+  noTools?: boolean;
 }
 
 export interface ChatResponse {
@@ -282,20 +284,7 @@ const DEFAULT_URLS: Record<ProviderType, string> = {
   openrouter: 'https://openrouter.ai/api/v1',
 };
 
-const DEFAULT_MODELS: Record<ProviderType, string> = {
-  openai: 'gpt-5.5',
-  anthropic: 'claude-sonnet-4-6',
-  deepseek: 'deepseek-v4-pro',
-  minimax: 'MiniMax-M3',
-  everfern: 'openai/gpt-5.6-luna',
-  gemini: 'gemini-3.5-flash',
-  ollama: 'llama3',
-  'ollama-cloud': 'qwen3-vl:235b-cloud',
-  llamacpp: 'local-model',
-  lmstudio: 'local-model',
-  nvidia: 'meta/llama-3.1-8b-instruct',
-  openrouter: 'openai/gpt-5.2',
-};
+
 
 const GEMINI_COMPUTER_USE_TOOLS = [
   {
@@ -579,7 +568,7 @@ export class AIClient {
       provider: config.provider,
       apiKey: finalApiKey,
       baseUrl: finalBaseUrl,
-      model: normalizedModel ?? DEFAULT_MODELS[config.provider],
+      model: normalizedModel ?? DEFAULT_CHAT_MODELS[config.provider],
       customModel: config.customModel,
       temperature: config.temperature ?? (config.provider === 'nvidia' ? 0.1 : 0.7),
       maxTokens: config.maxTokens ?? (config.provider === 'nvidia' ? 16383 : config.provider === 'openrouter' ? 8192 : 4096),
@@ -651,7 +640,7 @@ export class AIClient {
           });
           result.then(
             (res) => console.log(`[AIClient Fetch] Response: ${res.status} ${res.statusText} from ${url}`),
-            (err) => console.error(`[AIClient Fetch] Error:`, err)
+            (err: any) => console.error(`[AIClient Fetch] Error from ${url}: ${err?.name ?? 'Error'}: ${err?.message ?? String(err)}${err?.cause ? ` (cause: ${err.cause?.code ?? err.cause?.message ?? String(err.cause)})` : ''}`)
           );
           return result;
         }
@@ -801,7 +790,7 @@ export class AIClient {
     const lower = modelName.toLowerCase();
     const isGeminiModel = lower.includes('gemini');
     const isGpt5Model = lower.includes('gpt-5') || lower.includes('openai/gpt-5');
-    const needsTools = (isGeminiModel || isGpt5Model) && !req.tools?.length &&
+    const needsTools = !req.noTools && (isGeminiModel || isGpt5Model) && !req.tools?.length &&
       (this.config.provider === 'everfern' || this.config.provider === 'openrouter');
     if (needsTools) {
       options.tools = GEMINI_COMPUTER_USE_TOOLS.map(t => ({
@@ -1919,6 +1908,11 @@ export class AIClient {
       case 'anthropic': return this._anthropicListModels();
       default: return this._openAICompatListModels();
     }
+  }
+
+  providerHealthConfig() {
+    const { provider, baseUrl, apiKey } = this.config;
+    return { provider, baseUrl, apiKey };
   }
 
   async healthCheck(): Promise<{ ok: boolean; latencyMs?: number; error?: string; reason?: string }> {

@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron';
 import { projectsStore } from '../store/projects/projects';
 import { resolveWithin } from '../lib/path-guard';
+import { getNative } from '../lib/native';
 
 function mimeFromExt(ext: string): string {
   const clean = ext.replace(/^\./, '').toLowerCase();
@@ -86,6 +87,15 @@ export function registerProjectsHandlers() {
   });
 
   ipcMain.handle('projects:listFiles', async (_event, projectPath: string) => {
+    // Rust walk runs off the main thread; the JS walk below blocks it.
+    const native = projectPath ? getNative() : null;
+    if (native) {
+      try {
+        return { files: await native.listProjectFiles(projectPath) };
+      } catch (err) {
+        console.warn('[Projects] Native listFiles failed, using JS fallback:', err);
+      }
+    }
     const fs = require('fs');
     const path = require('path');
     const results: string[] = [];

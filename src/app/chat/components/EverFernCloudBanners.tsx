@@ -1,5 +1,6 @@
 "use client";
 
+import { Leaf as LuLeaf } from "lucide-react";
 import React from 'react';
 import { useTheme } from '@/components/ThemeProvider';
 
@@ -20,7 +21,7 @@ export function EverFernCloudLimitNotice() {
                 width: 34, height: 34, borderRadius: 10, flexShrink: 0,
                 backgroundColor: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 18,
-            }}>🌿</div>
+            }}><LuLeaf size={18} strokeWidth={1.75} color="#fff" /></div>
             <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 4 }}>
                     You've reached your EverFern Cloud daily limit

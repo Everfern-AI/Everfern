@@ -1,7 +1,10 @@
+import { currentScope } from '../agent-scope';
 import { IntentType, IntentClassification } from './state';
 import type { AIClient } from '../../lib/ai-client';
 import { normalizeMessages } from './services/message-utils';
-import { loadSoul, loadAgents } from '../personality-manager';
+import { loadPersonalityConfigs } from '../personality-manager';
+import { createHash } from 'crypto';
+import { execFile } from 'child_process';
 
 // ── Triage AI Prompt ─────────────────────────────────────────────────
 
@@ -147,6 +150,67 @@ export function classifyIntentFallback(userInput: string, history: any[] = []): 
   };
 }
 
+async function nativeTriage<T = IntentClassification>(
+  mode: '--ef-triage-fallback' | '--ef-triage-fast' | '--ef-triage-parse' | '--ef-triage-prompt' | '--ef-triage-finalize',
+  input: object,
+): Promise<T | null | undefined> {
+  const executable = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+  if (executable) {
+    return new Promise<T | null | undefined>(resolve => {
+      const child = execFile(executable, [mode], {
+        encoding: 'utf8', windowsHide: true, timeout: 5000,
+      }, (error, output) => {
+        if (error) return resolve(undefined);
+        try { resolve(JSON.parse(output)); } catch { resolve(undefined); }
+      });
+      child.stdin?.once('error', () => resolve(undefined));
+      child.stdin?.end(JSON.stringify(input));
+    });
+  }
+}
+
+export async function finalizeIntentClassification(classification: IntentClassification, operatorMode: boolean): Promise<IntentClassification> {
+  if (classification.intent !== 'operator') return classification;
+  const native = await nativeTriage('--ef-triage-finalize', { classification, operatorMode });
+  if (native) return native;
+  return operatorMode ? classification : {
+    intent: 'task',
+    confidence: Math.min(classification.confidence, 0.75),
+    reasoning: 'Operator mode requires the user to enable Pursue goal manually.',
+  };
+}
+
+async function classifyIntentFallbackForDesktop(userInput: string, history: any[]): Promise<IntentClassification> {
+  return await nativeTriage('--ef-triage-fallback', { userInput }) ?? classifyIntentFallback(userInput, history);
+}
+
+async function classifyIntentFastForDesktop(userInput: string, history: any[]): Promise<IntentClassification | null> {
+  if (process.env.EVERFERN_SHELL !== 'tauri' || !process.env.EF_NATIVE_EXE) {
+    return classifyIntentFast(userInput, history);
+  }
+  const previous = [...history].reverse().find(msg => msg.role === 'user' || msg.type === 'human' || msg._getType?.() === 'human');
+  const content = previous?.content;
+  const text = typeof content === 'string' ? content : Array.isArray(content)
+    ? content.filter(item => item?.type === 'text' || typeof item === 'string')
+      .map(item => typeof item === 'string' ? item : item.text || '').join(' ')
+    : '';
+  let cachedIntent: IntentType | undefined;
+  if (previous) {
+    for (const [key, entry] of intentCache) {
+      if (key.startsWith(text.trim() + ':')) {
+        cachedIntent = entry.intent;
+        break;
+      }
+    }
+  }
+  const attachmentMetadata = (item: any) => ({
+    type: item?.type, name: item?.name, path: item?.path, file: Boolean(item?.file),
+  });
+  const previousContent = Array.isArray(content) ? content.map(attachmentMetadata) : attachmentMetadata(content);
+  const result = await nativeTriage('--ef-triage-fast', { userInput, cachedIntent, previousContent });
+  return result === undefined ? classifyIntentFast(userInput, history) : result;
+}
+
 export function classifyIntentFast(userInput: string, history: any[] = []): IntentClassification | null {
   const normalized = userInput.toLowerCase().trim();
 
@@ -188,7 +252,22 @@ export function classifyIntentFast(userInput: string, history: any[] = []): Inte
 
 // ── Main AI Classification ────────────────────────────────────────────
 
+// Keys are `${userInput}:${sha1(history)}:${operatorMode}`. The history used to be inlined
+// raw (image base64 included), so one entry could hold megabytes and nothing evicted them.
 const intentCache = new Map<string, IntentClassification>();
+const INTENT_CACHE_MAX = 200;
+
+export function setIntentCacheEntry(key: string, value: IntentClassification): void {
+  intentCache.delete(key);
+  intentCache.set(key, value);
+  while (intentCache.size > INTENT_CACHE_MAX) {
+    intentCache.delete(intentCache.keys().next().value as string);
+  }
+}
+
+export function getIntentCacheSize(): number {
+  return intentCache.size;
+}
 
 export function clearIntentCache(): void {
   intentCache.clear();
@@ -227,24 +306,25 @@ export async function classifyIntent(
         : JSON.stringify(m.content || '');
     return `${role}:${content}`;
   }).join('|');
-  const cacheKey = `${targetUserInput.trim()}:${historyKey}:${!!operatorMode}`;
+  const historyHash = createHash('sha1').update(historyKey).digest('hex');
+  const cacheKey = `${targetUserInput.trim()}:${historyHash}:${!!operatorMode}`;
   if (intentCache.has(cacheKey)) {
     return intentCache.get(cacheKey)!;
   }
 
   const cacheAndReturn = (result: IntentClassification) => {
-    intentCache.set(cacheKey, result);
+    setIntentCacheEntry(cacheKey, result);
     return result;
   };
 
   // Check fast classification first (Requirement: short affirmatives context inheritance)
-  const fast = classifyIntentFast(targetUserInput, history);
+  const fast = await classifyIntentFastForDesktop(targetUserInput, history);
   if (fast) {
     return cacheAndReturn(fast);
   }
 
   if (!client) {
-    return cacheAndReturn(classifyIntentFallback(targetUserInput, history));
+    return cacheAndReturn(await classifyIntentFallbackForDesktop(targetUserInput, history));
   }
 
   try {
@@ -253,7 +333,7 @@ export async function classifyIntent(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(`[Triage] AI classification failed: ${msg}. Falling back to default task.`);
-    return cacheAndReturn(classifyIntentFallback(targetUserInput, history));
+    return cacheAndReturn(await classifyIntentFallbackForDesktop(targetUserInput, history));
   }
 }
 
@@ -280,23 +360,31 @@ export async function classifyIntentAI(
     }
   }
 
-  const historySnippet = normalized.slice(-5).map(m => {
-    const role = (m.role || 'user').toUpperCase();
-    let content = '';
-    if (typeof m.content === 'string') {
-      content = m.content.slice(0, 200);
-    } else if (Array.isArray(m.content)) {
-      const textParts = m.content.filter((item: any) => item.type === 'text' || typeof item === 'string');
-      content = textParts.map((item: any) => typeof item === 'string' ? item : item.text || '').join(' ').slice(0, 200);
-      const hasFiles = m.content.some((item: any) => item.type === 'file' || item.type === 'image_url');
-      if (hasFiles) content += ' [FILE ATTACHED]';
-    }
-    return `[${role}]: ${content}`;
-  }).join('\n');
+  const messages = normalized.slice(-5).map(({ role, content }) => {
+    if (typeof content === 'string') return { role, text: content, hasFiles: false };
+    const parts = Array.isArray(content) ? content : [];
+    const text = parts.filter((item: any) => item.type === 'text' || typeof item === 'string')
+      .map((item: any) => typeof item === 'string' ? item : item.text || '').join(' ');
+    const hasFiles = parts.some((item: any) => item.type === 'file' || item.type === 'image_url');
+    return { role, text, hasFiles };
+  });
 
-  const soulContent = loadSoul(workspaceRoot);
-  const agentsContent = loadAgents(workspaceRoot);
-  const triageSystemPrompt = `${TRIAGE_SYSTEM_PROMPT}\n\n# PERSONALITY & BEHAVIOR CORE (SOUL.md)\n${soulContent}\n\n# SUB-AGENTS & ROUTING RULES (AGENTS.md)\n${agentsContent}`;
+  const { soul: soulContent, agents: agentsContent } = loadPersonalityConfigs(workspaceRoot);
+  // Fern's personality and sub-agent routing belong to the chat; a worker run is triaged on the plain rules.
+  const worker = currentScope() === 'worker';
+  const prompt = await nativeTriage<{system: string; user: string}>('--ef-triage-prompt', {
+    system: TRIAGE_SYSTEM_PROMPT, soul: soulContent, agents: agentsContent, worker,
+    userInput: targetUserInput, messages, operatorMode: !!operatorMode,
+  });
+  const triageUserPrompt = prompt?.user ?? TRIAGE_USER_TEMPLATE(targetUserInput, messages.map(({ role, text, hasFiles }) =>
+    `[${(role || 'user').toUpperCase()}]: ${text.slice(0, 200)}${hasFiles ? ' [FILE ATTACHED]' : ''}`).join('\n'), !!operatorMode);
+  const triageSystemPrompt = prompt?.system ?? (worker ? TRIAGE_SYSTEM_PROMPT : `${TRIAGE_SYSTEM_PROMPT}
+
+# PERSONALITY & BEHAVIOR CORE (SOUL.md)
+${soulContent}
+
+# SUB-AGENTS & ROUTING RULES (AGENTS.md)
+${agentsContent}`);
 
   const isLocal = client?.isLocal?.();
   const timeoutMs = isLocal ? 60000 : (process.env.VITEST ? 1500 : 5000);
@@ -309,11 +397,11 @@ export async function classifyIntentAI(
   try {
     const chatPromise = client.chat({
       messages: process.env.VITEST ? [
-        { role: 'user', content: TRIAGE_USER_TEMPLATE(targetUserInput, historySnippet, !!operatorMode) },
+        { role: 'user', content: triageUserPrompt },
         { role: 'system', content: triageSystemPrompt },
       ] : [
         { role: 'system', content: triageSystemPrompt },
-        { role: 'user', content: TRIAGE_USER_TEMPLATE(targetUserInput, historySnippet, !!operatorMode) },
+        { role: 'user', content: triageUserPrompt },
       ],
       responseFormat: 'json',
       temperature: 0.2,
@@ -323,6 +411,9 @@ export async function classifyIntentAI(
     const response = await Promise.race([chatPromise, timeoutPromise]) as any;
 
     let content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+    const parsed = await nativeTriage('--ef-triage-parse', { content });
+    if (parsed) return parsed;
+    if (parsed === null) return classifyIntentFallbackForDesktop(userInput, history);
     content = content.replace(/<think>[\s\S]*?<\/think>/g, '');
     content = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
 
@@ -335,7 +426,7 @@ export async function classifyIntentAI(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(`[Triage] AI classification failed/timed out: ${msg}. Falling back to default task.`);
-    return classifyIntentFallback(userInput, history);
+    return classifyIntentFallbackForDesktop(userInput, history);
   } finally {
     if (timerId) {
       clearTimeout(timerId);

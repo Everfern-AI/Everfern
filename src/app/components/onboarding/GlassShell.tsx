@@ -24,6 +24,9 @@ export type AlpsPhoto = keyof typeof ALPS_PHOTOS;
 export const photoUrl = (id: string) =>
   `https://images.unsplash.com/${id}?auto=format&fit=crop&q=70&w=1600`;
 
+/** Welcome + sign-in + the 11 setup steps, so the dots count one flow. */
+export const ONBOARDING_STEPS = 13;
+
 export const EASE = [0.22, 1, 0.36, 1] as const;
 
 export function GlassShell({
@@ -37,7 +40,7 @@ export function GlassShell({
   children: React.ReactNode;
   photo?: AlpsPhoto;
   blur?: number;
-  /** [current (1-based), total] — renders progress dots in the bottom bar */
+  /** [current (1-based), total] across the whole flow (welcome, sign-in, then each setup step) */
   progress?: [number, number];
   bottomLeft?: React.ReactNode;
   bottomRight?: React.ReactNode;
@@ -92,7 +95,7 @@ export function GlassShell({
 
       {/* Bottom bar */}
       <div className="ef-bottombar">
-        <div className="ef-bottombar-side">{bottomLeft}</div>
+        <div className="ef-bottombar-side"><div id="ef-back-slot" style={{ display: "contents" }} />{bottomLeft}</div>
         {progress ? (
           <div className="ef-dots" aria-label={`Step ${progress[0]} of ${progress[1]}`}>
             {Array.from({ length: progress[1] }).map((_, i) => (

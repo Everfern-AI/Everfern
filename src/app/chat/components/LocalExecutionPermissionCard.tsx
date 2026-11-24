@@ -144,7 +144,7 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
                 ) : shellType === "Skill Creation" ? (
                   "Allow EverFern to save a new reusable skill?"
                 ) : shellType === "Security Check" ? (
-                  "⚠️ Security check — review action before proceeding"
+                  "Security check — review action before proceeding"
                 ) : (
                   `Allow ${agentName} to execute a command?`
                 )}
@@ -175,8 +175,6 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
               border: "1px solid var(--color-border)",
               padding: "3px 10px",
               borderRadius: 20,
-              letterSpacing: "0.02em",
-              textTransform: "uppercase",
               fontFamily: "var(--font-sans)",
             }}
           >

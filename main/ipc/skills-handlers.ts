@@ -1,4 +1,5 @@
 import { ipcMain } from 'electron';
+import { invalidateSkillsCache } from '../agent/runner/skills-loader';
 import { syncBuiltInSkills, mergeCustomSkills, getCustomSkillsPath, listCustomSkills, listAllSkills, saveCustomSkill, deleteCustomSkill } from '../lib/skills-sync';
 
 export function registerSkillsHandlers() {
@@ -14,6 +15,7 @@ export function registerSkillsHandlers() {
     const result = saveCustomSkill(data);
     if (result.success) {
       mergeCustomSkills();
+      invalidateSkillsCache();
     }
     return result;
   });
@@ -23,6 +25,7 @@ export function registerSkillsHandlers() {
     if (result.success) {
       syncBuiltInSkills();
       mergeCustomSkills();
+      invalidateSkillsCache();
     }
     return result;
   });
@@ -30,4 +33,7 @@ export function registerSkillsHandlers() {
   ipcMain.handle('skills:get-custom-path', async () => {
     return getCustomSkillsPath();
   });
+
+  // Under Tauri the Rust shell saves and deletes skills, then tells Node to reload them.
+  ipcMain.on('skills:changed', () => invalidateSkillsCache());
 }

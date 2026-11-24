@@ -1,6 +1,7 @@
 import { spawn, ChildProcess, execSync } from 'child_process';
 import * as os from 'os';
 import * as path from 'path';
+import { getNativeTerminalDaemon, hasNativeTerminal } from './native-daemon';
 
 export interface CommandInfo {
   id: string;
@@ -73,6 +74,7 @@ export class CommandRegistry {
   private wslAvailable: boolean | null = null;
   private wslCmdName: string = 'wsl.exe';
   private lastWslCheck: number = 0;
+  private nativeDockerReady = false;
   private readonly WSL_RECHECK_MS: number = 30000;
   private pendingMarkers: Map<'main' | 'vm', { id: string; marker: string; output: string; target: 'main' | 'vm' } | null> = new Map();
 
@@ -119,7 +121,9 @@ export class CommandRegistry {
       })();
       this.lastWslCheck = Date.now();
       console.log(`[CommandRegistry] checkWslAvailable: testing ${this.wslCmdName} with 15s timeout...`);
-      execSync(`${this.wslCmdName} -e echo ok`, { stdio: 'ignore', timeout: 15000 });
+      // Probe EverFern's own Alpine distro, never the user's default WSL distro.
+      const { ALPINE_DISTRO } = require('../alpine-vm');
+      execSync(`${this.wslCmdName} -d ${ALPINE_DISTRO} -u root -e echo ok`, { stdio: 'ignore', timeout: 15000 });
       this.wslAvailable = true;
       console.log(`[CommandRegistry] checkWslAvailable: ${this.wslCmdName} OK`);
     } catch (err: any) {
@@ -174,15 +178,25 @@ export class CommandRegistry {
       if (target === 'vm') {
         const isWslAvailable = await this.checkWslAvailable();
         if (!isWslAvailable) {
-          throw new Error('Linux VM (WSL) is not available on this system.');
+          throw new Error('The EverFern Linux VM (Alpine) is not available on this system.');
         }
+        // The chat VM is EverFern's Alpine distro, the same one workers use.
+        const { ALPINE_DISTRO } = require('../alpine-vm');
         executable = this.wslCmdName;
-        args = ['--exec', 'bash'];
+        args = ['-d', ALPINE_DISTRO, '-u', 'root', '--exec', 'bash'];
         spawnOptions.env = { ...process.env, WSL_UTF8: '1', WSLENV: '' };
       } else {
         executable = this.resolvePowerShellExecutable();
         args = ['-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass'];
       }
+    } else if (process.platform === 'darwin' && target === 'vm') {
+      // On macOS the VM is EverFern's Alpine container.
+      const { ensureDockerContainer } = require('../linux-vm-executor');
+      const { ALPINE_CONTAINER } = require('../alpine-vm');
+      await ensureDockerContainer();
+      executable = 'docker';
+      args = ['exec', '-i', '-w', '/root', ALPINE_CONTAINER, 'bash'];
+      spawnOptions.cwd = os.homedir();
     } else {
       executable = 'bash';
       args = [];
@@ -287,7 +301,7 @@ export class CommandRegistry {
 
             if (newCwd) {
               newShell.currentCwd = newCwd;
-              if (target === 'vm' && isWin) {
+              if (target === 'vm' && (isWin || process.platform === 'darwin')) {
                 const { translateLinuxPathToHost } = require('../linux-vm-executor');
                 newShell.currentCwd = translateLinuxPathToHost(newCwd);
               }
@@ -543,8 +557,10 @@ export class CommandRegistry {
       shell.proc.stdin?.write('Write-Output "$global:EF_M $global:EF_EXIT"\n');
       shell.proc.stdin?.write('Write-Output (Get-Location).Path\n\n');
     } else {
-      const { translateWindowsPathToLinux } = require('../linux-vm-executor');
-      const linuxCwd = isWin ? translateWindowsPathToLinux(req.cwd) : req.cwd;
+      const { translateWindowsPathToLinux, translateMacOSPathToDocker } = require('../linux-vm-executor');
+      const linuxCwd = isWin ? translateWindowsPathToLinux(req.cwd)
+        : process.platform === 'darwin' && target === 'vm' ? translateMacOSPathToDocker(req.cwd)
+        : req.cwd;
       const formattedCommand = req.command.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
       shell.proc.stdin?.write(`export EF_M="${marker}"\n`);
       if (needCd) {
@@ -565,6 +581,55 @@ export class CommandRegistry {
     onData?: (data: string) => void,
     emitEvent?: (event: any) => void
   ): Promise<CommandInfo> {
+    if (hasNativeTerminal()) {
+      try {
+        let nativeTarget = target;
+        if (process.platform === 'win32' && target === 'main') {
+          const normalizedCmd = command.trim().toLowerCase();
+          const hasLinuxIndicators = normalizedCmd.includes('/mnt/') || normalizedCmd.includes('/home/') || normalizedCmd.includes('/tmp/')
+            || /\bsource\b/.test(normalizedCmd) || /\b(python|pip|apt-get)\b/.test(normalizedCmd)
+            || ((normalizedCmd.includes('&&') || normalizedCmd.includes('||'))
+              && !/^(npm|npx|yarn|node|git|powershell|pwsh|cmd)\b/.test(normalizedCmd));
+          if (hasLinuxIndicators) nativeTarget = 'vm';
+        }
+        if (nativeTarget === 'vm' && process.platform === 'win32' && !(await this.checkWslAvailable())) {
+          const failedInfo: CommandInfo = {
+            id, command, cwd, status: 'failed',
+            output: 'Error: The EverFern Linux VM (Alpine) is not available on this system.\nThe EverFern VM is not ready. Ask the user to set it up in Settings, or run the command on this PC with target "main" (asks for permission).',
+            exitCode: -1, startTime: Date.now(), target: nativeTarget
+          };
+          getNativeTerminalDaemon().remember(failedInfo);
+          return failedInfo;
+        }
+        if (nativeTarget === 'vm' && process.platform === 'darwin' && !this.nativeDockerReady) {
+          const { ensureDockerContainer } = require('../linux-vm-executor');
+          await ensureDockerContainer();
+          this.nativeDockerReady = true;
+        }
+        let info = await getNativeTerminalDaemon().execute(
+          { id, command, cwd, timeoutMs, target: nativeTarget }, { onData, emitEvent }
+        );
+        // Preserve the Windows VM setup retry used by the former persistent Node shell.
+        // Provisioning stays in the existing setup service; Rust still owns all shell work.
+        if (process.platform === 'win32' && info.target === 'vm' && info.status === 'failed'
+          && /EverFern Linux VM .*not available|EverFern-Alpine.*not available/i.test(info.output)) {
+          const { ensureWSLSetup } = require('../linux-vm-executor');
+          await ensureWSLSetup();
+          info = await getNativeTerminalDaemon().execute(
+            { id, command, cwd, timeoutMs, target: 'vm' }, { onData, emitEvent }
+          );
+        }
+        return info;
+      } catch (err: any) {
+        const failedInfo: CommandInfo = {
+          id, command, cwd, status: 'failed', output: `Error: ${err?.message || err}`,
+          exitCode: -1, startTime: Date.now(), target
+        };
+        getNativeTerminalDaemon().remember(failedInfo);
+        return failedInfo;
+      }
+    }
+
     let actualTarget = target;
     if (process.platform === 'win32' && target === 'main') {
       const normalizedCmd = command.trim().toLowerCase();
@@ -610,33 +675,18 @@ export class CommandRegistry {
         this.processQueue(actualTarget);
       });
     } catch (err: any) {
-      if (actualTarget === 'vm' && process.platform === 'win32') {
-        console.warn(`[CommandRegistry] VM execution failed (${err.message}). Falling back to main host (PowerShell)...`);
-        try {
-          const hostShell = await this.getOrCreateShell('main', cwd);
-          return new Promise<CommandInfo>((resolve) => {
-            hostShell.queue.push({
-              id,
-              command,
-              cwd,
-              timeoutMs,
-              onData,
-              emitEvent,
-              resolve
-            });
-            this.processQueue('main');
-          });
-        } catch (hostErr: any) {
-          console.error(`[CommandRegistry] Host fallback execution also failed:`, hostErr);
-        }
-      }
+      // No silent fallback to this PC: a 'vm' command skips the permission prompt, so
+      // running it on the host instead would bypass the user's approval.
+      const vmHint = actualTarget === 'vm'
+        ? '\nThe EverFern VM is not ready. Ask the user to set it up in Settings, or run the command on this PC with target "main" (asks for permission).'
+        : '';
 
       const failedInfo: CommandInfo = {
         id,
         command,
         cwd,
         status: 'failed',
-        output: `Error: ${err.message || err}`,
+        output: `Error: ${err.message || err}${vmHint}`,
         exitCode: -1,
         startTime: Date.now(),
         target: actualTarget
@@ -647,10 +697,12 @@ export class CommandRegistry {
   }
 
   public listCommands(): CommandInfo[] {
+    if (hasNativeTerminal()) return getNativeTerminalDaemon().listCommands();
     return Array.from(this.commands.values());
   }
 
   public terminate(id: string): boolean {
+    if (hasNativeTerminal()) return getNativeTerminalDaemon().terminate(id);
     for (const [target, shell] of this.shells.entries()) {
       const active = shell.activeExecution;
       if (active && active.id === id) {

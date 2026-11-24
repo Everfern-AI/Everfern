@@ -2,14 +2,19 @@
 
 import { createPortal } from "react-dom";
 import React, { useEffect, useRef, useState } from "react";
-import { motion, AnimatePresence, useDragControls } from "framer-motion";
-import { ArrowLeft, ArrowRight, RotateCw, Expand, Minimize2, Minus, X, Lock, Folder, File as FileIcon, TerminalSquare, WifiOff, ShieldAlert, Frown, FileX2, Cloud, Monitor, Maximize, Volume2, VolumeX, Clipboard } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { ArrowLeft, ArrowRight, RotateCw, Maximize2, Minimize2, Minus, X, Lock, WifiOff, ShieldAlert, Frown, FileX2, Cloud, Monitor, Volume2, VolumeX, Clipboard } from "lucide-react";
 import { AppLogo } from "@/components/AppLogo";
-import { APPS } from "@/lib/apps";
+import { APPS, startUrlFor } from "@/lib/apps";
+import { WriteApp, loadDoc } from "./WriteApp";
+import { FilesApp } from "./FilesApp";
+import { TerminalApp, terminalTail, type TerminalLine } from "./TerminalApp";
+import { SearchApp, SearchThumb } from "./SearchApp";
 import { SheetsApp, cellRef, cellValue, colName, type SheetData } from "./SheetsApp";
 import { API_URL, cloudFetch, closeCloudApp, cloudDesktopUrl, cloudToken, saveCloudBrowserState } from "@/lib/cloud-vms";
 import type { Machine } from "@/lib/workers";
 import { captureCloudAppPreview, captureLocalAppPreview } from '@/lib/app-preview';
+import { AiPointer, pillSide } from "./native-cursor";
 
 /**
  * The worker's computer: floating app windows over the wallpaper, with minimized
@@ -22,25 +27,23 @@ import { captureCloudAppPreview, captureLocalAppPreview } from '@/lib/app-previe
  */
 
 export type Win = { app: string; min: boolean; max: boolean; z: number };
-export type NavTo = { app: string; url: string; n: number } | null;
+/** A page to show in an app window. `agent`: the worker's own run asked for it, not you. */
+export type NavTo = { app: string; url: string; n: number; agent?: boolean } | null;
+
+/** "mail.google.com" -> "google.com": the site a URL belongs to. */
+const siteOf = (u: string) => {
+  try {
+    const parts = new URL(u).hostname.replace(/^www\./, "").split(".");
+    const take = parts.length > 2 && parts[parts.length - 1].length === 2 && parts[parts.length - 2].length <= 3 ? 3 : 2;
+    return parts.slice(-take).join(".");
+  } catch { return ""; }
+};
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 const isElectron = () => typeof window !== "undefined" && !!(window as any).electronAPI;
 const workersApi = () => (typeof window !== "undefined" ? (window as any).electronAPI?.workers : undefined);
 
-const START_URL: Record<string, string> = {
-  browser: "https://google.com",
-  websearch: "https://google.com",
-  gads: "https://adstransparency.google.com",
-  gsheets: "https://docs.google.com/spreadsheets",
-  gmail: "https://mail.google.com",
-  gdocs: "https://docs.google.com/document",
-  gcal: "https://calendar.google.com",
-  gdrive: "https://drive.google.com",
-  gslides: "https://docs.google.com/presentation",
-};
-
-export const startUrlFor = (app: string) => APPS[app]?.url ?? START_URL[app] ?? (APPS[app]?.domain ? `https://${APPS[app].domain}` : null);
+export { startUrlFor };
 
 /** Electron's default UA makes Google and others refuse sign-in ("browser not secure"); present as plain Chrome. */
 const chromeUA = () => (typeof navigator === "undefined" ? undefined : navigator.userAgent.replace(/\s(Electron|everfern[\w-]*)\/[\d.]+/gi, ""));
@@ -296,120 +299,6 @@ function LoadError({ failure, offline, onRetry, onBack }: { failure: Failure; of
   );
 }
 
-function TerminalBody({ workerId }: { workerId?: string }) {
-  const [lines, setLines] = useState<{ kind: "in" | "out" | "err"; text: string }[]>([]);
-  const [cmd, setCmd] = useState("");
-  const [busy, setBusy] = useState(false);
-  const endRef = useRef<HTMLDivElement>(null);
-  const api = workersApi();
-
-  useEffect(() => {
-    if (!api?.vmStatus) { setLines([{ kind: "err", text: "The worker's Linux VM is available in the EverFern desktop app." }]); return; }
-    api.vmStatus().then((s: any) => setLines([{ kind: s?.available ? "out" : "err", text: s?.available ? `Connected to the worker's Linux VM. Workspace: ~/everfern-workers/${workerId}` : `VM not available: ${s?.reason ?? "start WSL or Docker"}` }]));
-  }, [api, workerId]);
-  useEffect(() => { endRef.current?.scrollIntoView({ block: "end" }); }, [lines]);
-
-  const exec = async () => {
-    const c = cmd.trim();
-    if (!c || !api?.vmExec || !workerId || busy) return;
-    setCmd(""); setBusy(true);
-    setLines((l) => [...l, { kind: "in", text: c }]);
-    const r = await api.vmExec(workerId, c);
-    setLines((l) => [...l, ...(r.stdout ? [{ kind: "out" as const, text: r.stdout.trimEnd() }] : []), ...(r.stderr ? [{ kind: "err" as const, text: r.stderr.trimEnd() }] : [])]);
-    setBusy(false);
-  };
-
-  return (
-    <div className="wk-term" onClick={(e) => (e.currentTarget.querySelector("input") as HTMLInputElement | null)?.focus()}>
-      {lines.map((l, i) => <pre key={i} className={`wk-term-l is-${l.kind}`}>{l.kind === "in" ? `$ ${l.text}` : l.text}</pre>)}
-      {api?.vmExec && (
-        <div className="wk-term-in">
-          <span>$</span>
-          <input value={cmd} onChange={(e) => setCmd(e.target.value)} onKeyDown={(e) => e.key === "Enter" && exec()} disabled={busy} spellCheck={false} aria-label="Command" />
-        </div>
-      )}
-      <div ref={endRef} />
-    </div>
-  );
-}
-
-function FilesBody({ workerId }: { workerId?: string }) {
-  const [state, setState] = useState<{ files: string[]; path?: string; subpath?: string; error?: string } | null>(null);
-  const [subpath, setSubpath] = useState("");
-  const [reload, setReload] = useState(0);
-  const [preview, setPreview] = useState<{ name: string; content?: string; error?: string } | null>(null);
-  const api = workersApi();
-  useEffect(() => {
-    if (!api?.vmLs || !workerId) { setState({ files: [], error: "Files live on the worker's computer in the EverFern desktop app." }); return; }
-    let alive = true;
-    const load = () => api.vmLs(workerId, subpath || undefined).then((r: { files: string[]; path?: string; subpath?: string; error?: string }) => alive && setState(r));
-    load();
-    const t = setInterval(load, 4000); // pick up files the worker writes while it runs
-    return () => { alive = false; clearInterval(t); };
-  }, [api, workerId, subpath, reload]);
-
-  const open = async (name: string) => {
-    if (name.endsWith("/")) {
-      const clean = name.replace(/\/+$/, "");
-      setSubpath((p) => (p ? `${p}/${clean}` : clean));
-      return;
-    }
-    if (!api?.vmRead || !workerId) return;
-    const rel = subpath ? `${subpath}/${name}` : name;
-    setPreview({ name });
-    const r = await api.vmRead(workerId, rel);
-    setPreview({ name, content: r?.content, error: r?.error });
-  };
-
-  if (!state) return <div className="wk-win-body"><p className="wk-win-p">Loading…</p></div>;
-  return (
-    <div className="wk-files" data-worker-app="files">
-      <div className="wk-files-toolbar">
-        <button
-          className="wk-files-btn"
-          disabled={!subpath}
-          onClick={() => setSubpath(subpath.split("/").slice(0, -1).join("/"))}
-          aria-label="Up one folder"
-        >Up</button>
-        <div className="wk-files-path">{state.path ?? "~"}</div>
-        <button className="wk-files-btn" onClick={() => setReload((n) => n + 1)} aria-label="Refresh">Refresh</button>
-      </div>
-      {state.error && <p className="wk-win-p" style={{ padding: 16 }}>{state.error}</p>}
-      {!state.error && !state.files.length && <p className="wk-win-p" style={{ padding: 16 }}>Empty. Files the worker creates show up here.</p>}
-      <div className="wk-files-list" role="list">
-        {state.files.map((f) => (
-          <button
-            type="button"
-            className="wk-file"
-            key={f}
-            role="listitem"
-            data-ef-file={f.replace(/\/$/, "")}
-            data-ef-kind={f.endsWith("/") ? "folder" : "file"}
-            onClick={() => void open(f)}
-            title={f.endsWith("/") ? `Open ${f}` : `Preview ${f}`}
-          >
-            {f.endsWith("/") ? <Folder size={15} /> : <FileIcon size={15} />}
-            <span>{f.replace(/\/$/, "")}</span>
-          </button>
-        ))}
-      </div>
-      {preview && (
-        <div className="wk-files-preview" role="dialog" aria-label={`Preview ${preview.name}`}>
-          <div className="wk-files-preview-head">
-            <strong>{preview.name}</strong>
-            <button className="wk-files-btn" onClick={() => setPreview(null)} aria-label="Close preview">Close</button>
-          </div>
-          {preview.error
-            ? <p className="wk-win-p">{preview.error}</p>
-            : preview.content === undefined
-              ? <p className="wk-win-p">Loading…</p>
-              : <pre>{preview.content.slice(0, 20000)}</pre>}
-        </div>
-      )}
-    </div>
-  );
-}
-
 /**
  * The Browser app when the worker has a machine: the VM's own screen over noVNC.
  * Local: EverFern's Alpine VM (Chromium on its XFCE desktop). Cloud: the user's EverFern Cloud VM.
@@ -425,9 +314,17 @@ type VmBoot = {
 };
 const VmCtx = React.createContext<VmBoot | null>(null);
 
+/** The local VM's X screen, which noVNC scales (letterboxed) into the window. */
+const LOCAL_VM_SCREEN = { w: 1440, h: 900 };
+
 /** Apps whose window shows the worker's VM screen instead of a local webview. */
 export const usesVm = (app: string, machine?: Machine) =>
-  app !== "sheets" && !!machine && (!!startUrlFor(app) || (machine === 'cloud' && ['terminal', 'files'].includes(app)));
+  !NATIVE_APPS.has(app) && !!machine && !!startUrlFor(app);
+
+/** EverFern's own apps: drawn in the renderer and driven by name, never through a VM screen. */
+export const NATIVE_APPS = new Set(["sheets", "write", "files", "terminal", "websearch"]);
+/** Native apps whose AI steps are replayed by the app itself with its own cursor. */
+const SELF_CURSOR_APPS = new Set(["files", "terminal", "websearch"]);
 
 /**
  * Boot the worker's VM once, as soon as its desktop opens, so app windows can
@@ -459,7 +356,7 @@ function useVmBoot(machine: Machine | undefined, cloudVmId: string | undefined, 
       } else {
         const sys = (window as any).electronAPI?.system;
         if (!sys?.startVMDesktop) { if (alive) setError("The Alpine VM is unavailable. Open EverFern desktop and set up its local VM."); return; }
-        const r = await sys.startVMDesktop({ openUrl: bootUrl });
+        const r = await sys.startVMDesktop({ openUrl: bootUrl, app: bootApp });
         if (!alive) return;
         if (r?.success && r.url) setUrl(r.url);
         else setError(r?.error || "Couldn't start the Alpine VM. Set up the VM and retry.");
@@ -612,7 +509,7 @@ function VmScreen({ app, machine, cloudVmId, partition, navTo }: { app: string; 
       if (r.url) { setOwn((previous) => ({ url: r.url!, live: !!previous && previous.url === r.url && previous.live, engine: r.engine, warning: r.warning })); setOwnErr(null); }
       else setOwnErr(r.error || "Couldn't open this page.");
     });
-    else void (window as any).electronAPI?.system?.openVMBrowser?.(target);
+    else void (window as any).electronAPI?.system?.openVMBrowser?.(target, app);
   };
 
   // The VM booted on another app's page: bring this window's page up.
@@ -630,7 +527,7 @@ function VmScreen({ app, machine, cloudVmId, partition, navTo }: { app: string; 
     if (machine !== "cloud" || !cloudVmId || !partition || !url) return;
     const api = (window as any).electronAPI?.workers;
     if (!api?.registerCloudVm) return;
-    const reg = () => { const t = cloudToken(); if (t) void api.registerCloudVm(partition, app, cloudVmId, API_URL, t); };
+    const reg = () => { const t = cloudToken(); if (t) void api.registerCloudVm(partition, app, cloudVmId, API_URL, t, startUrlFor(app) ?? undefined); };
     reg();
     const tick = setInterval(reg, 5 * 60_000);
     return () => { clearInterval(tick); void api.unregisterCloudVm?.(partition, app); };
@@ -675,6 +572,11 @@ function VmScreen({ app, machine, cloudVmId, partition, navTo }: { app: string; 
   useEffect(() => {
     if (!navTo || navTo.app !== app || navTo.n === lastNav.current || !url) return;
     lastNav.current = navTo.n;
+    if (navTo.agent) {
+      // On this computer the run drives the VM's page itself; opening it here too made a second window.
+      // And an app window keeps to its own site: the run can't use it to open another one.
+      if (machine !== "cloud" || app === "chrome" || siteOf(navTo.url) !== siteOf(start)) return;
+    }
     open(navTo.url);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navTo, app, url]);
@@ -700,6 +602,7 @@ function VmScreen({ app, machine, cloudVmId, partition, navTo }: { app: string; 
         {url && (
           <iframe
             ref={frame} src={url} className={live ? "" : "is-hidden"} title={`${APPS[app]?.name ?? "Browser"} on ${where}`}
+            data-screen-aspect={machine === "local" ? String(LOCAL_VM_SCREEN.w / LOCAL_VM_SCREEN.h) : undefined}
             allow="clipboard-read; clipboard-write; fullscreen; autoplay"
             // The Browserbase live view sends no stream state: it is up once it has loaded.
             onLoad={() => { if (bb) { setOwn((o) => (o ? { ...o, live: true } : o)); vm.onStream("connected"); } }}
@@ -724,17 +627,94 @@ function VmScreen({ app, machine, cloudVmId, partition, navTo }: { app: string; 
   );
 }
 
+/** Files / Terminal. On a cloud machine their workspace is the cloud VM, so this window registers it. */
+/**
+ * Files / Terminal. Both work on the worker's own computer, so the window connects first:
+ * a cloud worker registers its VM, then one real command proves the workspace answers.
+ * Only then does the app mount and read folders or take commands.
+ */
+function NativeWorkspaceApp({ app, workerId, machine, cloudVmId, partition }: { app: "files" | "terminal"; workerId?: string; machine?: Machine; cloudVmId?: string; partition?: string }) {
+  const [conn, setConn] = useState<{ state: "connecting" | "ready" | "error"; note: string }>({ state: "connecting", note: "" });
+  const [attempt, setAttempt] = useState(0);
+
+  // Keep the cloud VM registered while the window is open.
+  useEffect(() => {
+    if (machine !== "cloud" || !cloudVmId || !partition) return;
+    const api = workersApi();
+    if (!api?.registerCloudVm) return;
+    const tick = setInterval(() => { const t = cloudToken(); if (t) void api.registerCloudVm(partition, app, cloudVmId, API_URL, t); }, 5 * 60_000);
+    return () => { clearInterval(tick); void api.unregisterCloudVm?.(partition, app); };
+  }, [machine, cloudVmId, partition, app]);
+
+  useEffect(() => {
+    const api = workersApi();
+    let alive = true;
+    const set = (state: "connecting" | "ready" | "error", note: string) => { if (alive) setConn({ state, note }); };
+    void (async () => {
+      if (!api?.vmExec || !workerId) { set("error", "Files and Terminal run on the worker's computer in the EverFern desktop app."); return; }
+      if (machine === "cloud") {
+        if (!cloudVmId || !partition) {
+          set("connecting", "Waiting for the worker's cloud computer to start");
+          // The VM id arrives with the worker; if it never does, say so instead of spinning forever.
+          await new Promise((res) => setTimeout(res, 45_000));
+          set("error", "This worker's cloud computer hasn't started. Open one of its apps, then try again.");
+          return;
+        }
+        const token = cloudToken();
+        if (!token) { set("error", "Sign in to EverFern to reach this worker's cloud computer."); return; }
+        set("connecting", "Connecting to the cloud computer");
+        try { await api.registerCloudVm(partition, app, cloudVmId, API_URL, token); }
+        catch (e) { set("error", e instanceof Error ? e.message : String(e)); return; }
+      } else {
+        set("connecting", "Starting the worker's Linux computer");
+      }
+      // The VM may still be booting: retry the probe for about a minute.
+      let last = "";
+      for (let i = 0; i < 12 && alive; i++) {
+        try {
+          // A probe that never answers must not hold the window on "Connecting".
+          const r = await Promise.race([
+            api.vmExec(workerId, "pwd"),
+            new Promise<never>((_, rej) => setTimeout(() => rej(new Error("The worker's computer is taking too long to answer.")), 20_000)),
+          ]);
+          if (r?.exitCode === 0) { set("ready", ""); return; }
+          last = String(r?.stderr || "").trim();
+        } catch (e) { last = e instanceof Error ? e.message : String(e); }
+        set("connecting", "Waiting for the workspace to answer");
+        await new Promise((res) => setTimeout(res, 5000));
+      }
+      set("error", last || "The worker's computer did not answer.");
+    })();
+    return () => { alive = false; };
+  }, [app, workerId, machine, cloudVmId, partition, attempt]);
+
+  if (conn.state !== "ready") {
+    return (
+      <div className={`wk-native-connect is-${app}`} data-worker-app={app} role="status">
+        {conn.state === "error" ? <WifiOff size={22} /> : <span className="wk-native-connect-spin" aria-hidden="true" />}
+        <strong>{conn.state === "error" ? "Couldn't reach the worker's computer" : `Connecting ${app === "files" ? "Files" : "Terminal"}`}</strong>
+        {conn.note && <span>{conn.note}</span>}
+        {conn.state === "error" && <button onClick={() => { setConn({ state: "connecting", note: "" }); setAttempt((n) => n + 1); }}><RotateCw size={13} /> Try again</button>}
+      </div>
+    );
+  }
+  return app === "files" ? <FilesApp workerId={workerId} /> : <TerminalApp workerId={workerId} />;
+}
+
 function WindowBody({ app, partition, workerId, navTo, machine, cloudVmId }: { app: string; partition?: string; workerId?: string; navTo: NavTo; machine?: Machine; cloudVmId?: string }) {
   const def = APPS[app];
   if (!def) return null;
   // Native EverFern apps always render in the renderer so the AI can drive them
   // with pixel coordinates (worker_click / worker_type) and fast typed writes.
   if (app === "sheets") return <SheetsApp workerId={workerId} />;
+  if (app === "write") return <WriteApp workerId={workerId} />;
+  // Files and Terminal are AI-native: the AI names the step, the app replays it with a cursor.
+  if (app === "files" || app === "terminal") return <NativeWorkspaceApp app={app} workerId={workerId} machine={machine} cloudVmId={cloudVmId} partition={partition} />;
+  // EverFern Search shows the web_search tool: the cursor types each query, results land here.
+  if (app === "websearch") return <SearchApp workerId={workerId} />;
   // On a cloud machine every web app runs in the VM's browser (one signed-in profile, kept in sync).
   if (machine && usesVm(app, machine)) return <VmScreen app={app} machine={machine} cloudVmId={cloudVmId} partition={partition} navTo={navTo} />;
   if (startUrlFor(app)) return <BrowserBody app={app} partition={partition} navTo={navTo} />;
-  if (app === "terminal") return <TerminalBody workerId={workerId} />;
-  if (app === "files") return <FilesBody workerId={workerId} />;
   return (
     <div className="wk-win-body">
       <AppLogo app={app} size={52} />
@@ -744,56 +724,115 @@ function WindowBody({ app, partition, workerId, navTo, machine, cloudVmId }: { a
   );
 }
 
-/* ── AI at work: blue glow, cursor and a glass bubble saying what it's doing ── */
+/* ── AI at work: a soft glow, a liquid-glass cursor and a pill saying what it's doing ── */
 
-export type AiAct = { app?: string; label: string; x?: number; y?: number; n: number } | null;
+/** `space: "window"`: x/y are 0..1 of the whole app window (worker_click); otherwise of the page shown inside it. */
+/** `aspect`: the VM screen's width/height when x/y are on the whole screen, which the window letterboxes. */
+export type AiAct = { app?: string; label: string; x?: number; y?: number; space?: "window"; aspect?: number; n: number } | null;
 
-/** Where the cursor goes when the action has no coordinates: a calm spot that moves each action. */
-function restingPoint(n: number) {
-  const xs = [0.38, 0.62, 0.5, 0.3, 0.7, 0.45];
-  const ys = [0.42, 0.36, 0.58, 0.55, 0.48, 0.3];
-  return { x: xs[n % xs.length], y: ys[n % ys.length] };
+/** Where the cursor waits before the first action with a point: the middle of the page. */
+const RESTING = { x: 0.5, y: 0.46 };
+
+/** Click-like actions press the cursor; reading, typing and waiting don't. */
+const PRESS_VERBS = /^(click|tap|press|select|open|choose|check|toggle|double|right)/i;
+
+/** The page area inside a window that action points are fractions of, in px of the overlay.
+ *  A webview or VM stream when there is one (skipping the address bar); the whole frame otherwise.
+ *  The local VM's noVNC scales its whole screen to fit, so points land in the letterboxed screen. */
+function stageOf(overlay: HTMLElement, space?: "window", screenAspect?: number) {
+  const o = overlay.getBoundingClientRect();
+  const sx = overlay.offsetWidth / Math.max(1, o.width), sy = overlay.offsetHeight / Math.max(1, o.height);
+  const frame = overlay.parentElement;
+  let r: DOMRect | null = null;
+  let aspect = 0;
+  if (space === "window") r = overlay.closest(".wk-win")?.getBoundingClientRect() ?? null;
+  else if (frame) {
+    const el = frame.querySelector<HTMLElement>("webview, .wk-vmscreen iframe:not(.is-hidden)");
+    // A VM screen (VNC) is fitted into the window with bands: the point is on the fitted screen, not the frame.
+    if (el) { r = el.getBoundingClientRect(); aspect = Number(el.dataset.screenAspect) || (el.tagName === "IFRAME" ? screenAspect ?? 0 : 0); }
+  }
+  if (!r || r.width < 2 || r.height < 2) return { left: 0, top: 0, width: overlay.offsetWidth, height: overlay.offsetHeight };
+  let { left, top, width, height } = r;
+  if (aspect > 0) {
+    const fitW = Math.min(width, height * aspect), fitH = fitW / aspect;
+    left += (width - fitW) / 2; top += (height - fitH) / 2; width = fitW; height = fitH;
+  }
+  return { left: (left - o.left) * sx, top: (top - o.top) * sy, width: width * sx, height: height * sy };
 }
 
 function AiOverlay({ ai }: { ai: NonNullable<AiAct> }) {
-  const p = ai.x !== undefined && ai.y !== undefined ? { x: ai.x, y: ai.y } : restingPoint(ai.n);
-  // Keep the bubble inside the window: flip it to the left near the right edge.
-  const flip = p.x > 0.72;
+  const self = !!ai.app && SELF_CURSOR_APPS.has(ai.app);
+  const ref = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState(0);
+  // Native apps (Sheets cells, worker_click) say the exact spot on screen: it wins until the next action with a point.
+  const [exact, setExact] = useState<{ x: number; y: number; n: number; press: number } | null>(null);
+  const [press, setPress] = useState(0);
+
+  useEffect(() => {
+    const el = ref.current?.parentElement;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setSize((n) => n + 1));
+    ro.observe(el);
+    const stage = el.querySelector("webview, .wk-vmscreen");
+    if (stage) ro.observe(stage);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (ai.x !== undefined && PRESS_VERBS.test(ai.label.trim())) setPress((p) => p + 1);
+  }, [ai.n]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const onPoint = (e: Event) => {
+      const d = (e as CustomEvent<{ app?: string; clientX: number; clientY: number; press?: boolean }>).detail;
+      const el = ref.current;
+      if (!d || !el || (d.app && d.app !== ai.app)) return;
+      const o = el.getBoundingClientRect();
+      const x = ((d.clientX - o.left) / Math.max(1, o.width)) * el.offsetWidth;
+      const y = ((d.clientY - o.top) / Math.max(1, o.height)) * el.offsetHeight;
+      setExact((c) => ({ x, y, n: ai.n, press: (c?.press ?? 0) + (d.press ? 1 : 0) }));
+    };
+    window.addEventListener("everfern-ai-pointer", onPoint);
+    return () => window.removeEventListener("everfern-ai-pointer", onPoint);
+  }, [ai.app, ai.n]);
+
+  if (self) {
+    return (
+      <div className="wk-ai" aria-hidden="true">
+        <motion.div className="wk-ai-glow" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.6 }} />
+      </div>
+    );
+  }
+
+  const el = ref.current;
+  let pt: { x: number; y: number } | null = null;
+  let w = 0;
+  if (el) {
+    void size;
+    w = el.offsetWidth;
+    if (exact && exact.n === ai.n) pt = exact;
+    else {
+      const s = stageOf(el, ai.space, ai.aspect);
+      const f = ai.x !== undefined && ai.y !== undefined ? { x: ai.x, y: ai.y } : RESTING;
+      pt = { x: s.left + f.x * s.width, y: s.top + f.y * s.height };
+    }
+  }
+  const presses = press + (exact?.press ?? 0);
+  // Keep the pill inside the window: it goes to the roomier side and never grows past the edge.
+  const side = pt && w > 0 ? pillSide(pt.x, w) : { flip: false, room: 0 };
   return (
-    <div className="wk-ai" aria-live="polite">
+    <div className="wk-ai" ref={ref} aria-live="polite">
       <motion.div className="wk-ai-glow" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.6 }} />
-      <motion.div
-        className="wk-ai-cursor"
-        initial={false}
-        animate={{ left: `${p.x * 100}%`, top: `${p.y * 100}%` }}
-        transition={{ type: "spring", stiffness: 70, damping: 18, mass: 0.9 }}
-      >
-        {/* A rounded pointer: soft corners, light-blue fill, white rim. */}
-        <svg width="28" height="28" viewBox="0 0 24 24" aria-hidden>
-          <path
-            d="M5.6 3.4c0-.9 1-1.4 1.7-.9l12.1 8.6c.8.6.5 1.8-.5 2l-5.1.9c-.5.1-.9.4-1.1.8l-2.4 4.8c-.4.9-1.8.7-1.9-.3z"
-            fill="url(#wkAiGrad)" stroke="#fff" strokeWidth="1.8" strokeLinejoin="round"
-          />
-          <defs>
-            <linearGradient id="wkAiGrad" x1="5" y1="3" x2="15" y2="20" gradientUnits="userSpaceOnUse">
-              <stop stopColor="#c4e7ff" /><stop offset="1" stopColor="#6db8ff" />
-            </linearGradient>
-          </defs>
-        </svg>
-        <span className="wk-ai-ping" key={ai.n} />
-        <AnimatePresence mode="popLayout">
-          <motion.span
-            key={ai.label}
-            className={`wk-ai-bubble${flip ? " is-left" : ""}`}
-            initial={{ opacity: 0, y: 6, scale: 0.94 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -4, scale: 0.96 }}
-            transition={{ duration: 0.28, ease: EASE }}
-          >
-            <span className="wk-ai-dot" />{ai.label}
-          </motion.span>
-        </AnimatePresence>
-      </motion.div>
+      {pt && (
+        <motion.div
+          className="wk-ai-cursor"
+          initial={{ left: pt.x, top: pt.y, opacity: 0, scale: 0.6 }}
+          animate={{ left: pt.x, top: pt.y, opacity: 1, scale: 1 }}
+          transition={{ left: { type: "spring", bounce: 0, duration: 0.5 }, top: { type: "spring", bounce: 0, duration: 0.5 }, default: { duration: 0.3, ease: EASE } }}
+        >
+          <AiPointer press={presses} label={ai.label} flip={side.flip} room={side.room || undefined} pressDelay={0.42} />
+        </motion.div>
+      )}
     </div>
   );
 }
@@ -801,13 +840,12 @@ function AiOverlay({ ai }: { ai: NonNullable<AiAct> }) {
 /* ── window chrome ─────────────────────────────────────────────── */
 
 function AppWindow({
-  win, index, focused, full, bounds, partition, workerId, navTo, machine, cloudVmId, ai, locked, onFocus, onMin, onMax, onFull, onClose,
+  win, index, focused, full, bounds, partition, workerId, navTo, machine, cloudVmId, ai, locked, onFocus, onMin, onFull, onClose,
 }: {
   win: Win; index: number; focused: boolean; full?: boolean; bounds: React.RefObject<HTMLDivElement | null>; ai?: AiAct; locked?: boolean;
   partition?: string; workerId?: string; navTo: NavTo; machine?: Machine; cloudVmId?: string;
-  onFocus: () => void; onMin: () => void; onMax: () => void; onFull: () => void; onClose: () => void;
+  onFocus: () => void; onMin: () => void; onFull: () => void; onClose: () => void;
 }) {
-  const drag = useDragControls();
   const def = APPS[win.app];
   const windowRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -833,13 +871,11 @@ function AppWindow({
 
   // Full size: one big white card over a dimmed desktop (the same window, so the page keeps its state).
   const isAiOperating = (!!ai && (ai.app === win.app || (!ai.app && focused))) || locked;
+  // Windows have one fixed size, centred on the desktop and not movable; the only other size is Full.
+  const W = "min(800px, 45%)", H = "min(600px, calc(77% - 110px))";
   const pos = full
-    ? { left: "4%", top: 58, width: "92%", height: "calc(100% - 92px)" }
-    : win.max
-      ? { left: "2%", top: 60, width: "96%", height: "calc(100% - 146px)" }
-      : isAiOperating
-        ? { left: "calc(50% - min(1040px, 56vw) / 2)", top: "calc(50% - min(760px, 78vh) / 2 + 10px)", width: "min(1040px, 56vw)", height: "min(760px, 78vh)" }
-        : { left: `calc(${22 + index * 3}% )`, top: 62 + index * 22, width: "min(1040px, 58%)", height: "min(780px, calc(100% - 156px))" };
+    ? { left: 20, top: 56, width: "calc(var(--ef-vw) - 40px)", height: "calc(var(--ef-vh) - 76px)" }
+    : { left: `calc(50% - ${W} / 2)`, top: `calc(50% - ${H} / 2)`, width: W, height: H };
   const windowView = (
     <motion.div
       ref={windowRef}
@@ -848,12 +884,6 @@ function AppWindow({
       style={{ ...pos, zIndex: full ? 9000 : isAiOperating ? 800 : win.z }}
       layout
       transition={{ layout: { duration: 0.65, ease: EASE } }}
-      drag={!locked && !ai && !win.max && !full}
-      dragControls={drag}
-      dragListener={false}
-      dragMomentum={false}
-      dragConstraints={bounds}
-      dragElastic={0.04}
       onPointerDown={onFocus}
       initial={{ opacity: 0, rotateX: 14, rotateY: -10, z: -220, y: 40 }}
       animate={{
@@ -863,23 +893,22 @@ function AppWindow({
       }}
       exit={{ opacity: 0, rotateY: 38, z: -260, x: -260, transition: { duration: 0.42, ease: EASE } }}
     >
-      <div className="wk-win-bar" onPointerDown={(e) => drag.start(e)} onDoubleClick={() => { if (!locked && !ai) onMax(); }}>
-        <AppLogo app={win.app} size={13} radius={3} />
-        <span style={{ marginRight: "auto" }}>{def?.name}</span>
+      <div className="wk-win-bar" onDoubleClick={() => { if (!locked && !ai) onFull(); }}>
+        <span className="wk-win-icon"><AppLogo app={win.app} size={20} radius={5} /></span>
+        <span className="wk-win-name">{def?.name}</span>
         {locked && <span className="wk-control-lock" role="status">Worker in control - pause to interact</span>}
-        <button className="wk-win-btn" disabled={locked || !!ai} aria-label="Full size" title="Full size" onPointerDown={(e) => e.stopPropagation()} onClick={onFull}><Maximize size={8} strokeWidth={2.6} /></button>
-        {soundUrl && <button className="wk-win-btn" aria-label="Copy and paste" title="Copy and paste" disabled={locked} onPointerDown={event => event.stopPropagation()} onClick={() => window.dispatchEvent(new CustomEvent('everfern-app-clipboard', { detail: { app: win.app } }))}><Clipboard size={11} /></button>}
-        {soundUrl && <button className="wk-win-btn" aria-label={sound ? "Mute sound" : "Enable sound"} title={sound ? "Mute sound" : "Enable sound"} aria-pressed={sound} onPointerDown={e => e.stopPropagation()} onClick={toggleSound}>{sound ? <Volume2 size={11} /> : <VolumeX size={11} />}</button>}
-        <button className="wk-win-btn" disabled={locked || !!ai} aria-label="Minimize" onPointerDown={(e) => e.stopPropagation()} onClick={onMin}><Minus size={10} /></button>
-        <button className="wk-win-btn" disabled={locked || !!ai} aria-label={win.max ? "Restore" : "Expand"} onPointerDown={(e) => e.stopPropagation()} onClick={onMax}>
-          {win.max ? <Minimize2 size={9} /> : <Expand size={9} />}
+        {soundUrl && <button className="wk-win-btn" aria-label="Copy and paste" title="Copy and paste" disabled={locked} onPointerDown={event => event.stopPropagation()} onClick={() => window.dispatchEvent(new CustomEvent('everfern-app-clipboard', { detail: { app: win.app } }))}><Clipboard size={14} /></button>}
+        {soundUrl && <button className="wk-win-btn" aria-label={sound ? "Mute sound" : "Enable sound"} title={sound ? "Mute sound" : "Enable sound"} aria-pressed={sound} onPointerDown={e => e.stopPropagation()} onClick={toggleSound}>{sound ? <Volume2 size={14} /> : <VolumeX size={14} />}</button>}
+        <button className="wk-win-btn" disabled={locked || !!ai} aria-label={full ? "Exit full size" : "Full size"} title={full ? "Exit full size (Esc)" : "Full size"} onPointerDown={(e) => e.stopPropagation()} onClick={onFull}>
+          {full ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
         </button>
-        <button className="wk-win-btn" disabled={locked || !!ai} aria-label="Close" onPointerDown={(e) => e.stopPropagation()} onClick={onClose}><X size={10} /></button>
+        {!full && <button className="wk-win-btn" disabled={locked || !!ai} aria-label="Minimize" title="Minimize" onPointerDown={(e) => e.stopPropagation()} onClick={onMin}><Minus size={15} /></button>}
+        <button className="wk-win-btn" disabled={locked || !!ai} aria-label="Close" title="Close" onPointerDown={(e) => e.stopPropagation()} onClick={onClose}><X size={15} /></button>
       </div>
       <audio ref={audioRef} preload="none" />
       <div className="wk-win-frame">
         <div className="wk-app-content"><WindowBody app={win.app} partition={partition} workerId={workerId} navTo={navTo} machine={machine} cloudVmId={cloudVmId} /></div>
-        <AnimatePresence>{ai && <AiOverlay key="ai" ai={ai} />}</AnimatePresence>
+        <AnimatePresence>{ai && <AiOverlay key="ai" ai={{ ...ai, app: ai.app ?? win.app }} />}</AnimatePresence>
       </div>
     </motion.div>
   );
@@ -888,6 +917,89 @@ function AppWindow({
 
 
 /** Miniature live preview of the native Sheets app for the minimized 3D stack. */
+/** Files in the 3D stack: the worker's home folder, read from its machine. */
+function FilesThumb({ workerId }: { workerId?: string }) {
+  const api = workersApi();
+  const [items, setItems] = useState<{ name: string; dir: boolean }[] | null>(null);
+  useEffect(() => {
+    if (!api?.vmLs || !workerId) return;
+    let alive = true;
+    const load = () => {
+      Promise.resolve(api.vmLs(workerId))
+        .then((r: { files?: string[] } | null) => {
+          if (!alive || !r?.files) return;
+          const list = r.files.filter((f) => f && !f.startsWith(".")).map((f) => ({ name: f.replace(/\/$/, ""), dir: f.endsWith("/") }));
+          list.sort((a, b) => (a.dir === b.dir ? a.name.localeCompare(b.name) : a.dir ? -1 : 1));
+          setItems(list.slice(0, 12));
+        })
+        .catch(() => { /* thumbnail only */ });
+    };
+    load();
+    const t = setInterval(load, 6000);
+    return () => { alive = false; clearInterval(t); };
+  }, [api, workerId]);
+  return (
+    <div className="wk-thumb-files">
+      <div className="wk-thumb-files-side"><span className="is-on">Home</span><span>Documents</span><span>Downloads</span><span>Trash</span></div>
+      <div className="wk-thumb-files-grid">
+        {(items ?? []).map((it) => (
+          <div key={it.name} className="wk-thumb-files-item">
+            {it.dir
+              ? <svg width="22" height="18" viewBox="0 0 80 64" aria-hidden="true"><path d="M4 10a6 6 0 0 1 6-6h20l7 7h33a6 6 0 0 1 6 6v37a6 6 0 0 1-6 6H10a6 6 0 0 1-6-6z" fill="#4f9bec" /><path d="M4 22a6 6 0 0 1 6-6h60a6 6 0 0 1 6 6v32a6 6 0 0 1-6 6H10a6 6 0 0 1-6-6z" fill="#7dbcf8" /></svg>
+              : <svg width="15" height="18" viewBox="0 0 30 38" aria-hidden="true"><path d="M2 3a3 3 0 0 1 3-3h14l9 9v26a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3z" fill="#fff" stroke="#c9d1da" /><path d="M19 0v7a2 2 0 0 0 2 2h7" fill="#e8edf2" stroke="#c9d1da" /></svg>}
+            <b>{it.name}</b>
+          </div>
+        ))}
+        {items && !items.length && <span style={{ gridColumn: "1 / -1", opacity: .55 }}>Empty folder</span>}
+      </div>
+    </div>
+  );
+}
+
+/** Terminal in the 3D stack: the last lines of the worker's session. */
+function TerminalThumb({ workerId }: { workerId?: string }) {
+  const [lines, setLines] = useState<TerminalLine[]>([]);
+  useEffect(() => {
+    if (!workerId) return;
+    const read = () => setLines(terminalTail.get(workerId)?.lines.slice(-9) ?? []);
+    read();
+    const t = setInterval(read, 1500);
+    return () => clearInterval(t);
+  }, [workerId]);
+  return (
+    <div className="wk-thumb-term">
+      {lines.map((l, i) => (
+        <pre key={i}>{l.kind === "cmd" ? <><span className="is-prompt">worker@everfern %</span> {l.text}</> : l.text.split("\n").slice(-4).join("\n")}</pre>
+      ))}
+      {!lines.length && <pre><span className="is-prompt">worker@everfern ~ %</span> <span className="wk-thumb-term-caret" /></pre>}
+    </div>
+  );
+}
+
+/** Write in the 3D stack: the start of the document as plain text. */
+function WriteThumb({ workerId }: { workerId?: string }) {
+  const [doc, setDoc] = useState<{ name: string; text: string }>({ name: "Untitled", text: "" });
+  useEffect(() => {
+    const read = () => {
+      const d = loadDoc(workerId);
+      const el = document.createElement("div");
+      el.innerHTML = d.html;
+      setDoc({ name: d.name, text: (el.innerText || el.textContent || "").trim().slice(0, 600) });
+    };
+    read();
+    const t = setInterval(read, 3000);
+    return () => clearInterval(t);
+  }, [workerId]);
+  return (
+    <div className="wk-thumb-write">
+      <div className="wk-thumb-write-page">
+        <strong>{doc.name}</strong>
+        <p>{doc.text || "Empty document"}</p>
+      </div>
+    </div>
+  );
+}
+
 function SheetsThumb({ workerId }: { workerId?: string }) {
   const api = workersApi();
   const [data, setData] = useState<SheetData | null>(null);
@@ -950,6 +1062,7 @@ export function ThumbBody({ app, snapKey, machine, cloudVmId, partition }: { app
   const [previewError, setPreviewError] = useState(false);
   useEffect(() => {
     const worker = workerOf(partition);
+    if (NATIVE_APPS.has(app)) return; // drawn live from their own data instead
     if (!worker || !machine || (machine === 'cloud' ? !cloudVmId : !startUrlFor(app))) return;
     let alive = true;
     const capture = new AbortController();
@@ -972,11 +1085,16 @@ export function ThumbBody({ app, snapKey, machine, cloudVmId, partition }: { app
 
   // Native Sheets lives in the renderer, so capture-based previews do not apply.
   // Show a miniature live grid instead of the generic placeholder.
-  if (app === "sheets") {
+  if (app === "sheets" || app === "files" || app === "terminal" || app === "write" || app === "websearch") {
+    const wid = workerOf(partition);
     return (
-      <div className="wk-thumb-card" data-preview-state="sheets">
-        <div className="wk-thumb-preview is-sheets">
-          <SheetsThumb workerId={workerOf(partition)} />
+      <div className="wk-thumb-card" data-preview-state={app}>
+        <div className={`wk-thumb-preview is-${app}`}>
+          {app === "sheets" ? <SheetsThumb workerId={wid} />
+            : app === "files" ? <FilesThumb workerId={wid} />
+            : app === "terminal" ? <TerminalThumb workerId={wid} />
+            : app === "websearch" ? <SearchThumb />
+            : <WriteThumb workerId={wid} />}
         </div>
       </div>
     );
@@ -1001,7 +1119,7 @@ export function ThumbBody({ app, snapKey, machine, cloudVmId, partition }: { app
 }
 
 export function WorkerDesktop({
-  wins, setWins, hideThumbs, behind, onPick, onRemove, adding, partition, navTo = null, machine, cloudVmId, ai = null, locked = false,
+  wins, setWins, hideThumbs, behind, onPick, adding, partition, navTo = null, machine, cloudVmId, ai = null, locked = false,
 }: {
   wins: Win[]; setWins: (fn: (w: Win[]) => Win[]) => void; hideThumbs?: boolean; behind?: boolean; onPick?: () => void; partition?: string; navTo?: NavTo;
   machine?: Machine; cloudVmId?: string;
@@ -1020,6 +1138,12 @@ export function WorkerDesktop({
   const booting = settling && !vm.live;
   const open = wins.filter((w) => !w.min && !(noUrl && usesVm(w.app, machine)));
   const minimized = wins.filter((w) => w.min);
+  // Closing an app shuts its window (and the app on a cloud machine); it stays installed on the worker.
+  const closeApp = (app: string) => {
+    const drop = () => setWins(ws => ws.filter(x => x.app !== app));
+    if (machine === "cloud" && cloudVmId) void closeCloudApp(cloudVmId, workerOf(partition), app, drop);
+    else drop();
+  };
   const focusedZ = Math.max(-1, ...open.map((w) => w.z));
   const workerId = partition?.replace(/^persist:worker-/, "");
   const [fullApp, setFullApp] = useState<string | null>(null);
@@ -1031,7 +1155,7 @@ export function WorkerDesktop({
     return () => window.removeEventListener("keydown", k);
   }, [full]);
 
-  // Warmwind OS window focus: when the worker operates an app, bring its window to the front and un-minimize it.
+  // Window focus: when the worker operates an app, bring its window to the front and un-minimize it.
   // EverFern window focus: when the worker operates an app, bring its window to the front and un-minimize it.
   useEffect(() => {
     if (ai?.app) {
@@ -1039,10 +1163,10 @@ export function WorkerDesktop({
         const top = Math.max(0, ...ws.map((w) => w.z)) + 1;
         const target = ws.find((w) => w.app === ai.app);
         if (!target) {
-          return [...ws, { app: ai.app!, min: false, max: false, z: top }];
+          return [...ws.map((w) => ({ ...w, min: true, max: false })), { app: ai.app!, min: false, max: false, z: top }];
         }
-        if (target.min || target.z < top - 1) {
-          return ws.map((w) => (w.app === ai.app ? { ...w, min: false, z: top } : w));
+        if (target.min || ws.some((w) => w.app !== ai.app && !w.min)) {
+          return ws.map((w) => (w.app === ai.app ? { ...w, min: false, z: top } : { ...w, min: true, max: false }));
         }
         return ws;
       });
@@ -1084,9 +1208,17 @@ export function WorkerDesktop({
       }
       return null;
     };
-    const click = (app: string, x: number, y: number, action: string) => {
+    // One action at a time, in order: the cursor reaches the spot, presses, then the click lands.
+    let chain: Promise<void> = Promise.resolve();
+    const queue = (fn: () => void | Promise<void>) => { chain = chain.then(fn).catch(() => {}); };
+    const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+    const showPointer = (app: string, clientX: number, clientY: number, press: boolean) =>
+      window.dispatchEvent(new CustomEvent("everfern-ai-pointer", { detail: { app, clientX, clientY, press } }));
+    const click = async (app: string, x: number, y: number, action: string) => {
       const p = pointFor(app, x, y);
       if (!p) return;
+      showPointer(app, p.clientX, p.clientY, true);
+      await wait(320);
       const wv = webviewAt(p.root, p.clientX, p.clientY);
       if (wv) {
         api.workers?.webviewClick?.(wv.wcId, action, wv.nx, wv.ny);
@@ -1107,6 +1239,11 @@ export function WorkerDesktop({
       if (action === "right_click") target.dispatchEvent(new MouseEvent("contextmenu", base));
     };
     const typeInto = (app: string, text: string, submit: boolean) => {
+      // Sheets types into its selected cell itself: Tab moves right, Enter moves down.
+      if (app === "sheets") {
+        window.dispatchEvent(new CustomEvent("everfern-sheet-type", { detail: { text, submit } }));
+        return;
+      }
       const root = findApp(app);
       if (!root) return;
       const wv = root.querySelector("webview") as any;
@@ -1115,8 +1252,11 @@ export function WorkerDesktop({
         api.workers?.webviewType?.(wcId, text, submit);
         return;
       }
-      const focusable = root.querySelector<HTMLElement>('input:not([type="hidden"]), textarea, [contenteditable="true"]');
-      const el = focusable ?? (document.activeElement as HTMLElement | null);
+      // The field the AI just clicked first; the window's first field only when nothing in it has focus.
+      const active = document.activeElement as HTMLElement | null;
+      const editable = (n: HTMLElement | null) => !!n && (n instanceof HTMLInputElement || n instanceof HTMLTextAreaElement || n.isContentEditable);
+      const focusable = editable(active) && root.contains(active) ? active : root.querySelector<HTMLElement>('input:not([type="hidden"]), textarea, [contenteditable="true"]');
+      const el = focusable;
       if (!el) return;
       el.focus();
       if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
@@ -1195,11 +1335,12 @@ export function WorkerDesktop({
     const offs: Array<() => void> = [];
     offs.push(api.onPointer?.((e: { app?: string; x?: number; y?: number; action?: string }) => {
       if (typeof e?.app === "string" && typeof e.x === "number" && typeof e.y === "number") {
-        click(e.app, e.x, e.y, e.action ?? "click");
+        const { app, x, y } = e;
+        queue(() => click(app, x, y, e.action ?? "click"));
       }
     }) ?? (() => {}));
     offs.push(api.onType?.((e: { app?: string; text?: string; submit?: boolean }) => {
-      if (typeof e?.app === "string" && typeof e.text === "string") typeInto(e.app, e.text, !!e.submit);
+      if (typeof e?.app === "string" && typeof e.text === "string") { const { app, text } = e; queue(() => typeInto(app, text, !!e.submit)); }
     }) ?? (() => {}));
     offs.push(api.onDescribe?.((req: { app?: string; requestId?: string }) => { void handleDescribe(req); }) ?? (() => {}));
     return () => offs.forEach((off) => off());
@@ -1215,12 +1356,6 @@ export function WorkerDesktop({
           {full && (
             <motion.div key="full-scrim" className="wk-full-scrim" onClick={() => setFullApp(null)}
               initial={{ opacity: 0 }} animate={{ opacity: 1, transition: { duration: 0.35 } }} exit={{ opacity: 0, transition: { duration: 0.25 } }} />
-          )}
-          {full && (
-            <motion.button key="full-x" className="wk-full-close" onClick={() => setFullApp(null)} aria-label="Exit full size" title="Exit full size (Esc)"
-              initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1, transition: { duration: 0.35, ease: EASE, delay: 0.15 } }} exit={{ opacity: 0, scale: 0.8, transition: { duration: 0.15 } }}>
-              <X size={16} strokeWidth={2.4} />
-            </motion.button>
           )}
         </AnimatePresence>
         <AnimatePresence>
@@ -1242,8 +1377,7 @@ export function WorkerDesktop({
               onFocus={() => w.z < topZ() - 1 && patch(w.app, { z: topZ() })}
               onMin={() => { if (w.app === full) setFullApp(null); patch(w.app, { min: true, max: false }); }}
               onFull={() => { setFullApp(full === w.app ? null : w.app); patch(w.app, { z: topZ() }); }}
-              onMax={() => patch(w.app, { max: !w.max, z: topZ() })}
-              onClose={() => { if (machine === "cloud" && cloudVmId) void closeCloudApp(cloudVmId, workerOf(partition), w.app, () => setWins(ws => ws.filter(x => x.app !== w.app))); else setWins(ws => ws.filter(x => x.app !== w.app)); }}
+              onClose={() => closeApp(w.app)}
             />
           ))}
         </AnimatePresence>
@@ -1256,7 +1390,7 @@ export function WorkerDesktop({
                 <motion.button
                   key={w.app}
                   className="wk-thumb"
-                  onClick={() => { patch(w.app, { min: false, z: topZ() }); onPick?.(); }}
+                  onClick={() => { const z = topZ(); setWins((ws) => ws.map((x) => (x.app === w.app ? { ...x, min: false, z } : { ...x, min: true, max: false }))); onPick?.(); }}
                   initial={{ opacity: 0, x: -60, rotateY: 50 }}
                   animate={{ opacity: 1, x: 0, rotateY: 16, scale: 1, transition: { type: "spring", duration: 0.38, bounce: 0 } }}
                   exit={{ opacity: 0, x: -40, rotateY: 40, transition: { duration: 0.22, ease: EASE } }}
@@ -1269,9 +1403,10 @@ export function WorkerDesktop({
                     className="wk-app-remove"
                     role="button"
                     tabIndex={0}
-                    aria-label={`Remove ${APPS[w.app]?.name ?? w.app}`}
-                    onClick={e => { e.stopPropagation(); onRemove?.(w.app); }}
-                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onRemove?.(w.app); } }}
+                    aria-label={`Close ${APPS[w.app]?.name ?? w.app}`}
+                    title={`Close ${APPS[w.app]?.name ?? w.app}`}
+                    onClick={e => { e.stopPropagation(); closeApp(w.app); }}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); closeApp(w.app); } }}
                   >
                     <X size={11} strokeWidth={2.4} aria-hidden="true" />
                   </span>

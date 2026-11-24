@@ -1,6 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "EverFern",
+  "mainBinaryName": "EverFern",
   "version": "2.0.0",
   "identifier": "com.everfern.desktop",
   "build": {

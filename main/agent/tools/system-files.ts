@@ -1,8 +1,27 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { execFile } from 'child_process';
 import type { AgentTool, ToolResult } from '../runner/types';
 
 type SystemFilesAction = 'list' | 'mkdirp' | 'move' | 'rename' | 'delete';
+
+function executeWithNative(args: Record<string, unknown>): Promise<ToolResult | null> | undefined {
+  const executable = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+  if (!executable) return;
+  return new Promise(resolve => {
+    const child = execFile(executable, ['--ef-system-files'], {
+      encoding: 'utf8', windowsHide: true, timeout: 30000, maxBuffer: 8 * 1024 * 1024,
+    }, (error, output) => {
+      if (error) return resolve(null);
+      try {
+        const result = JSON.parse(output);
+        resolve(result && typeof result.success === 'boolean' && typeof result.output === 'string' ? result : null);
+      } catch { resolve(null); }
+    });
+    child.stdin?.once('error', () => resolve(null));
+    child.stdin?.end(JSON.stringify(args));
+  });
+}
 
 function isInsideRoot(rootAbs: string, candidateAbs: string): boolean {
   const rel = path.relative(rootAbs, candidateAbs);
@@ -110,6 +129,8 @@ export const systemFilesTool: AgentTool = {
   },
 
   async execute(args: Record<string, unknown>, onUpdate?: (msg: string) => void, emitEvent?: (event: any) => void, toolCallId?: string): Promise<ToolResult> {
+    const native = await executeWithNative(args);
+    if (native) return native;
     try {
       const action = args.action as SystemFilesAction;
       const root = String(args.root ?? '').trim();

@@ -54,7 +54,7 @@ export default function SitePreview({ chatId, filename, onOpenFolder }: SitePrev
                     </div>
                     <div>
                         <span style={{ fontSize: 13, fontWeight: 600, color: "#e8e5e3", display: "block" }}>Report: {filename}</span>
-                        <span style={{ fontSize: 10, color: "#a1a1aa", textTransform: "uppercase", letterSpacing: "0.05em" }}>Interactive Local Site</span>
+                        <span style={{ fontSize: 10, color: "#a1a1aa", }}>Interactive Local Site</span>
                     </div>
                 </div>
 

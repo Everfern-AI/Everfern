@@ -1,0 +1,7 @@
+{
+  "webSearch": {"mode":"local","provider":"exa","headless":true,"apiKey":"","exaApiKey":"","firecrawlApiKey":""},
+  "webCrawl": {"mode":"local","headless":true,"apiKey":""},
+  "browserUse": {"mode":"local","headless":false,"apiKey":"","useVision":false,"useThinking":true,"maxActionsPerStep":1,"maxFailures":10},
+  "navis": {"useVision":false,"onlyVision":false,"headless":false,"maxSteps":200,"useChromeProfile":true,"selectedBrowserId":"chrome","useIsolatedBrowser":false,"automationMode":"extension-first"},
+  "pdfOcr": {"engine":"ocrmypdf","backend":"auto","autoOcr":true}
+}

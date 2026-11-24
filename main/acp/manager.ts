@@ -15,6 +15,7 @@ import type { AIClientConfig, ProviderType } from '../lib/ai-client';
 import { hydrateConfigWithIsolatedKeys, hydrateVlmApiKey } from '../lib/vlm-config';
 import type { ACPStoredConfig, ProviderInfo } from './types';
 import { PROVIDER_REGISTRY } from '../lib/providers';
+import { loadNativeProviderConfig, prepareNativeRuntimeProvider } from '../lib/native-provider-config';
 
 export class ACPManager {
   private client: AIClient | null = null;
@@ -28,13 +29,15 @@ export class ACPManager {
 
   private loadFromStore(): void {
     try {
-      const configPath = path.join(os.homedir(), '.everfern', 'config.json');
-      if (!fs.existsSync(configPath)) return;
+      let stored = loadNativeProviderConfig<ACPStoredConfig>();
+      if (stored === undefined) {
+        const configPath = path.join(os.homedir(), '.everfern', 'config.json');
+        if (!fs.existsSync(configPath)) return;
+        const raw = fs.readFileSync(configPath, 'utf-8');
+        stored = hydrateConfigWithIsolatedKeys(JSON.parse(raw)) as ACPStoredConfig;
+      }
 
-      const raw = fs.readFileSync(configPath, 'utf-8');
-      const stored = hydrateConfigWithIsolatedKeys(JSON.parse(raw) as any) as ACPStoredConfig;
-
-      if (stored.provider) {
+      if (stored?.provider) {
         this.setProvider({
           provider: stored.provider as ProviderType,
           apiKey:   stored.apiKey,
@@ -44,8 +47,8 @@ export class ACPManager {
           baseUrl:  stored.baseUrl,
         });
       }
-    } catch (err) {
-      console.error('[ACPManager] Failed to load stored config:', err);
+    } catch {
+      console.error('[ACPManager] Failed to load stored config');
     }
   }
 
@@ -56,6 +59,12 @@ export class ACPManager {
    */
   setProvider(config: AIClientConfig): { ok: boolean; error?: string } {
     try {
+      const native = prepareNativeRuntimeProvider<AIClientConfig>(config);
+      if (native) {
+        this.client = new AIClient(native);
+        this.activeConfig = native;
+        return { ok: true };
+      }
       if ((config.provider as string) === 'local') {
         config.provider = 'ollama';
       }

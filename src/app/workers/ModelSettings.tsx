@@ -11,6 +11,7 @@ import {
   Monitor, CircleCheck, CircleAlert, LoaderCircle, Terminal, Download, Package, Lock,
   Play, Square, Trash2, Plus, X, ExternalLink, Server, Maximize2, Minimize2,
 } from "lucide-react";
+import { secureSession } from "@/lib/secure-session";
 
 /**
  * AI model and machine settings for the workers settings page.
@@ -83,7 +84,7 @@ export function useCloudAuth() {
       if (res.status === 202 || !res.ok) return;
       const data = await res.json();
       if (data.status !== "complete") return;
-      localStorage.setItem("everfern_cloud_session", JSON.stringify({ accessToken: data.accessToken, refreshToken: data.refreshToken, user: data.user }));
+      secureSession.setItem("everfern_cloud_session", JSON.stringify({ accessToken: data.accessToken, refreshToken: data.refreshToken, user: data.user }));
       code.current = null;
       setWaiting(false);
       setSignedIn(true);

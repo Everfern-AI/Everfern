@@ -55,7 +55,7 @@ export default function VoiceAssistantUI({
                             top: 0,
                             right: 0,
                             bottom: 0,
-                            width: '100vw',
+                            width: 'var(--ef-vw)',
                             backgroundColor: 'var(--color-bg-base)',
                             zIndex: 1001,
                             display: 'flex',
@@ -78,7 +78,7 @@ export default function VoiceAssistantUI({
                                     fontWeight: 600,
                                     color: 'var(--color-text-primary)',
                                 }}>
-                                    🎤 Voice Assistant
+                                    Voice Assistant
                                 </h2>
                                 <p style={{
                                     margin: '4px 0 0',
@@ -242,7 +242,7 @@ export default function VoiceAssistantUI({
                                                     maxWidth: '90%',
                                                 }}
                                             >
-                                                ✓ {voiceTranscript}
+                                                {voiceTranscript}
                                             </motion.p>
                                         )}
                                     </div>

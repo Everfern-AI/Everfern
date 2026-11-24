@@ -5,12 +5,16 @@ import os from 'os';
 import crypto from 'crypto';
 import { dbOps, ensureVectorTable } from '../../lib/db';
 import { getEmbeddingModel, getSystemEmbeddingConfig } from '../../lib/embeddings';
+import { nativeGraphOperation, runNativeGraphOperation } from '../learning/memory/persistent-memory';
+import { currentScope } from '../agent-scope';
 
 function getMemoryPath(): string {
   return path.join(os.homedir(), '.everfern', 'memory.md');
 }
 
 interface MemoryEntry {
+  id?: string;
+  embeddingText?: string;
   date: string;
   content: string;
   tags: string;
@@ -82,20 +86,33 @@ export const memorySearchTool: AgentTool = {
       const limit = (args.limit as number) || 5;
       if (!query) return { success: true, output: 'No query provided.' };
 
-      const filePath = getMemoryPath();
-      if (!fs.existsSync(filePath)) {
-        return { success: true, output: 'No memories found. The memory file does not exist yet.' };
+      const native = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+      let entries: MemoryEntry[];
+      let nativeFallback: ToolResult | undefined;
+      if (native) {
+        try {
+          return await runNativeGraphOperation<ToolResult>(native, { operation: 'search', query, limit, scope: currentScope() });
+        } catch {
+          // The compatibility path can still obtain embeddings from the local model.
+        }
+        const result = nativeGraphOperation(native, { operation: 'search-bank', query, limit });
+        entries = result.entries;
+        nativeFallback = result.fallback;
+      } else {
+        const filePath = getMemoryPath();
+        if (!fs.existsSync(filePath)) {
+          return { success: true, output: 'No memories found. The memory file does not exist yet.' };
+        }
+        entries = parseEntries(fs.readFileSync(filePath, 'utf-8'));
       }
 
-      const text = fs.readFileSync(filePath, 'utf-8');
-      const entries = parseEntries(text);
-
       if (entries.length === 0) {
-        return { success: true, output: 'No memories found in the memory file.' };
+        return nativeFallback ?? { success: true, output: 'No memories found in the memory file.' };
       }
 
       // Keyword fallback score method
       const runKeywordSearch = () => {
+        if (nativeFallback) return nativeFallback;
         const queryWords = query.toLowerCase().split(/\s+/).filter(w => w.length > 2);
         const scored = entries.map((e, i) => ({
           entry: e,
@@ -138,21 +155,24 @@ export const memorySearchTool: AgentTool = {
       try {
         const config = getSystemEmbeddingConfig();
         const { embeddings, dimensions } = getEmbeddingModel(config);
-        await ensureVectorTable(dimensions);
+        if (!native) await ensureVectorTable(dimensions);
 
         // Sync local memory file into memory_chunks database table
-        const rows = await dbOps.all('SELECT id FROM memory_chunks');
+        const rows: Array<{ id: string }> = native
+          ? nativeGraphOperation(native, { operation: 'vector-ids', scope: currentScope() })
+          : await dbOps.all('SELECT id FROM memory_chunks');
         const existingIds = new Set(rows.map(r => r.id));
 
         const currentIdsMap = new Map<string, MemoryEntry>();
         for (const entry of entries) {
-          const id = crypto.createHash('sha256').update(entry.date + '::' + entry.content).digest('hex');
+          const id = entry.id ?? crypto.createHash('sha256').update(entry.date + '::' + entry.content).digest('hex');
           currentIdsMap.set(id, entry);
         }
 
-        // 1. Delete removed memories from DB
+        const additions: Array<{ id: string; content: string; metadata: object; vector: number[] }> = [];
+        // 1. Delete removed memories from DB (the Rust path does this in the sync transaction).
         for (const id of existingIds) {
-          if (!currentIdsMap.has(id)) {
+          if (!native && !currentIdsMap.has(id)) {
             await dbOps.run('DELETE FROM memory_chunks WHERE id = ?', [id]);
             await dbOps.run('DELETE FROM memory_chunks_vec WHERE id = ?', [id]);
           }
@@ -161,8 +181,14 @@ export const memorySearchTool: AgentTool = {
         // 2. Embed and insert missing memories
         for (const [id, entry] of currentIdsMap.entries()) {
           if (!existingIds.has(id)) {
-            const textToEmbed = entry.content + (entry.tags ? ` Tags: ${entry.tags}` : '') + (entry.preference ? ` Preference: ${entry.preference}` : '');
+            const textToEmbed = entry.embeddingText ??
+              (entry.content + (entry.tags ? ` Tags: ${entry.tags}` : '') + (entry.preference ? ` Preference: ${entry.preference}` : ''));
             const vector = await embeddings.embedQuery(textToEmbed);
+            if (native) {
+              additions.push({ id, content: entry.content, vector,
+                metadata: { date: entry.date, tags: entry.tags, preference: entry.preference } });
+              continue;
+            }
             const vectorBuffer = Buffer.from(new Float32Array(vector).buffer);
 
             await dbOps.run('BEGIN TRANSACTION');
@@ -182,14 +208,22 @@ export const memorySearchTool: AgentTool = {
             }
           }
         }
+        if (native) {
+          nativeGraphOperation(native, { operation: 'sync-vectors', scope: currentScope(),
+            ids: [...currentIdsMap.keys()], additions });
+        }
 
         // 3. Perform vector similarity query
         const queryVector = await embeddings.embedQuery(query);
-        const queryVectorBuffer = Buffer.from(new Float32Array(queryVector).buffer);
-
+        if (native) {
+          const result: ToolResult | null = nativeGraphOperation(native, {
+            operation: 'search-vectors', scope: currentScope(), vector: queryVector, limit,
+          });
+          return result ?? runKeywordSearch();
+        }
         const results = await dbOps.all(
           'SELECT mc.id, mc.text_content as content, mc.metadata, vec_distance_cosine(v.embedding, ?) as distance FROM memory_chunks_vec v JOIN memory_chunks mc ON v.id = mc.id ORDER BY distance ASC LIMIT ?',
-          [queryVectorBuffer, limit]
+          [Buffer.from(new Float32Array(queryVector).buffer), limit]
         );
 
         if (!results || results.length === 0) {

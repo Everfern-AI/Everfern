@@ -6,8 +6,12 @@
  * Detects template type and preserves structure.
  */
 
-import * as cheerio from 'cheerio';
-import * as beautify from 'js-beautify';
+import type * as cheerio from 'cheerio';
+import type * as beautifyNs from 'js-beautify';
+
+// cheerio (with undici) and js-beautify are heavy; load them on first parse.
+const loadCheerio = (): typeof cheerio => require('cheerio');
+const loadBeautify = (): typeof beautifyNs => require('js-beautify');
 
 export interface ParsedArtifact {
   template: 'blank' | 'dashboard' | 'report' | 'chart' | 'gallery' | 'slides';
@@ -26,7 +30,7 @@ export class ArtifactParser {
   parse(html: string): ParsedArtifact {
     try {
       // Load HTML with Cheerio
-      const $ = cheerio.load(html, {
+      const $ = loadCheerio().load(html, {
         decodeEntities: false,
         xmlMode: false
       });
@@ -170,7 +174,7 @@ export class ArtifactParser {
    * Formats HTML with proper indentation.
    */
   private formatHTML(html: string): string {
-    return beautify.html(html, {
+    return loadBeautify().html(html, {
       indent_size: 2,
       wrap_line_length: 0,
       preserve_newlines: true,

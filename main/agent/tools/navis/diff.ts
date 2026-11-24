@@ -1,3 +1,5 @@
+import { getNative } from '../../../lib/native';
+
 const BULLET = /^(\s*)- /;
 
 export interface SnapshotDiff {
@@ -19,8 +21,32 @@ interface TaggedLine {
 /**
  * Line-level diff between two rendered snapshots.
  * Unchanged lines far from any change are elided to keep the diff small.
+ *
+ * Runs in Rust (native/src/lib.rs) when the native module is available: the
+ * JS version below allocates a full (n+1)x(m+1) LCS table on the V8 heap,
+ * which for large pages is hundreds of MB per browser step.
  */
 export function diffSnapshots(
+  before: string,
+  after: string,
+  opts: DiffOptions = {},
+): SnapshotDiff {
+  if (before === after) {
+    return { text: '', added: 0, removed: 0, changed: false };
+  }
+  const native = getNative();
+  if (native) {
+    try {
+      return native.diffSnapshots(before, after, opts.contextRadius);
+    } catch (err) {
+      console.warn('[Navis] Native diff failed, using JS fallback:', err);
+    }
+  }
+  return diffSnapshotsJs(before, after, opts);
+}
+
+/** Pure TypeScript implementation (fallback, and the reference for tests). */
+export function diffSnapshotsJs(
   before: string,
   after: string,
   opts: DiffOptions = {},

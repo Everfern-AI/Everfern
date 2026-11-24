@@ -2,6 +2,7 @@ import { AgentTool, ToolResult } from '../runner/types';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { execFile } from 'child_process';
 
 function getMemoryPath(): string {
   const dir = path.join(os.homedir(), '.everfern');
@@ -53,6 +54,23 @@ export const memorySaveTool: AgentTool = {
       if (!content) return { success: false, output: 'No content provided.' };
 
       const tags = args.tags as string || '';
+      const native = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+      if (native) {
+        return await new Promise<ToolResult>((resolve, reject) => {
+          const child = execFile(native, ['--ef-memory-graph'], {
+            encoding: 'utf8', windowsHide: true, timeout: 10000,
+          }, (error, stdout) => {
+            if (error) return reject(error);
+            try {
+              resolve(JSON.parse(stdout));
+            } catch (parseError) {
+              reject(parseError);
+            }
+          });
+          child.stdin?.on('error', reject);
+          child.stdin?.end(JSON.stringify({ operation: 'save-direct', content, tags }));
+        });
+      }
       const now = new Date();
       const dateStr = now.toDateString() + ' ' + now.toLocaleTimeString();
       const isPreference = detectPreference(content);

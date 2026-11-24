@@ -8,6 +8,8 @@ import { registerWindowFsHandlers } from './window-fs-handlers';
 import { registerWorkerHandlers } from './worker-handlers';
 import { registerSheetHandlers } from './sheet-handlers';
 import { registerMigrationHandlers } from './migration-handlers';
+import { registerSessionHandlers } from './session-handlers';
+import { startWorkerScheduler } from './worker-scheduler';
 
 export {
   KNOWN_MODELS,
@@ -31,4 +33,6 @@ export function registerSystemHandlers(): void {
   registerWorkerHandlers();
   registerSheetHandlers();
   registerMigrationHandlers();
+  registerSessionHandlers();
+  startWorkerScheduler();
 }

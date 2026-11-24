@@ -1,1 +1,1 @@
-export * from './common/FormComponents';
+export * from '@/components/desktop-chat/FormComponents';

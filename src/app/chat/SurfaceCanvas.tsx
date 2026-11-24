@@ -45,7 +45,7 @@ const SurfaceItem: React.FC<{ component: SurfaceComponent; onAction?: (id: strin
     case 'metric':
       return (
         <div className="p-4 rounded-xl bg-black/10 border border-white/5 flex flex-col gap-1">
-          <div className="flex items-center gap-2 text-xs font-semibold text-zinc-400 tracking-wider uppercase">
+          <div className="flex items-center gap-2 text-xs font-semibold text-zinc-400r">
             {props.icon === 'data' && <CircleStackIcon className="w-4 h-4" />}
             {props.icon === 'chart' && <ChartBarIcon className="w-4 h-4" />}
             {props.label}

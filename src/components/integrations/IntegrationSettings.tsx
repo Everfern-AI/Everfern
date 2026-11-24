@@ -85,7 +85,7 @@ const ToggleSwitch: React.FC<{
                     width: 20,
                     height: 20,
                     borderRadius: 10,
-                    backgroundColor: 'var(--color-bg-surface)', // Keep white thumb for toggle switch in both themes
+                    backgroundColor: '#ffffff', // white thumb in both themes
                     position: "absolute",
                     top: 2,
                     left: 2,
@@ -406,7 +406,7 @@ export default function IntegrationSettings({ isOpen, onClose }: IntegrationSett
 
     const colors = {
         overlay: "rgba(0, 0, 0, 0.4)",
-        background: "var(--color-bg-surface)",
+        background: "var(--color-bg-elevated)",
         sidebarBg: "var(--color-bg-subtle)",
         border: "var(--color-border)",
         textPrimary: "var(--color-text-primary)",
@@ -527,6 +527,9 @@ export default function IntegrationSettings({ isOpen, onClose }: IntegrationSett
                         exit={{ opacity: 0, scale: 0.95, y: 10 }}
                         transition={{ type: "spring", damping: 25, stiffness: 300 }}
                         className="glossy"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label="Integrations"
                         style={{
                             position: "relative",
                             width: "min(700px, calc(100vw - 32px))",
@@ -542,7 +545,7 @@ export default function IntegrationSettings({ isOpen, onClose }: IntegrationSett
                         <div style={{ padding: "24px 32px", borderBottom: `1px solid ${colors.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                             <div>
                                 <h2 style={{ fontSize: 20, fontWeight: 600, color: colors.textPrimary, margin: 0, fontFamily: 'var(--font-sans)' }}>
-                                    Integration Settings
+                                    Integrations
                                 </h2>
                                 <p style={{ fontSize: 14, color: colors.textSecondary, margin: "4px 0 0 0" }}>
                                     Configure external platform integrations for EverFern

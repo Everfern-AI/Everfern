@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { execFileSync } from 'child_process';
 import type { AgentTool, ToolResult } from '../runner/types';
 
 export const getDynamicToolsDir = (): string => {
@@ -32,6 +33,18 @@ export interface SynthesizedToolData {
 
 // Global runtime cache for dynamically registered tools
 const registeredDynamicTools = new Map<string, AgentTool>();
+
+function nativeToolRecords(): Array<SynthesizedToolData & { status: 'approved' }> | undefined {
+  const native = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+  if (!native) return undefined;
+  return JSON.parse(execFileSync(native, ['--ef-tool-settings'], {
+    input: JSON.stringify({ channel: 'tool-settings:list-synthesized' }),
+    encoding: 'utf8',
+    windowsHide: true,
+    timeout: 10000,
+    maxBuffer: 16 * 1024 * 1024,
+  }));
+}
 
 export function registerDynamicTool(toolData: SynthesizedToolData): AgentTool {
   // Use new Function to compile the dynamic code safely at runtime
@@ -69,18 +82,29 @@ export function registerDynamicTool(toolData: SynthesizedToolData): AgentTool {
 }
 
 export function loadAllSynthesizedTools(): AgentTool[] {
-  const dir = getDynamicToolsDir();
-  const files = fs.readdirSync(dir).filter(f => f.endsWith('.json'));
   const tools: AgentTool[] = [];
-
-  for (const file of files) {
+  if (process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE) {
     try {
-      const content = fs.readFileSync(path.join(dir, file), 'utf8');
-      const toolData: SynthesizedToolData = JSON.parse(content);
-      const tool = registerDynamicTool(toolData);
-      tools.push(tool);
+      for (const record of nativeToolRecords() ?? []) {
+        try {
+          tools.push(registerDynamicTool(record));
+        } catch (err) {
+          console.error(`[ToolSynthesizer] Failed to register dynamic tool ${record.name}:`, err);
+        }
+      }
     } catch (err) {
-      console.error(`[ToolSynthesizer] Failed to load dynamic tool ${file}:`, err);
+      console.error('[ToolSynthesizer] Failed to load native tool records:', err);
+    }
+    return tools;
+  } else {
+    const dir = getDynamicToolsDir();
+    for (const file of fs.readdirSync(dir).filter(f => f.endsWith('.json'))) {
+      try {
+        const content = fs.readFileSync(path.join(dir, file), 'utf8');
+        tools.push(registerDynamicTool(JSON.parse(content)));
+      } catch (err) {
+        console.error(`[ToolSynthesizer] Failed to load dynamic tool ${file}:`, err);
+      }
     }
   }
 
@@ -95,6 +119,17 @@ export function loadAllSynthesizedTools(): AgentTool[] {
 }
 
 export function approveSynthesizedTool(name: string): AgentTool {
+  if (process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE) {
+    const record = execFileSync(process.env.EF_NATIVE_EXE, ['--ef-tool-settings'], {
+      input: JSON.stringify({ channel: 'tool-settings:approve-synthesized', config: name }),
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 10000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    return registerDynamicTool(JSON.parse(record));
+  }
+
   const pendingDir = getPendingToolsDir();
   const pendingPath = path.join(pendingDir, `${name}.json`);
   if (!fs.existsSync(pendingPath)) {
@@ -117,6 +152,17 @@ export function approveSynthesizedTool(name: string): AgentTool {
 }
 
 export function deleteSynthesizedTool(name: string): void {
+  if (process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE) {
+    execFileSync(process.env.EF_NATIVE_EXE, ['--ef-tool-settings'], {
+      input: JSON.stringify({ channel: 'tool-settings:delete-synthesized', config: name }),
+      windowsHide: true,
+      timeout: 10000,
+      stdio: ['pipe', 'ignore', 'pipe'],
+    });
+    registeredDynamicTools.delete(name);
+    return;
+  }
+
   const activeDir = getDynamicToolsDir();
   const activePath = path.join(activeDir, `${name}.json`);
   if (fs.existsSync(activePath)) {
@@ -133,6 +179,8 @@ export function deleteSynthesizedTool(name: string): void {
 }
 
 export function getSynthesizedToolsList(): any[] {
+  const native = nativeToolRecords();
+  if (native) return native;
   const dir = getDynamicToolsDir();
   const files = fs.readdirSync(dir).filter(f => f.endsWith('.json'));
   const list: any[] = [];
@@ -208,8 +256,17 @@ export const synthesizeToolTool: AgentTool = {
     };
 
     // Save as pending tool first
-    const pendingDir = getPendingToolsDir();
-    fs.writeFileSync(path.join(pendingDir, `${name}.json`), JSON.stringify(toolData, null, 2), 'utf8');
+    if (process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE) {
+      execFileSync(process.env.EF_NATIVE_EXE, ['--ef-tool-settings'], {
+        input: JSON.stringify({ channel: 'tool-settings:save-pending-synthesized', config: toolData }),
+        windowsHide: true,
+        timeout: 10000,
+        stdio: ['pipe', 'ignore', 'pipe'],
+      });
+    } else {
+      const pendingDir = getPendingToolsDir();
+      fs.writeFileSync(path.join(pendingDir, `${name}.json`), JSON.stringify(toolData, null, 2), 'utf8');
+    }
 
     return {
       success: true,

@@ -1,9 +1,31 @@
 import { ChatMessage } from '../../../lib/ai-client';
+import { spawnSync } from 'child_process';
+
+function nativeMessageOperation<T>(request: Record<string, unknown>): T | null {
+  const executable = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+  if (!executable) return null;
+  try {
+    const result = spawnSync(executable, ['--ef-message-utils'], {
+      input: JSON.stringify(request), encoding: 'utf8', windowsHide: true, timeout: 5000, maxBuffer: 8 * 1024 * 1024,
+    });
+    if (result.error || result.status !== 0 || !result.stdout) return null;
+    return JSON.parse(result.stdout) as T | null;
+  } catch { return null; }
+}
+
+function projectLangChainMessage(message: any): any {
+  if (!message || typeof message !== 'object') return message;
+  const type = message.type || message._getType?.();
+  return type ? { ...message, type } : { ...message };
+}
 
 /**
  * Normalizes a LangChain or internal message object into a standard ChatMessage.
  */
 export function normalizeMessage(m: any): ChatMessage {
+  const native = nativeMessageOperation<ChatMessage>({ operation: 'normalize_message', message: projectLangChainMessage(m) });
+  if (native) return native;
+
   const toolCallId = m.tool_call_id || (m as any).toolCallId || (m as any).tool_call_id;
   // Sanitize any pseudo-tool messages like harness_recovery / harness_rollback into valid system messages
   if (
@@ -57,6 +79,11 @@ export function normalizeMessage(m: any): ChatMessage {
  * and should not be sent to the AI model.
  */
 export function normalizeMessages(messages: any[]): ChatMessage[] {
+  const native = nativeMessageOperation<ChatMessage[]>({
+    operation: 'normalize_messages', messages: messages.map(projectLangChainMessage),
+  });
+  if (native) return native;
+
   const normalized = messages
     .filter(m => {
       // Filter out narrative messages - they're for UI display only
@@ -80,6 +107,9 @@ export function normalizeMessages(messages: any[]): ChatMessage[] {
  *    a system-level memory consolidation note to conserve context budget.
  */
 export function consolidateHistory(messages: ChatMessage[]): ChatMessage[] {
+  const native = nativeMessageOperation<ChatMessage[]>({ operation: 'consolidate_history', messages });
+  if (native) return native;
+
   if (messages.length === 0) return messages;
 
   const consolidated: ChatMessage[] = [];

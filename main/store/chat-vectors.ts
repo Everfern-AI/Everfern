@@ -1,3 +1,4 @@
+import { execFile } from 'child_process';
 /**
  * EverFern Desktop — Chat Vector Store
  *
@@ -8,7 +9,8 @@
  * Has a write queue to prevent concurrent write errors.
  */
 
-import sqlite3 from 'sqlite3';
+import type sqlite3 from 'sqlite3';
+import { sqliteDatabaseClass } from '../lib/native-sqlite';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -100,10 +102,11 @@ export async function initChatVectorDb(): Promise<sqlite3.Database> {
 
   return new Promise((resolve, reject) => {
     try {
-      const db = new sqlite3.Database(dbPath, (err) => {
+      const Database = sqliteDatabaseClass();
+      const db = new Database(dbPath, (err) => {
         if (err) {
           log('Database open ERROR:', err.message);
-          const fallbackDb = new sqlite3.Database(':memory:');
+          const fallbackDb = new Database(':memory:');
           instance = fallbackDb;
           resolve(fallbackDb);
           return;
@@ -159,6 +162,25 @@ export function getChatVectorDb(): Promise<sqlite3.Database> {
   return instancePromise!;
 }
 
+function nativeChatIndex<T>(channel: string, args: unknown[]): Promise<T> | undefined {
+  const native = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+  if (!native) return undefined;
+  return new Promise((resolve, reject) => {
+    const child = execFile(native, ['--ef-chat-index'], {
+      encoding: 'utf8', windowsHide: true, timeout: 35000, maxBuffer: 64 * 1024 * 1024,
+    }, (error, output) => {
+      if (error) return reject(error);
+      try {
+        resolve(JSON.parse(output));
+      } catch (parseError) {
+        reject(parseError);
+      }
+    });
+    child.stdin?.on('error', reject);
+    child.stdin?.end(JSON.stringify({ channel, args }));
+  });
+}
+
 export async function embedAndStoreMessage(
   id: string,
   chatId: string,
@@ -174,6 +196,12 @@ export async function embedAndStoreMessage(
   }
 
   try {
+    const native = nativeChatIndex<{ success: boolean; error?: string }>('vectors:index-message', [id, chatId, role, content, createdAt]);
+    if (native) {
+      const result = await native;
+      if (!result.success) throw new Error(result.error || 'Chat indexing failed');
+      return;
+    }
     const db = await getChatVectorDb();
 
     // Use synchronous write in queue to prevent concurrent writes
@@ -214,6 +242,8 @@ export async function searchChatVectors(
   log('searchChatVectors:', { query: query.substring(0, 50), topK, filterChatId });
 
   try {
+    const native = nativeChatIndex<SearchResult[]>('vectors:search', [query, topK, filterChatId]);
+    if (native) return await native;
     const db = await getChatVectorDb();
 
     const queryLower = query.toLowerCase();
@@ -282,6 +312,8 @@ export async function getChatVectors(chatId: string): Promise<VectorMessage[]> {
   log('getChatVectors:', chatId);
 
   try {
+    const native = nativeChatIndex<VectorMessage[]>('vectors:get', [chatId]);
+    if (native) return await native;
     const db = await getChatVectorDb();
 
     return new Promise<VectorMessage[]>((res, rej) => {
@@ -309,6 +341,12 @@ export async function deleteChatVectors(chatId: string): Promise<void> {
   log('deleteChatVectors:', chatId);
 
   try {
+    const native = nativeChatIndex<{ success: boolean; error?: string }>('vectors:delete', [chatId]);
+    if (native) {
+      const result = await native;
+      if (!result.success) throw new Error(result.error || 'Chat index deletion failed');
+      return;
+    }
     const db = await getChatVectorDb();
 
     return new Promise((res, rej) => {

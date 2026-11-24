@@ -21,6 +21,19 @@ import {
 } from '../sessions/session-lifecycle-events';
 import { resolvePromptPlaceholders } from './system-prompt';
 
+/** Hard nesting limit for sub-agents (root-spawned agents are depth 1). */
+export const MAX_SPAWN_DEPTH = 4;
+
+/**
+ * Whether an agent at this registry entry may still spawn children. A child would sit at
+ * currentDepth + 1, which must fit both the hard limit and the entry's own maxDepth.
+ */
+export function canSpawnChildren(entry: { currentDepth: number; maxDepth?: number } | undefined): boolean {
+  if (!entry) return true;
+  const limit = Math.min(MAX_SPAWN_DEPTH, entry.maxDepth ?? MAX_SPAWN_DEPTH);
+  return entry.currentDepth + 1 <= limit;
+}
+
 export const AGENT_TIMEOUTS: Record<AgentType, number> = {
     'web-explorer': 900000, // 15 minutes
     'coding-specialist': 600000, // 10 minutes
@@ -248,19 +261,7 @@ class SubagentSpawner {
         // The root spawns without sponsorSessionKey (depth = 0), so a root-spawned agent gets depth = 1.
         // A sub-agent-spawned agent gets depth = parentDepth + 1.
         const sponsorKey = options.sponsorSessionKey || (parentSessionId.startsWith('agent:') ? parentSessionId : undefined);
-        const sponsorEntry = sponsorKey
-            ? registry.getBySessionKey(sponsorKey)
-            : undefined;
-        const currentDepth = (sponsorEntry?.currentDepth || 0) + 1;
-
-        // ENFORCE maxDepth per-agent: check the parent entry's maxDepth against currentDepth
-        if (sponsorEntry && currentDepth > sponsorEntry.maxDepth) {
-            throw new Error(`Maximum spawn depth (${sponsorEntry.maxDepth}) exceeded`);
-        }
-
-        if (currentDepth > 4) {
-            throw new Error(`Maximum spawn depth (3) exceeded`);
-        }
+        const currentDepth = registry.resolveSpawnDepth(sponsorKey, this.maxGlobalDepth, MAX_SPAWN_DEPTH);
 
         // INJECT SUB-AGENT AWARENESS PROMPT
         const subagentAwareness = `
@@ -269,7 +270,7 @@ class SubagentSpawner {
 - **Role:** You are a specialized SUB-AGENT spawned for a specific mission. Complete ONLY what was asked.
 - **Identity:** You are working as part of an agent army for your parent session: ${parentSessionId}.
 - **Nesting Depth:** Your current nesting level is ${currentDepth}.
-- **SPAWNING RULES:** You can spawn nested sub-agents (using spawn_agent or spawn_swarm) ONLY if your current nesting depth (${currentDepth}) is less than 4. Otherwise, you must complete the task yourself using your own tools.
+- **SPAWNING RULES:** You can spawn nested sub-agents (using spawn_agent or spawn_swarm) ONLY if your current nesting depth (${currentDepth}) is less than ${MAX_SPAWN_DEPTH}. Otherwise, you must complete the task yourself using your own tools.
 - **NO DELEGATION:** Do NOT try to delegate to other agents unnecessarily. Do NOT try to launch web-explorer, coding-specialist, or any other specialist unless independent work can proceed in parallel. YOU are the specialist.
 - **FOCUSED EXECUTION:** Complete ONLY the task you were given. Do not explore, research, or investigate beyond the scope of your assignment.
 - **NOT_FOUND PROTOCOL:** If you cannot find or accomplish what was requested, report back clearly: "NOT_FOUND: [specific reason]". Do NOT waste steps trying alternative approaches — just report what failed and why.
@@ -773,15 +774,12 @@ class SubagentSpawner {
 
         while (true) {
             const entry = registry.get(agentId);
-            if (!entry) {
-                await new Promise(resolve => setTimeout(resolve, 100));
-                continue;
-            }
-
-            if (entry.status === 'completed' || entry.status === 'failed' || entry.status === 'aborted') {
+            if (entry && (entry.status === 'completed' || entry.status === 'failed' || entry.status === 'aborted')) {
                 return entry;
             }
 
+            // Checked even when the entry is missing: a pruned or never-registered agent used to
+            // spin here forever and hang the parent's spawn_agent call.
             if (Date.now() - startTime > timeoutMs) {
                 throw new Error(`Timeout waiting for agent ${agentId} (${timeoutMs}ms)`);
             }

@@ -97,20 +97,21 @@ export const searchMcpRegistryTool: AgentTool = {
  */
 export const connectMcpServerTool: AgentTool = {
     name: 'connect_mcp_server',
-    description: 'Dynamically connect to an MCP server using a command or docker image.',
+    description: 'Connect an MCP server by local command, Docker image or remote URL. The server is saved, so its tools are available in later chats too.',
     parameters: {
         type: 'object',
         properties: {
             name: { type: 'string', description: 'A unique name for this connection' },
             command: { type: 'string', description: 'The command to run the MCP server (e.g., "npx ...")' },
             docker: { type: 'string', description: 'The docker image to run (if not using command)' },
+            url: { type: 'string', description: 'Remote MCP endpoint (Streamable HTTP or SSE), instead of command or docker' },
             args: { type: 'array', items: { type: 'string' }, description: 'Arguments for the command' },
             env: { type: 'object', description: 'Environment variables for the server' }
         },
         required: ['name']
     },
     execute: async (args: Record<string, unknown>, onUpdate?: (msg: string) => void, emitEvent?: (event: any) => void, toolCallId?: string): Promise<ToolResult> => {
-        const { name, command, docker, args: cmdArgs, env } = args as any;
+        const { name, command, docker, url, args: cmdArgs, env } = args as any;
         
         onUpdate?.(`Connecting to MCP server: ${name}...`);
         
@@ -119,6 +120,7 @@ export const connectMcpServerTool: AgentTool = {
                 name,
                 command,
                 docker,
+                url,
                 args: cmdArgs,
                 env
             });
@@ -126,12 +128,12 @@ export const connectMcpServerTool: AgentTool = {
             if (toolCount > 0) {
                 return {
                     success: true,
-                    output: `Successfully connected to ${name}. Registered ${toolCount} new tools.\n\nUse \`list_mcp_tools()\` to see available tools from this server.`
+                    output: `Successfully connected to ${name}. Registered ${toolCount} new tools.\n\nIts tools become callable from the next message; use \`list_mcp_tools()\` to see them.`
                 };
             } else {
                 return {
                     success: false,
-                    output: `Failed to connect to ${name}. No tools were registered. Check the server logs or command.`
+                    output: `Connected nothing from ${name}: ${mcpRegistry.status().find(s => s.config.name === name)?.error || 'the server exposes no tools'}. The config is saved; the user can fix or remove it in Settings > Tools > MCP servers.`
                 };
             }
         } catch (error) {

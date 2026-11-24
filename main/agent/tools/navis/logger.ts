@@ -21,7 +21,7 @@ export interface NavisEvent {
   action?: string;
   target?: string;
   selector?: string;
-  position?: { x: number; y: number };
+  position?: { x: number; y: number; aspect?: number };
   url?: string;
   detail?: string;
   /** Step key into the screenshot ring-buffer — use NavisLogger.getScreenshot(key) to retrieve */
@@ -116,8 +116,8 @@ export class NavisLogger {
   browserLaunch(detail?: string): void { this.emit({ type: 'browser_launch', detail }); }
   thinking(step?: number, maxSteps?: number, detail?: string, metadata?: Record<string, unknown>): void { this.emit({ type: 'thinking', step, maxSteps, detail, metadata }); }
   pageNavigate(step?: number, maxSteps?: number, url?: string): void { this.emit({ type: 'page_navigate', step, maxSteps, url }); }
-  elementClick(step?: number, maxSteps?: number, target?: string, selector?: string, position?: { x: number; y: number }): void { this.emit({ type: 'element_click', step, maxSteps, target, selector, position }); }
-  elementInput(step?: number, maxSteps?: number, target?: string, text?: string, position?: { x: number; y: number }): void { this.emit({ type: 'element_input', step, maxSteps, target, action: text, position }); }
+  elementClick(step?: number, maxSteps?: number, target?: string, selector?: string, position?: { x: number; y: number; aspect?: number }): void { this.emit({ type: 'element_click', step, maxSteps, target, selector, position }); }
+  elementInput(step?: number, maxSteps?: number, target?: string, text?: string, position?: { x: number; y: number; aspect?: number }): void { this.emit({ type: 'element_input', step, maxSteps, target, action: text, position }); }
   scroll(step?: number, maxSteps?: number, direction?: string): void { this.emit({ type: 'scroll', step, maxSteps, action: direction }); }
   tabChange(step?: number, maxSteps?: number, detail?: string): void { this.emit({ type: 'tab_change', step, maxSteps, action: detail }); }
   extract(step?: number, maxSteps?: number, detail?: string): void { this.emit({ type: 'extract', step, maxSteps, detail }); }

@@ -72,19 +72,27 @@ function clamp(value: unknown, max = 180): string {
 function formatRefs(state: BrowserPageState): string {
   const refs = Array.isArray(state.refs) ? state.refs : [];
   if (refs.length === 0) return 'No interactive refs captured.';
-  return refs.slice(0, 140).map((ref: any) => {
+  const shown = refs.slice(0, 220);
+  const lines = shown.map((ref: any) => {
     const parts = [
       `[${ref.ref}]`,
       ref.tag || ref.role || 'element',
       ref.name ? `"${clamp(ref.name, 90)}"` : '',
-      ref.label ? `label="${clamp(ref.label, 70)}"` : '',
+      ref.label && ref.label !== ref.name ? `label="${clamp(ref.label, 70)}"` : '',
       ref.placeholder ? `placeholder="${clamp(ref.placeholder, 70)}"` : '',
+      ref.value !== undefined && ref.value !== null && ref.value !== '' ? `value="${clamp(ref.value, 70)}"` : '',
+      ref.checked !== undefined && ref.checked !== null ? (ref.checked === true || ref.checked === 'true' ? 'checked' : 'unchecked') : '',
+      ref.expanded !== undefined && ref.expanded !== null ? (ref.expanded === true || ref.expanded === 'true' ? 'expanded' : 'collapsed') : '',
+      Array.isArray(ref.options) && ref.options.length ? `options=[${ref.options.slice(0, 12).map((o: any) => clamp(typeof o === 'string' ? o : o?.text ?? o?.value, 30)).join(' | ')}]` : '',
       ref.href ? `href="${clamp(ref.href, 120)}"` : '',
       ref.type ? `type=${ref.type}` : '',
+      ref.section ? `in=${clamp(ref.section, 40)}` : '',
       ref.disabled ? 'disabled' : '',
     ].filter(Boolean);
     return parts.join(' ');
-  }).join('\n');
+  });
+  if (refs.length > shown.length) lines.push(`(${refs.length - shown.length} more controls further down: scroll to reach them)`);
+  return lines.join('\n');
 }
 
 function semanticDom(state: BrowserPageState): string {
@@ -211,13 +219,19 @@ export class NavisExtensionOrchestrator {
         // Build prompt context
         const nonce = generateNonce();
         const refsFormatted = wrapUntrusted(nonce, 'dom-refs', formatRefs(pageState));
-        const semanticContent = wrapUntrusted(nonce, 'page-text', semanticDom(pageState));
+        const pageText = semanticDom(pageState);
+        const semanticContent = wrapUntrusted(nonce, 'page-text', pageText.length > 6000 ? `${pageText.slice(0, 6000)}\n(page text continues; scroll or extract for more)` : pageText);
         const stuckWarning = this.state.isStuckLoop() ? this.state.getStuckLoopWarning() : '';
         const historyContext = wrapUntrusted(nonce, 'history', compressHistory(this.state.getRawHistory()));
 
-        const visionInstruction = visionAvailable
-          ? `\n\nVISION: You have access to a screenshot. If DOM refs are insufficient, set current_state.request_vision=true to get a visual screenshot with bounding boxes.`
-          : '';
+        // Send the screenshot when the model asked for it, the page has no usable refs, or it is stuck.
+        const refCount = Array.isArray(pageState.refs) ? pageState.refs.length : 0;
+        const sendImage = Boolean(screenshotB64) && visionAvailable && (forceNextVision || onlyVision || refCount === 0 || this.state.isStuckLoop());
+        const visionInstruction = sendImage
+          ? `\n\nVISION: A screenshot of the page is attached. Use it with the refs; still act through refs.`
+          : visionAvailable
+            ? `\n\nVISION: If the refs are not enough (canvas, image-only content, overlapping UI), set current_state.request_vision=true to get a screenshot next step.`
+            : '';
 
         let formSummary = '';
         if (Array.isArray(pageState.forms) && pageState.forms.length > 0) {
@@ -225,7 +239,7 @@ export class NavisExtensionOrchestrator {
             pageState.forms.map(f => `- [ID: ${f.id}] "${f.name}" (${f.inputCount} inputs)${f.isFocused ? ' [FOCUSED]' : ''}`).join('\n') + '\n';
         }
         if (pageState.scopedForm) {
-          formSummary += `\n🎯 CURRENTLY SCOPED TO FORM: "${pageState.scopedForm.name}" (ID: ${pageState.scopedForm.id}) — To return to full page, use action "unfocus_form".\n`;
+          formSummary += `\nCURRENTLY SCOPED TO FORM: "${pageState.scopedForm.name}" (ID: ${pageState.scopedForm.id}) — To return to full page, use action "unfocus_form".\n`;
         }
 
         const userPrompt = `TASK: ${task}
@@ -239,8 +253,9 @@ DOM REFS (use these for interactions):
 ${refsFormatted}
 
 PAGE CONTENT:
-${semanticContent.slice(0, 3000)}
+${semanticContent}
 ${domDiffStr ? `\n${domDiffStr}` : ''}
+${this.state.getRawHistory().length ? `\nWHAT YOU HAVE DONE SO FAR:\n${historyContext}` : ''}
 ${lastResult ? `\nLAST ACTION RESULT: ${lastResult}` : ''}
 ${visionInstruction}
 
@@ -250,11 +265,18 @@ ${NEXT_STEP_PROMPT}`;
         const t3 = Date.now();
         let aiResponse: string;
         try {
-          const messages: Array<{ role: 'system' | 'user'; content: string }> = [
+          const userContent: any = sendImage
+            ? [
+                { type: 'text', text: userPrompt },
+                { type: 'image_url', image_url: { url: screenshotB64!.startsWith('data:') ? screenshotB64! : `data:image/jpeg;base64,${screenshotB64}` } },
+              ]
+            : userPrompt;
+          const messages: Array<{ role: 'system' | 'user'; content: any }> = [
             { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
+            { role: 'user', content: userContent },
           ];
-          const response = await this.aiClient.chat({
+          const client = sendImage && this.visionClient ? this.visionClient : this.aiClient;
+          const response = await client.chat({
             messages: messages as any,
             model: this.model,
             responseFormat: 'json',
@@ -291,6 +313,7 @@ ${NEXT_STEP_PROMPT}`;
         aiRetries = 0;
 
         // Track goal
+        forceNextVision = visionAvailable && Boolean(decision.current_state?.request_vision);
         const currentGoal = decision.current_state?.next_goal || '';
         this.state.updateGoal(currentGoal);
         console.log(`[Navis] Step ${steps + 1}: goal="${currentGoal}" actions=${decision.action.length}`);

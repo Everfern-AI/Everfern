@@ -41,8 +41,9 @@ export interface TelegramConfig extends PlatformConfig {
     approvalCode?: string;
     /** Approved Telegram user IDs */
     approvedUsers?: string[];
+    authorizeMessage?: (id: string, message: string) => Promise<'allowed' | 'paired' | 'denied'>;
     /** Called when a Telegram user approves successfully so the host can persist config */
-    onApproveUser?: (user: { id: string; name: string; approvedAt: string }) => void;
+    onApproveUser?: (user: { id: string; name: string; approvedAt: string }, message: string) => boolean | void;
   };
 }
 
@@ -504,7 +505,9 @@ export class TelegramPlatform extends MessagePlatform {
     if (!this.bot) return;
 
     this.bot.on('message', (message) => {
-      this.handleIncomingMessage(message);
+      void this.handleIncomingMessage(message).catch(error => {
+        console.error('[Telegram] Incoming message failed:', error);
+      });
     });
 
     this.bot.on('polling_error', (error: any) => {
@@ -528,7 +531,7 @@ export class TelegramPlatform extends MessagePlatform {
   /**
    * Handle incoming Telegram message
    */
-  private handleIncomingMessage(message: TelegramBot.Message): void {
+  private async handleIncomingMessage(message: TelegramBot.Message): Promise<void> {
     const telegramConfig = this.config as TelegramConfig;
     const userId = message.from?.id.toString() || '';
     const userName = this.getUserDisplayName(message.from);
@@ -558,8 +561,10 @@ export class TelegramPlatform extends MessagePlatform {
       return;
     }
 
-    if (!this.isTelegramUserApproved(userId)) {
-      this.handleApprovalGate(message, userId, userName, messageText).catch(error => {
+    const authorizeMessage = (this.config as TelegramConfig).config.authorizeMessage;
+    const decision = await authorizeMessage?.(userId, messageText);
+    if (decision ? decision !== 'allowed' : !this.isTelegramUserApproved(userId)) {
+      this.handleApprovalGate(message, userId, userName, messageText, decision).catch(error => {
         console.error('[Telegram] Approval gate failed:', error);
       });
       return;
@@ -652,39 +657,36 @@ I'm your AI assistant powered by EverFern. I can help you with:
     message: TelegramBot.Message,
     userId: string,
     userName: string,
-    messageText: string
+    messageText: string,
+    decision?: 'paired' | 'denied' | 'allowed'
   ): Promise<void> {
     if (!this.bot) return;
 
     const telegramConfig = this.config as TelegramConfig;
     const approvalCode = (telegramConfig.config.approvalCode || '').trim();
-    const normalized = messageText.trim().toLowerCase();
-    const extractedCode = normalized
-      .replace(/^`+|`+$/g, '')
-      .replace(/^fern\s+approve\s+/i, '')
-      .trim();
-    const approvalMatch = normalized.match(/(?:^|\s)fern\s+approve\s+([a-z0-9-]+)(?:\s|$)/i);
-    const providedCode = approvalMatch?.[1] || extractedCode;
+    const validateLocally = () => {
+      const normalized = messageText.trim().toLowerCase();
+      const extractedCode = normalized
+        .replace(/^`+|`+$/g, '')
+        .replace(/^fern\s+approve\s+/i, '')
+        .trim();
+      const approvalMatch = normalized.match(/(?:^|\s)fern\s+approve\s+([a-z0-9-]+)(?:\s|$)/i);
+      const providedCode = approvalMatch?.[1] || extractedCode;
+      return Boolean(approvalCode && providedCode && providedCode.toLowerCase() === approvalCode.toLowerCase());
+    };
 
-    console.log('[Telegram] Approval gate check:', {
-      userId,
-      approvalCode,
-      providedCode,
-      messageText: normalized
-    });
-
-    if (approvalCode && providedCode && providedCode.toLowerCase() === approvalCode.toLowerCase()) {
+    const approve = () => telegramConfig.config.onApproveUser?.({
+      id: userId,
+      name: userName,
+      approvedAt: new Date().toISOString()
+    }, messageText);
+    const approved = decision ? decision === 'paired' : validateLocally() && approve() !== false;
+    if (approved) {
       const approvedUsers = telegramConfig.config.approvedUsers || [];
       if (!approvedUsers.includes(userId)) {
         approvedUsers.push(userId);
         telegramConfig.config.approvedUsers = approvedUsers;
       }
-
-      telegramConfig.config.onApproveUser?.({
-        id: userId,
-        name: userName,
-        approvedAt: new Date().toISOString()
-      });
 
       await this.bot.sendMessage(
         message.chat.id,

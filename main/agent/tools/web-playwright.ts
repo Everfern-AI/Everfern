@@ -1,10 +1,17 @@
-let chromium: any = null;
-try {
-  chromium = require('playwright').chromium;
-} catch {
-  try {
-    chromium = require('playwright-core').chromium;
-  } catch {}
+// Playwright is ~1,100 modules; load it on first launch, not at import.
+let chromiumMod: any = undefined;
+function getChromium(): any {
+  if (chromiumMod === undefined) {
+    chromiumMod = null;
+    try {
+      chromiumMod = require('playwright').chromium;
+    } catch {
+      try {
+        chromiumMod = require('playwright-core').chromium;
+      } catch {}
+    }
+  }
+  return chromiumMod;
 }
 
 const ANTI_DETECTION_ARGS = [
@@ -36,7 +43,7 @@ export async function playwrightWebSearch(
   query: string,
   headless: boolean
 ): Promise<PlaywrightSearchResult[]> {
-  const browser = await chromium.launch({
+  const browser = await getChromium().launch({
     headless,
     args: ANTI_DETECTION_ARGS,
   }).catch((err: Error) => {
@@ -170,7 +177,7 @@ export async function playwrightWebCrawl(
   url: string,
   headless: boolean
 ): Promise<string> {
-  const browser = await chromium.launch({
+  const browser = await getChromium().launch({
     headless,
     args: ANTI_DETECTION_ARGS,
   }).catch((err: Error) => {

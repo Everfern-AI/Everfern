@@ -82,7 +82,7 @@ export const SNAPSHOT = `(() => { ${HELPERS}
     if (parent && nameOf(parent) === nameOf(child)) wrappers.add(parent);
   }
   const candidates = els.filter(el => !wrappers.has(el));
-  for (const el of candidates.slice(0, 80)) {
+  for (const el of candidates.slice(0, 150)) {
     const ref = 'e' + (++n);
     el.setAttribute('data-navis-ref', ref);
     const tag = el.tagName.toLowerCase();
@@ -93,8 +93,9 @@ export const SNAPSHOT = `(() => { ${HELPERS}
       href: tag === 'a' ? clean(el.getAttribute('href'), 160) : undefined,
       type: tag === 'input' ? el.type : undefined,
       disabled: el.disabled || el.getAttribute('aria-disabled') === 'true' || undefined,
-      checked: typeof el.checked === 'boolean' ? el.checked : el.getAttribute('aria-checked') || undefined,
-      expanded: el.getAttribute('aria-expanded') || undefined,
+      checked: tag === 'input' && /^(checkbox|radio)$/.test(el.type) ? el.checked : el.hasAttribute('aria-checked') ? el.getAttribute('aria-checked') === 'true' : undefined,
+      expanded: el.hasAttribute('aria-expanded') ? el.getAttribute('aria-expanded') === 'true' : undefined,
+      options: tag === 'select' ? Array.from(el.options).slice(0, 15).map((o) => clean(o.text, 40)) : undefined,
       value: tag === 'input' && el.type === 'password' ? undefined : clean(el.value, 80) || undefined,
     });
   }
@@ -152,10 +153,52 @@ function axText(nodes: any[]): string {
   return lines.join('\n');
 }
 
+/** Apps that are a general browser: the worker may open any site in them. */
+const OPEN_APPS = new Set(['browser', 'chrome', 'websearch']);
+
+/** "mail.google.com" -> "google.com", "shop.example.co.uk" -> "example.co.uk". */
+export function siteOf(raw: string): string {
+  let host = '';
+  try { host = new URL(/^[a-z][\w+.-]*:/i.test(raw) ? raw : `https://${raw}`).hostname.toLowerCase().replace(/^www\./, ''); } catch { return ''; }
+  if (!host || /^[\d.]+$/.test(host) || host.includes(':')) return host;
+  const parts = host.split('.');
+  // Two-letter country domains often sit under a short second level (co.uk, com.au).
+  const take = parts.length > 2 && parts[parts.length - 1].length === 2 && parts[parts.length - 2].length <= 3 ? 3 : 2;
+  return parts.slice(-take).join('.');
+}
+
 export class WorkerWindowAdapter implements BrowserControlAdapter {
   readonly mode = 'extension' as const;
+  /**
+   * Sites this app window may open. An app window belongs to one site: it starts
+   * with the app's own, and gains any site the page itself goes to (a sign-in
+   * redirect, a link the worker clicked), but the worker can't type its way out.
+   */
+  private sites = new Set<string>();
+  private locked: boolean;
 
-  constructor(private page: PageDriver, private logger: NavisLogger) {}
+  constructor(private page: PageDriver, private logger: NavisLogger, opts: { app?: string; home?: string } = {}) {
+    const home = opts.home ? siteOf(opts.home) : '';
+    this.locked = Boolean(home) && !OPEN_APPS.has(opts.app ?? '');
+    if (home) this.sites.add(home);
+  }
+
+  /** Accepts the site the page is on now: the page got there itself. */
+  private async note(url?: string) {
+    if (!this.locked) return;
+    const site = siteOf(url ?? (await this.page.url().catch(() => '')));
+    if (site && /^https?:/i.test(url ?? 'https:')) this.sites.add(site);
+  }
+
+  /** Why the window may not open `url`, or null when it may. */
+  private refusal(url: string): string | null {
+    if (!this.locked) return null;
+    const site = siteOf(url);
+    if (!site || this.sites.has(site)) return null;
+    const home = [...this.sites][0];
+    return `This window is the ${home} app, so it only opens pages on ${[...this.sites].join(', ')}; ${site} is not one of them. ` +
+      `Stay on ${home}, or use the Browser app or web search for other sites.`;
+  }
 
   isAvailable(): boolean {
     return this.page.alive();
@@ -189,6 +232,7 @@ export class WorkerWindowAdapter implements BrowserControlAdapter {
     this.logger.elementClick(step, maxSteps, p.name, what, await this.page.frame(p));
     await this.page.click(p.x, p.y, opts);
     const now = await this.page.url();
+    await this.note(now);
     return { success: true, message: `Clicked "${p.name}"${now !== before ? ` (now on ${now})` : ''}`, stateChanged: true };
   }
 
@@ -225,15 +269,25 @@ export class WorkerWindowAdapter implements BrowserControlAdapter {
   async launch(options: { startUrl?: string }): Promise<void> {
     if (!this.isAvailable()) throw new Error('The worker browser window is not open');
     this.logger.browserLaunch(`Using ${this.page.label}`);
-    if (options.startUrl && !(await this.page.url()).startsWith(options.startUrl)) {
+    const now = await this.page.url();
+    // The app window may already be on a page its site moved it to (signed in, redirected).
+    if (/^https?:/i.test(now)) await this.note(now);
+    if (options.startUrl && /^https?:|^[\w-]+\./i.test(options.startUrl) && !now.startsWith(options.startUrl)) {
+      if (this.refusal(options.startUrl)) {
+        this.logger.browserLaunch(`Staying on ${now || 'the app'}: ${options.startUrl} is outside this app`);
+        return;
+      }
       await this.goTo(options.startUrl);
       this.logger.pageNavigate(undefined, undefined, await this.page.url());
+      await this.note();
     }
   }
 
   private async goTo(raw: string) {
     const url = /^[a-z][\w+.-]*:/i.test(raw) ? raw : `https://${raw}`;
     if (!/^https?:/i.test(url)) throw new Error(`Only web pages can be opened (${url})`);
+    const no = this.refusal(url);
+    if (no) throw new Error(no);
     await this.page.navigate(url);
   }
 
@@ -253,6 +307,7 @@ export class WorkerWindowAdapter implements BrowserControlAdapter {
       this.page.axTree ? this.page.axTree().catch(() => null) : Promise.resolve(null),
     ]);
     const url = String(snap?.url || (await this.page.url()));
+    await this.note(url);
     const title = String(snap?.title || (await this.page.title()) || 'Untitled');
     const domText = String(snap?.text || '');
     const axRendered = axText(Array.isArray(ax) ? ax : []);
@@ -335,7 +390,8 @@ export class WorkerWindowAdapter implements BrowserControlAdapter {
           const want = String(args.value ?? args.option ?? args.text ?? '');
           const r = await this.js<{ ok: boolean; picked?: string }>(`(() => { ${HELPERS}
             const el = byRef(${JSON.stringify(String(args.ref || ''))}) || findText(${JSON.stringify(String(args.target || args.label || ''))}, true);
-            if (!el || el.tagName !== 'SELECT') return { ok: false };
+            if (!el) return { ok: false };
+            if (el.tagName !== 'SELECT') return { ok: false, custom: true };
             const q = ${JSON.stringify(want.toLowerCase())};
             const opt = Array.from(el.options).find((o) => o.value.toLowerCase() === q || clean(o.text).toLowerCase() === q)
               || Array.from(el.options).find((o) => clean(o.text).toLowerCase().includes(q));
@@ -346,9 +402,27 @@ export class WorkerWindowAdapter implements BrowserControlAdapter {
             return { ok: true, picked: clean(opt.text) };
           })()`);
           this.logger.elementInput(step, maxSteps, String(args.ref || 'select'), want);
+          if (!r.ok && (r as any).custom && want) {
+            const box = await this.locate(args);
+            if (box) {
+              await this.page.click(box.x, box.y);
+              await sleep(350);
+              const opt = await this.locate({ target: want });
+              if (opt) {
+                await this.page.click(opt.x, opt.y);
+                await this.page.settle();
+                return { success: true, message: `Selected "${want}"`, stateChanged: true };
+              }
+              await this.key('Escape');
+            }
+          }
           return r.ok ? { success: true, message: `Selected "${r.picked}"`, stateChanged: true } : { success: false, message: `Couldn't select "${want}"`, stateChanged: false };
         }
         case 'press_key': {
+          if (args.ref || args.target) {
+            const at = await this.locate(args, true) ?? await this.locate(args);
+            if (at) await this.page.click(at.x, at.y);
+          }
           await this.key(String(args.key || args.keys || 'Enter'));
           this.logger.elementInput(step, maxSteps, 'page', String(args.key || 'key'));
           return { success: true, message: `Pressed ${args.key || 'Enter'}`, stateChanged: true };
@@ -356,10 +430,10 @@ export class WorkerWindowAdapter implements BrowserControlAdapter {
         case 'scroll_down':
         case 'scroll_up': {
           const dir = actionName === 'scroll_up' ? -1 : 1;
-          if (await this.page.desktopScroll?.(dir * (Number(args.amount) || 600))) return { success: true, message: 'Scrolled VM app', stateChanged: true };
-          const moved = await this.js<boolean>(`(() => {
+          if (!args.ref && await this.page.desktopScroll?.(dir * (Number(args.amount) || 600))) return { success: true, message: 'Scrolled VM app', stateChanged: true };
+          const moved = await this.js<boolean>(`(() => { ${HELPERS}
             const pick = (el) => { for (; el && el !== document.body; el = el.parentElement) { const s = getComputedStyle(el); if (/(auto|scroll)/.test(s.overflowY) && el.scrollHeight > el.clientHeight + 4) return el; } return document.scrollingElement || document.documentElement; };
-            const box = pick(document.elementFromPoint(innerWidth / 2, innerHeight / 2));
+            const box = pick(byRef(${JSON.stringify(String(args.ref || ''))}) || document.elementFromPoint(innerWidth / 2, innerHeight / 2));
             const before = box.scrollTop;
             const by = ${Number(args.amount) > 0 ? Number(args.amount) : 0} || Math.round((box === document.scrollingElement ? innerHeight : box.clientHeight) * 0.8);
             box.scrollBy({ top: ${dir} * by, behavior: 'instant' });
@@ -373,7 +447,16 @@ export class WorkerWindowAdapter implements BrowserControlAdapter {
         case 'wait_for_dom_change': {
           const ms = Math.min(10000, Math.max(300, Number(args.ms || args.timeoutMs || (Number(args.seconds) * 1000) || 2000)));
           const text = String(args.text || '');
-          if (text) {
+          const selector = String(args.selector || '');
+          const urlPart = String(args.urlContains || '');
+          if (urlPart) {
+            const end = Date.now() + ms;
+            while (Date.now() < end && !(await this.page.url()).includes(urlPart)) await sleep(250);
+          } else if (selector) {
+            await this.js(`new Promise((done) => { const end = Date.now() + ${ms};
+              const tick = () => { let hit = false; try { hit = !!document.querySelector(${JSON.stringify(selector)}); } catch {} return hit || Date.now() > end ? done(true) : setTimeout(tick, 250); };
+              tick(); })`, ms + 2000).catch(() => {});
+          } else if (text) {
             // Polled inside the page, so a remote browser needs one round trip.
             await this.js(`new Promise((done) => { const end = Date.now() + ${ms};
               const tick = () => (document.body && document.body.innerText.includes(${JSON.stringify(text)})) || Date.now() > end ? done(true) : setTimeout(tick, 250);

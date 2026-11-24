@@ -47,6 +47,7 @@ export interface DiscordConfig extends PlatformConfig {
     allowedChannels?: string[];
     /** Allowed user IDs (empty = all allowed) */
     allowedUsers?: string[];
+    authorizeMessage?: (id: string, direct: boolean, mentioned: boolean, guildId?: string) => Promise<boolean>;
     /** Whether to respond to DMs */
     respondToDMs?: boolean;
     /** Whether to respond to guild messages */
@@ -737,7 +738,10 @@ export class DiscordPlatform extends MessagePlatform {
     const isDM = message.channel.type === ChannelType.DM;
     console.log(`[Discord] Is DM: ${isDM}`);
 
-    if (isDM) {
+    const authorizeMessage = discordConfig.config.authorizeMessage;
+    if (authorizeMessage) {
+      if (!await authorizeMessage(message.author.id, isDM, !isDM && this.isBotMentioned(message), message.guild?.id)) return;
+    } else if (isDM) {
       console.log(`[Discord] 🔍 Processing DM message...`);
       if (discordConfig.config.respondToDMs === false) {
         console.log(`[Discord] ❌ DM responses disabled in config, ignoring message`);
@@ -766,7 +770,7 @@ export class DiscordPlatform extends MessagePlatform {
     }
 
     // Check if user is allowed (only for guild messages, not DMs)
-    if (!isDM && discordConfig.config.allowedUsers &&
+    if (!authorizeMessage && !isDM && discordConfig.config.allowedUsers &&
         discordConfig.config.allowedUsers.length > 0) {
       console.log(`[Discord] Checking allowed users list (${discordConfig.config.allowedUsers.length} users)`);
       if (!discordConfig.config.allowedUsers.includes(message.author.id)) {
@@ -777,7 +781,7 @@ export class DiscordPlatform extends MessagePlatform {
     }
 
     // Check if guild is allowed (only for guild messages)
-    if (!isDM && message.guild &&
+    if (!authorizeMessage && !isDM && message.guild &&
         discordConfig.config.allowedGuilds &&
         discordConfig.config.allowedGuilds.length > 0) {
       console.log(`[Discord] Checking allowed guilds list (${discordConfig.config.allowedGuilds.length} guilds)`);

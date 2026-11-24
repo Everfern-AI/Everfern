@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { homedir as osHomedir } from 'os';
+import { execFile } from 'child_process';
 import type { AgentTool, ToolResult } from '../runner/types';
 
 export const todoWriteTool: AgentTool = {
@@ -53,12 +54,25 @@ export const todoWriteTool: AgentTool = {
     }
 
     try {
+      const taskFile = path.join(planPath, 'task.md');
+      const native = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+      if (native) {
+        return await new Promise<ToolResult>((resolve, reject) => {
+          const child = execFile(native, ['--ef-write-todos'], {
+            encoding: 'utf8', windowsHide: true, maxBuffer: 16 * 1024 * 1024,
+          }, (error, output) => {
+            if (error) return reject(error);
+            try { resolve(JSON.parse(output)); } catch (parseError) { reject(parseError); }
+          });
+          child.stdin?.once('error', reject);
+          child.stdin?.end(JSON.stringify({ path: taskFile, tasks }));
+        });
+      }
       // Ensure directory exists
       if (!fs.existsSync(planPath)) {
         fs.mkdirSync(planPath, { recursive: true });
       }
 
-      const taskFile = path.join(planPath, 'task.md');
 
       // Generate Markdown content
       const lines = ['# Task List', ''];

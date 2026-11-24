@@ -1,10 +1,8 @@
 "use client";
 
+import { Lock as LuLock } from "lucide-react";
 import React, { useState, useRef, useEffect, useCallback, useMemo, KeyboardEvent } from "react";
 import Image from "next/image";
-import { DialogSurface } from "@/components/DialogSurface";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { getModelCapabilities, type ReasoningEffort } from './model-capabilities';
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { EverFernCloudLimitNotice, EverFernCloudUsageBanner, PromptWrapper } from "./components/EverFernCloudBanners";
@@ -57,8 +55,6 @@ import { CheckIcon as CheckSolidIcon, BookmarkIcon as BookmarkSolidIcon } from "
 // Components
 import { AgentTimeline } from "../../components/AgentTimeline";
 import MissionProgressCard from './components/MissionProgressCard';
-import RunSummaryCard from './components/RunSummaryCard';
-import TodoPanel from './components/TodoPanel';
 import type { MissionTimeline as MissionTimelineType } from "../../components/MissionTimeline";
 import StreamView from "../../components/StreamView";
 import WindowControls from "../components/WindowControls";
@@ -95,14 +91,10 @@ import CreateProjectModal from '../components/CreateProjectModal';
 import { ComputerPane } from './components/ComputerPane';
 import ToolDetailSidePanel from '@/components/ToolDetailSidePanel';
 import FileViewerModal from './components/FileViewerModal';
-import { SubagentPanel, getPhaseEvents, type SubagentPhase } from './components/SubagentPanel';
-import { SubagentChatView } from './components/SubagentChatView';
+import { SubagentPanel } from './components/SubagentPanel';
 import { ToolCallDetailPane, PlanPreviewCard, type ToolCallDetail } from './components/ToolCallDetailPane';
 import { useSubagentTracking } from '@/hooks/useSubagentTracking';
 import { VisionDowngradeNotice } from '@/components/VisionDowngradeNotice';
-import { InterruptedResponseBanner } from './components/InterruptedResponseBanner';
-import { DotmSquare4 } from "@/components/ui/dotm-square-4";
-import { normalizeToolName } from '@/lib/tool-utils';
 
 
 // Extracted components
@@ -115,14 +107,13 @@ import {
     OpenRouterLogo,
     OllamaLogo,
     LMStudioLogo,
-    LlamaCppLogo,
     HuggingFaceLogo,
     EverFernBglessLogo,
     MiniMaxLogo
 } from './components/ProviderLogos';
 import { WaveformIcon, FernStarburst } from './components/UIIcons';
 import { MarkdownRenderer, StreamingMarkdown } from './components/MarkdownComponents';
-import { ContextTokenRing, VoiceButton, RateLimitContinueButton, CloudAuthLoginButton, VisionGroundingErrorCard, isVisionGroundingError } from './components/UIHelpers';
+import { ContextTokenRing, VoiceButton, RateLimitContinueButton, CloudAuthLoginButton } from './components/UIHelpers';
 import { ToolCallTag, ToolCallRow, ComputerUseResultCard, LiveToolCallCard } from './components/ToolCallComponents';
 import { ReportContainer } from './components/ReportComponents';
 import { InlineVisualization } from './components/InlineVisualization';
@@ -195,73 +186,16 @@ const ORCHESTRATOR_LINE_PATTERNS = [
     /^\s*(?:🌐|🔍|📝|✅|🔬|⚠️|🖥️|💻|📊)\s*(?:WEB EXPLORER|Deep Research|OS Interaction|Coding Specialist|Data Analyst|Data Analysis)[^\n]*/gim,
 ];
 
-function extractThinkingFromText(text: string): { cleanText: string; thought: string } {
-    if (!text) return { cleanText: '', thought: '' };
-    const thoughts: string[] = [];
-
-    // 1. Check for closed tags: <think>...</think>, <thought>...</thought>, <thinking>...</thinking>, etc.
-    const tagRegex = /<(?:think|thought|thinking|reasoning|reflection)>([\s\S]*?)<\/(?:think|thought|thinking|reasoning|reflection)>/gi;
-    let match;
-    while ((match = tagRegex.exec(text)) !== null) {
-        if (match[1]?.trim()) {
-            thoughts.push(match[1].trim());
-        }
-    }
-
-    // 2. Check for bracket tags: [Thinking]...[/Thinking], [Reasoning]...[/Reasoning], [Thought]...[/Thought]
-    const bracketRegex = /\[(?:Thinking|Reasoning|Thought)\]([\s\S]*?)\[\/(?:Thinking|Reasoning|Thought)\]/gi;
-    while ((match = bracketRegex.exec(text)) !== null) {
-        if (match[1]?.trim()) {
-            thoughts.push(match[1].trim());
-        }
-    }
-
-    // 3. Check for trailing open tag (currently streaming inside <think>...</think> or [Thought]...)
-    const openTagMatch = text.match(/<(?:think|thought|thinking|reasoning|reflection)>([\s\S]*)$/i);
-    if (openTagMatch && openTagMatch[1] !== undefined && openTagMatch[1].trim()) {
-        const openContent = openTagMatch[1].trim();
-        if (!thoughts.includes(openContent)) {
-            thoughts.push(openContent);
-        }
-    }
-
-    const openBracketMatch = text.match(/\[(?:Thinking|Reasoning|Thought)\]([\s\S]*)$/i);
-    if (openBracketMatch && openBracketMatch[1] !== undefined && openBracketMatch[1].trim()) {
-        const openContent = openBracketMatch[1].trim();
-        if (!thoughts.includes(openContent)) {
-            thoughts.push(openContent);
-        }
-    }
-
-    // 4. Check for leading Thought: ... or Thinking Process: ...
-    if (thoughts.length === 0) {
-        const headerMatch = text.match(/^\s*(?:Thinking Process|Reasoning Process|Chain-of-thought|Internal Thought|Thought|Thinking|Reasoning):\s*([\s\S]*?)(?=(?:\n\n[A-Z]|\n\n#{1,3}\s|\n\n\*\*|$))/i);
-        if (headerMatch && headerMatch[1]?.trim()) {
-            thoughts.push(headerMatch[1].trim());
-        }
-    }
-
-    let clean = text
-        .replace(/<(?:think|thought|thinking|reasoning|reflection)>[\s\S]*?<\/(?:think|thought|thinking|reasoning|reflection)>/gi, '')
-        .replace(/\[(?:Thinking|Reasoning|Thought)\][\s\S]*?\[\/(?:Thinking|Reasoning|Thought)\]/gi, '')
-        .replace(/<(?:think|thought|thinking|reasoning|reflection)>[\s\S]*$/gi, '')
-        .replace(/\[(?:Thinking|Reasoning|Thought)\][\s\S]*$/gi, '')
-        .replace(/^\s*(?:Thinking Process|Reasoning Process|Chain-of-thought|Internal Thought|Thought|Thinking|Reasoning):[\s\S]*?(?=(?:\n\n[A-Z]|\n\n#{1,3}\s|\n\n\*\*|$))/gi, '')
-        .trim();
-
-    return { cleanText: clean, thought: thoughts.join('\n\n').trim() };
-}
-
 function scrubOrchestratorNoise(text: string): string {
     if (!text) return text;
     let out = text;
     // Strip XML/bracket reasoning tags (closed or open-ended)
     out = out
-        .replace(/<(?:think|thought|thinking|reasoning|reflection)>[\s\S]*?<\/(?:think|thought|thinking|reasoning|reflection)>/gi, '')
-        .replace(/\[(?:Thinking|Reasoning|Thought)\][\s\S]*?\[\/(?:Thinking|Reasoning|Thought)\]/gi, '')
-        .replace(/<(?:think|thought|thinking|reasoning|reflection)>[\s\S]*$/gi, '')
-        .replace(/\[(?:Thinking|Reasoning|Thought)\][\s\S]*$/gi, '')
-        .replace(/^\s*(?:Thinking Process|Reasoning Process|Chain-of-thought|Internal Thought|Thought|Thinking|Reasoning):[^\n]*\n?/gim, '');
+        .replace(/<(?:think|thought|reasoning|reflection)>[\s\S]*?<\/(?:think|thought|reasoning|reflection)>/gi, '')
+        .replace(/\[(?:Thinking|Reasoning)\][\s\S]*?\[\/(?:Thinking|Reasoning)\]/gi, '')
+        .replace(/<(?:think|thought|reasoning|reflection)>[\s\S]*$/gi, '')
+        .replace(/\[(?:Thinking|Reasoning)\][\s\S]*$/gi, '')
+        .replace(/^\s*(?:Thinking Process|Reasoning Process|Chain-of-thought|Internal Thought):[^\n]*\n?/gim, '');
 
     for (const pat of ORCHESTRATOR_LINE_PATTERNS) {
         out = out.replace(pat, '');
@@ -620,21 +554,7 @@ const isNavisQuestion = (questions: any[]) => {
 };
 
 // ── Main ChatPage ─────────────────────────────────────────────────────────────
-const RIBBON_SEGMENT = {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    borderRadius: 999,
-    background: "color-mix(in srgb, var(--color-bg-surface) 62%, transparent)",
-    border: "1px solid color-mix(in srgb, var(--color-border) 72%, transparent)",
-    boxShadow: "0 10px 30px -18px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.16)",
-    backdropFilter: "blur(22px) saturate(160%)",
-    WebkitBackdropFilter: "blur(22px) saturate(160%)",
-    WebkitAppRegion: "no-drag",
-} as any;
-
 export default function ChatPage() {
-    const [projectToDelete, setProjectToDelete] = useState<{id: string; name: string} | null>(null);
     const router = useRouter();
     const [messages, setMessages] = useState<Message[]>([]);
     const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
@@ -854,25 +774,8 @@ export default function ChatPage() {
 
     const [fileViewerPane, setFileViewerPane] = useState<{ toolId: string; filename: string; content: string; tab: 'code' | 'preview' } | null>(null);
     const [selectedModel, setSelectedModel] = useState("fern-1");
-    const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>('medium');
-    const [showReasoningSelector, setShowReasoningSelector] = useState(false);
     const [availableModels, setAvailableModels] = useState<ModelOption[]>([]);
     const availableModelsRef = useRef<ModelOption[]>([]);
-    const currentModel = availableModels.find(m => m.id === selectedModel) || availableModels[0] || { id: "fern", name: "EverFern-1", provider: "EverFern", providerType: "everfern", logo: null };
-    const currentModelCapabilities = getModelCapabilities(currentModel);
-
-    useEffect(() => {
-        setShowReasoningSelector(false);
-        if (!currentModelCapabilities.reasoning) return;
-        const saved = localStorage.getItem(`everfern_reasoning_effort:${selectedModel}`);
-        if (saved === 'low' || saved === 'medium' || saved === 'high') setReasoningEffort(saved);
-    }, [selectedModel, currentModelCapabilities.reasoning]);
-
-    const updateReasoningEffort = (effort: ReasoningEffort) => {
-        setReasoningEffort(effort);
-        localStorage.setItem(`everfern_reasoning_effort:${selectedModel}`, effort);
-        setShowReasoningSelector(false);
-    };
     // Keep the ref updated so closures (dispatch command handler) always see the latest models
     useEffect(() => { availableModelsRef.current = availableModels; }, [availableModels]);
     const messagesRef = useRef<Message[]>([]);
@@ -883,7 +786,6 @@ export default function ChatPage() {
     const [showIntegrationSettings, setShowIntegrationSettings] = useState(false);
     const [showProjectsPage, setShowProjectsPage] = useState(false);
     const [showAnalyticsPage, setShowAnalyticsPage] = useState(false);
-    const [showScheduledTasksPage, setShowScheduledTasksPage] = useState(false);
     const [showCreateProjectModal, setShowCreateProjectModal] = useState(false);
     const [showCustomizeModal, setShowCustomizeModal] = useState(false);
     const [showScheduledTaskModal, setShowScheduledTaskModal] = useState(false);
@@ -924,8 +826,6 @@ export default function ChatPage() {
     const [projectInstructions, setProjectInstructions] = useState<string>('');
     const [isEditingInstructions, setIsEditingInstructions] = useState(false);
     const [instructionsInput, setInstructionsInput] = useState('');
-    const [editingUserMessageId, setEditingUserMessageId] = useState<string | null>(null);
-    const [editingUserMessageText, setEditingUserMessageText] = useState<string>('');
     const { theme } = useTheme();
 
     // Fetch conversation history for project recents
@@ -1229,7 +1129,7 @@ export default function ChatPage() {
 
     useEffect(() => {
         // Only run on client side
-        if (typeof window !== 'undefined' && (window as any).electronAPI?.db?.checkConnection) {
+        if (typeof window !== 'undefined') {
             const healthCheckDone = sessionStorage.getItem('healthCheckCompleted');
             if (!healthCheckDone) {
                 setShowHealthCheck(true);
@@ -1247,12 +1147,7 @@ export default function ChatPage() {
 
     // Subagent Panel State
     const [showSubagentPanel, setShowSubagentPanel] = useState(false);
-    const showSubagentPanelRef = useRef(false);
-    useEffect(() => {
-        showSubagentPanelRef.current = showSubagentPanel;
-    }, [showSubagentPanel]);
     const [selectedSubagentToolCall, setSelectedSubagentToolCall] = useState<ToolCallDetail | null>(null);
-    const [activeSubagentChat, setActiveSubagentChat] = useState<SubagentPhase | null>(null);
     const subagent = useSubagentTracking(activeConversationId);
 
     const prevIsToolDetailOpen = useRef(isToolDetailOpen);
@@ -1458,11 +1353,7 @@ export default function ChatPage() {
     };
 
     const loadingMessages = ["marinating...", "schlepping...", "concocting...", "honking..."];
-    const greetingMessages = [
-        "What do you want to do, {name}?",
-        "Ready to build, {name}?",
-        "Back at it, {name}?"
-    ];
+    const greetingMessages = ["What should we work on, {name}?"];
 
     useEffect(() => {
         if (isLoading) {
@@ -1594,11 +1485,11 @@ export default function ChatPage() {
 
         const m = selectedModel.toLowerCase();
         return pType === 'ollama' ||
-            pType === 'lmstudio' || pType === 'llamacpp' ||
+            pType === 'lmstudio' ||
             pType === 'local' ||
             m === 'fern-1' ||
             m.startsWith('ollama:') ||
-            m.startsWith('llamacpp:') || m.startsWith('lmstudio:');
+            m.startsWith('lmstudio:');
     }, [selectedModel, availableModels, config?.provider]);
 
     // Timer to detect if local model is taking too long to respond (e.g. >12s)
@@ -1645,7 +1536,7 @@ export default function ChatPage() {
             m.providerType === 'everfern' ||
             m.provider === 'EverFern' ||
             m.id === 'mistralai/mistral-medium-3.5-128b' ||
-            (m.providerType !== 'ollama' && m.providerType !== 'lmstudio' && m.providerType !== 'llamacpp' && m.providerType !== 'local')
+            (m.providerType !== 'ollama' && m.providerType !== 'lmstudio' && m.providerType !== 'local')
         );
 
         if (cloudModel) {
@@ -1704,10 +1595,6 @@ export default function ChatPage() {
         dependencies?: string[];
     }> | null>(null);
     const [activePlanTitle, setActivePlanTitle] = useState<string | null>(null);
-    const activePlanStepsRef = useRef<typeof activePlanSteps>(null);
-    const activePlanTitleRef = useRef<string | null>(null);
-    useEffect(() => { activePlanStepsRef.current = activePlanSteps; }, [activePlanSteps]);
-    useEffect(() => { activePlanTitleRef.current = activePlanTitle; }, [activePlanTitle]);
     const [envWarning, setEnvWarning] = useState<string | null>(null);
     const [showEnvWarningBanner, setShowEnvWarningBanner] = useState<boolean>(false);
     const [settingsInitialSection, setSettingsInitialSection] = useState<string>('general');
@@ -1856,7 +1743,6 @@ export default function ChatPage() {
 
     // Settings
     const [settingsShowuiUrl, setSettingsShowuiUrl] = useState("http://127.0.0.1:7860");
-    const [settingsVlmEnabled, setSettingsVlmEnabled] = useState(false);
     const [settingsVlmMode, setSettingsVlmMode] = useState<"local" | "cloud">("local");
     const [settingsVlmCloudProvider, setSettingsVlmCloudProvider] = useState("ollama");
     const [settingsVlmCloudModel, setSettingsVlmCloudModel] = useState("qwen3-vl:235b-cloud");
@@ -2233,7 +2119,7 @@ export default function ChatPage() {
     const CompletionToast = () => (
         <AnimatePresence>
             {notification && (
-                <DialogSurface label="Assistant dialog"
+                <motion.div
                     initial={{ opacity: 0, y: -20, x: 20 }}
                     animate={{ opacity: 1, y: 0, x: 0 }}
                     exit={{ opacity: 0, scale: 0.95 }}
@@ -2280,7 +2166,7 @@ export default function ChatPage() {
                     <div style={{ color: 'var(--color-text-tertiary)' }}>
                         <ChevronRightIcon width={16} height={16} />
                     </div>
-                </DialogSurface>
+                </motion.div>
             )}
         </AnimatePresence>
     );
@@ -2514,7 +2400,6 @@ export default function ChatPage() {
         setActiveComputerData(null);
         setShowSubagentPanel(false);
         setSelectedSubagentToolCall(null);
-        setActiveSubagentChat(null);
         setActiveSurface(null);
         setShowLocalSlowWarning(false);
         setDismissedLocalSlowWarning(false);
@@ -2578,7 +2463,7 @@ export default function ChatPage() {
     }, []);
 
     useEffect(() => {
-        if (displayName) {
+        if (displayName && displayName !== "User") {
             const nameStr = displayName.charAt(0).toUpperCase() + displayName.slice(1);
             const msg = greetingMessages[Math.floor(Math.random() * greetingMessages.length)];
             setRandomGreeting(msg.replace("{name}", nameStr));
@@ -2690,8 +2575,7 @@ export default function ChatPage() {
             if (res.success && res.models) {
                 const formatted = res.models.map((m: any) => ({
                     id: m.id, name: m.name, provider: m.provider, providerType: m.providerType,
-                    capabilities: m.capabilities,
-                    logo: (m.providerType === 'ollama' || m.providerType === 'local') ? OllamaLogo : m.providerType === 'openai' ? OpenAILogo : m.providerType === 'anthropic' ? AnthropicLogo : m.providerType === 'deepseek' ? DeepSeekLogo : m.providerType === 'nvidia' ? NvidiaLogo : m.providerType === 'openrouter' ? OpenRouterLogo : (m.providerType === 'gemini' || m.providerType === 'google') ? GeminiLogo : m.providerType === 'llamacpp' ? LlamaCppLogo : m.providerType === 'lmstudio' ? LMStudioLogo : m.providerType === 'minimax' ? MiniMaxLogo : m.providerType === 'everfern' ? EverFernBglessLogo : null
+                    logo: (m.providerType === 'ollama' || m.providerType === 'local') ? OllamaLogo : m.providerType === 'openai' ? OpenAILogo : m.providerType === 'anthropic' ? AnthropicLogo : m.providerType === 'deepseek' ? DeepSeekLogo : m.providerType === 'nvidia' ? NvidiaLogo : m.providerType === 'openrouter' ? OpenRouterLogo : (m.providerType === 'gemini' || m.providerType === 'google') ? GeminiLogo : m.providerType === 'lmstudio' ? LMStudioLogo : m.providerType === 'minimax' ? MiniMaxLogo : m.providerType === 'everfern' ? EverFernBglessLogo : null
                 }));
 
                 // Ensure openrouter / nvidia custom model from config is visible in dropdown
@@ -2699,7 +2583,7 @@ export default function ChatPage() {
                     const customId = config.customModel.trim();
                     if (customId && !formatted.find((m: any) => m.id === customId)) {
                         const provName = config.provider === 'openrouter' ? 'OpenRouter' : config.provider === 'nvidia' ? 'NVIDIA NIM' : 'Ollama Cloud';
-                        const provLogo = config.provider === 'openrouter' ? OpenRouterLogo : NvidiaLogo;
+                        const provLogo = config.provider === 'openrouter' ? OpenRouterLogo : config.provider === 'ollama-cloud' ? OllamaLogo : NvidiaLogo;
                         formatted.unshift({
                             id: customId,
                             name: `${customId} (Custom)`,
@@ -2730,16 +2614,7 @@ export default function ChatPage() {
                 setAvailableModels(finalModels);
                 setSelectedModel(prev => {
                     const validIds = finalModels.filter((m: ModelOption) => !m.id.endsWith('-error') && !m.id.endsWith('-empty')).map((m: ModelOption) => m.id);
-                    if (!validIds.includes(prev)) {
-                        if (config?.provider === 'llamacpp') {
-                            const savedModel = String(config.model || prev).replace(/^llamacpp:/, '');
-                            const savedId = `llamacpp:${savedModel}`;
-                            if (validIds.includes(savedId)) return savedId;
-                            const localId = validIds.find((id: string) => id.startsWith('llamacpp:'));
-                            if (localId) return localId;
-                        }
-                        return validIds[0] ?? prev;
-                    }
+                    if (!validIds.includes(prev)) return validIds[0] ?? prev;
                     return prev;
                 });
             }
@@ -2839,7 +2714,7 @@ export default function ChatPage() {
         if (selectedModel) {
             console.log('[ModelInfo] Effect: selectedModel changed to:', selectedModel);
             // For local models (fern-1, ollama*, lmstudio*), use fallback
-            if (selectedModel === 'fern-1' || selectedModel.includes('ollama') || selectedModel.includes('llamacpp') || selectedModel.includes('lmstudio')) {
+            if (selectedModel === 'fern-1' || selectedModel.includes('ollama') || selectedModel.includes('lmstudio')) {
                 console.log('[ModelInfo] Local model detected, skipping API fetch');
                 setModelInfo({
                     contextLength: 128000,
@@ -2946,11 +2821,10 @@ export default function ChatPage() {
         if (showSettings && config) {
             setSettingsEngine(config.engine || "everfern");
             setSettingsProvider(config.provider || null);
-            setSettingsApiKey(config.provider === "llamacpp" ? (config.baseUrl || config.baseUrls?.llamacpp || "http://localhost:8080/v1") : (config.keys?.[config.provider || ""] || config.apiKey || ""));
+            setSettingsApiKey(config.keys?.[config.provider || ""] || config.apiKey || "");
             setSettingsCustomModel(config.customModel || "z-ai/glm5");
             setModelValidationStatus("none");
             setSettingsShowuiUrl(config.showuiUrl || "http://127.0.0.1:7860");
-            setSettingsVlmEnabled(config.vlm?.enabled === true || (config.vlm?.enabled == null && config.vlm?.engine === "cloud"));
             const loadedVlmProvider = config.vlm?.engine === "cloud" ? (config.vlm.provider || "ollama") : "ollama";
             const defaultLoadedVlmModel =
                 loadedVlmProvider === "everfern" ? "everfern-tars-v1" :
@@ -2976,7 +2850,7 @@ export default function ChatPage() {
     }, [showSettings]);
 
     useEffect(() => {
-        if (settingsProvider && config) setSettingsApiKey(settingsProvider === "llamacpp" ? (config.baseUrls?.llamacpp || (config.provider === "llamacpp" ? config.baseUrl : undefined) || "http://localhost:8080/v1") : (config.keys?.[settingsProvider] || ""));
+        if (settingsProvider && config) setSettingsApiKey(config.keys?.[settingsProvider] || "");
     }, [settingsProvider, config]);
 
     useEffect(() => {
@@ -3151,10 +3025,8 @@ export default function ChatPage() {
                 console.log(`[Frontend] ⏸️ Mission complete received but ${hasActiveHitl ? 'HITL' : 'user question'} is active - committing message and deferring completion`);
                 if (!isMessageCommittedRef.current) {
                     isMessageCommittedRef.current = true;
-                    const rawContent = streamingContentRef.current || "";
-                    const { cleanText: nonThoughtFinal, thought: extractedThoughtFinal } = extractThinkingFromText(rawContent);
-                    const finalContent = nonThoughtFinal || rawContent;
-                    const finalThought = (streamingThoughtRef.current || extractedThoughtFinal || "").trim();
+                    const finalContent = streamingContentRef.current || "";
+                    const finalThought = streamingThoughtRef.current;
                     const finalToolCalls = persistableToolCalls(
                         liveToolCallsRef.current,
                         t => t.status === 'running' ? 'done' : undefined
@@ -3165,21 +3037,17 @@ export default function ChatPage() {
                             id: assistantMessageIdRef.current || crypto.randomUUID(),
                             role: "assistant",
                             content: finalContent,
-                            thought: finalThought || undefined,
-                            reasoning_content: finalThought || undefined,
+                            thought: finalThought,
+                            reasoning_content: streamingThoughtRef.current,
                             thinkingDuration: durationMs,
                             timestamp: new Date(),
                             toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
                             generatedTitle: title,
-                            planSteps: activePlanStepsRef.current || undefined,
-                            planTitle: activePlanTitleRef.current || undefined,
-                        missionTimeline: missionTimelineRef.current,
+                            missionTimeline: missionTimelineRef.current,
                         };
                         setLiveToolCalls([]);
                         setStreamingToolCalls([]);
                         streamingToolCallsRef.current = [];
-                        streamingContentRef.current = "";
-                        streamingThoughtRef.current = "";
                         setMessages(prev => {
                             const existingIdx = prev.findIndex(m => m.id === assistantMsg.id);
                             if (existingIdx >= 0) {
@@ -3218,10 +3086,8 @@ export default function ChatPage() {
                 if (isMessageCommittedRef.current) return;
                 isMessageCommittedRef.current = true;
 
-                const rawFinalContent = streamingContentRef.current || "";
-                const { cleanText: nonThoughtFinal, thought: extractedThoughtFinal } = extractThinkingFromText(rawFinalContent);
-                const finalContent = nonThoughtFinal || rawFinalContent;
-                const finalThought = streamingThoughtRef.current || extractedThoughtFinal;
+                const finalContent = streamingContentRef.current || "";
+                const finalThought = streamingThoughtRef.current;
                 const finalToolCalls = persistableToolCalls(
                     liveToolCallsRef.current,
                     t => t.status === 'running' ? 'done' : undefined
@@ -3241,14 +3107,12 @@ export default function ChatPage() {
                             role: "assistant",
                             content: finalContent,
                             thought: finalThought,
-                            reasoning_content: finalThought,
+                            reasoning_content: streamingThoughtRef.current,
                             thinkingDuration: durationMs,
                             timestamp: new Date(),
                             toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
                             generatedTitle: title,
-                            planSteps: activePlanStepsRef.current || undefined,
-                            planTitle: activePlanTitleRef.current || undefined,
-                        missionTimeline: missionTimelineRef.current,
+                            missionTimeline: missionTimelineRef.current,
                         };
                         setLiveToolCalls([]);
                         setStreamingToolCalls([]);
@@ -3292,13 +3156,11 @@ export default function ChatPage() {
                         role: "assistant",
                         content: finalContent,
                         thought: finalThought,
-                        reasoning_content: finalThought,
+                        reasoning_content: streamingThoughtRef.current,
                         thinkingDuration: durationMs,
                         timestamp: new Date(),
                         toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
                         generatedTitle: title,
-                        planSteps: activePlanStepsRef.current || undefined,
-                        planTitle: activePlanTitleRef.current || undefined,
                         missionTimeline: missionTimelineRef.current,
                     };
                     setStreamingContent("");
@@ -3596,14 +3458,8 @@ export default function ChatPage() {
                 const existing = map.get(event.toolCallId) || [];
                 map.set(event.toolCallId, [...existing, event].slice(-100));
 
-                const agentId = (event as any)?.metadata?.agentId;
-                if (agentId && agentId !== event.toolCallId) {
-                    const existingAgentEvents = map.get(agentId) || [];
-                    map.set(agentId, [...existingAgentEvents, event].slice(-100));
-                }
-
-                // Trigger a React re-render if the detail panel or subagent panel is currently open
-                if (isToolDetailOpen || showSubagentPanelRef.current) {
+                // Only trigger a React re-render if the detail panel is currently open
+                if (isToolDetailOpen) {
                     setSubAgentProgressVersion(v => v + 1);
                 }
 
@@ -3747,9 +3603,6 @@ export default function ChatPage() {
                     truncatedTools: truncatedTools ?? undefined,
                     schemaTokenSavings: schemaTokenSavings ?? undefined,
                 });
-                // NOTE: Usage persistence/analytics recording happens in the main process
-                // (agent-runtime/call_model/brain forward acp:usage upstream). Recording here
-                // too would double-count every row.
             });
             acpApi.onSurfaceAction((data: any) => {
                 if (data?.conversationId && data.conversationId !== activeConversationIdRef.current) return;
@@ -3847,7 +3700,6 @@ export default function ChatPage() {
                     conversationId: activeConversationId,
                     assistantMessageId: assistantMessageIdRef.current,
                     operatorMode: pursueGoalMode,
-                    reasoningEffort: currentModelCapabilities.reasoning ? reasoningEffort : undefined,
                 });
             } catch (err: any) {
                 console.error("Stream error:", err);
@@ -3859,11 +3711,9 @@ export default function ChatPage() {
             }
             finally { setIsLoading(false); }
         })();
-    }, [activeConversationId, selectedModel, availableModels, pursueGoalMode, applyLiveToolUpdate, reasoningEffort, currentModelCapabilities.reasoning]);
+    }, [activeConversationId, selectedModel, availableModels, pursueGoalMode, applyLiveToolUpdate]);
 
-    const saveConversation = useCallback(async (msgs: Message[], isFullSave: boolean = true) => {
-        // Full-snapshot saves of empty lists are not a supported UI flow — bail unconditionally
-        // to prevent an accidental mass-delete of all messages at the store level.
+    const saveConversation = useCallback(async (msgs: Message[], isFullSave: boolean = false) => {
         if (msgs.length === 0) return;
         // Use the ref for synchronous reads — avoids duplicate IDs when called
         // multiple times before React flushes the state update.
@@ -4040,22 +3890,14 @@ export default function ChatPage() {
                     feedback_type: type,
                     reason,
                     custom_reason: customReason,
-                    context_data: contextMessages,
-                    model: {
-                        id: selectedModel,
-                        name: currentModel.name,
-                    },
-                    provider: {
-                        name: currentModel.provider,
-                        type: currentModel.providerType,
-                    },
+                    context_data: contextMessages
                 })
             });
             if (!reqRes.ok) throw new Error('Failed to submit feedback');
         } catch (err) {
             console.error('Error submitting feedback:', err);
         }
-    }, [messages, feedbackTargetIndex, selectedModel, currentModel]);
+    }, [messages, feedbackTargetIndex]);
 
 
     const handleSend = useCallback(async (overrideValue?: any, currentMessages?: Message[], skipAddUserMessage?: boolean) => {
@@ -4071,11 +3913,6 @@ export default function ChatPage() {
 
         let newMessages: Message[];
         const isProject = folderContexts.length > 0 && projects.some(p => p.id === folderContexts[0].id || p.path === folderContexts[0].path);
-        const activeFolder = folderContexts[0];
-        let contextSuffix = '';
-        if (activeFolder && !isProject) {
-            contextSuffix = `\n\n[Shared folder context]\n${folderContexts.map(f => `- ${f.path}`).join('\n')}\n\nNote: This folder structure is provided as passive context. You do not need to process, scan, or organize these files automatically. However, if the user explicitly asks you to take an action on these files in this message, you MUST fulfill their request using your tools immediately without asking for extra confirmation.`;
-        }
 
         if (skipAddUserMessage) {
             // Silent approval/rejection: do NOT add a visible message to the chat or save it to database.
@@ -4083,7 +3920,8 @@ export default function ChatPage() {
             const tempUserMessage: Message = { id: crypto.randomUUID(), role: "user", content: textToUse.trim(), timestamp: new Date() };
             newMessages = [...(currentMessages ?? messagesRef.current), tempUserMessage];
         } else {
-            const userMessage: Message = { id: crypto.randomUUID(), role: "user", content: (textToUse.trim() + contextSuffix).trim(), timestamp: new Date(), attachments: attachments.length > 0 ? [...attachments] : undefined };
+            const folderContextText = (folderContexts.length > 0 && !isProject) ? `\n\n[Shared folder context]\n${folderContexts.map(f => `- ${f.path}`).join('\n')}\n\nNote: This folder structure is provided as passive context. You do not need to process, scan, or organize these files automatically. However, if the user explicitly asks you to take an action on these files in this message, you MUST fulfill their request using your tools immediately without asking for extra confirmation.` : '';
+            const userMessage: Message = { id: crypto.randomUUID(), role: "user", content: (textToUse.trim() + folderContextText).trim(), timestamp: new Date(), attachments: attachments.length > 0 ? [...attachments] : undefined };
             newMessages = [...(currentMessages ?? messagesRef.current), userMessage];
             messagesRef.current = newMessages;
             setMessages(newMessages);
@@ -4242,7 +4080,7 @@ export default function ChatPage() {
                 });
                 api.onSkillDetected(({ skillName, reason, conversationId }: { skillName: string; skillDescription: string; reason: string; conversationId?: string }) => {
                     if (conversationId && conversationId !== activeConversationIdRef.current) return;
-                    const newTc: ToolCallDisplay = { id: crypto.randomUUID(), toolName: 'skill_detected', displayName: `📚 Skill Detected: ${skillName}`, description: reason, status: 'done', args: { skillName } };
+                    const newTc: ToolCallDisplay = { id: crypto.randomUUID(), toolName: 'skill_detected', displayName: `Skill detected: ${skillName}`, description: reason, status: 'done', args: { skillName } };
                     liveToolCallsRef.current = [...liveToolCallsRef.current, newTc];
                     setLiveToolCalls(liveToolCallsRef.current);
                 });
@@ -4388,9 +4226,7 @@ export default function ChatPage() {
                                     reasoning_content: streamingThoughtRef.current,
                                     timestamp: new Date(),
                                     toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
-                                    planSteps: activePlanStepsRef.current || undefined,
-                            planTitle: activePlanTitleRef.current || undefined,
-                        missionTimeline: missionTimelineRef.current,
+                                    missionTimeline: missionTimelineRef.current,
                                 };
                                 setMessages(prev => {
                                     // Prevent duplicate message if the last message is identical
@@ -4479,13 +4315,10 @@ export default function ChatPage() {
                         truncatedTools: truncatedTools ?? undefined,
                         schemaTokenSavings: schemaTokenSavings ?? undefined,
                     });
-                    // NOTE: Usage persistence/analytics recording happens in the main process
-                    // (agent-runtime/call_model/brain forward acp:usage upstream). Recording here
-                    // too would double-count every row.
                 });
                 api.onOptima(({ event, details, conversationId }: { event: string; details: string; conversationId?: string }) => {
                     if (conversationId && conversationId !== activeConversationIdRef.current) return;
-                    setStreamingThought(prev => { const icon = event === 'cache_hit' ? '⚡' : '✂️'; const label = event === 'cache_hit' ? 'Semantic Cache Hit' : 'Prompt Slimmed'; return `> [!NOTE]\n> **Optima**: ${icon} ${label} — ${details}\n\n` + prev; });
+                    setStreamingThought(prev => { const label = event === 'cache_hit' ? 'Semantic Cache Hit' : 'Prompt Slimmed'; return `> [!NOTE]\n> **Optima**: ${label} — ${details}\n\n` + prev; });
                 });
                 api.onShowArtifact?.(({ name, conversationId }: { name: string; conversationId?: string }) => {
                     if (conversationId && conversationId !== activeConversationIdRef.current) return;
@@ -4500,8 +4333,6 @@ export default function ChatPage() {
                     isHandlingPlanRef.current = true;
                     // Save any accumulated AI response before showing plan
                     if (accumulated || streamingThoughtRef.current) {
-                        const { cleanText: cleanAccumulated, thought: extractedThoughtPlan } = extractThinkingFromText(accumulated || "");
-                        const effectiveThoughtPlan = (streamingThoughtRef.current || extractedThoughtPlan || "").trim();
                         const finalToolCalls = persistableToolCalls(
                             liveToolCallsRef.current,
                             t => t.status === 'running' ? 'done' : undefined
@@ -4509,14 +4340,12 @@ export default function ChatPage() {
                         const assistantMsg: Message = {
                             id: crypto.randomUUID(),
                             role: "assistant",
-                            content: cleanAccumulated || "",
-                            thought: effectiveThoughtPlan || undefined,
-                            reasoning_content: effectiveThoughtPlan || undefined,
+                            content: accumulated || "",
+                            thought: streamingThoughtRef.current,
+                            reasoning_content: streamingThoughtRef.current,
                             timestamp: new Date(),
                             toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
-                            planSteps: activePlanStepsRef.current || undefined,
-                            planTitle: activePlanTitleRef.current || undefined,
-                        missionTimeline: missionTimelineRef.current,
+                            missionTimeline: missionTimelineRef.current,
                         };
                         setMessages(prev => {
                             // Prevent duplicate message if the last message is identical
@@ -4581,13 +4410,6 @@ export default function ChatPage() {
                     const limitedEvents = updatedEvents.slice(-100);
 
                     newMap.set(event.toolCallId, limitedEvents);
-
-                    const agentId = (event as any)?.metadata?.agentId;
-                    if (agentId && agentId !== event.toolCallId) {
-                        const existingAgentEvents = newMap.get(agentId) || [];
-                        newMap.set(agentId, [...existingAgentEvents, event].slice(-100));
-                    }
-
                     setSubAgentProgressVersion(v => v + 1);
 
                     // Only update liveToolCalls state if this event actually matches a live tc
@@ -4749,19 +4571,12 @@ export default function ChatPage() {
                         }
                     } else {
                         api.removeStreamListeners();
-                        if (typeof window !== 'undefined' && (window as any).__streamingThrottler) {
-                            clearTimeout((window as any).__streamingThrottler);
-                            (window as any).__streamingThrottler = null;
-                        }
                         if (isMessageCommittedRef.current) {
                             setStreamingContent("");
                             setStreamingThought("");
                             setLiveToolCalls([]);
                             setStreamingToolCalls([]);
                             streamingToolCallsRef.current = [];
-                            streamingContentRef.current = "";
-                            streamingThoughtRef.current = "";
-                            liveToolCallsRef.current = [];
                             setIsLoading(false);
                             return;
                         }
@@ -4769,9 +4584,7 @@ export default function ChatPage() {
 
                         let finalContent = accumulated || "";
                         finalContent = finalContent.replace(/<tool_call>[\s\S]*?(?:<\/tool_call>|$)/gi, '').trim();
-                        const { thought: extractedFinalThought, cleanText: cleanFromThinking } = extractThinkingFromText(finalContent);
-                        finalContent = cleanFromThinking;
-                        const effectiveFinalThought = (streamingThoughtRef.current || extractedFinalThought || "").trim();
+                        const finalThought = streamingThoughtRef.current;
                         const finalToolCalls = persistableToolCalls(
                             liveToolCallsRef.current,
                             t => t.status === 'running' ? 'done' : undefined
@@ -4782,19 +4595,17 @@ export default function ChatPage() {
                         const cleanContent = wasStopped ? finalContent.replace(/\n\n🛑 Stopped by user\./g, '').trim() : finalContent;
 
                         // Only create assistant message if there's actual content, tool calls, or a mission timeline
-                        if (cleanContent || effectiveFinalThought || finalToolCalls.length > 0 || wasStopped || missionTimelineRef.current) {
+                        if (cleanContent || finalThought || finalToolCalls.length > 0 || wasStopped || missionTimelineRef.current) {
                             const assistantMsg: Message = {
                                 id: assistantMessageIdRef.current || crypto.randomUUID(),
                                 role: "assistant",
                                 content: cleanContent || "",
-                                thought: effectiveFinalThought || undefined,
-                                reasoning_content: effectiveFinalThought || undefined,
+                                thought: finalThought,
+                                reasoning_content: streamingThoughtRef.current,
                                 timestamp: new Date(),
                                 toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
                                 stopped: wasStopped,
-                                planSteps: activePlanStepsRef.current || undefined,
-                            planTitle: activePlanTitleRef.current || undefined,
-                        missionTimeline: missionTimelineRef.current,
+                                missionTimeline: missionTimelineRef.current,
                             };
 
                             setStreamingContent("");
@@ -4802,9 +4613,6 @@ export default function ChatPage() {
                             setLiveToolCalls([]);
                             setStreamingToolCalls([]);
                             streamingToolCallsRef.current = [];
-                            streamingContentRef.current = "";
-                            streamingThoughtRef.current = "";
-                            liveToolCallsRef.current = [];
                             setIsLoading(false);
                             setMessages(prev => {
                                 const existingIdx = prev.findIndex(m => m.id === assistantMsg.id);
@@ -4841,9 +4649,6 @@ export default function ChatPage() {
                             setLiveToolCalls([]);
                             setStreamingToolCalls([]);
                             streamingToolCallsRef.current = [];
-                            streamingContentRef.current = "";
-                            streamingThoughtRef.current = "";
-                            liveToolCallsRef.current = [];
                             setIsLoading(false);
                         }
 
@@ -5024,11 +4829,9 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                     model: selectedModel,
                     providerType: currentM?.providerType || 'everfern',
                     conversationId: activeConversationIdRef.current,
-                    projectId: folderContexts.length > 0 ? (folderContexts[0].id || folderContexts[0].path) : undefined,
-                    projectPath: folderContexts.length > 0 ? folderContexts[0].path : undefined,
+                    projectId: folderContexts.length > 0 ? folderContexts[0].id : undefined,
                     assistantMessageId: assistantMessageIdRef.current,
                     operatorMode: pursueGoalMode,
-                    reasoningEffort: currentModelCapabilities.reasoning ? reasoningEffort : undefined,
                 });
             } catch (err) {
                 if (isMessageCommittedRef.current) return;
@@ -5048,7 +4851,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                     role: "assistant",
                     content: isLimitReached
                         ? (streamingContentRef.current || "")
-                        : (streamingContentRef.current ? streamingContentRef.current + `\n\n❌ ${errorMessage}` : `❌ ${errorMessage}`),
+                        : (streamingContentRef.current ? streamingContentRef.current + `\n\n${errorMessage}` : `${errorMessage}`),
                     thought: streamingThoughtRef.current,
                     reasoning_content: streamingThoughtRef.current,
                     toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
@@ -5079,35 +4882,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                 setIsLoading(false);
             }
         })();
-    }, [inputValue, attachments, folderContexts, isLoading, messages, saveConversation, selectedModel, availableModels, activeConversationId, checkForPlan, pursueGoalMode, applyLiveToolUpdate, reasoningEffort, currentModelCapabilities.reasoning]);
-
-    const handleSaveEditedMessage = useCallback(async (targetMsg: Message) => {
-        const text = editingUserMessageText.trim();
-        if (!text) return;
-        setEditingUserMessageId(null);
-
-        const userMsgIndex = messages.findIndex(m => m.id === targetMsg.id);
-        if (userMsgIndex === -1) return;
-
-        // Preserve any shared folder context block if it existed in the original message
-        const msgContentStr = toContentString(targetMsg.content);
-        const strippedStr = msgContentStr.replace(/(\r?\n)*\[Active Project Context\][\s\S]*$/, '');
-        const parts = strippedStr.split(/\n\n\[Shared folder context\]\n/);
-        const updatedContent = parts.length > 1
-            ? `${text}\n\n[Shared folder context]\n${parts[1]}`
-            : text;
-
-        // History before this user message
-        const historyBeforeUser = messages.slice(0, userMsgIndex);
-
-        // If there were attachments on this user message, preserve them
-        if (targetMsg.attachments && targetMsg.attachments.length > 0) {
-            setAttachments(targetMsg.attachments);
-        }
-
-        // Call handleSend with the updated text and previous history
-        handleSend(updatedContent, historyBeforeUser, false);
-    }, [editingUserMessageText, messages, handleSend]);
+    }, [inputValue, attachments, folderContexts, isLoading, messages, saveConversation, selectedModel, availableModels, activeConversationId, checkForPlan, pursueGoalMode, applyLiveToolUpdate]);
 
     const handleQuestionSubmit = useCallback((answers: Record<string, string[]>, attachedFiles?: Array<{ name: string; content?: string; base64?: string; mimeType?: string }>) => {
         // Format as clear form response so AI doesn't interpret as a new question
@@ -5483,8 +5258,6 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
         setShowSettings(false);
         setShowIntegrationSettings(false);
         setShowProjectsPage(false);
-        setShowAnalyticsPage(false);
-        setShowScheduledTasksPage(false);
         resetConversationUiState(null, { clearInput: true, clearAttachments: true });
     };
 
@@ -5496,8 +5269,6 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
         setShowSettings(false);
         setShowIntegrationSettings(false);
         setShowProjectsPage(false);
-        setShowAnalyticsPage(false);
-        setShowScheduledTasksPage(false);
         setSidebarOpen(false); // auto-collapse on mobile/small screens
         resetConversationUiState(id, { clearAttachments: true });
 
@@ -5513,14 +5284,13 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                         if (conv.projectId) {
                             // Find project in the current projects list
                             // Note: projects state is updated every 5s, so it should be there
-                            const project = (projects || []).find((p: any) => p.id === conv.projectId || p.path === conv.projectId || (p.path && p.path.toLowerCase() === conv.projectId.toLowerCase()));
+                            const project = (projects || []).find((p: any) => p.id === conv.projectId);
                             if (project) {
                                 setFolderContexts([{ id: project.id, path: project.path, name: project.name }]);
-                            } else if (typeof conv.projectId === 'string' && (conv.projectId.includes('/') || conv.projectId.includes('\\'))) {
-                                const parts = conv.projectId.split(/[\\/]/).filter(Boolean);
-                                const folderName = parts.length > 0 ? parts[parts.length - 1] : 'Project';
-                                setFolderContexts([{ id: conv.projectId, path: conv.projectId, name: folderName }]);
                             } else {
+                                // Fallback if projects list hasn't loaded yet or project was deleted
+                                // We can't easily fetch it by ID here without a new IPC call,
+                                // so we just clear it for now or wait for projects to load.
                                 setFolderContexts([]);
                             }
                         } else {
@@ -5535,8 +5305,6 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                             reasoning_content: m.reasoning_content,
                             thinkingDuration: m.thinkingDuration,
                             missionTimeline: m.missionTimeline,
-                            planSteps: m.planSteps || undefined,
-                            planTitle: m.planTitle || undefined,
                             toolCalls: m.toolCalls ? m.toolCalls.map((tc: any) => {
                                 const display = tc.toolName ? resolveToolDisplay(tc.toolName, tc.args) : {};
                                 return {
@@ -5586,6 +5354,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
         await loadPromise;
     };
 
+    const currentModel = availableModels.find(m => m.id === selectedModel) || availableModels[0] || { id: "fern", name: "EverFern-1", provider: "EverFern", providerType: "everfern", logo: null };
     const isCloudModel = currentModel.providerType === 'everfern';
     const isCloudUsageOver = isCloudModel && (
         (dailyLimit !== null && dailyUsed !== null && dailyUsed >= dailyLimit) ||
@@ -5615,8 +5384,13 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }} transition={{ duration: 0.15 }}
                         className="glossy"
                         style={{ position: "absolute", bottom: "calc(100% + 8px)", right: 0, width: 320, backgroundColor: "var(--color-bg-elevated)", border: "1px solid var(--color-border)", borderRadius: 12, padding: 6, zIndex: 9999 }}>
-                        <div style={{ padding: "8px 10px 4px", fontSize: 10, fontWeight: 700, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Models</div>
+                        <div style={{ padding: "8px 10px 4px", fontSize: 12, fontWeight: 500, color: "var(--color-text-tertiary)" }}>Models</div>
                         <div style={{ maxHeight: 320, overflowY: "auto", scrollbarWidth: "thin", scrollbarColor: "var(--color-border) transparent" }}>
+                            {availableModels.length === 0 && (
+                                <div style={{ padding: "10px 10px 12px", fontSize: 13, lineHeight: 1.45, color: "var(--color-text-secondary)" }}>
+                                    No models yet. Sign in to EverFern Cloud, or add a provider in Settings, then Models.
+                                </div>
+                            )}
                             {availableModels.map(model => {
                                 const isDisabled = model.id.endsWith('-error') || model.id.endsWith('-empty');
                                 return (
@@ -5644,8 +5418,6 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                 : <model.logo size={14} />)
                                             : <GlobeAltIcon width={14} height={14} className="text-zinc-500" />}
                                         <span style={{ flex: 1, whiteSpace: "normal", wordBreak: "break-word", lineHeight: 1.3 }}>{model.name}</span>
-                                        {getModelCapabilities(model).reasoning && <span title="Supports adjustable reasoning" style={{ fontSize: 9, color: "var(--color-text-tertiary)", border: "1px solid var(--color-border)", borderRadius: 4, padding: "1px 4px" }}>Reasoning</span>}
-                                        {getModelCapabilities(model).imageGeneration && <span title="Supports image generation" style={{ fontSize: 9, color: "var(--color-text-tertiary)", border: "1px solid var(--color-border)", borderRadius: 4, padding: "1px 4px" }}>Images</span>}
                                         {selectedModel === model.id && <CheckSolidIcon width={14} height={14} className="text-indigo-400" />}
                                     </button>
                                 );
@@ -5656,37 +5428,6 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
             </AnimatePresence>
         </div>
     );
-
-    const renderReasoningSelector = () => {
-        if (!currentModelCapabilities.reasoning) return null;
-        const labels: Record<ReasoningEffort, string> = { low: 'Low', medium: 'Medium', high: 'High' };
-        return (
-            <div style={{ position: 'relative' }}>
-                <button
-                    type="button"
-                    title="Change reasoning effort"
-                    onClick={() => setShowReasoningSelector(open => !open)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 5, height: 36, padding: '0 10px', borderRadius: 8, border: '1px solid var(--color-border)', background: 'var(--color-bg-subtle)', color: 'var(--color-text-primary)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
-                >
-                    Reasoning: {labels[reasoningEffort]}
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m6 9 6 6 6-6" /></svg>
-                </button>
-                <AnimatePresence>
-                    {showReasoningSelector && (
-                        <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }}
-                            style={{ position: 'absolute', bottom: 'calc(100% + 8px)', right: 0, width: 180, padding: 6, zIndex: 9999, border: '1px solid var(--color-border)', borderRadius: 10, background: 'var(--color-bg-elevated)' }}>
-                            {(['low', 'medium', 'high'] as ReasoningEffort[]).map(effort => (
-                                <button key={effort} type="button" onClick={() => updateReasoningEffort(effort)}
-                                    style={{ width: '100%', padding: '8px 10px', border: 'none', borderRadius: 7, textAlign: 'left', cursor: 'pointer', color: 'var(--color-text-primary)', background: reasoningEffort === effort ? 'var(--color-bg-selected)' : 'transparent', fontSize: 13 }}>
-                                    {labels[effort]}
-                                </button>
-                            ))}
-                        </motion.div>
-                    )}
-                </AnimatePresence>
-            </div>
-        );
-    };
 
     const handleSaveSettings = async (
         newProfileName?: string,
@@ -5729,10 +5470,9 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
 
         if (settingsEngine === "local") {
             updated.provider = settingsProvider || "ollama";
-            if (updated.provider === "llamacpp") updated.apiKey = baseConfig.keys?.llamacpp || "";
             const trimmedKey = settingsApiKey?.trim() || '';
             const isValidHttp = /^https?:\/\//i.test(trimmedKey);
-            updated.baseUrl = isValidHttp ? trimmedKey : (updated.provider === 'llamacpp' ? 'http://localhost:8080/v1' : updated.provider === "lmstudio" ? "http://localhost:1234/v1" : "http://localhost:11434");
+            updated.baseUrl = isValidHttp ? trimmedKey : (updated.provider === "lmstudio" ? "http://localhost:1234/v1" : "http://localhost:11434");
         }
         const defaultVlmModel =
             settingsVlmCloudProvider === 'everfern' ? 'everfern-tars-v1' :
@@ -5759,7 +5499,6 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
             }
 
             updated.vlm = {
-                enabled: settingsVlmEnabled,
                 engine: "cloud",
                 provider: settingsVlmCloudProvider,
                 model: finalVlmModel,
@@ -5769,7 +5508,6 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
         } else {
             // Local VLM mode - explicitly save with engine "local"
             updated.vlm = {
-                enabled: settingsVlmEnabled,
                 engine: "local",
                 provider: "ollama",
                 model: "qwen3-vl:2b",
@@ -5823,7 +5561,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
         if ((window as any).electronAPI?.system?.ollamaInstall) {
             const res = await (window as any).electronAPI?.system.ollamaInstall();
             if (res.success) { setOllamaInstalled(true); setOllamaInstallPct(100); setOllamaInstallPhase("done"); setOllamaInstallDone(true); setOllamaLogs(["✔ Ollama installed successfully!"]); }
-            else { setOllamaLogs(prev => [...prev, `✘ Installation failed with code ${res.code}`]); }
+            else { setOllamaLogs(prev => [...prev, `Installation failed with code ${res.code}`]); }
         }
         setIsInstallingOllama(false);
     };
@@ -5841,7 +5579,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
         if ((window as any).electronAPI?.system?.ollamaPull) {
             const res = await (window as any).electronAPI?.system.ollamaPull("qwen3-vl:2b");
             if (res.success) { setPullPct(100); await finalizeOnboarding(true); }
-            else { setOllamaLogs(prev => [...prev, `✘ Model pull failed with code ${res.code}`]); }
+            else { setOllamaLogs(prev => [...prev, `Model pull failed with code ${res.code}`]); }
         }
         setIsPullingModel(false);
     };
@@ -6124,76 +5862,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                 No Project
                             </button>
 
-                            <button
-                                type="button"
-                                onClick={async () => {
-                                    setShowProjectDropdown(false);
-                                    try {
-                                        let selectedPath: string | null = null;
-                                        if ((window as any).electronAPI?.projects?.selectFolder) {
-                                            selectedPath = await (window as any).electronAPI.projects.selectFolder();
-                                        } else if ((window as any).electronAPI?.system?.openFolderPicker) {
-                                            const res = await (window as any).electronAPI.system.openFolderPicker();
-                                            if (res?.success && res?.path) selectedPath = res.path;
-                                        }
-
-                                        if (!selectedPath) return;
-
-                                        const normalizedSelected = selectedPath.replace(/[\\/]+$/, '').toLowerCase();
-                                        let targetProject = projects.find((p: any) => p.path && p.path.replace(/[\\/]+$/, '').toLowerCase() === normalizedSelected);
-
-                                        if (!targetProject) {
-                                            const parts = selectedPath.split(/[\\/]/).filter(Boolean);
-                                            const folderName = parts.length > 0 ? parts[parts.length - 1] : 'New Project';
-                                            if ((window as any).electronAPI?.projects?.create) {
-                                                const res = await (window as any).electronAPI.projects.create({
-                                                    name: folderName,
-                                                    path: selectedPath
-                                                });
-                                                targetProject = res?.project || (res?.success ? res : {
-                                                    id: crypto.randomUUID(),
-                                                    name: folderName,
-                                                    path: selectedPath,
-                                                    createdAt: new Date().toISOString(),
-                                                    updatedAt: new Date().toISOString()
-                                                });
-                                            } else {
-                                                targetProject = {
-                                                    id: crypto.randomUUID(),
-                                                    name: folderName,
-                                                    path: selectedPath,
-                                                    createdAt: new Date().toISOString(),
-                                                    updatedAt: new Date().toISOString()
-                                                };
-                                            }
-                                            if ((window as any).electronAPI?.projects?.list) {
-                                                const projs = await (window as any).electronAPI.projects.list();
-                                                setProjects(projs || []);
-                                            }
-                                        }
-
-                                        if (targetProject) {
-                                            setFolderContexts([{ id: targetProject.id, path: targetProject.path, name: targetProject.name }]);
-                                            setContextItems([{
-                                                id: crypto.randomUUID(),
-                                                type: 'folder' as any,
-                                                label: targetProject.name,
-                                                path: targetProject.path
-                                            } as any]);
-                                        }
-                                    } catch (err) {
-                                        console.error('Failed to select folder as project:', err);
-                                    }
-                                }}
-                                style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 8, border: "none", backgroundColor: "transparent", color: "var(--color-primary, #3b82f6)", cursor: "pointer", fontSize: 13, textAlign: "left", transition: "0.15s", fontWeight: 500 }}
-                                onMouseEnter={e => e.currentTarget.style.backgroundColor = "var(--color-bg-hover)"}
-                                onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
-                            >
-                                <FolderIcon width={14} height={14} style={{ flexShrink: 0 }} />
-                                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Select folder as project...</span>
-                            </button>
-
-                            <div style={{ height: 1, backgroundColor: 'var(--color-border-subtle)', margin: '4px 0' }} />
+                            {projects.length > 0 && <div style={{ height: 1, backgroundColor: 'var(--color-border-subtle)', margin: '4px 0' }} />}
 
                             {projects.map(p => (
                                 <button
@@ -6221,12 +5890,13 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
 
     const renderComposerRightActions = (showVolumeToggle = false) => (
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <ContextTokenRing
+            {/* The context meter only means something once the conversation has started. */}
+            {messages.length > 0 && <ContextTokenRing
                 used={contextTokens.used + currentTokens}
                 max={contextTokens.max}
                 modelInfo={modelInfo}
                 estimatedCost={estimatedCost}
-                isLocalModel={currentModel.providerType === 'ollama' || currentModel.providerType === 'llamacpp' || currentModel.providerType === 'lmstudio' || currentModel.providerType === 'local'}
+                isLocalModel={currentModel.providerType === 'ollama' || currentModel.providerType === 'lmstudio' || currentModel.providerType === 'local'}
                 systemTokens={contextTokens.systemTokens}
                 chatTokens={(contextTokens.chatTokens || 0) + currentTokens}
                 inputTokens={contextTokens.inputTokens !== undefined ? contextTokens.inputTokens + currentTokens : undefined}
@@ -6235,10 +5905,9 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                 toolSchemaTokens={contextTokens.toolSchemaTokens}
                 truncatedTools={contextTokens.truncatedTools}
                 schemaTokenSavings={contextTokens.schemaTokenSavings}
-            />
+            />}
 
             {renderModelSelector(true)}
-            {renderReasoningSelector()}
 
             <VoiceButton
                 isRecording={isRecording}
@@ -6273,8 +5942,6 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                         timestamp: new Date(),
                         toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
                         stopped: true, // Mark as stopped by user
-                        planSteps: activePlanStepsRef.current || undefined,
-                        planTitle: activePlanTitleRef.current || undefined,
                         missionTimeline: missionTimelineRef.current,
                     };
 
@@ -6339,12 +6006,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                         setIsToolDetailOpen(false);
                         setIsComputerPaneOpen(false);
                     }}
-                    onDoubleClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setActiveSubagentChat(activePhase);
-                    }}
-                    title="Click to open panel · Double-click to open full sub-agent chat view"
+                    title="Open sub-agent details"
                     style={{
                         width: "100%",
                         display: "flex",
@@ -6364,13 +6026,17 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                         style={{
                             width: 28,
                             height: 28,
+                            borderRadius: 9,
+                            background: "radial-gradient(circle at 30% 25%, #ffffff 0%, #dbeafe 34%, #7c3aed 100%)",
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
+                            color: "#ffffff",
+                            boxShadow: "0 7px 18px rgba(59,130,246,0.25)",
                             flexShrink: 0,
                         }}
                     >
-                        <DotmSquare4 size={26} dotSize={3.5} speed={1.4} />
+                        <CpuChipIcon width={14} height={14} strokeWidth={2.2} />
                     </span>
                     <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 1 }}>
                         <span style={{ fontSize: 13, fontWeight: 650, color: "var(--color-text-primary)", lineHeight: 1.2 }}>
@@ -6396,30 +6062,6 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                     >
                         <span style={{ width: 6, height: 6, borderRadius: 999, background: "var(--color-navis-active-border)", boxShadow: "0 0 10px var(--color-navis-active-border)" }} />
                         {statusLabel}
-                    </span>
-                    <span
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            setActiveSubagentChat(activePhase);
-                        }}
-                        style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 4,
-                            padding: "4px 8px",
-                            borderRadius: 6,
-                            background: "var(--color-bg-surface)",
-                            border: "1px solid var(--color-border)",
-                            color: "var(--color-text-secondary)",
-                            fontSize: 11,
-                            fontWeight: 600,
-                            cursor: "pointer",
-                            flexShrink: 0,
-                        }}
-                        title="Open sub-agent chat view"
-                    >
-                        <ArrowTopRightOnSquareIcon width={12} height={12} strokeWidth={2} />
-                        <span>Chat</span>
                     </span>
                     <ChevronRightIcon width={14} height={14} strokeWidth={2.2} color="var(--color-text-tertiary)" />
                 </button>
@@ -6514,8 +6156,6 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                         borderRadius: 6,
                                         backgroundColor: isDark ? "rgba(255, 255, 255, 0.08)" : "rgba(0, 0, 0, 0.05)",
                                         color: "var(--color-text-tertiary)",
-                                        textTransform: "uppercase",
-                                        letterSpacing: "0.04em",
                                     }}
                                 >
                                     Local LLM
@@ -6621,7 +6261,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
     const onboardingModalNode = (
         <AnimatePresence>
             {showOnboarding && (
-                <DialogSurface label="Assistant dialog" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                     style={{ position: "fixed", inset: 0, zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "var(--color-bg-overlay)", backdropFilter: "blur(16px)" }}>
                     <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}
                         className="glossy"
@@ -6633,7 +6273,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                 </div>
                                 <h2 style={{ fontFamily: "var(--font-serif)", fontSize: 34, fontWeight: 500, margin: "0 0 12px", color: "var(--color-text-primary)", letterSpacing: "-0.02em" }}>Welcome to EverFern</h2>
                                 <p style={{ fontSize: 16, color: "var(--color-text-tertiary)", marginBottom: 32, lineHeight: 1.5 }}>Let's get started. How should your intelligence companion address you?</p>
-                                <input aria-label="Your name..." type="text" placeholder="Your name..." value={onboardingName} onChange={(e) => setOnboardingName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleNextFromName()}
+                                <input type="text" placeholder="Your name..." value={onboardingName} onChange={(e) => setOnboardingName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleNextFromName()}
                                     style={{ width: "100%", padding: "18px 24px", backgroundColor: "var(--color-bg-subtle)", border: "1px solid var(--color-border)", borderRadius: 18, color: "var(--color-text-primary)", fontSize: 16, outline: "none", boxSizing: "border-box", marginBottom: 24, textAlign: "center", transition: "all 0.2s", fontFamily: "var(--font-sans)" }}
                                     onFocus={e => { e.target.style.borderColor = "var(--color-border-focus)"; e.target.style.backgroundColor = "var(--color-bg-surface)"; }}
                                     onBlur={e => { e.target.style.borderColor = "var(--color-border)"; e.target.style.backgroundColor = "var(--color-bg-subtle)"; }}
@@ -6668,7 +6308,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                             <div style={{ marginTop: 20 }}>
                                                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                                                     <span style={{ fontSize: 12, color: "var(--color-text-tertiary)", fontWeight: 500 }}>
-                                                        {ollamaInstallPhase === "done" ? "✔ Installation complete!" : ollamaInstallPhase === "finalizing" ? "Finalizing..." : "Downloading Ollama..."}
+                                                        {ollamaInstallPhase === "done" ? "Installation complete" : ollamaInstallPhase === "finalizing" ? "Finalizing..." : "Downloading Ollama..."}
                                                     </span>
                                                     <span style={{ fontSize: 12, color: "var(--color-text-tertiary)", fontFamily: "monospace" }}>{ollamaInstallPct.toFixed(1)}%</span>
                                                 </div>
@@ -6692,7 +6332,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                         </div>
                                         <button onClick={handlePullModel} disabled={!!(isPullingModel || isInstallingOllama || modelInstalled)}
                                             style={{ width: "100%", padding: "14px", backgroundColor: modelInstalled ? "transparent" : "var(--color-text-primary)", color: modelInstalled ? "var(--color-text-tertiary)" : "var(--color-text-inverse)", borderRadius: 14, fontWeight: 600, fontSize: 14, border: modelInstalled ? "1px solid var(--color-border)" : "none", cursor: (isPullingModel || isInstallingOllama) ? "wait" : (modelInstalled ? "default" : "pointer"), transition: "all 0.2s" }}>
-                                            {modelInstalled ? "✔ Ready to use" : (isPullingModel ? `Downloading... ${pullPct.toFixed(1)}%` : "Download & Setup")}
+                                            {modelInstalled ? "Ready to use" : (isPullingModel ? `Downloading... ${pullPct.toFixed(1)}%` : "Download & Setup")}
                                         </button>
                                         {isPullingModel && (
                                             <div style={{ marginTop: 14 }}>
@@ -6720,7 +6360,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                             </motion.div>
                         )}
                     </motion.div>
-                </DialogSurface>
+                </motion.div>
             )}
         </AnimatePresence>
     );
@@ -6744,8 +6384,6 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                     setSettingsCustomModel={setSettingsCustomModel}
                     settingsShowuiUrl={settingsShowuiUrl}
                     setSettingsShowuiUrl={setSettingsShowuiUrl}
-                    settingsVlmEnabled={settingsVlmEnabled}
-                    setSettingsVlmEnabled={setSettingsVlmEnabled}
                     settingsVlmMode={settingsVlmMode}
                     setSettingsVlmMode={setSettingsVlmMode}
                     settingsVlmCloudProvider={settingsVlmCloudProvider}
@@ -7101,39 +6739,19 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
         };
     }, []);
 
-    const handleRecordToggleRef = useRef(handleRecordToggle);
-    useEffect(() => { handleRecordToggleRef.current = handleRecordToggle; }, [handleRecordToggle]);
-
-    const handleQuestionSubmitRef = useRef(handleQuestionSubmit);
-    useEffect(() => { handleQuestionSubmitRef.current = handleQuestionSubmit; }, [handleQuestionSubmit]);
-
-
-    const handleSelectConversationRef = useRef(handleSelectConversation);
-    useEffect(() => { handleSelectConversationRef.current = handleSelectConversation; }, [handleSelectConversation]);
-
-    const voiceProviderRef = useRef(voiceProvider);
-    useEffect(() => { voiceProviderRef.current = voiceProvider; }, [voiceProvider]);
-
-    const voiceElevenlabsKeyRef = useRef(voiceElevenlabsKey);
-    useEffect(() => { voiceElevenlabsKeyRef.current = voiceElevenlabsKey; }, [voiceElevenlabsKey]);
-
     useEffect(() => {
         if (typeof window !== 'undefined' && (window as any).electronAPI) {
-            const api = (window as any).electronAPI;
-
-            api.voiceOverlay?.onStateChange?.((data: any) => {
+            (window as any).electronAPI.voiceOverlay.onStateChange((data: any) => {
                 if (data.state === 'listening') {
-                    const currentVoiceProvider = voiceProviderRef.current;
-                    const currentElevenlabsKey = voiceElevenlabsKeyRef.current;
-                    const isVoiceEnabled = !!currentVoiceProvider && (
-                        currentVoiceProvider === 'everfern' ||
-                        currentVoiceProvider === 'local' ||
-                        currentVoiceProvider === 'deepgram' ||
-                        (currentVoiceProvider === 'elevenlabs' && !!currentElevenlabsKey?.trim())
+                    const isVoiceEnabled = !!voiceProvider && (
+                        voiceProvider === 'everfern' ||
+                        voiceProvider === 'local' ||
+                        voiceProvider === 'deepgram' ||
+                        (voiceProvider === 'elevenlabs' && !!voiceElevenlabsKey?.trim())
                     );
                     if (!isVoiceEnabled) {
                         console.log('[VoiceOverlay] Voice mode is disabled/unconfigured. Broadcasting error.');
-                        api.voiceOverlay.sendState?.({
+                        (window as any).electronAPI.voiceOverlay.sendState?.({
                             state: 'error',
                             message: "Voice mode isn't enabled. Please configure a provider in settings."
                         });
@@ -7150,17 +6768,17 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                             overlayIdleTimeoutRef.current = null;
                         }
                         setRecordingSource('overlay');
-                        handleRecordToggleRef.current();
+                        handleRecordToggle();
                     }
                 } else if (data.state === 'executing') {
                     if (isRecordingRef.current) {
-                        handleRecordToggleRef.current();
+                        handleRecordToggle();
                     }
                 } else if (data.state === 'idle') {
                     setRecordingSource(null);
                 }
             });
-            api.voiceOverlay?.onSubmitAnswer?.((data: any) => {
+            (window as any).electronAPI.voiceOverlay.onSubmitAnswer((data: any) => {
                 console.log('[VoiceOverlay] Submission received via overlay:', data);
                 if (overlayIdleTimeoutRef.current) {
                     clearTimeout(overlayIdleTimeoutRef.current);
@@ -7168,7 +6786,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                 }
                 if (data && data.type === 'select-history') {
                     console.log('[VoiceOverlay] Loading conversation selected via voice overlay:', data.conversationId);
-                    handleSelectConversationRef.current(data.conversationId);
+                    handleSelectConversation(data.conversationId);
                     // Automatically transition to listening state after a brief timeout
                     setTimeout(() => {
                         if (typeof window !== 'undefined' && (window as any).electronAPI?.voiceOverlay) {
@@ -7176,13 +6794,13 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                         }
                     }, 500);
                 } else if (data && data.type === 'followup') {
-                    handleSendRef.current(data.query);
+                    handleSend(data.query);
                 } else {
-                    handleQuestionSubmitRef.current(data);
+                    handleQuestionSubmit(data);
                 }
             });
 
-            // Register global shortcut listeners once on mount
+            // Register global shortcut listeners
             const handleResumeShortcut = () => {
                 console.log('[Shortcut] Received resume-chat shortcut');
                 if (typeof window !== 'undefined' && (window as any).electronAPI?.voiceOverlay) {
@@ -7191,7 +6809,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                         action: 'Continuing execution...'
                     });
                 }
-                handleSendRef.current("continue");
+                handleSend("continue");
             };
             const handleShowHistoryShortcut = () => {
                 console.log('[Shortcut] Received show-history shortcut, opening history in overlay');
@@ -7202,60 +6820,16 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                 }
             };
 
-            api.on?.('shortcut:resume-chat', handleResumeShortcut);
-            api.on?.('shortcut:show-history', handleShowHistoryShortcut);
+            (window as any).electronAPI.on('shortcut:resume-chat', handleResumeShortcut);
+            (window as any).electronAPI.on('shortcut:show-history', handleShowHistoryShortcut);
 
             return () => {
-                api.voiceOverlay?.removeListeners?.();
-                api.off?.('shortcut:resume-chat', handleResumeShortcut);
-                api.off?.('shortcut:show-history', handleShowHistoryShortcut);
+                (window as any).electronAPI.voiceOverlay.removeListeners();
+                (window as any).electronAPI.off('shortcut:resume-chat', handleResumeShortcut);
+                (window as any).electronAPI.off('shortcut:show-history', handleShowHistoryShortcut);
             };
         }
-    }, []);
-
-    // Persistent page-level listener for sub-agent events and live progress
-    useEffect(() => {
-        if (typeof window === 'undefined' || !(window as any).electronAPI) return;
-        const api = (window as any).electronAPI;
-
-        const handleProgress = (event: SubAgentProgressEvent) => {
-            if (event?.conversationId && activeConversationIdRef.current && event.conversationId !== activeConversationIdRef.current) return;
-            const newMap = subAgentProgressRef.current;
-            const primaryKey = event.toolCallId || (event as any)?.metadata?.agentId || (event as any)?.agentId;
-            if (!primaryKey) return;
-
-            const existing = newMap.get(primaryKey) || [];
-            newMap.set(primaryKey, [...existing, event].slice(-200));
-
-            const agentId = (event as any)?.metadata?.agentId || (event as any)?.agentId;
-            if (agentId && agentId !== primaryKey) {
-                const existingAgent = newMap.get(agentId) || [];
-                newMap.set(agentId, [...existingAgent, event].slice(-200));
-            }
-            if (event.toolCallId && event.toolCallId !== primaryKey) {
-                const existingTc = newMap.get(event.toolCallId) || [];
-                newMap.set(event.toolCallId, [...existingTc, event].slice(-200));
-            }
-
-            setSubAgentProgressVersion(v => v + 1);
-        };
-
-        const handleSubEvent = (event: any) => {
-            if (event?.conversationId && activeConversationIdRef.current && event.conversationId !== activeConversationIdRef.current) return;
-            if (event?.type === 'subagent_event') {
-                console.log('[Frontend Global] 🤖 Subagent event received:', event.subagentEventType, event.agent);
-                subagent.handleStreamEvent(event);
-            }
-        };
-
-        const disposeProgress = api.onSubAgentProgress?.(handleProgress);
-        const disposeSubEvent = api.onSubagentEvent?.(handleSubEvent);
-
-        return () => {
-            if (typeof disposeProgress === 'function') disposeProgress();
-            if (typeof disposeSubEvent === 'function') disposeSubEvent();
-        };
-    }, [subagent]);
+    }, [handleRecordToggle, handleQuestionSubmit, handleSend, setShowSearch, voiceProvider, voiceDeepgramKey, handleSelectConversation]);
 
     const prevIsLoadingRef = useRef(false);
     useEffect(() => {
@@ -7317,7 +6891,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                 const runningTool = liveToolCalls.find(t => t.status === 'running');
                 let actionText = 'Executing tasks...';
                 if (runningTool) {
-                    actionText = runningTool.label || `Running ${normalizeToolName(runningTool.toolName)}...`;
+                    actionText = runningTool.label || `Running ${runningTool.toolName}...`;
                 } else if (streamingThought) {
                     actionText = streamingThought;
                 }
@@ -7360,17 +6934,9 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                 />
             )}
 
-            <div style={{ height: "100vh", backgroundColor: "var(--color-bg-base)", color: "var(--color-text-primary)", fontFamily: "var(--font-sans)", display: "flex", overflow: "hidden" }}>
-                {projectToDelete && <ConfirmDialog title={`Delete ${projectToDelete.name}?`} description="This removes the project from EverFern. Files on your computer are kept." onClose={() => setProjectToDelete(null)} onConfirm={async () => {
-                    const api = (window as any).electronAPI?.projects;
-                    if (!api?.delete) throw new Error('Project management is unavailable in this build.');
-                    const result = await api.delete(projectToDelete.id);
-                    if (result?.success === false) throw new Error(result.error || 'Couldn’t delete this project.');
-                    setFolderContexts([]); setContextItems([]); setShowProjectsPage(true);
-                    setProjects(await api.list() || []);
-                }} />}
+            <div style={{ height: "var(--ef-vh)", backgroundColor: "var(--color-bg-base)", color: "var(--color-text-primary)", fontFamily: "var(--font-sans)", display: "flex", overflow: "hidden" }}>
                 <PermissionDialog />
-                <ArtifactsPanel isOpen={showArtifacts} onClose={() => { setShowArtifacts(false); setSelectedArtifactName(null); }} activeChatId={activeConversationId} selectedFileName={selectedArtifactName} projectPath={folderContexts[0]?.path} />
+                <ArtifactsPanel leftInset={sidebarOpen ? 260 : 68} isOpen={showArtifacts} onClose={() => { setShowArtifacts(false); setSelectedArtifactName(null); }} activeChatId={activeConversationId} selectedFileName={selectedArtifactName} projectPath={folderContexts[0]?.path} />
                 <FileViewerModal
                     file={viewingFile}
                     onClose={() => setViewingFile(null)}
@@ -7401,14 +6967,13 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                     activeTaskIds={activeTaskIds}
                     onSelectConversation={handleSelectConversation}
                     onNewChat={handleNewChat}
-                    onSettingsClick={() => { setShowSettings(true); setShowCustomizeModal(false); setShowArtifacts(false); setShowIntegrationSettings(false); setShowProjectsPage(false); setShowAnalyticsPage(false); setShowScheduledTasksPage(false); }}
-                    onArtifactsClick={() => { setShowArtifacts(true); setShowSettings(false); setShowCustomizeModal(false); setShowIntegrationSettings(false); setShowProjectsPage(false); setShowAnalyticsPage(false); setShowScheduledTasksPage(false); }}
-                    onCustomizeClick={() => { setShowDirectoryModal(true); setShowSettings(false); setShowArtifacts(false); setShowIntegrationSettings(false); setShowProjectsPage(false); setShowAnalyticsPage(false); setShowScheduledTasksPage(false); }}
-                    onIntegrationClick={() => { setShowIntegrationSettings(true); setShowSettings(false); setShowCustomizeModal(false); setShowArtifacts(false); setShowProjectsPage(false); setShowAnalyticsPage(false); setShowScheduledTasksPage(false); }}
-                    onProjectsClick={() => { setShowProjectsPage(true); setShowSettings(false); setShowCustomizeModal(false); setShowArtifacts(false); setShowIntegrationSettings(false); setShowAnalyticsPage(false); setShowScheduledTasksPage(false); }}
-                    onAnalyticsClick={() => { setShowAnalyticsPage(true); setShowProjectsPage(false); setShowSettings(false); setShowCustomizeModal(false); setShowArtifacts(false); setShowIntegrationSettings(false); setShowScheduledTasksPage(false); }}
-                    onScheduledTasksClick={() => { setShowScheduledTasksPage(true); setShowProjectsPage(false); setShowAnalyticsPage(false); setShowSettings(false); setShowArtifacts(false); setShowIntegrationSettings(false); }}
-                    onCodeClick={() => { handleNewChat(); setInputValue('Write a Python script that '); setTimeout(() => textareaRef.current?.focus(), 50); }}
+                    onSettingsClick={() => { setShowSettings(true); setShowCustomizeModal(false); setShowArtifacts(false); setShowIntegrationSettings(false); setShowProjectsPage(false); setShowAnalyticsPage(false); }}
+                    onArtifactsClick={() => { setShowArtifacts(true); setShowSettings(false); setShowCustomizeModal(false); setShowIntegrationSettings(false); setShowProjectsPage(false); setShowAnalyticsPage(false); }}
+                    onCustomizeClick={() => { setShowDirectoryModal(true); setShowSettings(false); setShowArtifacts(false); setShowIntegrationSettings(false); setShowProjectsPage(false); setShowAnalyticsPage(false); }}
+                    onIntegrationClick={() => { setShowIntegrationSettings(true); setShowSettings(false); setShowCustomizeModal(false); setShowArtifacts(false); setShowProjectsPage(false); setShowAnalyticsPage(false); }}
+                    onProjectsClick={() => { setShowProjectsPage(true); setShowSettings(false); setShowCustomizeModal(false); setShowArtifacts(false); setShowIntegrationSettings(false); setShowAnalyticsPage(false); }}
+                    onScheduledTasksClick={() => setShowScheduledTaskModal(true)}
+                    onAnalyticsClick={() => { setShowAnalyticsPage(true); setShowProjectsPage(false); setShowSettings(false); setShowCustomizeModal(false); setShowArtifacts(false); setShowIntegrationSettings(false); }}
                     showSearch={showSearch}
                     onSearchOpen={() => setShowSearch(true)}
                     onSearchClose={() => setShowSearch(false)}
@@ -7423,47 +6988,20 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                     style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", backgroundColor: "var(--color-bg-base)", position: "relative" }}
                 >
                     {/* Header */}
-                    <header style={{ height: 66, display: "flex", alignItems: "center", gap: 10, padding: "10px 14px 8px", WebkitAppRegion: "drag", background: "transparent" } as any}>
-                        <div style={{ ...RIBBON_SEGMENT, padding: "7px 14px", gap: 10, minWidth: 0 }}>
-                            <span
-                                aria-hidden
-                                style={{
-                                    width: 22, height: 22, borderRadius: 999, flexShrink: 0,
-                                    background: "conic-gradient(from 210deg, #34d399, #60a5fa, #a78bfa, #34d399)",
-                                    boxShadow: "0 0 18px rgba(96,165,250,0.45), inset 0 1px 0 rgba(255,255,255,0.5)",
-                                }}
-                            />
-                            <div style={{ display: "flex", flexDirection: "column", minWidth: 0, lineHeight: 1.15 }}>
-                                <span style={{ fontSize: 12.5, fontWeight: 650, letterSpacing: "0.01em", color: "var(--color-text-primary)" }}>EverFern</span>
-                                <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 240 }}>
-                                    {(messages.find(m => m.generatedTitle)?.generatedTitle) || (messages.find(m => m.role === "user" && typeof m.content === "string")?.content?.replace(/\s+/g, " ").trim().slice(0, 48)) || "New task"}
-                                </span>
-                            </div>
-                        </div>
-                        <div style={{ ...RIBBON_SEGMENT, padding: "7px 14px" }}>
-                            <span
-                                aria-hidden
-                                style={{
-                                    width: 7, height: 7, borderRadius: 999, flexShrink: 0,
-                                    background: isLoading ? "#f59e0b" : executionPlan ? "#3b82f6" : "#22c55e",
-                                    boxShadow: `0 0 10px ${isLoading ? "#f59e0b" : executionPlan ? "#3b82f6" : "#22c55e"}`,
-                                }}
-                            />
-                            <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>
-                                {isLoading ? (executionPlan ? "Executing plan" : "Working") : (executionPlan ? "Plan ready" : currentModel.name)}
-                            </span>
-                        </div>
-                        <div style={{ flex: 1 }} />
-                        <div style={{ ...RIBBON_SEGMENT, padding: "5px 8px 5px 10px", gap: 6 }}>
+                    <header style={{ height: 52, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", WebkitAppRegion: "drag" } as any}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 16, WebkitAppRegion: "no-drag" } as any}>
                             {executionPlan && !isExecutionPlanPaneOpen && (
                                 <button onClick={() => {
                                     setIsExecutionPlanPaneOpen(true);
                                     if (activeConversationId) localStorage.removeItem(`everfern_exec_pane_closed_${activeConversationId}`);
-                                }} style={{ fontSize: 11.5, fontWeight: 600, color: "var(--color-text-primary)", backgroundColor: "color-mix(in srgb, var(--color-bg-subtle) 70%, transparent)", padding: "5px 10px", borderRadius: 999, border: "1px solid color-mix(in srgb, var(--color-border) 70%, transparent)", cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
-                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                                }} style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-primary)", backgroundColor: "var(--color-bg-subtle)", padding: "6px 12px", borderRadius: 8, border: "1px solid var(--color-border)", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                                     View Plan
                                 </button>
                             )}
+
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, WebkitAppRegion: "no-drag" } as any}>
                             <div style={{ position: "relative" }}>
                                 <button
                                     type="button"
@@ -7522,23 +7060,13 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                     </>
                                 )}
                             </div>
-                            <div style={{ marginLeft: 8 }}><WindowControls /></div>
+                            <WindowControls />
                         </div>
                     </header>
 
                     <div className="glossy" style={{ flex: 1, position: "relative", minHeight: 0, display: "flex", flexDirection: "row", backgroundColor: "var(--color-bg-surface)", margin: isToolDetailOpen ? "0 8px 8px 0" : "0 12px 12px 0", borderRadius: isToolDetailOpen ? 24 : 28, border: "1px solid var(--color-border)", overflow: "hidden" }}>
                         {/* Main Chat Area */}
-                        {showScheduledTasksPage ? (
-                            <div style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: "40px 60px", backgroundColor: "var(--color-bg-surface)" }}>
-                                <div style={{ maxWidth: 900, margin: "0 auto" }}>
-                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 32 }}>
-                                        <h1 style={{ margin: 0, fontFamily: 'var(--font-serif, Georgia, serif)', fontSize: 32, fontWeight: 400, color: "var(--color-text-primary)" }}>Scheduled Tasks</h1>
-                                        <button type="button" aria-label="Close scheduled tasks" onClick={() => setShowScheduledTasksPage(false)} style={{ width: 40, height: 40, border: "1px solid var(--color-border)", borderRadius: 10, backgroundColor: "var(--color-bg-surface)", color: "var(--color-text-secondary)", cursor: "pointer" }}>×</button>
-                                    </div>
-                                    <ScheduledTasksPanel onAddTask={() => setShowScheduledTaskModal(true)} refreshTrigger={scheduledTasksRefreshTrigger} defaultExpanded />
-                                </div>
-                            </div>
-                        ) : showAnalyticsPage ? (
+                        {showAnalyticsPage ? (
                             <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden", backgroundColor: "var(--color-bg-surface)" }}>
                                 <AnalyticsPage
                                     onClose={() => setShowAnalyticsPage(false)}
@@ -7625,18 +7153,8 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                         </div>
                                     </div>
                                 )}
-                                {activeSubagentChat ? (
-                                    <div style={{ flex: 1, height: "100%", minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-                                        <SubagentChatView
-                                            phase={subagent.phases.find(p => p.id === activeSubagentChat.id || (activeSubagentChat.agentId && p.agentId === activeSubagentChat.agentId)) || activeSubagentChat}
-                                            events={getPhaseEvents(activeSubagentChat, subAgentProgress)}
-                                            onBack={() => setActiveSubagentChat(null)}
-                                        />
-                                    </div>
-                                ) : (
-                                    <>
-                                        <div ref={chatScrollRef} style={{ flex: 1, overflowY: "auto", padding: isToolDetailOpen ? "16px 0 24px" : "16px 0 32px", display: "flex", flexDirection: "column" }}>
-                                    <div style={{ maxWidth: (isEmpty && folderContexts.length > 0) ? (isToolDetailOpen ? 960 : 1200) : (isToolDetailOpen ? 780 : 1000), margin: isEmpty ? "auto" : "0 auto", padding: (isEmpty && folderContexts.length > 0) ? "0 28px" : (isToolDetailOpen ? "0 22px" : "0 32px"), width: "100%", flex: isEmpty ? 1 : undefined, display: "flex", flexDirection: "column", justifyContent: (isEmpty && folderContexts.length === 0) ? "center" : undefined, alignItems: "center" }}>
+                                <div ref={chatScrollRef} style={{ flex: 1, overflowY: "auto", padding: isToolDetailOpen ? "16px 0 24px" : "16px 0 32px", display: "flex", flexDirection: "column" }}>
+                                    <div style={{ maxWidth: (isEmpty && folderContexts.length > 0) ? (isToolDetailOpen ? 960 : 1200) : (isToolDetailOpen ? 780 : 1000), margin: isEmpty ? "auto" : "0 auto", padding: (isEmpty && folderContexts.length > 0) ? "0 28px" : (isToolDetailOpen ? "0 22px" : "0 32px"), width: "100%", flex: isEmpty ? 1 : undefined, display: "flex", flexDirection: "column", justifyContent: (isEmpty && folderContexts.length === 0) ? "center" : undefined, alignItems: (isEmpty && folderContexts.length === 0) ? "center" : undefined }}>
 
                                         {/* ── Empty / Home State ── */}
                                         {isEmpty && (
@@ -7714,9 +7232,23 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                             }
                                                                         };
 
-                                                                        const handleDeleteActiveProject = () => {
+                                                                        const handleDeleteActiveProject = async () => {
                                                                             setShowProjectMenu(false);
-                                                                            if (activeProjectObj?.id) setProjectToDelete({ id: activeProjectObj.id, name: folderContexts[0]?.name || 'this project' });
+                                                                            if (!activeProjectObj?.id) return;
+                                                                            if (window.confirm(`Are you sure you want to delete project "${folderContexts[0]?.name}"?`)) {
+                                                                                try {
+                                                                                    if ((window as any).electronAPI?.projects?.delete) {
+                                                                                        await (window as any).electronAPI.projects.delete(activeProjectObj.id);
+                                                                                        setFolderContexts([]);
+                                                                                        setContextItems([]);
+                                                                                        setShowProjectsPage(true);
+                                                                                        const list = await (window as any).electronAPI.projects.list();
+                                                                                        setProjects(list || []);
+                                                                                    }
+                                                                                } catch (e) {
+                                                                                    console.error("Failed to delete project:", e);
+                                                                                }
+                                                                            }
                                                                         };
 
                                                                         return (
@@ -7984,7 +7516,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                     </div>
                                                                     {isEditingInstructions ? (
                                                                         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
-                                                                            <textarea aria-label="Add instructions for this project..."
+                                                                            <textarea
                                                                                 value={instructionsInput}
                                                                                 onChange={e => setInstructionsInput(e.target.value)}
                                                                                 placeholder="Add instructions for this project..."
@@ -8094,7 +7626,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                             <path d="M12 8v4M12 16h.01" />
                                                                         </svg>
                                                                         <div style={{ flex: 1 }}>
-                                                                            <div style={{ fontSize: 11.5, fontWeight: 600, color: "#6366f1", marginBottom: 3, letterSpacing: "0.02em", textTransform: "uppercase" }}>
+                                                                            <div style={{ fontSize: 11.5, fontWeight: 600, color: "#6366f1", marginBottom: 3, }}>
                                                                                 From your previous preferences
                                                                             </div>
                                                                             <div style={{ fontSize: 13, color: "#4a4846", lineHeight: 1.55 }}>
@@ -8319,10 +7851,10 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                         exit={{ opacity: 0, y: -20, scale: 0.95 }}
                                                         transition={{ type: "spring", stiffness: 400, damping: 30, delay: Math.min(idx * 0.05, 0.2) }}
                                                         layout={idx === messages.length - 1}
-                                                        style={{ marginBottom: 28, display: "flex", flexDirection: "column", alignItems: msg.role === "user" ? "center" : "flex-start", width: "100%", maxWidth: 860, marginLeft: "auto", marginRight: "auto" }}
+                                                        style={{ marginBottom: 28, display: "flex", flexDirection: "column", alignItems: msg.role === "user" ? "flex-end" : "flex-start", width: "100%" }}
                                                     >
 
-                                                        <div id={`user-msg-bubble-${msg.id}`} className={msg.role === "user" ? "group user-msg-glass" : ""} style={{ maxWidth: msg.role === "user" ? (editingUserMessageId === msg.id ? "100%" : "min(860px, 94%)") : "100%", width: msg.role === "user" ? (editingUserMessageId === msg.id ? "100%" : "min(860px, 94%)") : "100%", margin: msg.role === "user" ? "0 auto" : undefined, padding: msg.role === "user" ? "16px 20px" : "0", borderRadius: msg.role === "user" ? 16 : 0, borderTopRightRadius: msg.role === "user" ? 16 : 0, fontSize: 15, lineHeight: 1.7, textAlign: msg.role === "user" ? "left" : undefined, display: msg.role === "user" ? "flex" : undefined, flexDirection: msg.role === "user" ? "column" : undefined, alignItems: msg.role === "user" ? "stretch" : undefined, gap: msg.role === "user" ? 8 : undefined }}>
+                                                        <div className={msg.role === "user" ? "glossy-bubble" : ""} style={{ maxWidth: msg.role === "user" ? "80%" : "100%", width: msg.role === "user" ? "auto" : "100%", padding: msg.role === "user" ? "12px 18px" : "0", borderRadius: msg.role === "user" ? 16 : 0, borderTopRightRadius: msg.role === "user" ? 4 : 0, background: msg.role === "user" ? "var(--color-user-bubble)" : "transparent", border: msg.role === "user" ? "1px solid var(--color-user-bubble-border)" : "none", fontSize: 15, lineHeight: 1.7 }}>
                                                             {msg.role === "user" ? (
                                                                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                                                                     {msg.attachments && msg.attachments.length > 0 && (
@@ -8346,92 +7878,15 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                     {(() => {
                                                                         const msgContentStr = toContentString(msg.content);
                                                                         if (!msgContentStr) return null;
-                                                                        const strippedStr = msgContentStr.replace(/(\r?\n)*\[Active Project Context\][\s\S]*$/, '');
-                                                                        const parts = strippedStr.split(/\n\n\[Shared folder context\]\n/);
+                                                                        const parts = msgContentStr.split(/\n\n\[Shared folder context\]\n/);
                                                                         const mainText = parts[0];
                                                                         const folderContextBlock = parts.length > 1 ? parts[1].split("\n\nNote:")[0] : null;
                                                                         const folderLines = folderContextBlock ? folderContextBlock.split('\n').filter(l => l.startsWith('- ')).map(l => l.substring(2).trim()) : [];
                                                                         const isPlanApproved = mainText?.startsWith('[PLAN_APPROVED]');
                                                                         const planText = isPlanApproved ? mainText.replace('[PLAN_APPROVED]\n', '').trim() : null;
-                                                                        const isEditingThis = editingUserMessageId === msg.id;
-
                                                                         return (
                                                                             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                                                                                {isEditingThis ? (
-                                                                                    <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%", minWidth: "280px" }}>
-                                                                                        <textarea aria-label="Edit your prompt..."
-                                                                                            autoFocus
-                                                                                            value={editingUserMessageText}
-                                                                                            onChange={(e) => setEditingUserMessageText(e.target.value)}
-                                                                                            onKeyDown={(e) => {
-                                                                                                if (e.key === 'Enter' && !e.shiftKey) {
-                                                                                                    e.preventDefault();
-                                                                                                    handleSaveEditedMessage(msg);
-                                                                                                } else if (e.key === 'Escape') {
-                                                                                                    e.preventDefault();
-                                                                                                    setEditingUserMessageId(null);
-                                                                                                }
-                                                                                            }}
-                                                                                            rows={Math.min(8, Math.max(2, editingUserMessageText.split('\n').length))}
-                                                                                            placeholder="Edit your prompt..."
-                                                                                            style={{
-                                                                                                width: '100%',
-                                                                                                background: 'var(--color-bg-subtle, rgba(0, 0, 0, 0.25))',
-                                                                                                color: 'var(--color-text-primary, #f3f4f6)',
-                                                                                                border: '1px solid var(--color-border-hover, rgba(255, 255, 255, 0.18))',
-                                                                                                borderRadius: 10,
-                                                                                                padding: '10px 12px',
-                                                                                                fontSize: 15,
-                                                                                                lineHeight: 1.6,
-                                                                                                fontFamily: 'inherit',
-                                                                                                resize: 'vertical',
-                                                                                                outline: 'none',
-                                                                                                boxSizing: 'border-box',
-                                                                                            }}
-                                                                                        />
-                                                                                        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8 }}>
-                                                                                            <button
-                                                                                                type="button"
-                                                                                                onClick={() => setEditingUserMessageId(null)}
-                                                                                                style={{
-                                                                                                    padding: "6px 12px",
-                                                                                                    fontSize: 13,
-                                                                                                    fontWeight: 500,
-                                                                                                    borderRadius: 8,
-                                                                                                    border: "1px solid var(--color-border, rgba(255, 255, 255, 0.1))",
-                                                                                                    background: "transparent",
-                                                                                                    color: "var(--color-text-secondary, #9ca3af)",
-                                                                                                    cursor: "pointer",
-                                                                                                    transition: "all 0.15s ease",
-                                                                                                }}
-                                                                                            >
-                                                                                                Cancel
-                                                                                            </button>
-                                                                                            <button
-                                                                                                type="button"
-                                                                                                onClick={() => handleSaveEditedMessage(msg)}
-                                                                                                disabled={!editingUserMessageText.trim()}
-                                                                                                style={{
-                                                                                                    padding: "6px 14px",
-                                                                                                    fontSize: 13,
-                                                                                                    fontWeight: 500,
-                                                                                                    borderRadius: 8,
-                                                                                                    border: "none",
-                                                                                                    background: "var(--color-primary, #2563eb)",
-                                                                                                    color: "#ffffff",
-                                                                                                    cursor: editingUserMessageText.trim() ? "pointer" : "not-allowed",
-                                                                                                    opacity: editingUserMessageText.trim() ? 1 : 0.5,
-                                                                                                    transition: "all 0.15s ease",
-                                                                                                    display: "inline-flex",
-                                                                                                    alignItems: "center",
-                                                                                                    gap: 6,
-                                                                                                }}
-                                                                                            >
-                                                                                                Save & Submit
-                                                                                            </button>
-                                                                                        </div>
-                                                                                    </div>
-                                                                                ) : isPlanApproved ? (
+                                                                                {isPlanApproved ? (
                                                                                     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                                                                                         <PlanApprovalBanner />
                                                                                         {planText && planText !== 'I have reviewed and approved your execution plan. Please proceed with the execution as planned.' && (
@@ -8439,38 +7894,11 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                                         )}
                                                                                     </div>
                                                                                 ) : (
-                                                                                    mainText && (
-                                                                                        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
-                                                                                            <span style={{ color: "var(--color-text-primary)", whiteSpace: "pre-wrap", flex: 1 }}>{mainText}</span>
-                                                                                            <button
-                                                                                                type="button"
-                                                                                                className="opacity-0 group-hover:opacity-100 transition-opacity"
-                                                                                                onClick={() => {
-                                                                                                    setEditingUserMessageId(msg.id);
-                                                                                                    setEditingUserMessageText(mainText || '');
-                                                                                                }}
-                                                                                                title="Edit prompt"
-                                                                                                style={{
-                                                                                                    background: "transparent",
-                                                                                                    border: "none",
-                                                                                                    color: "var(--color-text-tertiary, #9ca3af)",
-                                                                                                    cursor: "pointer",
-                                                                                                    padding: "2px",
-                                                                                                    borderRadius: "4px",
-                                                                                                    display: "inline-flex",
-                                                                                                    alignItems: "center",
-                                                                                                    justifyContent: "center",
-                                                                                                    flexShrink: 0,
-                                                                                                }}
-                                                                                            >
-                                                                                                <PencilSquareIcon width={14} height={14} />
-                                                                                            </button>
-                                                                                        </div>
-                                                                                    )
+                                                                                    mainText && <span style={{ color: "var(--color-text-primary)", whiteSpace: "pre-wrap" }}>{mainText}</span>
                                                                                 )}
                                                                                 {folderLines.length > 0 && (
                                                                                     <div style={{ padding: "12px 16px", backgroundColor: "var(--color-bg-surface)", border: "1px solid var(--color-border)", borderRadius: 12 }}>
-                                                                                        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--color-text-tertiary)", marginBottom: 8, display: "flex", alignItems: "center", gap: 6, textTransform: "uppercase" }}>
+                                                                                        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--color-text-tertiary)", marginBottom: 8, display: "flex", alignItems: "center", gap: 6, }}>
                                                                                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
                                                                                             Shared context
                                                                                         </div>
@@ -8482,56 +7910,65 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                             </div>
                                                                         );
                                                                     })()}
-                                                                    {msg.timestamp && (
-                                                                        <div style={{ alignSelf: "flex-end", fontSize: 11, color: "var(--color-text-tertiary)", lineHeight: 1.2, marginTop: 2, whiteSpace: "nowrap" }}>
-                                                                            {new Date(msg.timestamp).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
-                                                                        </div>
-                                                                    )}
                                                                 </div>
                                                             ) : (
                                                                 <>
+                                                                    <div
+                                                                        className="overflow-y-auto pr-3 custom-scrollbar"
+                                                                        style={{
+                                                                            width: "100%",
+                                                                            maxHeight: "calc(var(--ef-vh) - 280px)",
+                                                                            position: "relative",
+                                                                            paddingLeft: "0px",
+                                                                            marginBottom: msg.content?.trim() ? "14px" : "0px",
+                                                                        }}
+                                                                    >
+                                                                        <AgentTimeline
+                                                                            key={`timeline-${msg.id}`}
+                                                                            toolCalls={msg.toolCalls || []}
+                                                                            thought={msg.thought}
+                                                                            reasoningContent={msg.reasoning_content}
+                                                                            isLive={false}
+                                                                            currentPhase={currentPhase}
+                                                                            currentNode={currentNode}
+                                                                            subAgentProgress={subAgentProgress}
+                                                                            generatedTitle={msg.generatedTitle}
+                                                                            missionTimeline={msg.missionTimeline || missionTimeline}
+                                                                            onPillClick={handlePillClick}
+                                                                        />
+                                                                    </div>
+                                                                    {msg.stopped && (
+                                                                        <div style={{
+                                                                            display: 'flex',
+                                                                            alignItems: 'center',
+                                                                            gap: 8,
+                                                                            padding: '10px 14px',
+                                                                            marginTop: 12,
+                                                                            backgroundColor: 'var(--color-error-dim)',
+                                                                            border: '1px solid var(--color-error-border)',
+                                                                            borderRadius: 10,
+                                                                            fontSize: 13,
+                                                                            color: 'var(--color-error)',
+                                                                            fontWeight: 500
+                                                                        }}>
+                                                                            <StopIcon width={14} height={14} />
+                                                                            <span>Stopped by user</span>
+                                                                        </div>
+                                                                    )}
+
+
                                                                     {(() => {
-                                                                        const { cleanText: nonThoughtContent, thought: embeddedThought } = extractThinkingFromText(msg.content || '');
-                                                                        const effectiveThought = msg.reasoning_content || msg.thought || embeddedThought;
-                                                                        const { cleanContent, artifacts } = extractFileArtifacts(nonThoughtContent);
+                                                                        const { cleanContent, artifacts } = extractFileArtifacts(msg.content || '');
                                                                         let displayContent = scrubOrchestratorNoise(cleanContent.trim());
                                                                         if (displayContent === 'Working...' || displayContent === 'Working') {
                                                                             displayContent = '';
                                                                         }
                                                                         const { cleanContent: finalContent, followUps } = extractSuggestedFollowUps(displayContent);
-                                                                        const visionGroundingError = isVisionGroundingError(finalContent);
-                                                                        const hasContent = finalContent.length > 0 && !visionGroundingError;
+                                                                        const hasContent = finalContent.length > 0;
                                                                         const hasToolCalls = msg.toolCalls && msg.toolCalls.length > 0;
 
                                                                         return (
                                                                             <>
-                                                                                <div
-                                                                                    className="overflow-y-auto pr-3 custom-scrollbar"
-                                                                                    style={{
-                                                                                        width: "100%",
-                                                                                        maxHeight: "calc(100vh - 280px)",
-                                                                                        position: "relative",
-                                                                                        paddingLeft: "0px",
-                                                                                        marginBottom: msg.content?.trim() ? "14px" : "0px",
-                                                                                    }}
-                                                                                >
-                                                                                    {msg.planSteps && msg.planSteps.length > 0 && (
-                                                                                        <TodoPanel steps={msg.planSteps} title={msg.planTitle || "Task plan"} live={false} />
-                                                                                    )}
-                                                                                    <AgentTimeline
-                                                                                        key={`timeline-${msg.id}`}
-                                                                                        toolCalls={msg.toolCalls || []}
-                                                                                        thought={effectiveThought}
-                                                                                        reasoningContent={effectiveThought}
-                                                                                        isLive={false}
-                                                                                        currentPhase={currentPhase}
-                                                                                        currentNode={currentNode}
-                                                                                        subAgentProgress={subAgentProgress}
-                                                                                        generatedTitle={msg.generatedTitle}
-                                                                                        missionTimeline={msg.missionTimeline || missionTimeline}
-                                                                                        onPillClick={handlePillClick}
-                                                                                    />
-                                                                                </div>
                                                                                 {hasContent ? (
                                                                                     <StreamingMarkdown content={finalContent} isLive={false} isLatest={idx === messages.length - 1} />
                                                                                 ) : hasToolCalls ? (
@@ -8540,15 +7977,6 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                                     </div>
                                                                                 ) : null}
                                                                                 {msg.limitReached && <EverFernCloudLimitNotice />}
-                                                                                {(msg.missionTimeline || (msg.toolCalls && msg.toolCalls.length > 0) || (msg.thinkingDuration ?? 0) > 0) && (
-                                                                                    <RunSummaryCard
-                                                                                        status={msg.limitReached ? "error" : msg.stopped ? "stopped" : "finished"}
-                                                                                        durationMs={msg.thinkingDuration}
-                                                                                        summary={finalContent}
-                                                                                        tierLabel={userPlan === "pro" || userPlan === "max" ? "Pro intelligence" : "Lite intelligence"}
-                                                                                        onUpgrade={() => setShowSettings(true)}
-                                                                                    />
-                                                                                )}
                                                                                 {artifacts.map((art, i) => {
                                                                                     const ext = art.path.split('.').pop()?.toLowerCase() || '';
                                                                                     const isPremiumDoc = ext === 'md';
@@ -8667,55 +8095,8 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                             </div>
                                                                         );
                                                                     })}
-                                                                    {/* Interrupted Response Banner (when user stops message) */}
-                                                                    {msg.stopped && (
-                                                                        <InterruptedResponseBanner
-                                                                            onEditPrompt={() => {
-                                                                                const prevUserMsg = messages.slice(0, idx).reverse().find(m => m.role === 'user');
-                                                                                if (prevUserMsg) {
-                                                                                    const rawContent = typeof prevUserMsg.content === 'string' ? prevUserMsg.content : toContentString(prevUserMsg.content);
-                                                                                    const cleanPrompt = rawContent.replace(/(\r?\n)*\[Active Project Context\][\s\S]*$/, '').split(/\n\n\[Shared folder context\]\n/)[0].trim();
-                                                                                    setEditingUserMessageId(prevUserMsg.id);
-                                                                                    setEditingUserMessageText(cleanPrompt);
-                                                                                    setTimeout(() => {
-                                                                                        const bubble = document.getElementById(`user-msg-bubble-${prevUserMsg.id}`);
-                                                                                        if (bubble) {
-                                                                                            bubble.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                                                                            const ta = bubble.querySelector('textarea');
-                                                                                            if (ta) {
-                                                                                                ta.focus();
-                                                                                                ta.setSelectionRange(cleanPrompt.length, cleanPrompt.length);
-                                                                                            }
-                                                                                        }
-                                                                                    }, 60);
-                                                                                }
-                                                                            }}
-                                                                            onTryAgain={() => {
-                                                                                const prevUserMsg = messages.slice(0, idx).reverse().find(m => m.role === 'user');
-                                                                                if (prevUserMsg) {
-                                                                                    const promptText = typeof prevUserMsg.content === 'string' ? prevUserMsg.content : '';
-                                                                                    const userMsgIndex = messages.findIndex(m => m.id === prevUserMsg.id);
-                                                                                    const historyBeforeAssistant = messages.slice(0, userMsgIndex);
-                                                                                    handleSend(promptText, historyBeforeAssistant, false);
-                                                                                }
-                                                                            }}
-                                                                        />
-                                                                    )}
                                                                     <RateLimitContinueButton content={msg.content} onContinue={() => { setInputValue("continue"); const inputArea = document.querySelector('textarea') || document.querySelector('input[type="text"]'); if (inputArea) { (inputArea as any).focus(); } }} />
                                                                     <CloudAuthLoginButton content={toContentString(msg.content)} providerType={currentModel?.providerType} onLogin={() => { setCloudAuthError(false); router.push('/auth'); }} />
-                                                                    <VisionGroundingErrorCard
-                                                                        content={toContentString(msg.content)}
-                                                                        onOpenSettings={() => {
-                                                                            setSettingsInitialSection('vision');
-                                                                            setShowSettings(true);
-                                                                        }}
-                                                                        onDisable={async () => {
-                                                                            const updated = { ...config, vlm: { ...(config?.vlm || {}), enabled: false } };
-                                                                            setSettingsVlmEnabled(false);
-                                                                            setConfig(updated);
-                                                                            await (window as any).electronAPI?.saveConfig?.(updated);
-                                                                        }}
-                                                                    />
                                                                     {idx === messages.length - 1 && activeUserQuestions.length > 0 && isNavisQuestion(activeUserQuestions) && (
                                                                         <div style={{ marginTop: 16, width: '100%', maxWidth: '720px' }}>
                                                                             <UserQuestionForm
@@ -8808,24 +8189,45 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                         {/* Live streaming state - hide if last message already has this content (prevent duplicates).
                                         Exception: when HITL or user question is active, always show the streaming bubble
                                         so the previous agent message doesn't disappear while the form is shown. */}
-                                        {(isLoading || cloudAuthError || (streamingContent && (activeUserQuestions.length > 0 || showHitlApproval))) && (
-                                            (activeUserQuestions.length > 0 || showHitlApproval || cloudAuthError) ||
-                                            !(
-                                                messages.length > 0 &&
-                                                messages[messages.length - 1].role === "assistant" &&
-                                                assistantMessageIdRef.current &&
-                                                messages[messages.length - 1].id === assistantMessageIdRef.current &&
-                                                streamingContent &&
-                                                messages[messages.length - 1].content?.trim() === streamingContent?.trim()
-                                            )
+                                        {(isLoading || (streamingContent && (activeUserQuestions.length > 0 || showHitlApproval))) && (
+                                            (activeUserQuestions.length > 0 || showHitlApproval) ||
+                                            !(messages.length > 0 && messages[messages.length - 1].role === "assistant" && streamingContent && messages[messages.length - 1].content?.trim() === streamingContent?.trim())
                                         ) && (
                                                 <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 32, display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
 
                                                     <div style={{ width: "100%" }}>
+                                                        <AgentTimeline
+                                                            key={activeConversationId || 'new'}
+                                                            toolCalls={liveToolCalls}
+                                                            thought={streamingThought}
+                                                            reasoningContent={undefined}
+                                                            isLive={true}
+                                                            currentPhase={currentPhase}
+                                                            currentNode={currentNode}
+                                                            planSteps={activePlanSteps}
+                                                            planTitle={activePlanTitle}
+                                                            subAgentProgress={subAgentProgress}
+                                                            debateData={debateData}
+                                                            isDebating={isDebating}
+                                                            debateId={lastDebateId}
+                                                            onSkipDebate={skipDebate}
+                                                            missionTimeline={missionTimeline}
+                                                            onPillClick={handlePillClick}
+                                                        />
+                                                        {/* Live streaming tool call cards — show tool calls being built in real-time */}
+                                                        {streamingToolCalls.length > 0 && (
+                                                            <div className="mt-2 space-y-1">
+                                                                {streamingToolCalls.map(tc => (
+                                                                    <LiveToolCallCard key={tc.index} {...tc} />
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                        {activeSurface && (
+                                                            <SurfaceCanvas data={activeSurface} />
+                                                        )}
+
                                                         {(() => {
-                                                            const { cleanText: nonThoughtStreaming, thought: liveExtractedThought } = extractThinkingFromText(streamingContent || '');
-                                                            const effectiveLiveThought = (streamingThought || liveExtractedThought || '').trim();
-                                                            const { cleanContent: artifactCleanContent, artifacts } = extractFileArtifacts(nonThoughtStreaming);
+                                                            const { cleanContent: artifactCleanContent, artifacts } = extractFileArtifacts(streamingContent || '');
 
                                                             // Scrub tool calls and orchestrator noise from streaming content
                                                             let cleanContent = scrubOrchestratorNoise(
@@ -8836,65 +8238,24 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                             }
 
                                                             const { cleanContent: finalStreamingContent } = extractSuggestedFollowUps(cleanContent);
-                                                            const textToRender = finalStreamingContent;
+                                                            const textToRender = finalStreamingContent || streamingContent;
                                                             const lastAssistantMsg = messages.length > 0 && messages[messages.length - 1].role === "assistant" ? messages[messages.length - 1] : null;
                                                             const lastAssistantClean = lastAssistantMsg ? extractSuggestedFollowUps(lastAssistantMsg.content || '').cleanContent.trim() : '';
                                                             const currentClean = extractSuggestedFollowUps(textToRender).cleanContent.trim();
-                                                            const activeNarration = [...liveToolCalls].reverse().find(tool => tool.status === 'running' && tool.description?.trim())?.description?.trim();
                                                             
-                                                            const isAlreadyInMessages = lastAssistantMsg !== null &&
-                                                                assistantMessageIdRef.current !== null &&
-                                                                lastAssistantMsg.id === assistantMessageIdRef.current &&
-                                                                lastAssistantClean.length > 0 &&
-                                                                lastAssistantClean === currentClean;
+                                                            const isAlreadyInMessages = !isLoading || isMessageCommittedRef.current || (
+                                                                lastAssistantMsg !== null &&
+                                                                (
+                                                                    !textToRender ||
+                                                                    lastAssistantClean === currentClean ||
+                                                                    (currentClean.length > 0 && lastAssistantClean.startsWith(currentClean)) ||
+                                                                    (lastAssistantClean.length > 0 && currentClean.startsWith(lastAssistantClean))
+                                                                )
+                                                            );
 
                                                             return (
                                                                 <>
-                                                                    {activeNarration && (
-                                                                        <p style={{ margin: '0 0 10px', maxWidth: 720, fontSize: 14, lineHeight: 1.55, color: 'var(--color-text-primary)' }}>
-                                                                            {activeNarration}
-                                                                        </p>
-                                                                    )}
-                                                                    {(isLoading || (activePlanSteps && activePlanSteps.length > 0)) && (
-                                                                        <TodoPanel
-                                                                            steps={activePlanSteps || []}
-                                                                            title={activePlanTitle || "Task plan"}
-                                                                            live={isLoading}
-                                                                        />
-                                                                    )}
-                                                                    <AgentTimeline
-                                                                        key={activeConversationId || 'new'}
-                                                                        toolCalls={liveToolCalls}
-                                                                        thought={effectiveLiveThought}
-                                                                        reasoningContent={effectiveLiveThought}
-                                                                        isLive={true}
-                                                                        currentPhase={currentPhase}
-                                                                        currentNode={currentNode}
-                                                                        planSteps={activePlanSteps}
-                                                                        planTitle={activePlanTitle}
-                                                                        subAgentProgress={subAgentProgress}
-                                                                        debateData={debateData}
-                                                                        isDebating={isDebating}
-                                                                        debateId={lastDebateId}
-                                                                        onSkipDebate={skipDebate}
-                                                                        missionTimeline={missionTimeline}
-                                                                        onPillClick={handlePillClick}
-                                                                    />
-                                                                    {/* Live streaming tool call cards — show tool calls being built in real-time */}
-                                                                    {streamingToolCalls.length > 0 && (
-                                                                        <div className="mt-2 space-y-1">
-                                                                            {streamingToolCalls.map(tc => (
-                                                                                <LiveToolCallCard key={tc.index} {...tc} />
-                                                                            ))}
-                                                                        </div>
-                                                                    )}
-                                                                    {activeSurface && (
-                                                                        <SurfaceCanvas data={activeSurface} />
-                                                                    )}
-
-                                                                    {!isAlreadyInMessages && textToRender ? (
-                                                                        <StreamingMarkdown content={finalStreamingContent} isLive={true} />
-                                                                    ) : null}
+                                                                    {!isAlreadyInMessages && textToRender && <StreamingMarkdown content={finalStreamingContent} isLive={true} />}
                                                                     {artifacts.map((art, i) => {
                                                                         const ext = art.path.split('.').pop()?.toLowerCase() || '';
                                                                         const isPremiumDoc = ext === 'md';
@@ -9081,13 +8442,13 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
                                                             <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                                                                 <div style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: showPermissionModal ? "rgba(251, 191, 36, 0.15)" : "var(--color-bg-subtle)", border: showPermissionModal ? "1px solid rgba(251, 191, 36, 0.3)" : "1px solid transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                                                                    {showPermissionModal ? <span style={{ fontSize: 16 }}>🔒</span> : <Loader size={14} strokeWidth={2} className="text-zinc-300" />}
+                                                                    {showPermissionModal ? <LuLock size={15} strokeWidth={1.75} color="#d97706" /> : <Loader size={14} strokeWidth={2} className="text-zinc-300" />}
                                                                 </div>
                                                                 <div>
                                                                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                                                         <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" }}>Fern needs permission to access your system files</div>
                                                                     </div>
-                                                                    <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>Fern will be able to read and organize files in the folders you share.</div>
+                                                                    <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>EverFern can read and organize files in the folders you share.</div>
                                                                 </div>
                                                             </div>
 
@@ -9102,7 +8463,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                         {/* Screenshot Zoom Overlay */}
                                         <AnimatePresence>
                                             {zoomedScreenshot && (
-                                                <DialogSurface label="Assistant dialog"
+                                                <motion.div
                                                     initial={{ opacity: 0 }}
                                                     animate={{ opacity: 1 }}
                                                     exit={{ opacity: 0 }}
@@ -9119,7 +8480,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                             <XMarkIcon width={18} height={18} strokeWidth={2.5} /> Close Preview
                                                         </div>
                                                     </motion.div>
-                                                </DialogSurface>
+                                                </motion.div>
                                             )}
                                         </AnimatePresence>
 
@@ -9177,7 +8538,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                                     <path d="M12 8v4M12 16h.01" />
                                                                 </svg>
                                                                 <div style={{ flex: 1 }}>
-                                                                    <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-navis-active-text)", marginBottom: 3, letterSpacing: "0.02em", textTransform: "uppercase" }}>
+                                                                    <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-navis-active-text)", marginBottom: 3, }}>
                                                                         From your previous preferences
                                                                     </div>
                                                                     <div style={{ fontSize: 12.5, color: "var(--color-text-secondary)", lineHeight: 1.55 }}>
@@ -9274,7 +8635,7 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                                         <div style={{ padding: "0 20px 12px", display: "flex", alignItems: "center", gap: 10 }}>
                                                             {isRecording && <div style={{ display: "flex", alignItems: "center", gap: 6 }}><div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--color-error)", animation: "pulse 1s infinite" }} /><span style={{ fontSize: 13, color: "var(--color-error)" }}>Recording...</span></div>}
                                                             {voiceLoading && <span style={{ fontSize: 13, color: "var(--color-success)" }}>Transcribing...</span>}
-                                                            {voiceTranscript && !isRecording && !voiceLoading && <span style={{ fontSize: 13, color: "var(--color-text-tertiary)", fontStyle: "italic" }}>✓ {voiceTranscript.substring(0, 50)}{voiceTranscript.length > 50 ? '...' : ''}</span>}
+                                                            {voiceTranscript && !isRecording && !voiceLoading && <span style={{ fontSize: 13, color: "var(--color-text-tertiary)", fontStyle: "italic" }}>{voiceTranscript.substring(0, 50)}{voiceTranscript.length > 50 ? '...' : ''}</span>}
                                                         </div>
                                                     )}
 
@@ -9292,80 +8653,57 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                         </div>
                                     </div>
                                 )}
-                            </>
+                            </div>
                         )}
-                    </div>
-                )}
 
                         {/* Right Sidebar — panel switcher and content */}
-                        {(!isEmpty && !isToolDetailOpen && !isComputerPaneOpen && (subagent.isActive || (subagent.phases.length > 0 && showSubagentPanel) || selectedSubagentToolCall || (panelTasks && panelTasks.length > 0) || (executionPlan && isExecutionPlanPaneOpen))) && (
+                        {(!isEmpty && !isToolDetailOpen && !isComputerPaneOpen && (subagent.isActive || selectedSubagentToolCall || (panelTasks && panelTasks.length > 0) || (executionPlan && isExecutionPlanPaneOpen))) && (
                             <div style={{ width: 380, flexShrink: 0, display: "flex", flexDirection: "column", overflowY: "auto", padding: "16px 16px", gap: 16 }}>
 
                                 {/* Tab switcher for panels */}
-                                {(subagent.isActive || subagent.phases.length > 0 || selectedSubagentToolCall) && (
+                                {(subagent.isActive || selectedSubagentToolCall) && (
                                     <div style={{
                                         display: "flex",
-                                        alignItems: "center",
-                                        justifyContent: "space-between",
                                         gap: 8,
                                         borderBottom: "1px solid var(--color-border)",
                                         paddingBottom: 12,
                                         marginBottom: 8
                                     }}>
-                                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                                        <button
+                                            onClick={() => { setShowSubagentPanel(true); setSelectedSubagentToolCall(null); }}
+                                            style={{
+                                                padding: "6px 12px",
+                                                borderRadius: 6,
+                                                border: "none",
+                                                background: showSubagentPanel && !selectedSubagentToolCall ? "var(--color-bg-selected)" : "transparent",
+                                                cursor: "pointer",
+                                                fontSize: 12,
+                                                fontWeight: 600,
+                                                color: "var(--color-text-secondary)",
+                                                transition: "all 0.2s"
+                                            }}
+                                        >
+                                            Agents
+                                        </button>
+                                        {selectedSubagentToolCall && (
                                             <button
-                                                onClick={() => { setShowSubagentPanel(true); setSelectedSubagentToolCall(null); }}
+                                                onClick={() => setShowSubagentPanel(false)}
                                                 style={{
                                                     padding: "6px 12px",
                                                     borderRadius: 6,
                                                     border: "none",
-                                                    background: showSubagentPanel && !selectedSubagentToolCall ? "var(--color-bg-selected)" : "transparent",
-                                                    cursor: "pointer",
-                                                    fontSize: 12,
-                                                    fontWeight: 600,
                                                     color: "var(--color-text-secondary)",
                                                     transition: "all 0.2s"
                                                 }}
                                             >
-                                                Sub-agents {subagent.phases.length > 0 ? `(${subagent.phases.length})` : ''}
+                                                Tool Details
                                             </button>
-                                            {selectedSubagentToolCall && (
-                                                <button
-                                                    onClick={() => setShowSubagentPanel(false)}
-                                                    style={{
-                                                        padding: "6px 12px",
-                                                        borderRadius: 6,
-                                                        border: "none",
-                                                        color: "var(--color-text-secondary)",
-                                                        transition: "all 0.2s"
-                                                    }}
-                                                >
-                                                    Tool Details
-                                                </button>
-                                            )}
-                                        </div>
-                                        <button
-                                            onClick={() => setShowSubagentPanel(false)}
-                                            style={{
-                                                background: "transparent",
-                                                border: "none",
-                                                padding: "4px",
-                                                borderRadius: 6,
-                                                cursor: "pointer",
-                                                color: "var(--color-text-tertiary)",
-                                                display: "flex",
-                                                alignItems: "center",
-                                                justifyContent: "center",
-                                            }}
-                                            title="Close sub-agent panel"
-                                        >
-                                            <XMarkIcon width={15} height={15} />
-                                        </button>
+                                        )}
                                     </div>
                                 )}
 
                                 {/* Subagent Panel or Tool Call Detail */}
-                                {(subagent.isActive || subagent.phases.length > 0) && showSubagentPanel ? (
+                                {subagent.isActive && showSubagentPanel ? (
                                     <SubagentPanel
                                         coordination={subagent.coordination || {
                                             phase: 'exploration',
@@ -9374,10 +8712,6 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
                                             sharedContext: {}
                                         }}
                                         phases={subagent.phases}
-                                        subAgentProgress={subAgentProgress}
-                                        subAgentProgressVersion={subAgentProgressVersion}
-                                        onClose={() => setShowSubagentPanel(false)}
-                                        onOpenChat={(phase) => setActiveSubagentChat(phase)}
                                     />
                                 ) : selectedSubagentToolCall ? (
                                     <ToolCallDetailPane
@@ -9508,4 +8842,3 @@ Only use the WSL path ${wslPath} as fallback if local execution is not possible.
         </>
     );
 }
-

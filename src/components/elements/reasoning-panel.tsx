@@ -48,7 +48,7 @@ export function ReasoningPanel({
         : first.body;
       if (text) {
         // Strip markdown headers/bullets
-        const clean = text.replace(/^[#*\-\d.:\s]+/, "").trim();
+        const clean = text.replace(/^[#*\-\d.:\s]+/, "").replace(/\*\*|__|`/g, "").trim();
         // Take first sentence or up to 90 chars
         const firstSentence = clean.split(/[.\n]/)[0]?.trim();
         if (firstSentence && firstSentence.length > 5) {

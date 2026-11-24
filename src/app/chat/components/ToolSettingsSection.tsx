@@ -63,7 +63,7 @@ const DEFAULT_TOOL_SETTINGS: ToolSettingsConfig = {
 // ── Shared sub-components (matching SettingsPage style) ───────────────────────
 
 const Label = ({ children }: { children: React.ReactNode }) => (
-    <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8, margin: '0 0 8px' }}>
+    <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-tertiary)', marginBottom: 8, margin: '0 0 8px' }}>
         {children}
     </p>
 );

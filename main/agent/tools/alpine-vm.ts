@@ -141,8 +141,9 @@ export async function installAlpineVM(log: Log = () => {}): Promise<{ success: b
       }
     }
 
-    // Keep the VM self-contained: root user, no Windows PATH leaking in.
-    const wslConf = '[user]\\ndefault=root\\n\\n[interop]\\nappendWindowsPath=false\\n\\n[network]\\nhostname=everfern\\n';
+    // Keep the VM self-contained: root user, no Windows PATH leaking in, and no running
+    // Windows programs from inside it (a worker could otherwise start one on this computer).
+    const wslConf = '[user]\\ndefault=root\\n\\n[interop]\\nenabled=false\\nappendWindowsPath=false\\n\\n[network]\\nhostname=everfern\\n';
     await execFileAsync(wslCmd(), ['-d', ALPINE_DISTRO, '-u', 'root', '--exec', '/bin/sh', '-c', `printf '${wslConf}' > /etc/wsl.conf`], { timeout: 30000 }).catch(() => {});
     await execFileAsync(wslCmd(), ['--terminate', ALPINE_DISTRO], { timeout: 15000 }).catch(() => {});
     log('Alpine VM created.', 'success');
@@ -296,10 +297,11 @@ export function startAlpineDesktop(opts: { webPort?: number } = {}): Promise<{ u
 
 /**
  * Shows `url` in Chromium on the VM desktop (display :1): a new tab when Chromium is
- * already open, otherwise a new maximized window. The URL is passed as an argument,
- * never spliced into the script.
+ * already open, otherwise a new maximized window. `asApp` opens it as an app window
+ * instead (no tab strip or address bar), the way a web app should look. The URL is
+ * passed as an argument, never spliced into the script.
  */
-export function openAlpineBrowser(url: string, display = 1): Promise<void> {
+export function openAlpineBrowser(url: string, display = 1, asApp = false): Promise<void> {
   if (!/^https?:\/\//i.test(url)) return Promise.resolve();
   const script = [
     `export DISPLAY=:${display} HOME=/root`,
@@ -309,7 +311,7 @@ export function openAlpineBrowser(url: string, display = 1): Promise<void> {
     // Upgrade an already running VM browser to DevTools control without touching the host browser.
     'python3 -c "import urllib.request; urllib.request.urlopen(\'http://127.0.0.1:19222/json/version\', timeout=2)" >/dev/null 2>&1 || { pkill -f "^[^ ]*chrom[^ ]* .*--user-data-dir=/root/.config/ef-chromium" 2>/dev/null || true; sleep 1; }',
     'F="--no-sandbox --test-type --no-first-run --no-default-browser-check --start-maximized --disable-dev-shm-usage --remote-debugging-address=127.0.0.1 --remote-debugging-port=19222 --user-data-dir=/root/.config/ef-chromium"',
-    'setsid nohup "$B" $F "$1" >>/tmp/ef-browser.log 2>&1 &',
+    asApp ? 'setsid nohup "$B" $F --app="$1" >>/tmp/ef-browser.log 2>&1 &' : 'setsid nohup "$B" $F "$1" >>/tmp/ef-browser.log 2>&1 &',
     'i=0; until python3 -c "import urllib.request; urllib.request.urlopen(\'http://127.0.0.1:19222/json/version\', timeout=1)" >/dev/null 2>&1; do i=$((i+1)); [ "$i" -lt 40 ] || exit 21; sleep 0.25; done',
   ].join('\n') + '\n';
   return new Promise((resolve, reject) => {

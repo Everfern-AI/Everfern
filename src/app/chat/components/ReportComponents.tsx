@@ -246,7 +246,7 @@ const ReportContainer = ({ content, onView }: ReportContainerProps) => {
                                     <RenderLabel label={link.label} />
                                 </span>
                                 <div className="flex items-center gap-2">
-                                    <span className="text-[11px] text-[var(--color-text-secondary)] font-bold uppercase tracking-widest leading-none">
+                                    <span className="text-[11px] text-[var(--color-text-secondary)] font-boldst leading-none">
                                         {ext} REPORT
                                     </span>
                                     <div className="w-1 h-1 bg-[var(--color-border)] rounded-full" />

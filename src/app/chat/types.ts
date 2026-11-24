@@ -48,13 +48,6 @@ export interface SubAgentProgressEvent {
     type: string;           // e.g., "left_click", "type", "scroll"
     params: Record<string, unknown>;
     description: string;    // Human-readable description
-    status?: 'pending' | 'running' | 'completed' | 'failed';
-    result?: string | {
-      success?: boolean;
-      output?: unknown;
-      error?: unknown;
-      [key: string]: unknown;
-    };
   };
 
   /** Screenshot data (for screenshot events) */

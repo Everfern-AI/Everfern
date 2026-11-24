@@ -22,7 +22,7 @@ export function registerExecutionPermissionHandlers(): void {
     }
   });
 
-  ipcMain.on('acp:local-execution-response', (_event, response: { requestId: string; approved: boolean; alwaysAllow: boolean; allowPrefix?: boolean }) => {
+  ipcMain.on('acp:local-execution-response', (_event, response: { requestId: string; approved: boolean; alwaysAllow: boolean; allowPrefix?: boolean; target?: 'host' | 'vm' }) => {
     console.log('[local-execution-response] Received IPC response:', JSON.stringify(response));
     if (!response?.requestId) {
       console.warn('[local-execution-response] Missing requestId');
@@ -46,7 +46,12 @@ export function registerExecutionPermissionHandlers(): void {
       handledLocalExecutionResponses.add(response.requestId);
       setTimeout(() => handledLocalExecutionResponses.delete(response.requestId), 10 * 60 * 1000);
       resolvers.delete(response.requestId);
-      resolver({ approved: response.approved, alwaysAllow: response.alwaysAllow, allowPrefix: response.allowPrefix ?? false });
+      resolver({
+        approved: response.approved,
+        alwaysAllow: response.alwaysAllow,
+        allowPrefix: response.allowPrefix ?? false,
+        target: response.target === 'vm' ? 'vm' : response.target === 'host' ? 'host' : undefined,
+      });
     } else {
       console.warn('[local-execution-response] ❌ No resolver found for requestId:', response?.requestId);
     }

@@ -106,6 +106,21 @@ export const PROVIDER_MODELS: Record<ProviderType, string[]> = {
   ],
 };
 
+export const DEFAULT_CHAT_MODELS: Record<ProviderType, string> = {
+  openai: 'gpt-5.5',
+  anthropic: 'claude-sonnet-4-6',
+  deepseek: 'deepseek-v4-pro',
+  minimax: 'MiniMax-M3',
+  everfern: 'openai/gpt-5.6-luna',
+  gemini: 'gemini-3.5-flash',
+  ollama: 'llama3',
+  'ollama-cloud': 'qwen3-vl:235b-cloud',
+  llamacpp: 'local-model',
+  lmstudio: 'local-model',
+  nvidia: 'meta/llama-3.1-8b-instruct',
+  openrouter: 'openai/gpt-5.2',
+};
+
 export const CLOUD_MODEL_MAP: Record<string, string> = {
   // Anthropic
   'claude-fable-5': 'anthropic/claude-fable-5',

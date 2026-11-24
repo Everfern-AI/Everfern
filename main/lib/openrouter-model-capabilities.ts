@@ -1,4 +1,5 @@
 import type { FlatModelEntry } from './providers';
+import { execFile } from 'child_process';
 
 export interface OpenRouterCatalog {
   reasoningModelIds: Set<string>;
@@ -53,6 +54,24 @@ async function fetchEverFernCatalog(): Promise<OpenRouterCatalog> {
 
 export async function getOpenRouterCatalog(): Promise<OpenRouterCatalog | null> {
   if (catalogCache && catalogCache.expiresAt > Date.now()) return catalogCache;
+  const native = process.env.EVERFERN_SHELL === 'tauri' ? process.env.EF_NATIVE_EXE : undefined;
+  if (native) {
+    type Catalog = { reasoning: string[]; imageGeneration: string[] };
+    const catalog = await new Promise<Catalog | null>(resolve => {
+      execFile(native, ['--ef-openrouter-catalog'], { windowsHide: true, timeout: 18000 }, (error, output) => {
+        if (error) return resolve(null);
+        try { resolve(JSON.parse(output)); } catch { resolve(null); }
+      });
+    });
+    if (catalog) {
+      catalogCache = {
+        reasoningModelIds: new Set(catalog.reasoning),
+        imageModelIds: new Set(catalog.imageGeneration),
+        expiresAt: Date.now() + CATALOG_TTL_MS,
+      };
+    }
+    return catalogCache;
+  }
 
   try {
     const catalog = await fetchEverFernCatalog();

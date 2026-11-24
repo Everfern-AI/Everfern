@@ -110,10 +110,10 @@ import { VectorContextEngine } from './context-engine/vector';
 import { syncBuiltInSkills, mergeCustomSkills, getCustomSkillsPath, listCustomSkills, listAllSkills, saveCustomSkill, deleteCustomSkill } from './lib/skills-sync';
 import { CommandRegistry } from './agent/tools/terminal/registry';
 import { initializePromptSync, watchPrompts } from './lib/prompt-sync';
-import { initializeOpenClawConfigs, loadSoul, loadAgents, saveGlobalSoul, saveGlobalAgents } from './agent/personality-manager';
+import { initializeOpenClawConfigs } from './agent/personality-manager';
 import { registerProjectsHandlers } from './ipc/projects';
 import { ensureWSLSetup, ensureDockerContainer } from './agent/tools/linux-vm-executor';
-import { shutdownMCPTools } from './agent/tools/mcp';
+import { initMCPTools, shutdownMCPTools } from './agent/tools/mcp';
 import { initializeUpdater } from './updater';
 import { toolApprovalStore } from './store/tool-approvals';
 
@@ -424,7 +424,16 @@ function createWindow(): void {
     }
   });
 
+  // Mirroring every renderer log into the main process doubles string churn in
+  // both heaps; packaged builds only forward warnings and errors.
+  const forwardAllRendererLogs = !app.isPackaged || process.env.EVERFERN_VERBOSE_LOGS === '1';
   mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    if (!forwardAllRendererLogs) {
+      // Electron 35+ puts a string level on the event; older builds pass a number.
+      const named = (event as any)?.level;
+      const isWarnOrError = typeof named === 'string' ? named === 'warning' || named === 'error' : level >= 2;
+      if (!isWarnOrError) return;
+    }
     const levels = ['Log', 'Info', 'Warn', 'Error'];
     const levelStr = levels[level] || 'Log';
     console.log(`[Renderer ${levelStr}] ${message} (at ${sourceId}:${line})`);
@@ -638,6 +647,8 @@ app.whenReady().then(async () => {
 
     // Start the extension bridge server (localhost:4001)
     bridgeServer.start();
+    // "Send to EverFern" from the Navis extension panel becomes a chat message.
+    require('./lib/navis-tasks').registerNavisTasks();
 
     // Start the Agent Gateway Control Plane server (localhost:4002)
     try {
@@ -722,6 +733,8 @@ Your goal is to be the ultimate workplace companion.
   // ── Protocol Handlers ──────────────────────────────────────────────
 
   // Custom protocol for the main application (Next.js out folder)
+  // Per-request logging runs for every chunk, font and image the renderer loads.
+  const verboseProtocolLogs = process.env.EVERFERN_VERBOSE_LOGS === '1';
   protocol.handle('everfern-app', async (request) => {
     try {
       const url = new URL(request.url);
@@ -739,7 +752,7 @@ Your goal is to be the ultimate workplace companion.
         : path.join(__dirname, '../../out');
 
       let absPath = path.join(baseDir, filePath);
-      console.log(`[Protocol] Request: ${request.url} -> ${absPath} (baseDir: ${baseDir}, isPackaged: ${app.isPackaged})`);
+      if (verboseProtocolLogs) console.log(`[Protocol] Request: ${request.url} -> ${absPath} (baseDir: ${baseDir}, isPackaged: ${app.isPackaged})`);
 
       // Async helper to get stats
       const getStats = async (p: string) => { try { return await fs.promises.stat(p); } catch { return null; } };
@@ -750,7 +763,7 @@ Your goal is to be the ultimate workplace companion.
       if (stats && stats.isDirectory()) {
         const dirIndexPath = path.join(absPath, 'index.html');
         if (await getStats(dirIndexPath)) {
-          console.log(`[Protocol] Directory detected, serving ${dirIndexPath}`);
+          if (verboseProtocolLogs) console.log(`[Protocol] Directory detected, serving ${dirIndexPath}`);
           const data = await fs.promises.readFile(dirIndexPath);
           return new Response(data, { headers: { 'Content-Type': 'text/html' } });
         }
@@ -921,6 +934,9 @@ Your goal is to be the ultimate workplace companion.
   } catch (error) {
     console.error('[Shortcut] ❌ Error registering Ctrl+Alt+H:', error);
   }
+
+  // ── MCP servers: connect saved servers in the background ────────────
+  initMCPTools();
 
   // ── Initialize Integration Services ─────────────────────────────────
   // Only boot the Discord/Telegram stack when a bot is actually configured;

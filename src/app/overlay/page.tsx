@@ -257,8 +257,8 @@ export default function OverlayPage() {
 
   return (
     <div style={{
-      width: '100vw',
-      height: '100vh',
+      width: 'var(--ef-vw)',
+      height: 'var(--ef-vh)',
       display: 'flex',
       justifyContent: 'center',
       alignItems: 'flex-end',
@@ -283,8 +283,8 @@ export default function OverlayPage() {
               flexDirection: (isCompleted || state === 'clarification' || state === 'history') ? 'column' : 'row',
               alignItems: (isCompleted || state === 'clarification' || state === 'history') ? 'stretch' : 'center',
               justifyContent: 'space-between',
-              maxWidth: 'calc(100vw - 32px)',
-              maxHeight: 'calc(100vh - 40px)',
+              maxWidth: 'calc(var(--ef-vw) - 32px)',
+              maxHeight: 'calc(var(--ef-vh) - 40px)',
               overflowY: 'auto',
               width: isCompleted ? 740 : (state === 'clarification' || state === 'history') ? 600 : 500,
               minHeight: isCompleted ? 260 : state === 'clarification' ? clarificationMinHeight : state === 'history' ? 320 : state === 'error' ? 52 : 64,
@@ -329,7 +329,7 @@ export default function OverlayPage() {
                 {/* State: Executing */}
                 {state === 'executing' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, overflow: 'hidden' }}>
-                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.05em', fontFamily: '"Figtree", sans-serif' }}>
+                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontFamily: '"Figtree", sans-serif' }}>
                       Executing
                     </span>
                     <p style={{
@@ -439,7 +439,7 @@ export default function OverlayPage() {
                       <span style={{ fontSize: 13, color: '#ffffff', fontWeight: 500 }}>
                         EverFern Assistant
                       </span>
-                      <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                      <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', }}>
                         Execution Complete
                       </span>
                     </div>
@@ -590,7 +590,7 @@ export default function OverlayPage() {
                     alt="EverFern Logo"
                     style={{ width: 30, height: 30, objectFit: 'contain' }}
                   />
-                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', }}>
                     Clarification Required
                   </span>
                 </div>
@@ -829,7 +829,7 @@ export default function OverlayPage() {
                       alt="EverFern Logo"
                       style={{ width: 30, height: 30, objectFit: 'contain' }}
                     />
-                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', }}>
                       Select Chat History
                     </span>
                   </div>

@@ -48,10 +48,28 @@ export const askUserTool: AgentTool = {
   },
 
   async execute(args: Record<string, unknown>, onUpdate?: (msg: string) => void, emitEvent?: (event: any) => void, toolCallId?: string): Promise<ToolResult> {
+    const preview = args.previewMarkdown as string | undefined;
+    const executable = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+    const nativeQuestions = executable && (preview == null || typeof preview === 'string')
+      ? await new Promise<{ result: ToolResult; formatted?: string; count?: number } | null>(resolve => {
+        const { execFile } = require('child_process') as typeof import('child_process');
+        const child = execFile(executable, ['--ef-normalize-questions'], {
+          encoding: 'utf8', windowsHide: true, timeout: 5000,
+        }, (error, output) => {
+          if (error) return resolve(null);
+          try { resolve(JSON.parse(output)); } catch { resolve(null); }
+        });
+        child.stdin?.once('error', () => resolve(null));
+        child.stdin?.end(JSON.stringify(args));
+      }) : null;
+    if (nativeQuestions && !nativeQuestions.result.success) return nativeQuestions.result;
+
     // Handle both formats: { questions: [...] } or { question: "...", options: [...] }
     let questions: any[];
 
-    if (args.questions && Array.isArray(args.questions)) {
+    if (nativeQuestions) {
+      questions = [];
+    } else if (args.questions && Array.isArray(args.questions)) {
       // Correct format: questions array
       questions = args.questions as any[];
     } else if (args.question && args.options) {
@@ -70,19 +88,14 @@ export const askUserTool: AgentTool = {
       };
     }
 
-    const preview = args.previewMarkdown as string | undefined;
-
-    const formatted = questions.map(q => {
+    const formatted = nativeQuestions?.formatted ?? questions.map(q => {
       const opts = (Array.isArray(q.options) ? q.options : [])
         .map((o: any) => typeof o === 'string' ? o : (o?.label || o?.value || String(o)))
         .join(' / ') || 'No options provided';
       return `❓ **${q.question}**\n   Choices: ${opts}`;
     }).join('\n\n');
-
-    onUpdate?.(`🤔 Presenting ${questions.length} clarifying questions to the user...`);
-
-    // Normalize options to ensure they're properly serializable
-    const normalizedQuestions = questions.map(q => ({
+    onUpdate?.(`🤔 Presenting ${nativeQuestions?.count ?? questions.length} clarifying questions to the user...`);
+    const normalizedQuestions = nativeQuestions ? undefined : questions.map(q => ({
       question: String(q.question || ''),
       options: (Array.isArray(q.options) ? q.options : []).map((opt: any) => {
         if (typeof opt === 'string') {
@@ -134,7 +147,7 @@ export const askUserTool: AgentTool = {
       console.error('[Notification] Failed to show system notification:', err);
     }
 
-    return {
+    return nativeQuestions?.result ?? {
       success: true,
       output: `Questions presented to the user:\n\n${formatted}\n\n${preview ? `**Preview Context:**\n${preview}\n\n` : ''}Wait for the user's selection.`,
       data: {

@@ -48,11 +48,6 @@ export * from './integrations/IntegrationSettings';
 export * from './tasks/ScheduledTaskModal';
 export * from './tasks/ScheduledTasksPanel';
 
-// 7. Projects
-export * from './projects/CreateProjectModal';
-export * from './projects/ProjectCreator';
-export * from './projects/ProjectDashboard';
-
 // 8. Visual Effects & Media
 export * from './visuals/agent-audio-visualizer-aura';
 export * from './visuals/siri-orb';
@@ -60,11 +55,6 @@ export * from './visuals/react-shader-toy';
 export * from './visuals/CursorOverlaySystem';
 export * from './visuals/GradientBorderSystem';
 export * from './visuals/ShimmerProgressComponent';
-
-// 9. IDE & Workspace
-export * from './ide/IDEMode';
-export * from './ide/IDEPane';
-export * from './ide/CodePanel';
 
 // 10. Common & Utilities
 export * from './common/FormComponents';

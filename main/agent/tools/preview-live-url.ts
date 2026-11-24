@@ -1,4 +1,21 @@
 import { AgentTool, ToolResult } from '../runner/types';
+import { execFile } from 'child_process';
+
+type UrlToolResult = ToolResult & { data?: { url: string } };
+
+function nativeUrlResult(mode: '--ef-show-user-url' | '--ef-preview-live-url', url: unknown): Promise<UrlToolResult | null> | undefined {
+  const executable = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+  if (!executable) return;
+  return new Promise(resolve => {
+    const child = execFile(executable, [mode], { encoding: 'utf8', windowsHide: true, timeout: 5000 },
+      (error, output) => {
+        if (error) return resolve(null);
+        try { resolve(JSON.parse(output)); } catch { resolve(null); }
+      });
+    child.stdin?.once('error', () => resolve(null));
+    child.stdin?.end(JSON.stringify({ url }));
+  });
+}
 
 /**
  * Preview Live URL Tool
@@ -18,7 +35,11 @@ export const previewLiveUrlTool: AgentTool = {
     required: ['url']
   },
   async execute(args: Record<string, unknown>, onUpdate?: (msg: string) => void, emitEvent?: (event: any) => void, toolCallId?: string): Promise<ToolResult> {
-    const url = args.url as string;
+    const native = typeof args.url === 'string' || !args.url
+      ? await nativeUrlResult('--ef-preview-live-url', args.url)
+      : undefined;
+    if (native && !native.success) return native;
+    const url = native?.data?.url ?? args.url as string;
     if (!url) {
       return {
         success: false,
@@ -36,7 +57,7 @@ export const previewLiveUrlTool: AgentTool = {
       });
     }
 
-    return {
+    return native ?? {
       success: true,
       output: `Live preview pane opened successfully for ${url}`,
       data: { url }
@@ -81,7 +102,9 @@ export const showUserUrlTool: AgentTool = {
     required: ['url']
   },
   async execute(args: Record<string, unknown>, onUpdate?: (msg: string) => void, emitEvent?: (event: any) => void): Promise<ToolResult> {
-    const url = normalizeUserUrl(args.url);
+    const native = await nativeUrlResult('--ef-show-user-url', args.url);
+    if (native && !native.success) return native;
+    const url = native?.data?.url ?? normalizeUserUrl(args.url);
     if (!url) {
       return {
         success: false,
@@ -97,7 +120,7 @@ export const showUserUrlTool: AgentTool = {
       url
     });
 
-    return {
+    return native ?? {
       success: true,
       output: `Opened browser tab for user\nURL: ${url}`,
       data: { url }

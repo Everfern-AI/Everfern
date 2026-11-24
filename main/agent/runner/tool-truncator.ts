@@ -1,4 +1,5 @@
 import type { ToolDefinition } from '../../lib/ai-client';
+import { execFile } from 'child_process';
 
 /**
  * Category labels assigned to each tool for relevance filtering.
@@ -100,6 +101,11 @@ const ALWAYS_INCLUDE = new Set<string>([
   'bash',
   'executePwsh',
   'terminal_status',
+  // Core file tools: specialists (coding, data analyst) must be able to read what they edit,
+  // even when the message has no filesystem keyword ("analyze sales.csv").
+  'read',
+  'write',
+  'ls',
   'edit',
   'multi_file_edit',
   // Navigation / browser
@@ -156,6 +162,8 @@ const ALWAYS_INCLUDE = new Set<string>([
   'worker_click',
   'worker_type',
   'worker_describe',
+  'files_action',
+  'terminal_run',
 ]);
 
 
@@ -266,6 +274,21 @@ export function truncateTools(
       continue;
     }
 
+    // Tools from user-connected MCP servers (mcp__<server>__<tool>): keep them whenever the
+    // conversation names the server ("my github issues") or the tool, not only when it says "mcp".
+    const mcpName = /^mcp__(.+?)__(.+)$/.exec(def.name);
+    if (mcpName) {
+      const haystack = `${userInput} ${recentAssistantOutput}`.toLowerCase();
+      const words = [mcpName[1], ...mcpName[1].split(/[_-]+/), mcpName[2].replace(/[_-]+/g, ' ')]
+        .map(w => w.toLowerCase()).filter(w => w.length >= 3);
+      if (relevantCategories.has('mcp') || words.some(w => haystack.includes(w))) {
+        kept.push(def);
+      } else {
+        removed.push(def.name);
+      }
+      continue;
+    }
+
     // Find the tool's category
     let cat: ToolCategory | undefined;
     for (const entry of TOOL_CATEGORY_MAP) {
@@ -310,6 +333,76 @@ export function truncateTools(
     details: {
       totalSchemaTokens: estimateToolSchemaTokens(toolDefs),
       keptSchemaTokens: estimateToolSchemaTokens(kept),
+      toolsRemoved: removed.length,
+    },
+  };
+}
+
+/** Rust owns tool relevance selection in Tauri; the synchronous TypeScript policy remains the fallback. */
+export async function truncateToolsForDesktop(
+  toolDefs: ToolDefinition[],
+  userInput: string,
+  recentAssistantOutput: string,
+  options: TruncatorOptions = {},
+): Promise<TruncationResult> {
+  const executable = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+  if (!executable) return truncateTools(toolDefs, userInput, recentAssistantOutput, options);
+
+  const native = await new Promise<any | null>(resolve => {
+    let settled = false;
+    const finish = (value: any | null) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    const child = execFile(executable, ['--ef-tool-truncate'], {
+      encoding: 'utf8', windowsHide: true, timeout: 5000, maxBuffer: 4 * 1024 * 1024,
+    }, (error, output) => {
+      if (error) return finish(null);
+      try {
+        const response = JSON.parse(output);
+        if (!Array.isArray(response?.keptIndices) || !Array.isArray(response?.removedIndices)
+          || !response?.scores || typeof response.scores !== 'object'
+          || typeof response.fallback !== 'boolean' || !Number.isInteger(response.candidateKept)) return finish(null);
+        const allIndices = [...response.keptIndices, ...response.removedIndices];
+        if (allIndices.some((index: unknown) => !Number.isInteger(index) || (index as number) < 0 || (index as number) >= toolDefs.length)
+          || new Set(allIndices).size !== toolDefs.length) return finish(null);
+        finish(response);
+      } catch { finish(null); }
+    });
+    child.stdin?.once('error', () => finish(null));
+    child.stdin?.end(JSON.stringify({
+      names: toolDefs.map(tool => tool.name),
+      userInput,
+      recentAssistantOutput,
+      relevanceThreshold: options.relevanceThreshold ?? 1,
+      alwaysInclude: options.alwaysInclude ?? [],
+    }));
+  });
+
+  if (!native) return truncateTools(toolDefs, userInput, recentAssistantOutput, options);
+  const scores = native.scores as Record<ToolCategory, number>;
+  const totalSchemaTokens = estimateToolSchemaTokens(toolDefs);
+  const keptTools = native.keptIndices.map((index: number) => toolDefs[index]);
+  const removed = native.removedIndices.map((index: number) => toolDefs[index].name);
+
+  if (options.debug) {
+    console.log('[ToolTruncator] Category scores:', JSON.stringify(scores, null, 2));
+    console.log('[ToolTruncator] Relevant categories:', Object.keys(scores).filter(category => scores[category as ToolCategory] >= (options.relevanceThreshold ?? 1)).join(', '));
+    if (native.fallback) console.log(`[ToolTruncator] Truncation too aggressive (kept ${native.candidateKept} < ${Math.max(8, Math.ceil(toolDefs.length * 0.2))}), returning full set`);
+    else {
+      console.log(`[ToolTruncator] Kept ${keptTools.length} tools, removed ${removed.length}`);
+      console.log('[ToolTruncator] Removed:', removed.join(', '));
+    }
+  }
+
+  return {
+    tools: keptTools,
+    removed,
+    scores,
+    details: {
+      totalSchemaTokens,
+      keptSchemaTokens: estimateToolSchemaTokens(keptTools),
       toolsRemoved: removed.length,
     },
   };

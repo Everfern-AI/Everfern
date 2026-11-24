@@ -2,6 +2,7 @@ import { ipcMain } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import { execFile, execFileSync } from 'child_process';
 import { integrationService } from '../integrations/integration-service';
 import type { DiscordPlatform } from '../integrations/discord-platform';
 import type { TelegramPlatform } from '../integrations/telegram-platform';
@@ -10,7 +11,7 @@ import { acpManager } from '../acp/manager';
 import { PROVIDER_REGISTRY, getModelsForProvider, formatModelName, FlatModelEntry } from '../lib/providers';
 import type { ProviderType } from '../acp/types';
 import { loadConfigSync } from './config-handlers';
-import { loadSoul, loadAgents, saveGlobalSoul, saveGlobalAgents } from '../agent/personality-manager';
+import { loadPersonalityConfigs, saveGlobalSoul, saveGlobalAgents } from '../agent/personality-manager';
 
 export interface IntegrationConfig {
   telegram: {
@@ -67,12 +68,33 @@ async function ensureIntegrationInitialized(): Promise<void> {
   await integrationService.initialize();
 }
 
+type IntegrationConfigUpdate = { [Platform in keyof IntegrationConfig]?: Partial<IntegrationConfig[Platform]> };
+
+type IntegrationTestResult = {
+  platform: 'telegram' | 'discord';
+  token: string;
+  applicationId?: string;
+  success: boolean;
+  username?: string;
+};
+
+function nativeIntegrationStore(channel: 'integration:load-resolved' | 'integration:save' | 'integration:merge-and-save' | 'integration:commit-test-result', config?: IntegrationConfig | { update: IntegrationConfigUpdate } | IntegrationTestResult): IntegrationConfig | null | undefined {
+  const executable = process.env.EF_NATIVE_EXE;
+  if (process.env.EVERFERN_SHELL !== 'tauri' || !executable) return undefined;
+  return JSON.parse(execFileSync(executable, ['--ef-integration-store'], {
+    encoding: 'utf8',
+    input: JSON.stringify({ channel, config }),
+    windowsHide: true,
+  }));
+}
+
 export const loadIntegrationConfig = (): IntegrationConfig => {
   try {
     const configPath = path.join(os.homedir(), '.everfern', 'integration-config.json');
-    if (fs.existsSync(configPath)) {
-      const data = fs.readFileSync(configPath, 'utf8');
-      const loaded = JSON.parse(data);
+    const native = nativeIntegrationStore('integration:load-resolved');
+    if (native) return native;
+    const loaded = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : null;
+    if (loaded) {
 
       return {
         telegram: {
@@ -93,6 +115,7 @@ export const loadIntegrationConfig = (): IntegrationConfig => {
 
 export const saveIntegrationConfig = (config: IntegrationConfig): void => {
   try {
+    if (nativeIntegrationStore('integration:save', config) !== undefined) return;
     const configDir = path.join(os.homedir(), '.everfern');
     if (!fs.existsSync(configDir)) {
       fs.mkdirSync(configDir, { recursive: true });
@@ -105,7 +128,39 @@ export const saveIntegrationConfig = (config: IntegrationConfig): void => {
   }
 };
 
+function saveConnectionResult(result: IntegrationTestResult): boolean {
+  const { platform, token, applicationId, success, username } = result;
+  if (integrationConfig[platform].botToken !== token ||
+      (platform === 'discord' && integrationConfig.discord.applicationId !== applicationId)) {
+    return false;
+  }
+  const native = nativeIntegrationStore('integration:commit-test-result', result);
+  if (native === null) return false;
+  if (native) {
+    integrationConfig = native;
+  } else {
+    integrationConfig[platform].connected = success;
+    if (platform === 'telegram' && username) integrationConfig.telegram.botUsername = username;
+    saveIntegrationConfig(integrationConfig);
+  }
+  return true;
+}
+
 export const getIntegrationConfig = () => integrationConfig;
+
+function authorizeDiscordMessage(token: string) {
+  const executable = process.env.EF_NATIVE_EXE;
+  if (process.env.EVERFERN_SHELL !== 'tauri' || !executable) return undefined;
+  return (id: string, direct: boolean, mentioned: boolean, guildId?: string) => new Promise<boolean>(resolve => {
+    const child = execFile(executable, ['--ef-integration-store'], {
+      encoding: 'utf8', windowsHide: true, timeout: 5000,
+    }, (error, output) => resolve(!error && output.trim() === 'true'));
+    child.stdin?.once('error', () => resolve(false));
+    child.stdin?.end(JSON.stringify({
+      channel: 'integration:authorize-discord-message', config: { token, id, direct, mentioned, guildId },
+    }));
+  });
+}
 
 export const buildTelegramPlatformConfig = (telegramConfig: IntegrationConfig['telegram']) => ({
   enabled: true,
@@ -117,6 +172,20 @@ export const buildTelegramPlatformConfig = (telegramConfig: IntegrationConfig['t
     requireApproval: telegramConfig.requireApproval !== false,
     approvalCode: telegramConfig.approvalCode || '',
     approvedUsers: telegramConfig.approvedUsers || [],
+    authorizeMessage: process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE
+      ? (id: string, message: string) => new Promise<'allowed' | 'paired' | 'denied'>(resolve => {
+        const child = execFile(process.env.EF_NATIVE_EXE!, ['--ef-integration-store'], {
+          encoding: 'utf8', windowsHide: true, timeout: 5000,
+        }, (error, output) => {
+          const result = output.trim();
+          resolve(error ? 'denied' : result === '"allowed"' ? 'allowed' : result === '"paired"' ? 'paired' : 'denied');
+        });
+        child.stdin?.once('error', () => resolve('denied'));
+        child.stdin?.end(JSON.stringify({
+          channel: 'integration:authorize-telegram-message', config: { id, token: telegramConfig.botToken, message },
+        }));
+      })
+      : undefined,
     onApproveUser: (user: { id: string; name: string; approvedAt: string }) => {
       const approvedUsers = integrationConfig.telegram.approvedUsers || [];
       if (!approvedUsers.includes(user.id)) {
@@ -124,6 +193,7 @@ export const buildTelegramPlatformConfig = (telegramConfig: IntegrationConfig['t
       }
       saveIntegrationConfig(integrationConfig);
       console.log('[Integration] Telegram user approved:', user);
+      return true;
     }
   }
 });
@@ -138,6 +208,7 @@ export async function autoStartEnabledBots(): Promise<void> {
     }
 
     if (integrationConfig.discord.enabled && integrationConfig.discord.botToken) {
+      const { botToken: token, applicationId } = integrationConfig.discord;
       if (!integrationConfig.discord.model || !integrationConfig.discord.provider) {
         console.warn('[Integration] Discord bot is enabled but missing model/provider configuration.');
       }
@@ -154,23 +225,23 @@ export async function autoStartEnabledBots(): Promise<void> {
               respondToGuilds: true,
               guildMentionOnly: true,
               allowedGuilds: integrationConfig.discord.allowedGuilds || [],
-              allowedUsers: integrationConfig.discord.allowedUsers || []
+              allowedUsers: integrationConfig.discord.allowedUsers || [],
+              authorizeMessage: authorizeDiscordMessage(integrationConfig.discord.botToken)
             }
           });
           await platform.initialize();
           botManager.registerPlatform('discord', platform);
-          integrationConfig.discord.connected = true;
-          saveIntegrationConfig(integrationConfig);
+          saveConnectionResult({ platform: 'discord', token, applicationId, success: true });
           console.log('[Integration] Discord bot auto-started successfully');
         }
       } catch (error) {
         console.error('[Integration] Failed to auto-start Discord bot:', error);
-        integrationConfig.discord.connected = false;
-        saveIntegrationConfig(integrationConfig);
+        saveConnectionResult({ platform: 'discord', token, applicationId, success: false });
       }
     }
 
     if (integrationConfig.telegram.enabled && integrationConfig.telegram.botToken) {
+      const token = integrationConfig.telegram.botToken;
       if (!integrationConfig.telegram.model || !integrationConfig.telegram.provider) {
         console.warn('[Integration] Telegram bot is enabled but missing model/provider configuration.');
       }
@@ -181,14 +252,12 @@ export async function autoStartEnabledBots(): Promise<void> {
           const platform = new TelegramPlatform(buildTelegramPlatformConfig(integrationConfig.telegram));
           await platform.initialize();
           botManager.registerPlatform('telegram', platform);
-          integrationConfig.telegram.connected = true;
-          saveIntegrationConfig(integrationConfig);
+          saveConnectionResult({ platform: 'telegram', token, success: true });
           console.log('[Integration] Telegram bot auto-started successfully');
         }
       } catch (error) {
         console.error('[Integration] Failed to auto-start Telegram bot:', error);
-        integrationConfig.telegram.connected = false;
-        saveIntegrationConfig(integrationConfig);
+        saveConnectionResult({ platform: 'telegram', token, success: false });
       }
     }
   } catch (error) {
@@ -237,7 +306,22 @@ export async function shutdownBotMessageHandler(): Promise<void> {
 
 
 
+function testNativeConnection<T extends { success: boolean }>(platform: string, token: string, applicationId?: string): Promise<T | { success: false }> | undefined {
+  const executable = process.env.EF_NATIVE_EXE;
+  if (process.env.EVERFERN_SHELL !== 'tauri' || !executable) return undefined;
+  return new Promise(resolve => {
+    const child = execFile(executable, ['--ef-integration-test'], { windowsHide: true, timeout: 20000 }, (error, stdout) => {
+      if (error) return resolve({ success: false });
+      try { resolve(JSON.parse(stdout)); } catch { resolve({ success: false }); }
+    });
+    child.stdin?.once('error', () => resolve({ success: false }));
+    child.stdin?.end(JSON.stringify({ platform, token, applicationId }));
+  });
+}
+
 const testTelegramConnection = async (botToken: string): Promise<{ success: boolean; username?: string }> => {
+  const native = testNativeConnection<{ success: boolean; username?: string }>('telegram', botToken);
+  if (native) return native;
   try {
     if (!botToken || !botToken.trim()) return { success: false };
 
@@ -260,6 +344,8 @@ const testTelegramConnection = async (botToken: string): Promise<{ success: bool
 };
 
 const testDiscordConnection = async (botToken: string, applicationId: string): Promise<{ success: boolean; name?: string }> => {
+  const native = testNativeConnection<{ success: boolean; name?: string }>('discord', botToken, applicationId);
+  if (native) return native;
   try {
     if (!botToken || !botToken.trim() || !applicationId || !applicationId.trim()) {
       return { success: false };
@@ -295,7 +381,8 @@ export function registerIntegrationHandlers() {
 
   ipcMain.handle('integration:save-config', async (_event, config: IntegrationConfig): Promise<void> => {
     try {
-      integrationConfig = {
+      const native = nativeIntegrationStore('integration:merge-and-save', { update: config });
+      integrationConfig = native ?? {
         telegram: {
           ...integrationConfig.telegram,
           ...config.telegram,
@@ -308,8 +395,22 @@ export function registerIntegrationHandlers() {
           ...config.discord,
         },
       };
-      saveIntegrationConfig(integrationConfig);
+      if (!native) saveIntegrationConfig(integrationConfig);
+      await applyIntegrationConfig();
+    } catch (error) {
+      console.error('[Integration] Failed to save configuration:', error);
+      throw error;
+    }
+  });
 
+  ipcMain.handle('integration:apply-saved-config', async () => {
+    const saved = nativeIntegrationStore('integration:load-resolved');
+    if (!saved) throw new Error('Failed to reload saved integration configuration');
+    integrationConfig = saved;
+    await applyIntegrationConfig();
+  });
+
+  async function applyIntegrationConfig() {
       await ensureIntegrationInitialized();
       const botManager = integrationService.getService<any>('bot-integration-manager');
       if (botManager) {
@@ -345,7 +446,8 @@ export function registerIntegrationHandlers() {
               respondToGuilds: true,
               guildMentionOnly: true,
               allowedGuilds: integrationConfig.discord.allowedGuilds || [],
-              allowedUsers: integrationConfig.discord.allowedUsers || []
+              allowedUsers: integrationConfig.discord.allowedUsers || [],
+              authorizeMessage: authorizeDiscordMessage(integrationConfig.discord.botToken)
             }
           });
           await newPlatform.initialize();
@@ -361,39 +463,25 @@ export function registerIntegrationHandlers() {
           botManager.registerPlatform('telegram', newPlatform);
         }
       }
-    } catch (error) {
-      console.error('[Integration] Failed to save configuration:', error);
-      throw error;
-    }
-  });
+  }
 
   ipcMain.handle('integration:test-connection', async (_event, platform: string): Promise<boolean> => {
+    if (platform !== 'telegram' && platform !== 'discord') return false;
+    const token = integrationConfig[platform].botToken;
+    const applicationId = platform === 'discord' ? integrationConfig.discord.applicationId : undefined;
     try {
       let result = false;
+      let username: string | undefined;
 
       if (platform === 'telegram') {
-        const testRes = await testTelegramConnection(integrationConfig.telegram.botToken);
+        const testRes = await testTelegramConnection(token);
         result = testRes.success;
-        if (testRes.username) {
-          integrationConfig.telegram.botUsername = testRes.username;
-        }
-      } else if (platform === 'discord') {
-        const testRes = await testDiscordConnection(
-          integrationConfig.discord.botToken,
-          integrationConfig.discord.applicationId
-        );
-        result = testRes.success;
+        username = testRes.username;
       } else {
-        return false;
+        result = (await testDiscordConnection(token, applicationId ?? '')).success;
       }
 
-      if (platform === 'telegram') {
-        integrationConfig.telegram.connected = result;
-      } else if (platform === 'discord') {
-        integrationConfig.discord.connected = result;
-      }
-
-      saveIntegrationConfig(integrationConfig);
+      if (!saveConnectionResult({ platform, token, applicationId, success: result, username })) return false;
 
       if (result) {
         await ensureIntegrationInitialized();
@@ -413,7 +501,8 @@ export function registerIntegrationHandlers() {
                     respondToGuilds: true,
                     guildMentionOnly: true,
                     allowedGuilds: integrationConfig.discord.allowedGuilds || [],
-                    allowedUsers: integrationConfig.discord.allowedUsers || []
+                    allowedUsers: integrationConfig.discord.allowedUsers || [],
+                    authorizeMessage: authorizeDiscordMessage(integrationConfig.discord.botToken)
                   }
                 });
                 await discordPlatform.initialize();
@@ -437,12 +526,7 @@ export function registerIntegrationHandlers() {
       return result;
     } catch (error) {
       console.error(`[Integration] Connection test failed for ${platform}:`, error);
-      if (platform === 'telegram') {
-        integrationConfig.telegram.connected = false;
-      } else if (platform === 'discord') {
-        integrationConfig.discord.connected = false;
-      }
-      saveIntegrationConfig(integrationConfig);
+      saveConnectionResult({ platform, token, applicationId, success: false });
       return false;
     }
   });
@@ -548,10 +632,7 @@ export function registerIntegrationHandlers() {
   });
 
   ipcMain.handle('openclaw:get-configs', (_event, workspaceRoot?: string) => {
-    return {
-      soul: loadSoul(workspaceRoot),
-      agents: loadAgents(workspaceRoot)
-    };
+    return loadPersonalityConfigs(workspaceRoot);
   });
 
   ipcMain.handle('openclaw:save-configs', (_event, configs: { soul?: string; agents?: string; workspaceRoot?: string }) => {

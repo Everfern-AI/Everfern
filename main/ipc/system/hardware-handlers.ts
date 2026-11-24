@@ -78,19 +78,22 @@ export async function detectHardwareSpecsAsync() {
   let driverVersion = '';
   let gpuTemp = 0;
 
+  const probeNvidia = async () => {
+    const { stdout } = await execAsync('nvidia-smi --query-gpu=name,memory.total,driver_version,temperature.gpu --format=csv,noheader,nounits', { timeout: 3000 });
+    const parts = stdout.trim().split(',');
+    if (parts.length < 2) return;
+    gpuName = parts[0].trim();
+    const mb = parseInt(parts[1].trim(), 10);
+    if (!isNaN(mb)) vramGB = Math.round((mb / 1024) * 10) / 10;
+    if (parts[2]) driverVersion = parts[2].trim();
+    if (parts[3]) gpuTemp = parseInt(parts[3].trim(), 10) || 0;
+    isNvidia = true;
+  };
+
   try {
     if (process.platform === 'win32') {
       try {
-        const { stdout: nvsmi } = await execAsync('nvidia-smi --query-gpu=name,memory.total,driver_version,temperature.gpu --format=csv,noheader,nounits', { timeout: 3000 });
-        const parts = nvsmi.trim().split(',');
-        if (parts.length >= 2) {
-          gpuName = parts[0].trim();
-          const mb = parseInt(parts[1].trim(), 10);
-          if (!isNaN(mb)) vramGB = Math.round((mb / 1024) * 10) / 10;
-          if (parts[2]) driverVersion = parts[2].trim();
-          if (parts[3]) gpuTemp = parseInt(parts[3].trim(), 10) || 0;
-          isNvidia = true;
-        }
+        await probeNvidia();
       } catch {
         let wmicResolved = false;
         try {
@@ -135,16 +138,7 @@ export async function detectHardwareSpecsAsync() {
       } catch {}
     } else if (process.platform === 'linux') {
       try {
-        const { stdout } = await execAsync('nvidia-smi --query-gpu=name,memory.total,driver_version,temperature.gpu --format=csv,noheader,nounits', { timeout: 3000 });
-        const parts = stdout.trim().split(',');
-        if (parts.length >= 2) {
-          gpuName = parts[0].trim();
-          const mb = parseInt(parts[1].trim(), 10);
-          if (!isNaN(mb)) vramGB = Math.round((mb / 1024) * 10) / 10;
-          if (parts[2]) driverVersion = parts[2].trim();
-          if (parts[3]) gpuTemp = parseInt(parts[3].trim(), 10) || 0;
-          isNvidia = true;
-        }
+        await probeNvidia();
       } catch {}
     }
   } catch {}
@@ -372,70 +366,71 @@ export function registerHardwareHandlers(): void {
     // 1. Detect hardware for exact VRAM and TPS calculations
     let hardware: any = null;
     try {
-      const ramGB = Math.round((os.totalmem() / (1024 * 1024 * 1024)) * 10) / 10;
-      const freeRamGB = Math.round((os.freemem() / (1024 * 1024 * 1024)) * 10) / 10;
-      const cpus = os.cpus() || [];
-      const cpuModel = cpus[0]?.model ? cpus[0].model.trim() : 'Generic Processor';
-      const cpuCores = cpus.length;
-      let gpuName = 'Unknown GPU';
-      let vramGB = 0;
-      let isNvidia = false;
-      let isAppleSilicon = false;
+        const ramGB = Math.round((os.totalmem() / (1024 * 1024 * 1024)) * 10) / 10;
+        const freeRamGB = Math.round((os.freemem() / (1024 * 1024 * 1024)) * 10) / 10;
+        const cpus = os.cpus() || [];
+        const cpuModel = cpus[0]?.model ? cpus[0].model.trim() : 'Generic Processor';
+        const cpuCores = cpus.length;
+        let gpuName = 'Unknown GPU';
+        let vramGB = 0;
+        let isNvidia = false;
+        let isAppleSilicon = false;
 
-      if (process.platform === 'darwin') {
-        const { execSync } = require('child_process');
-        try {
-          const stdout = execSync('system_profiler SPDisplaysDataType', { encoding: 'utf8' });
-          isAppleSilicon = stdout.includes('Apple M') || (os.cpus()[0]?.model || '').includes('Apple');
-          const chipsetMatch = stdout.match(/Chipset Model:\s*(.+)/);
-          gpuName = chipsetMatch ? chipsetMatch[1].trim() : (isAppleSilicon ? 'Apple Silicon' : 'Intel/AMD Mac');
-          vramGB = isAppleSilicon ? Math.round(ramGB * 0.75 * 10) / 10 : 0;
-        } catch {}
-      } else if (process.platform === 'win32') {
-        const { execSync } = require('child_process');
-        try {
-          const stdout = execSync('nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits', { encoding: 'utf8' });
-          const parts = stdout.trim().split(',');
-          if (parts.length >= 2) {
-            gpuName = parts[0].trim();
-            const mb = parseInt(parts[1].trim(), 10);
-            if (!isNaN(mb)) vramGB = Math.round((mb / 1024) * 10) / 10;
-            isNvidia = true;
-          }
-        } catch {
-          let wmicResolved = false;
+        if (process.platform === 'darwin') {
+          const { execSync } = require('child_process');
           try {
-            const stdout = execSync('wmic path Win32_VideoController get AdapterRAM,Name /format:list', { encoding: 'utf8' });
-            for (const line of stdout.split('\n')) {
-              const trimmed = line.trim();
-              if (trimmed.startsWith('AdapterRAM=')) {
-                const bytes = parseInt(trimmed.substring(11), 10);
-                if (!isNaN(bytes) && bytes > 0) vramGB = Math.max(vramGB, Math.round((bytes / (1024 * 1024 * 1024)) * 10) / 10);
-              } else if (trimmed.startsWith('Name=')) {
-                const name = trimmed.substring(5).trim();
-                if (name && (gpuName === 'Unknown GPU' || name.toLowerCase().includes('nvidia') || name.toLowerCase().includes('rtx'))) {
-                  gpuName = name;
+            const stdout = execSync('system_profiler SPDisplaysDataType', { encoding: 'utf8' });
+            isAppleSilicon = stdout.includes('Apple M') || (os.cpus()[0]?.model || '').includes('Apple');
+            const chipsetMatch = stdout.match(/Chipset Model:\s*(.+)/);
+            gpuName = chipsetMatch ? chipsetMatch[1].trim() : (isAppleSilicon ? 'Apple Silicon' : 'Intel/AMD Mac');
+            vramGB = isAppleSilicon ? Math.round(ramGB * 0.75 * 10) / 10 : 0;
+          } catch {}
+        } else if (process.platform === 'win32') {
+          const { execSync } = require('child_process');
+          try {
+            const stdout = execSync('nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits', { encoding: 'utf8' });
+            const parts = stdout.trim().split(',');
+            if (parts.length >= 2) {
+              gpuName = parts[0].trim();
+              const mb = parseInt(parts[1].trim(), 10);
+              if (!isNaN(mb)) vramGB = Math.round((mb / 1024) * 10) / 10;
+              isNvidia = true;
+            }
+          } catch {
+            let wmicResolved = false;
+            try {
+              const stdout = execSync('wmic path Win32_VideoController get AdapterRAM,Name /format:list', { encoding: 'utf8' });
+              for (const line of stdout.split('\n')) {
+                const trimmed = line.trim();
+                if (trimmed.startsWith('AdapterRAM=')) {
+                  const bytes = parseInt(trimmed.substring(11), 10);
+                  if (!isNaN(bytes) && bytes > 0) vramGB = Math.max(vramGB, Math.round((bytes / (1024 * 1024 * 1024)) * 10) / 10);
+                } else if (trimmed.startsWith('Name=')) {
+                  const name = trimmed.substring(5).trim();
+                  if (name && (gpuName === 'Unknown GPU' || name.toLowerCase().includes('nvidia') || name.toLowerCase().includes('rtx'))) {
+                    gpuName = name;
+                  }
                 }
               }
+              wmicResolved = gpuName !== 'Unknown GPU' || vramGB > 0;
+            } catch {}
+            if (!wmicResolved) {
+              ({ gpuName, vramGB, isNvidia } = mergeCimGpuInfo(await getGpuInfoViaCim(), gpuName, vramGB));
             }
-            wmicResolved = gpuName !== 'Unknown GPU' || vramGB > 0;
-          } catch {}
-          if (!wmicResolved) {
-            ({ gpuName, vramGB, isNvidia } = mergeCimGpuInfo(await getGpuInfoViaCim(), gpuName, vramGB));
           }
         }
-      }
 
-      hardware = {
-        ramGB,
-        freeRamGB,
-        cpuModel,
-        cpuCores,
-        gpuName,
-        vramGB,
-        isNvidia,
-        isAppleSilicon,
-      };
+        hardware = {
+          ramGB,
+          freeRamGB,
+          cpuModel,
+          cpuCores,
+          gpuName,
+          vramGB,
+          isNvidia,
+          isAppleSilicon,
+        };
+      
     } catch (e) {
       hardware = {
         ramGB: 16,
@@ -511,7 +506,6 @@ export function registerHardwareHandlers(): void {
     const installedModels: any[] = [];
     let isRunning = false;
     let providerError = '';
-
     if (provider === 'ollama') {
       try {
         const http = baseUrl.startsWith('https:') ? require('https') : require('http');

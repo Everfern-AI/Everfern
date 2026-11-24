@@ -125,6 +125,7 @@ export default function ProjectsPage({ onClose, onSelectProject, onCreateNew }: 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            className="ef-page-surface"
             style={{
                 flex: 1,
                 display: 'flex',
@@ -235,50 +236,8 @@ export default function ProjectsPage({ onClose, onSelectProject, onCreateNew }: 
                             <FolderIcon width={32} height={32} className="text-[var(--color-text-tertiary)]" />
                         </div>
                         <p style={{ margin: 0, fontSize: 15 }}>
-                            {searchQuery ? 'No projects match your search.' : 'No projects yet. Select an existing folder or create a new one!'}
+                            {searchQuery ? 'No projects match your search.' : 'No projects yet. Open a folder or start a new project with the buttons above.'}
                         </p>
-                        {!searchQuery && (
-                            <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-                                <button
-                                    onClick={handleOpenFolderAsProject}
-                                    style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: 8,
-                                        padding: '10px 18px',
-                                        backgroundColor: 'var(--color-bg-surface)',
-                                        color: 'var(--color-text-primary)',
-                                        borderRadius: 12,
-                                        border: '1px solid var(--color-border)',
-                                        fontSize: 14,
-                                        fontWeight: 600,
-                                        cursor: 'pointer',
-                                    }}
-                                >
-                                    <FolderIcon width={18} height={18} className="text-[var(--color-text-secondary)]" />
-                                    Open existing folder
-                                </button>
-                                <button
-                                    onClick={onCreateNew}
-                                    style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: 8,
-                                        padding: '10px 18px',
-                                        backgroundColor: 'var(--color-text-primary)',
-                                        color: 'var(--color-text-inverse)',
-                                        borderRadius: 12,
-                                        border: 'none',
-                                        fontSize: 14,
-                                        fontWeight: 600,
-                                        cursor: 'pointer',
-                                    }}
-                                >
-                                    <PlusIcon width={18} height={18} />
-                                    New project
-                                </button>
-                            </div>
-                        )}
                     </div>
                 ) : (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 24 }}>

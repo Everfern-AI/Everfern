@@ -1,35 +1,42 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ReplyMarkdown } from "./ReplyMarkdown";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence, MotionConfig } from "framer-motion";
 import { createPortal } from "react-dom";
 import { SettingsSheet, logoutLocal, type SettingsSection } from "./Settings";
 import {
-  ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Check, ChevronUp, LayoutGrid, List, MessageCircle,
+  ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Check, ChevronRight, ChevronUp, LayoutGrid, List, MessageCircle,
   MessageSquareOff, MessageSquare, Pause, Play, Plus, X, Zap, Pencil, CalendarClock, Trash2, Sparkles, ChevronDown, Settings as SettingsIcon, Monitor, LoaderCircle,
   Sun, Clock, Calendar, Repeat, Mail, Globe, Search, FileText, User, Bell, CircleDot, type LucideIcon,
-  FolderOpen, FolderPlus, Pin, PinOff, CircleHelp,
+  FolderOpen, FolderPlus, Pin, PinOff, Cpu, TriangleAlert, ListChecks, PanelRightClose, Workflow,
 } from "lucide-react";
 import WindowControls from "../components/WindowControls";
 import { ALPS_PHOTOS, photoUrl } from "../components/onboarding/GlassShell";
 import { AppLogo, AppLogoCluster } from "@/components/AppLogo";
-import { APPS } from "@/lib/apps";
+import { APPS, startUrlFor } from "@/lib/apps";
+import { appsInStep, planStepDone, stepApps } from "./step-apps";
 import { isWorkerChatBusy } from "@/lib/worker-activity";
 import { latestAssistantPreview, workerLandscape } from '@/lib/worker-presentation';
 import { FEATURED_TEMPLATES, WORKER_TEMPLATES, type WorkerTemplate } from "@/lib/worker-templates";
-import { TIERS, newWorker, useWorkers, type Machine, type Worker } from "@/lib/workers";
-import { ensureCloudVm, closeCloudApp, cloudToken, API_URL, type Paywall } from "@/lib/cloud-vms";
+import { TIERS, newWorker, useWorkers, withRun, loadWorkerChat, saveWorkerChat, type Machine, type Worker } from "@/lib/workers";
+import { ensureCloudVm, prewarmCloudVm, closeCloudApp, releaseCloudVm, cloudToken, API_URL, type Paywall } from "@/lib/cloud-vms";
 import { CloudGate, PaywallView, useCloudAuth } from "./ModelSettings";
 import { AppsSheet, TemplateCard, TemplatesSheet, registerCustomApps } from "./Sheets";
 import { WorkerDesktop, type Win, type AiAct } from "./Desktop";
-import { hasAgent, parseSteps, planJob, runWorker, stopWorker, type ChatTurn } from "@/lib/worker-engine";
+import { activeRunOf, attachRun, hasAgent, liveRuns, parseSteps, planJob, runWorker, stopWorker, type ChatTurn, type LiveRun, type RunEvents } from "@/lib/worker-engine";
+import { dropRun, patchRun, pickLive, saveRun, savedRuns, savedView, saveView, type SavedRun, type SavedView } from "./live-run";
 import "./workers.css";
+import { pushWithTransition } from "@/lib/route-transition";
 import "./worker-reference.css";
 import "./materials.css";
+import "./liquid-glass.css";
+import { LiquidGlassDefs } from "./liquid-glass";
 import { useDialogFocus } from "@/lib/use-dialog-focus";
-import { makeWorkerSchedule, advanceWorkerSchedule } from "@/lib/worker-schedule";
+import { makeWorkerSchedule, SCHEDULE_LABELS, REMOVE_SCHEDULE } from "@/lib/worker-schedule";
+import { missedNote, setScheduledRunHandler } from "@/lib/worker-scheduled-run";
 
 type Mode = "home" | "tier" | "machine" | "template" | "desktop";
 const MACHINE_KEY = "everfern_worker_machine";
@@ -39,7 +46,7 @@ type Sheet = null | "apps" | "templates" | "settings";
 type Msg =
   | { kind: "user"; text: string; at?: number }
   | { kind: "thinking"; text: string }
-  | { kind: "ai"; text: string; key?: string; streaming?: boolean; at?: number }
+  | { kind: "ai"; text: string; key?: string; streaming?: boolean; at?: number; failure?: { provider?: string; model?: string; error?: string } }
   | { kind: "reason"; text: string; key: string; live: boolean }
   | { kind: "tool"; text: string }
   | { kind: "flow"; steps: string[] }
@@ -47,7 +54,37 @@ type Msg =
   | { kind: "ask"; question: string; options: { label: string; icon?: string }[]; job: string; answered?: string }
   /** Something the worker still needs from the user before it can run. */
   | { kind: "open"; title: string; detail: string }
-  | { kind: "schedule" };
+  | { kind: "schedule" }
+  /** `steps`: what that run did; `oneOff`: a task from the chat that is not the worker's saved workflow. */
+  | { kind: "report"; result: RunReport; at?: number; steps?: string[]; oneOff?: boolean };
+
+type ChatSession = { start: number; end: number; title: string; at?: number; finished: boolean };
+
+/**
+ * A worker keeps one running conversation; History splits it into sessions. A new
+ * session starts at something you asked after a run finished, or after a 30 minute break.
+ */
+function chatSessions(msgs: Msg[]): ChatSession[] {
+  const out: ChatSession[] = [];
+  let lastAt: number | undefined;
+  let reported = false;
+  msgs.forEach((m, i) => {
+    const at = "at" in m ? m.at : undefined;
+    if (m.kind === "user") {
+      const gap = at !== undefined && lastAt !== undefined && at - lastAt > 30 * 60_000;
+      if (!out.length || reported || gap) {
+        if (out.length) out[out.length - 1].end = i;
+        out.push({ start: out.length ? i : 0, end: msgs.length, title: m.text, at, finished: false });
+        reported = false;
+      }
+    }
+    if (m.kind === "report") { reported = true; if (out.length) out[out.length - 1].finished = true; }
+    if (at !== undefined) lastAt = at;
+  });
+  return out;
+}
+
+type RunReport = { title: string; subtitle: string; timeWorked: string; durationLabel: string; cost: string; costLabel: string; status: string; summary: string; accomplishments: string[] };
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 const TASK_SPRING = { type: "spring" as const, stiffness: 340, damping: 37, mass: 1 };
@@ -64,15 +101,59 @@ const nameFrom = (prompt: string) => {
   return words.length > 26 ? `${words.slice(0, 26)}…` : words;
 };
 
+/** Law 8 on the way in: drop reasoning, internal markers, IDs and emoji the model should not have written. */
+function tidyReply(t: string): string {
+  return t
+    .replace(/<think>[\s\S]*?(<\/think>|$)/g, "")
+    .replace(/\[(PHASE_COMPLETE|PHASE|STEP_DONE|TASK_COMPLETE)[^\]]*\]/gi, "")
+    .replace(/\(\s*(Step|Plan) ID:?\s*`?[\w-]+`?\s*\)/gi, "")
+    .replace(/[✅☑☐⏳❌✔✖]️?/g, "")
+    .replace(/\p{Extended_Pictographic}️?/gu, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** Playful loading words in the style of Claude Code's spinner, shown while the worker plans or thinks. */
+const LOADING_WORDS = [
+  "Accomplishing", "Actualizing", "Baking", "Booping", "Brewing", "Calculating", "Cerebrating", "Channelling",
+  "Churning", "Coalescing", "Cogitating", "Combobulating", "Concocting", "Conjuring", "Considering", "Contemplating",
+  "Cooking", "Crafting", "Crunching", "Deciphering", "Deliberating", "Discombobulating", "Divining", "Elucidating",
+  "Enchanting", "Envisioning", "Finagling", "Flibbertigibbeting", "Forging", "Frolicking", "Germinating", "Hatching",
+  "Herding", "Honking", "Hustling", "Ideating", "Imagining", "Incubating", "Inferring", "Jiving", "Manifesting",
+  "Marinating", "Meandering", "Moseying", "Mulling", "Mustering", "Musing", "Noodling", "Percolating", "Perusing",
+  "Philosophising", "Pondering", "Pontificating", "Puttering", "Puzzling", "Reticulating", "Ruminating", "Schlepping",
+  "Shimmying", "Simmering", "Smooshing", "Spelunking", "Stewing", "Synthesizing", "Tinkering", "Transmuting",
+  "Unfurling", "Unravelling", "Vibing", "Whirring", "Wibbling", "Wizarding", "Wrangling",
+];
+const pickWord = (not?: string) => {
+  let w = not;
+  while (w === not) w = LOADING_WORDS[Math.floor(Math.random() * LOADING_WORDS.length)];
+  return w as string;
+};
+
+function LoadingWord() {
+  const [word, setWord] = useState(() => pickWord());
+  useEffect(() => {
+    const t = setInterval(() => setWord((w) => pickWord(w)), 2600);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <span className="wk-shimmer wk-loading-word">
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.span key={word} initial={{ opacity: 0, y: 4, filter: "blur(3px)" }} animate={{ opacity: 1, y: 0, filter: "blur(0px)" }} exit={{ opacity: 0, y: -4, filter: "blur(3px)" }} transition={{ duration: 0.22, ease: EASE }}>
+          {word}…
+        </motion.span>
+      </AnimatePresence>
+    </span>
+  );
+}
+
+/** Generic statuses become loading words; specific ones ("Starting: Search Gmail") stay as written. */
+const GENERIC_STATUS = /^(planning the job|thinking it through|thinking|working|reasoning carefully)\.*$/i;
+
 function ReplyText({ text }: { text: string }) {
-  const inline = (line: string) => line.split(/(\*\*[^*]+\*\*)/g).map((part, index) => part.startsWith('**') && part.endsWith('**') ? <strong key={index}>{part.slice(2, -2)}</strong> : part);
-  return <>{text.split(/\n\s*\n/).map((block, index) => {
-    const heading = block.match(/^#{1,3}\s+(.+)$/);
-    if (heading) return <h2 key={index}>{inline(heading[1])}</h2>;
-    const lines = block.split('\n');
-    if (lines.every(line => /^[-*]\s+/.test(line))) return <ul key={index}>{lines.map((line, item) => <li key={item}>{inline(line.replace(/^[-*]\s+/, ''))}</li>)}</ul>;
-    return <p key={index}>{inline(block)}</p>;
-  })}</>;
+  return <ReplyMarkdown text={text} />;
 }
 
 function TeachIcon() {
@@ -96,7 +177,8 @@ function Avatar({ w, size = 30 }: { w: Pick<Worker, "id" | "hue" | "status">; si
 
 export default function WorkersPage() {
   const router = useRouter();
-  const { workers, ready, save, remove } = useWorkers();
+  const goToChat = useCallback(() => pushWithTransition("to-chat", () => router.push("/chat")), [router]);
+  const { workers, ready, error: storeError, clearError, save, remove } = useWorkers();
   const [mode, setMode] = useState<Mode>("home");
   const [draft, setDraft] = useState<Worker | null>(null); // unsaved worker during creation
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -108,24 +190,22 @@ export default function WorkersPage() {
   const [composerText, setComposerText] = useState("");
   useEffect(() => setComposerText(""), [activeId]);
   const [creationStage, setCreationStage] = useState<"idle" | "writing" | "logins" | "ready" | "completed">("idle");
-  const [completedResult, setCompletedResult] = useState<{
-    title: string;
-    subtitle: string;
-    timeWorked: string;
-    durationLabel: string;
-    cost: string;
-    costLabel: string;
-    status: string;
-    summary: string;
-    accomplishments: string[];
-  } | null>(null);
   const [completedStepIndex, setCompletedStepIndex] = useState<number>(-1);
   const [planningJobText, setPlanningJobText] = useState("");
   const [streamingSteps, setStreamingSteps] = useState<string[]>([]);
+  /** The plan the agent wrote for this run (create_plan / update_plan_step), shown in the right column. */
+  // steps: the list the person sees (the workflow's own steps when it has them). agent: the agent's
+  // own create_plan list, when it differs, only used to move the ticks along the person's list.
+  const [runPlan, setRunPlan] = useState<{ workerId: string; steps: string[]; done: number; used: string[][]; agent?: { total: number; done: number } } | null>(null);
+  /** The steps each worker's current run covers, for the pause point when it has no plan of its own. */
+  const runSteps = useRef<Record<string, { steps: string[]; base: number }>>({});
   const [streamingPartial, setStreamingPartial] = useState<string | undefined>();
   const [loginApps, setLoginApps] = useState<string[]>([]);
   const [chats, setChats] = useState<Record<string, Msg[]>>({});
   const [chatHidden, setChatHidden] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  /** The past session shown in the chat (its first message's index), or null for the whole conversation. */
+  const [sessionAt, setSessionAt] = useState<number | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [folders, setFolders] = useState<string[]>([]);
   const [folderName, setFolderName] = useState('');
@@ -149,6 +229,11 @@ export default function WorkersPage() {
   const msgs = (activeId && chats[activeId]) || [];
   const recentChatText = latestAssistantPreview(msgs);
   const chatBusy = isWorkerChatBusy(msgs);
+  const sessions = useMemo(() => chatSessions(msgs), [msgs]);
+  const viewing = sessionAt === null ? null : sessions.find((s) => s.start === sessionAt) ?? null;
+  // Another worker, or anything new said, goes back to the live conversation.
+  useEffect(() => { setSessionAt(null); setHistoryOpen(false); }, [activeId]);
+  useEffect(() => { setSessionAt(null); }, [msgs.length]);
 
   const update = useCallback((w: Worker) => {
     if (draft && draft.id === w.id) setDraft(w);
@@ -157,6 +242,31 @@ export default function WorkersPage() {
 
   const workersRef = useRef(workers);
   workersRef.current = workers;
+  // Each worker's chat is saved to disk a moment after it changes (without the live "thinking" lines).
+  const savedChats = useRef<Record<string, Msg[]>>({});
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      for (const [id, list] of Object.entries(chats)) {
+        if (savedChats.current[id] === list || !workersRef.current.some((w) => w.id === id)) continue;
+        savedChats.current[id] = list;
+        saveWorkerChat(id, list.filter((m) => m.kind !== "thinking").map((m) => ("live" in m || "streaming" in m ? { ...m, live: false, streaming: false } : m)));
+      }
+    }, 800);
+    return () => window.clearTimeout(t);
+  }, [chats]);
+
+  /**
+   * Warm a worker's computer before its windows ask for it: the local Alpine VM
+   * (boot, setup, desktop stream) or its stopped cloud VM. Pointing at a worker is
+   * enough, so by the time a window opens the VM is already up.
+   */
+  const prewarm = useCallback((w?: Worker | null) => {
+    if (!w) return;
+    if (w.machine === "cloud") void prewarmCloudVm(w.cloudVmId);
+    else if (w.machine === "local") void (window as any).electronAPI?.system?.prewarmVM?.(w.id);
+  }, []);
+  // The worker you are on, as soon as the page shows it.
+  useEffect(() => { prewarm(workers.find((x) => x.id === activeId)); }, [activeId, workers.length, prewarm]); // eslint-disable-line react-hooks/exhaustive-deps
   const later = (fn: () => void, ms: number) => { timers.current.push(window.setTimeout(fn, ms)); };
 
   /* ── flow ─────────────────────────────────────────────────────── */
@@ -223,8 +333,12 @@ export default function WorkersPage() {
     setCreationStage("idle");
     setActiveId(w.id); setSheet(null); setPromptOpen(false);
     setWins([]);
-    if (!chats[w.id] && w.prompt) {
-      setChats((c) => ({ ...c, [w.id]: [{ kind: "user", text: w.prompt }, { kind: "flow", steps: parseSteps(w.prompt) }] }));
+    if (!chats[w.id]) {
+      void loadWorkerChat<Msg>(w.id).then((saved) => setChats((c) => {
+        if (c[w.id]) return c; // something was said meanwhile
+        if (saved.length) return { ...c, [w.id]: saved };
+        return w.prompt ? { ...c, [w.id]: [{ kind: "user", text: w.prompt }, { kind: "flow", steps: parseSteps(w.prompt) }] } : c;
+      }));
     }
     setMode("desktop");
   };
@@ -301,7 +415,7 @@ My answer: ${text}`, text);
     if (plan.error) {
       setCreationStage("idle");
       setChats((c) => ({ ...c, [w.id]: (c[w.id] ?? []).filter((x) => x.kind !== "thinking") }));
-      upsert(w.id, { kind: "ai", key: `${k}-a`, text: plan.reply });
+      upsert(w.id, { kind: "ai", key: `${k}-a`, text: plan.reply, failure: { ...plan.via, error: plan.error } });
       return;
     }
     const open: Msg[] = (plan.open ?? []).map((o) => ({ kind: "open", title: o.title, detail: o.detail }));
@@ -321,28 +435,17 @@ My answer: ${text}`, text);
       upsert(w.id, { kind: "ai", key: `${k}-a`, text: plan.reply });
       if (open.length) push(w.id, ...open);
       if (plan.kind === "do" && plan.steps.length) {
-        const named = { ...w, name };
-        if (name !== w.name) update(named);
+        const apps = withJobApps(w.apps, `${job} ${said}`, plan.steps);
+        const named = { ...w, name, apps };
+        if (name !== w.name || apps.length !== w.apps.length) update(named);
         await run(named, plan.steps);
       }
       return;
     }
 
     // Detect all apps mentioned across steps and user input
-    const allAppsList = Object.keys(APPS);
-    const detected = new Set<string>();
-    for (const st of plan.steps) {
-      for (const a of appsInStep(st, allAppsList)) {
-        detected.add(a);
-      }
-    }
-    const combinedText = (job + " " + said + " " + plan.steps.join(" ")).toLowerCase();
-    if (combinedText.includes("amazon")) detected.add("amazon");
-    if (combinedText.includes("canva")) detected.add("canva");
-    if (combinedText.includes("moss")) detected.add("moss");
-    if (combinedText.includes("linkedin")) detected.add("linkedin");
-
-    const updatedApps = Array.from(new Set([...w.apps, ...Array.from(detected)]));
+    const updatedApps = withJobApps(w.apps, `${job} ${said}`, plan.steps);
+    const detected = new Set(updatedApps.filter((a) => !w.apps.includes(a)));
     const namedWorker: Worker = { ...w, prompt: plan.steps.map((st, i) => `${i + 1}. ${st}`).join("\n"), name, apps: updatedApps };
     update(namedWorker);
 
@@ -355,6 +458,8 @@ My answer: ${text}`, text);
     // Ensure steps are visible in center card before transition
     setStreamingSteps(plan.steps);
     setStreamingPartial(undefined);
+    // Let the finished list sit centred for a moment, then it morphs into the top-right panel.
+    await new Promise((r) => setTimeout(r, 2000));
 
     const webAppsNeedingLogin = Array.from(detected).filter(
       (a) => APPS[a]?.domain || ["amazon", "linkedin", "canva", "moss"].includes(a)
@@ -376,45 +481,70 @@ My answer: ${text}`, text);
   /** Bring an app's window up (opening it if needed). */
   const showApp = (app: string) =>
     setWins((ws) => {
-      const top = Math.max(0, ...ws.map((x) => x.z)) + 1;
-      const has = ws.some((x) => x.app === app);
-      return has ? ws.map((x) => (x.app === app ? { ...x, min: false, z: top } : x)) : [...ws, { app, min: false, max: false, z: top }];
+      return bringUp(ws, app);
     });
   const followUrl = (url: string, w: Worker) => {
     const app = appForUrl(url, w);
     if (!app) return;
     setWins((ws) => {
-      const top = Math.max(0, ...ws.map((x) => x.z)) + 1;
-      const has = ws.some((x) => x.app === app);
-      return has ? ws.map((x) => (x.app === app ? { ...x, min: false, z: top } : x)) : [...ws, { app, min: false, max: false, z: top }];
+      return bringUp(ws, app);
     });
-    setNavTo((n) => ({ app, url, n: (n?.n ?? 0) + 1 }));
+    setNavTo((n) => ({ app, url, n: (n?.n ?? 0) + 1, agent: true }));
   };
+  // A result clicked in EverFern Search opens in the worker's browser window.
+  useEffect(() => {
+    const open = (e: Event) => {
+      const url = (e as CustomEvent<{ url?: string }>).detail?.url;
+      if (!url || !/^https?:\/\//.test(url)) return;
+      setWins((ws) => bringUp(ws, "browser"));
+      setNavTo((n) => ({ app: "browser", url, n: (n?.n ?? 0) + 1 }));
+    };
+    window.addEventListener("everfern:worker-open-url", open);
+    return () => window.removeEventListener("everfern:worker-open-url", open);
+  }, []);
 
   /** Run the worker's workflow, or `only` these steps (a one-off job from the chat). */
-  const run = async (target?: Worker, only?: string[]) => {
-    const w = target ?? active;
-    if (!w || w.status === "running") return;
+  const run = async (target?: Worker, only?: string[], opts: { auto?: boolean; from?: { steps: string[]; done: number } } = {}) => {
+    const picked = target ?? active;
+    // "running" with no run behind it (left from a crash) does not block a new run.
+    if (!picked || (picked.status === "running" && activeRunOf(picked.id))) return;
+    // Any new run replaces a saved pause point.
+    const w: Worker = picked.resume || picked.pausedBy ? { ...picked, resume: undefined, pausedBy: undefined } : picked;
+    // Resuming: the full plan stays on screen, with the steps already done ticked off.
+    const from = opts.from;
+    const base = from?.done ?? 0;
     const steps = only ?? parseSteps(w.prompt);
+    runSteps.current[w.id] = { steps: from?.steps ?? steps, base };
     const startTime = Date.now();
-    setCompletedStepIndex(0);
-    setCompletedResult(null);
+    setCompletedStepIndex(base);
     update({ ...w, status: "running" });
     if (!live) {
       push(w.id, { kind: "ai", text: "Preview mode: there's no agent in this browser tab. Open the EverFern desktop app and press Run there to do the job for real." });
       update({ ...w, status: "idle" });
       return;
     }
-    push(w.id, { kind: "thinking", text: `Starting: ${steps[0] ?? "first step"}` });
+    // One step list: the plan panel shows the same steps as the chat's workflow card from the start.
+    setRunPlan((p) => from
+      ? { workerId: w.id, steps: from.steps, done: from.done, used: p?.workerId === w.id ? p.used : [] }
+      : steps.length >= 2 ? { workerId: w.id, steps, done: 0, used: [] }
+      : (p?.workerId === w.id ? null : p));
+    const controllable = (app: string) => !!(APPS[app]?.domain || APPS[app]?.url || ['chrome', 'browser', 'terminal', 'files'].includes(app));
+    // The first app the job names (Amazon for "search Amazon for ..."), opened now so its
+    // window loads while the agent thinks, instead of the desktop sitting empty.
+    const firstApp = steps.map((st) => appsInStep(st, w.apps).find(controllable)).find(Boolean)
+      ?? (w.apps.includes("browser") && steps.some((st) => /\b(search|browse|website|online|web)\b/i.test(st)) ? "browser" : undefined);
+    const stage = (text: string) => push(w.id, { kind: "thinking", text });
+    const opening = from ? `Resuming at step ${base + 1}: ${parseStepParts(steps[0] ?? "").title}` : `Starting: ${steps[0] ?? "first step"}`;
+    stage(w.machine === 'cloud' ? "Starting your cloud computer" : opening);
     // Let the user watch the windows while it works; the chat is one click away.
     setChatHidden(true);
     setAi(null);
-    // Its browser runs use a window on its desktop, so make sure one is open.
-    const controllable = (app: string) => !!(APPS[app]?.domain || APPS[app]?.url || ['chrome', 'browser', 'terminal', 'files'].includes(app));
+    if (firstApp) showApp(firstApp);
     let executionWorker = w;
     if (w.machine === 'cloud') {
       try {
         const assigned = await ensureCloudVm({ preferId: w.cloudVmId, workerId: w.id, name: w.name });
+        stage(firstApp ? `Opening ${APPS[firstApp]?.name ?? firstApp}` : "Opening your apps");
         const current = workersRef.current.find(worker => worker.id === w.id);
         if (current && current.status !== 'running') return;
         if (!('vm' in assigned)) throw new Error('error' in assigned ? assigned.error : 'Your cloud plan needs attention before this worker can run.');
@@ -426,8 +556,9 @@ My answer: ${text}`, text);
         if (!token) throw new Error('Sign in to EverFern Cloud before running this worker.');
         // Register installed apps before the first tool call, including apps whose
         // viewer has not opened yet. Their browser is created lazily by the API.
-        const registered = await Promise.all(w.apps.filter(controllable).map(app => api.registerCloudVm(`persist:worker-${w.id}`, app, assigned.vm.id, API_URL, token)));
+        const registered = await Promise.all(w.apps.filter(controllable).map(app => api.registerCloudVm(`persist:worker-${w.id}`, app, assigned.vm.id, API_URL, token, startUrlFor(app) ?? undefined)));
         if (registered.some(result => result !== true)) throw new Error('Could not register the worker’s cloud apps.');
+        stage(opening);
       } catch (error) {
         update({ ...executionWorker, status: 'paused' });
         setChatHidden(false);
@@ -436,117 +567,303 @@ My answer: ${text}`, text);
         return;
       }
     }
-    let lastTool = "";
     const currentRun = workersRef.current.find(worker => worker.id === w.id);
     if (w.machine === 'cloud' && currentRun && currentRun.status !== 'running') return;
+    const rec: SavedRun = { workerId: w.id, conversationId: "", steps, from, startTime, auto: opts.auto, key: `run-${Date.now()}` };
+    const t = track(w, rec);
+    // The run's id is kept, so a page reload can pick it back up (the agent keeps going in main).
+    const res = await runWorker(executionWorker, steps, t.ev, { auto: opts.auto, onStart: (conversationId) => saveRun({ ...rec, conversationId }) });
+    t.finish(res);
+  };
+
+  /** What a run's events do on screen, and how it ends. Shared by a new run and by a run picked
+   *  back up after a page reload, so both look and finish the same. */
+  const track = (w: Worker, rec: SavedRun) => {
+    const { steps, from, startTime } = rec;
+    const base = from?.done ?? 0;
+    const k = rec.key;
+    let lastTool = "";
     let lastApp: string | undefined;
-    const k = `run-${Date.now()}`;
-    const clean = (t: string) => t.replace(/<think>[\s\S]*?(<\/think>|$)/g, "").trim();
+    const clean = tidyReply;
     let said = false;
-    const res = await runWorker(executionWorker, steps, {
+    const ev: RunEvents = {
+      // Keep the AI overlay and the window it drives up for the whole run;
+      // thinking/text between actions must not drop it (cleared when the run ends).
       onText: (t) => {
-        setAi(null);
         const text = clean(t);
         if (!text) return;
         said = true;
         upsert(w.id, { kind: "ai", key: `${k}-a`, text, streaming: true });
       },
-      onThought: (t) => { setAi(null); upsert(w.id, { kind: "reason", key: `${k}-r`, text: t, live: true }); },
-      onAction: ({ label, x, y, url, app }) => {
+      onThought: (t) => { upsert(w.id, { kind: "reason", key: `${k}-r`, text: t, live: true }); },
+      onAction: ({ label, x, y, url, app, space, aspect }) => {
         // The agent is driving one of this worker's windows: keep it up front.
         if (app) { if (app !== lastApp) showApp(app); lastApp = app; }
+        // Remember which app each plan step really used: the plan shows its icon.
+        if (lastApp) {
+          const used = lastApp;
+          setRunPlan((p) => {
+            if (!p || p.workerId !== w.id || p.done >= p.steps.length || (p.used[p.done] ?? []).includes(used)) return p;
+            const next = p.used.slice(); next[p.done] = [...(next[p.done] ?? []), used];
+            return { ...p, used: next };
+          });
+        }
         else if (url && /^https?:\/\//.test(url)) lastApp = appForUrl(url, w) ?? lastApp;
-        setAi((a) => ({ app: lastApp, label, x, y, n: (a?.n ?? 0) + 1 }));
+        // No point given (reading, typing): the cursor stays where it last was in that window.
+        setAi((a) => {
+          const keep = x === undefined && a && a.app === lastApp;
+          return { app: lastApp, label, x: keep ? a.x : x, y: keep ? a.y : y, space: keep ? a.space : space, aspect: keep ? a.aspect : aspect, n: (a?.n ?? 0) + 1 };
+        });
         if (controlTimer.current) clearTimeout(controlTimer.current);
-        controlTimer.current = setTimeout(() => setAi(null), 10000);
       },
-      onTool: (label, args) => {
+      onTool: (label, args, name) => {
+        // The agent's own plan goes to the plan column on the right, not into the chat.
+        const tool = String(name ?? "").toLowerCase();
+        if (PLAN_TOOLS.has(tool)) {
+          const list = Array.isArray(args.steps) ? (args.steps as unknown[]).filter((x): x is string => typeof x === "string" && !!x.trim()) : [];
+          // A resumed run keeps the plan it was paused in; the agent only sees the steps left.
+          if (tool === "create_plan" && list.length && !from) {
+            // The workflow's steps stay on screen; the agent's own list only paces the ticks.
+            setRunPlan((p) => steps.length >= 2
+              ? { workerId: w.id, steps, done: 0, used: p?.workerId === w.id ? p.used : [], agent: { total: list.length, done: 0 } }
+              : { workerId: w.id, steps: list, done: 0, used: [] });
+          } else if (tool === "update_plan_step") {
+            const st = String(args.status ?? "");
+            setRunPlan((p) => (p && p.workerId === w.id && st === "done" ? planStepDone(p) : p));
+          }
+          return;
+        }
         if (label === lastTool) return;
         lastTool = label;
         const url = typeof args.url === "string" ? args.url : "";
         if (/^https?:\/\//.test(url)) followUrl(url, w);
         setChats((c) => {
           const list = (c[w.id] ?? []).filter((x) => x.kind !== "thinking");
-          const nextIndex = Math.min(steps.length - 1, list.filter(item => item.kind === "tool").length);
+          const nextIndex = Math.min(base + steps.length - 1, base + list.filter(item => item.kind === "tool").length);
           setCompletedStepIndex(nextIndex);
           return { ...c, [w.id]: [...list, { kind: "tool", text: label }, { kind: "thinking", text: "Working" }] };
         });
       },
-    });
-    setAi(null);
-    endReason(w.id, `${k}-r`);
-    const latest = workersRef.current.find((x) => x.id === w.id) ?? w;
-    if (latest.status !== "running") { // stopped by the user
-      if (said) upsert(w.id, { kind: "ai", key: `${k}-a`, text: clean(res.text) || "Stopped." });
-      return;
-    }
-    update({ ...latest, status: "idle" });
-    setChats((c) => ({ ...c, [w.id]: (c[w.id] ?? []).filter((x) => x.kind !== "thinking") }));
-    upsert(w.id, { kind: "ai", key: `${k}-a`, text: res.error ? `I hit a problem: ${res.error}` : clean(res.text) || "Done." });
+    };
+    const finish = (res: { text: string; error?: string }) => {
+      dropRun(w.id);
+      if (controlTimer.current) clearTimeout(controlTimer.current);
+      setAi(null);
+      endReason(w.id, `${k}-r`);
+      const latest = workersRef.current.find((x) => x.id === w.id) ?? w;
+      const task = steps.join("; ");
+      // Paused by the user. ("closed" is main's word for a run it no longer sees; after a reload that
+      // means it ended while the page was away, so it finishes normally.)
+      if (latest.status !== "running" && !(latest.status === "paused" && latest.pausedBy === "closed")) {
+        // Keep what it had said so far; the pause itself is already in the chat.
+        const soFar = said ? clean(res.text) : "";
+        if (soFar) upsert(w.id, { kind: "ai", key: `${k}-a`, text: soFar });
+        else if (said) setChats((c) => ({ ...c, [w.id]: (c[w.id] ?? []).filter((x) => !(x.kind === "ai" && x.key === `${k}-a`)) }));
+        const at = latest.resume;
+        const summary = at
+          ? `Paused by you after ${at.done} of ${at.steps.length} steps. Already done: ${at.steps.slice(0, at.done).map((st) => parseStepParts(st).title).join("; ")}.`
+          : "Paused by you before it finished.";
+        update(withRun(latest, { at: new Date().toISOString(), task, summary, ok: false, auto: rec.auto }));
+        return;
+      }
+      // Remember this run, so the next one knows what was already done.
+      update(withRun({ ...latest, status: "idle", resume: undefined, pausedBy: undefined }, {
+        at: new Date().toISOString(), task, ok: !res.error, auto: rec.auto,
+        summary: res.error ? `Failed: ${res.error}` : (clean(res.text) || "Finished without a report."),
+      }));
+      setChats((c) => ({ ...c, [w.id]: (c[w.id] ?? []).filter((x) => x.kind !== "thinking") }));
+      if (res.error) upsert(w.id, { kind: "ai", key: `${k}-a`, text: `I hit a problem: ${res.error}` });
+      else {
+        setCompletedStepIndex(base + steps.length);
+        // The agent may finish without ticking its last step; a finished run has done them all.
+        setRunPlan((p) => (p && p.workerId === w.id ? { ...p, done: p.steps.length, agent: p.agent && { ...p.agent, done: p.agent.total } } : p));
+        const elapsedSeconds = Math.max(1, Math.round((Date.now() - startTime) / 1000));
+        // The report arrives as the AI's reply in the chat, not as a separate screen.
+        setChats((c) => ({ ...c, [w.id]: (c[w.id] ?? []).filter((x) => !(x.kind === "ai" && x.key === `${k}-a`)) }));
+        const ran = from?.steps ?? steps;
+        const oneOff = parseSteps(latest.prompt).join("\n") !== ran.join("\n");
+        push(w.id, { kind: "report", at: Date.now(), steps: ran, oneOff, result: {
+          title: "Run finished",
+          subtitle: "The agent finished this run. Review its report below.",
+          timeWorked: elapsedSeconds < 60 ? `${elapsedSeconds} secs` : `${Math.round(elapsedSeconds / 60)} mins`,
+          durationLabel: "Duration",
+          cost: "Not reported",
+          costLabel: "Total cost",
+          status: "Finished",
+          summary: clean(res.text) || "The agent did not provide a final report. Review the conversation before assuming the task is complete.",
+          accomplishments: [],
+        } });
+        setChatHidden(false);
+      }
+    };
+    return { ev, finish };
+  };
 
-    if (!res.error) {
-      // Minimize open windows back to 3D stack on the left so center is clear for completed UI
-      setWins((ws) => ws.map((win) => ({ ...win, min: true })));
-      setCompletedStepIndex(steps.length);
-      const elapsedSeconds = Math.max(1, Math.round((Date.now() - startTime) / 1000));
-      setCompletedResult({
-        title: "Run finished",
-        subtitle: "The agent finished this run. Review its report below.",
-        timeWorked: elapsedSeconds < 60 ? `${elapsedSeconds} secs` : `${Math.round(elapsedSeconds / 60)} mins`,
-        durationLabel: "Duration",
-        cost: "Not reported",
-        costLabel: "Total cost",
-        status: "Finished",
-        summary: clean(res.text) || "The agent did not provide a final report. Review the conversation before assuming the task is complete.",
-        accomplishments: [],
-      });
-      setCreationStage("completed");
+  /** Picks up a run that kept going in the main process while this page reloaded: its chat,
+   *  plan and windows come back, and its events flow to the screen again. */
+  const reattach = async (w: Worker, r: LiveRun, saved: SavedRun | undefined, view: SavedView | null) => {
+    const from = saved?.from ?? (w.resume && w.resume.done > 0 ? w.resume : undefined);
+    const rec: SavedRun = saved ?? {
+      workerId: w.id, conversationId: r.conversationId,
+      steps: from ? from.steps.slice(from.done) : parseSteps(w.prompt),
+      from, startTime: Date.now(), key: `run-${Date.now()}`,
+    };
+    saveRun({ ...rec, conversationId: r.conversationId });
+    const base = rec.from?.done ?? 0;
+    runSteps.current[w.id] = { steps: rec.from?.steps ?? rec.steps, base };
+    const chat = await loadWorkerChat<Msg>(w.id);
+    setChats((c) => (c[w.id] ? c : { ...c, [w.id]: chat }));
+    // The plan as it was, or the run's steps with the progress saved as it went.
+    const all = rec.from?.steps ?? rec.steps;
+    const plan = rec.plan?.workerId === w.id ? rec.plan
+      : all.length >= 2 ? { workerId: w.id, steps: all, done: w.resume?.steps.length === all.length ? w.resume.done : base, used: [] }
+      : null;
+    if (plan) setRunPlan(plan);
+    setCompletedStepIndex(rec.completed ?? plan?.done ?? base);
+    if (view?.activeId === w.id) {
+      setDraft(null); setActiveId(w.id); setSheet(null); setPromptOpen(false);
+      setWins(Array.isArray(view.wins) ? (view.wins as Win[]) : []);
+      setChatHidden(!!view.chatHidden && !r.done);
+      setMode("desktop");
     }
+    if (!r.done) push(w.id, { kind: "thinking", text: "Working" });
+    const t = track(w, rec);
+    t.finish(await attachRun(w, r, t.ev));
+  };
+  // After a reload: runs the agent is still doing (or finished meanwhile) come back on screen.
+  const bootView = useRef<SavedView | null | undefined>(undefined);
+  if (bootView.current === undefined) bootView.current = typeof window === "undefined" ? null : savedView();
+  const pickedUp = useRef(false);
+  useEffect(() => {
+    if (!ready || !live || pickedUp.current) return;
+    pickedUp.current = true;
+    void (async () => {
+      const runs = await liveRuns();
+      const saved = savedRuns();
+      for (const w of workersRef.current) {
+        const rec = saved[w.id];
+        if (activeRunOf(w.id)) continue;
+        // Main calls a "running" worker whose run it no longer sees "closed"; with a saved run
+        // that only means the run ended during the reload, and its result may still be there.
+        const wasRunning = w.status === "running" || (w.status === "paused" && w.pausedBy === "closed" && !!rec);
+        const r = wasRunning ? pickLive(w.id, rec, runs) : undefined;
+        if (!r) { if (rec) dropRun(w.id); continue; }
+        void reattach(w, r, rec, bootView.current ?? null);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, live]);
+  // Keep the screen and each run's plan saved, for the next reload.
+  useEffect(() => {
+    if (pickedUp.current) saveView({ activeId: mode === "desktop" ? activeId : null, mode, wins, chatHidden });
+  }, [activeId, mode, wins, chatHidden]);
+  useEffect(() => { if (runPlan) patchRun(runPlan.workerId, { plan: runPlan }); }, [runPlan]);
+  useEffect(() => {
+    const id = runPlan?.workerId ?? activeId;
+    if (id) patchRun(id, { completed: completedStepIndex });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [completedStepIndex]);
+  const deleteWorker = async (id: string) => {
+    const gone = workersRef.current.find((w) => w.id === id);
+    const r = await remove(id);
+    setChats(({ [id]: _gone, ...rest }) => rest);
+    delete savedChats.current[id];
+    const warnings = [...(r.warnings ?? [])];
+    // Its runs are stopped by now, so the cloud machine can be given back.
+    if (r.success && gone?.machine === 'cloud') {
+      const problem = await releaseCloudVm(id, gone.cloudVmId);
+      if (problem) warnings.push(problem);
+    }
+    if (r.success && warnings.length) console.warn('[Workers] deleted with leftovers:', warnings);
+  };
+  /** Where the current run of `w` has got to: its plan and how many steps are done. */
+  const progressOf = (w: Worker) => {
+    if (runPlan?.workerId === w.id) return { steps: runPlan.steps, done: runPlan.done };
+    const r = runSteps.current[w.id];
+    return r ? { steps: r.steps, done: Math.max(r.base, completedStepIndex) } : undefined;
   };
   const stop = (w: Worker) => {
-    update({ ...w, status: w.status === "running" ? "paused" : "idle" });
-    if (w.status === "running") { stopWorker(); setAi(null); }
-    setChats((c) => ({ ...c, [w.id]: [...(c[w.id] ?? []).filter((x) => x.kind !== "thinking"), { kind: "ai", text: "Paused. Pick it back up whenever you like." }] }));
+    setChats((c) => ({ ...c, [w.id]: (c[w.id] ?? []).filter((x) => x.kind !== "thinking") }));
+    if (w.status !== "running") {
+      if (w.status === "paused") update({ ...w, status: "idle", resume: undefined, pausedBy: undefined });
+      return;
+    }
+    const p = progressOf(w);
+    const resumeAt = p && p.done > 0 && p.done < p.steps.length ? { steps: p.steps, done: p.done } : undefined;
+    update({ ...w, status: "paused", resume: resumeAt, pausedBy: "you" });
+    void stopWorker(w.id);
+    setAi(null);
+    push(w.id, { kind: "ai", text: resumeAt
+      ? `Paused after step ${resumeAt.done} of ${resumeAt.steps.length}. Continue picks up at "${parseStepParts(resumeAt.steps[resumeAt.done]).title}".`
+      : "Paused. Continue starts the job again from the first step." });
   };
-  const schedule = async (label: string) => {
+  /** Continue a paused worker from the first step it had not finished. */
+  const resume = (w: Worker) => {
+    const p = w.resume ?? (runPlan?.workerId === w.id ? { steps: runPlan.steps, done: runPlan.done } : undefined);
+    if (!p || p.done <= 0 || p.done >= p.steps.length) return run(w);
+    return run(w, p.steps.slice(p.done), { from: { steps: p.steps, done: p.done } });
+  };
+  const schedule = async (label: string, patch: Partial<Worker> = {}) => {
     if (!active) return;
     try {
       const api = (window as any).electronAPI?.workers;
       if (!live || !api?.save) throw new Error('Scheduling needs the EverFern desktop app.');
-      const next = { ...active, schedule: label === 'Remove schedule' ? undefined : makeWorkerSchedule(label) };
+      const next = { ...active, ...patch, schedule: label === REMOVE_SCHEDULE ? undefined : makeWorkerSchedule(label) };
       const result = await api.save(next);
       if (result?.success === false) throw new Error(result.error || 'Couldn’t save this schedule.');
       update(next);
-      push(active.id, { kind: 'ai', text: next.schedule ? `Scheduled: ${label}. Keep EverFern open on the Workers screen. Paused workers wait until you resume them; missed runs are combined into one run when available.` : 'Schedule removed.' });
+      push(active.id, { kind: 'ai', text: next.schedule ? `Scheduled: ${next.schedule.label}. Runs happen while EverFern is open (on any screen). Paused workers wait until you resume them; runs missed while EverFern was closed are combined into one run, and I'll tell you when that happens.` : 'Schedule removed.' });
     } catch (error) { push(active.id, { kind: 'ai', text: error instanceof Error ? error.message : 'Couldn’t save this schedule.' }); }
   };
+  const asPrompt = (steps: string[]) => steps.map((st, i) => `${i + 1}. ${st}`).join("\n");
+  /** Keeps a task done from the chat as this worker's workflow, so it can run again or on a schedule. */
+  const saveWorkflow = (steps: string[]) => {
+    if (!active || !steps.length) return;
+    update({ ...active, prompt: asPrompt(steps) });
+    push(active.id, { kind: "flow", steps });
+  };
+  /** What the paused notice says: who paused the task and where Continue picks it up. */
+  const pauseNote = (w: Worker | null) => {
+    if (!w || w.status !== "paused") return undefined;
+    const at = w.resume;
+    const where = at
+      ? ` after step ${at.done} of ${at.steps.length}. Continue picks up at "${parseStepParts(at.steps[at.done]).title}".`
+      : " before it finished a step. Continue starts it again from the first step.";
+    if (w.pausedBy === "closed") return `EverFern closed while this task was running, so it stopped${where}`;
+    if (w.pausedBy === "you") return `You paused this task${where}`;
+    return `This task stopped${where}`;
+  };
+  // Save how far a run has got as it goes, so a run cut off by closing EverFern continues from there.
+  useEffect(() => {
+    const id = runPlan?.workerId ?? activeId;
+    const w = workersRef.current.find((x) => x.id === id);
+    if (!w || w.status !== "running") return;
+    const p = progressOf(w);
+    if (!p || p.done <= 0 || p.done >= p.steps.length) return;
+    if (w.resume?.done === p.done && w.resume.steps.length === p.steps.length) return;
+    update({ ...w, resume: { steps: p.steps, done: p.done } });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runPlan?.done, runPlan?.workerId, completedStepIndex]);
   const scheduledRun = useRef(run);
   scheduledRun.current = run;
   const scheduledOpen = useRef(openWorker);
   scheduledOpen.current = openWorker;
-  const scheduleClaim = useRef(false);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  // The main process keeps the schedule clock (worker-scheduler.ts) and hands each due worker
+  // over already claimed. While this screen is open the run happens here, in the chat.
   useEffect(() => {
     if (!ready || !live) return;
-    const tick = async () => {
-      if (scheduleClaim.current || chatBusy || sheet || promptOpen || draft || document.querySelector('[role="alertdialog"]') || workersRef.current.some(worker => worker.status === 'running')) return;
-      const due = workersRef.current.find(worker => worker.schedule && worker.status !== 'paused' && worker.prompt.trim() && Date.parse(worker.schedule.nextRun) <= Date.now());
-      const api = (window as any).electronAPI?.workers;
-      if (!due?.schedule || !api?.save) return;
-      scheduleClaim.current = true;
-      try {
-        const next = { ...due, schedule: advanceWorkerSchedule(due.schedule) };
-        const result = await api.save(next);
-        if (result?.success === false) throw new Error('Couldn’t claim scheduled run.');
-        update(next);
-        scheduledOpen.current(next);
-        await scheduledRun.current(next);
-      } catch (error) { push(due.id, { kind: 'ai', text: `Scheduled run could not start: ${error instanceof Error ? error.message : String(error)}` }); }
-      finally { scheduleClaim.current = false; }
-    };
-    const timer = setInterval(() => { void tick(); }, 15000);
-    void tick();
-    return () => clearInterval(timer);
-  }, [ready, live, chatBusy, sheet, promptOpen, draft]);
+    setScheduledRunHandler(async (next) => {
+      update(next);
+      // Opening it would pull you out of the worker you are creating; it still runs.
+      if (!draftRef.current) scheduledOpen.current(next);
+      const note = missedNote(next);
+      if (note) push(next.id, { kind: 'ai', text: note });
+      await scheduledRun.current(next, undefined, { auto: true });
+    });
+    return () => setScheduledRunHandler(null);
+  }, [ready, live]);
 
   const [removeApp, setRemoveApp] = useState<string | null>(null);
   const removeDialogRef = useDialogFocus<HTMLDivElement>(!!removeApp, () => setRemoveApp(null));
@@ -574,8 +891,15 @@ My answer: ${text}`, text);
 
   // With every app closed (or minimized) the worker's chat is the screen; with apps open it is opt-in.
   const noWindows = !wins.some((x) => !x.min);
-  const chatShown = mode === "desktop" && !!active && !sheet && creationStage === "idle" && (noWindows || (!chatHidden && msgs.length > 0));
-  const chatMsgs: Msg[] = msgs.length ? msgs : [{ kind: "ai", text: active?.prompt
+  // While the plan is being written but no step has streamed yet, the chat (with what you just sent) stays up.
+  const planEmpty = creationStage === "writing" && !streamingSteps.length && !streamingPartial;
+  // A paused worker's saved stopping point stands in for the run plan after a restart.
+  const livePlan = runPlan && runPlan.workerId === active?.id ? runPlan
+    : active?.status === "paused" && active.resume ? { workerId: active.id, steps: active.resume.steps, done: active.resume.done, used: [] as string[][] } : null;
+  // A run's plan stays on the right while the agent works in its windows, not only while the chat is open.
+  const planDuringRun = !!livePlan && livePlan.steps.length > 0 && (active?.status === "running" || active?.status === "paused");
+  const chatShown = mode === "desktop" && !!active && !sheet && (creationStage === "idle" || planEmpty) && (noWindows || (!chatHidden && msgs.length > 0));
+  const chatMsgs: Msg[] = viewing ? msgs.slice(viewing.start, viewing.end) : msgs.length ? msgs : [{ kind: "ai", text: active?.prompt
     ? "Ready when you are. Run the workflow, or tell me what to change."
     : "Hi, I'm ready. Which repetitive task should I take off your plate?" }];
   const sharp = mode === "desktop" && !sheet && !chatShown;
@@ -591,6 +915,7 @@ My answer: ${text}`, text);
   return (
     <MotionConfig reducedMotion="user" transition={{ duration: 0.3, ease: EASE }}>
     <div className={`ef-shell wk${mode === "desktop" ? " is-desktop" : ""}${running ? " is-working" : ""}${sidebarOpen ? " has-sidebar" : ""}${sheet === 'settings' ? ' is-settings-open' : ''}`}>
+      <LiquidGlassDefs />
       {mode === 'desktop' && <>
         <button className="wk-sidebar-toggle" onClick={toggleSidebar} aria-label={sidebarOpen ? 'Collapse worker sidebar' : 'Expand worker sidebar'} title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}>{sidebarOpen ? <PinOff size={18} /> : <Pin size={18} />}</button>
         <AnimatePresence>{sidebarOpen && <motion.nav className="wk-workspace-nav" aria-label="Workers and folders" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} transition={{ duration: 0.24, ease: EASE }}>
@@ -598,7 +923,7 @@ My answer: ${text}`, text);
           <form className="wk-folder-create" onSubmit={event => { event.preventDefault(); createFolder(); }}><input aria-label="New folder name" placeholder="Create new folder..." value={folderName} onChange={event => setFolderName(event.target.value)} /><button type="submit" aria-label="Create worker folder"><FolderPlus size={18} /></button></form>
           {['Home', ...folders].map(folder => <div className="wk-folder-group" key={folder}>
             <button className="wk-folder-heading" onClick={() => setSelectedFolder(folder)} aria-expanded={selectedFolder === folder}><FolderOpen size={18} />{folder}</button>
-            {selectedFolder === folder && workers.filter(worker => (worker.folder || 'Home') === folder).map(worker => <button className={`wk-sidebar-worker${worker.id === activeId ? ' is-active' : ''}`} key={worker.id} onClick={() => openWorker(worker)}><Avatar w={worker} /><span>{worker.name}</span><span className="wk-sidebar-status"><MessageCircle size={13} /></span></button>)}
+            {selectedFolder === folder && workers.filter(worker => (worker.folder || 'Home') === folder).map(worker => <button className={`wk-sidebar-worker${worker.id === activeId ? ' is-active' : ''}`} key={worker.id} onMouseEnter={() => prewarm(worker)} onClick={() => openWorker(worker)}><Avatar w={worker} /><span>{worker.name}</span><span className="wk-sidebar-status"><MessageCircle size={13} /></span></button>)}
           </div>)}
           <button className="wk-overview" onClick={() => { setMode('home'); setActiveId(null); setSheet(null); }}>All workers</button>
         </motion.nav>}</AnimatePresence>
@@ -668,12 +993,17 @@ My answer: ${text}`, text);
             <Image src="/images/logos/black-logo-withoutbg.png" alt="" width={18} height={18} priority style={{ display: "block" }} />
             <span className="ef-notch-word">everfern</span>
           </button>
-          <span className="wk-notch-sep" />
-          <button className="wk-notch-btn" onClick={() => router.push("/chat")} aria-label="Ask EverFern" title="Ask EverFern"><MessageCircle size={14} /></button>
         </div>
         )}
 
-        {mode === "home" && !sheet && <div className="ef-glass ef-screen-content"><Home ready={ready} workers={workers} onOpen={openWorker} onNew={startNew} onDelete={remove} /></div>}
+        {storeError && (
+          <div className="wk-store-error" role="alert">
+            <TriangleAlert size={14} aria-hidden />
+            <span>{storeError}</span>
+            <button onClick={clearError} aria-label="Dismiss"><X size={13} /></button>
+          </div>
+        )}
+        {mode === "home" && !sheet && <div className="ef-glass ef-screen-content"><Home ready={ready} workers={workers} onOpen={openWorker} onNew={startNew} onAsk={goToChat} onDelete={deleteWorker} /></div>}
 
         {/* hire flow: intelligence -> computer -> template */}
         {mode === "tier" && draft && (
@@ -714,8 +1044,9 @@ My answer: ${text}`, text);
             adding={addingApp}
             wins={wins}
             setWins={setWins}
-            hideThumbs={!!sheet || creationStage === "writing" || creationStage === "logins"}
-            behind={chatShown || creationStage === "ready" || creationStage === "completed"}
+            // The marketplace keeps the 3D stack in view: open windows step aside into it, and apps you add land there.
+            hideThumbs={(!!sheet && sheet !== "apps") || creationStage === "writing" || creationStage === "logins"}
+            behind={chatShown || sheet === "apps" || creationStage === "ready" || creationStage === "completed"}
             onPick={() => { setChatHidden(true); setCreationStage("idle"); }}
             partition={active ? `persist:worker-${active.id}` : undefined}
             navTo={navTo}
@@ -725,7 +1056,46 @@ My answer: ${text}`, text);
           />
         )}
         {paywall && <PaywallView info={paywall} onClose={() => setPaywall(null)} />}
-        {mode === "desktop" && creationStage === "idle" && <button className="wk-history wk-gpill" onClick={() => setChatHidden(false)}><Clock size={18} />History</button>}
+        {mode === "desktop" && creationStage === "idle" && (
+          <button className="wk-history wk-gpill" aria-expanded={historyOpen} aria-haspopup="dialog" onClick={() => setHistoryOpen((v) => !v)}><Clock size={18} />History</button>
+        )}
+        <AnimatePresence>
+          {historyOpen && mode === "desktop" && creationStage === "idle" && (
+            <>
+              <div className="wk-hist-scrim" onClick={() => setHistoryOpen(false)} />
+              <motion.div key="hist" className="wk-hist" role="dialog" aria-label="Chat history"
+                initial={{ opacity: 0, y: 8, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1, transition: { duration: 0.28, ease: EASE } }} exit={{ opacity: 0, y: 6, transition: { duration: 0.16 } }}
+                onKeyDown={(e) => { if (e.key === "Escape") setHistoryOpen(false); }}>
+                <div className="wk-hist-head">
+                  <strong>History</strong>
+                  <span>{sessions.length} {sessions.length === 1 ? "session" : "sessions"}</span>
+                </div>
+                {sessions.length ? (
+                  <ul className="wk-hist-list">
+                    {[...sessions].reverse().map((s, k) => {
+                      const latest = k === 0;
+                      const on = latest ? sessionAt === null : sessionAt === s.start;
+                      return (
+                        <li key={s.start}>
+                          <button className={`wk-hist-item${on ? " is-on" : ""}`} autoFocus={on}
+                            onClick={() => { setSessionAt(latest ? null : s.start); setChatHidden(false); setHistoryOpen(false); }}>
+                            <span className="wk-hist-title">{s.title}</span>
+                            <span className="wk-hist-meta">
+                              {s.at ? new Date(s.at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true }) : "Earlier"}
+                              {" · "}{latest ? (chatBusy ? "Running" : "Latest") : s.finished ? "Finished" : "Ended"}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <p className="wk-hist-empty">No sessions yet. What you ask this worker shows up here.</p>
+                )}
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
 
         {/* ── Workflow Creation Sequence Components ── */}
         <AnimatePresence>
@@ -766,17 +1136,6 @@ My answer: ${text}`, text);
               }}
             />
           )}
-
-          {mode === "desktop" && creationStage === "completed" && completedResult && (
-            <WorkflowCompletedCard
-              key="workflow-completed"
-              result={completedResult}
-              onRunAgain={() => {
-                if (active) void run(active);
-              }}
-              onClose={() => setCreationStage("idle")}
-            />
-          )}
         </AnimatePresence>
 
         {/* chat column */}
@@ -784,18 +1143,22 @@ My answer: ${text}`, text);
           <motion.div className="wk-chat-scrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} />
         )}
         {chatShown && (
-          <Chat msgs={chatMsgs} running={running} paused={active?.status === "paused" && !chatBusy} canHide={!noWindows} withPlan={!!active?.prompt} onHide={() => setChatHidden(true)} onRun={() => run()} onStop={() => active && stop(active)} onEdit={() => { setPromptText(active?.prompt ?? ""); setPromptOpen(true); }} onSchedule={schedule} onAnswer={answer} />
+          <Chat msgs={chatMsgs} running={running} pauseNote={chatBusy ? undefined : pauseNote(active)} workflow={active?.prompt} canHide={!noWindows} withPlan={!!active?.prompt || !!livePlan} onHide={() => setChatHidden(true)} onRun={() => active && resume(active)} onRunSteps={(st) => active && run(active, st)} onSaveWorkflow={saveWorkflow} onStop={() => active && stop(active)} onEdit={() => { setPromptText(active?.prompt ?? ""); setPromptOpen(true); }} onSchedule={schedule} onAnswer={(i, t) => answer(i + (viewing?.start ?? 0), t)}
+            past={viewing && viewing.start !== sessions[sessions.length - 1]?.start ? { at: viewing.at, onLatest: () => setSessionAt(null) } : undefined} />
         )}
         <AnimatePresence>
-          {(chatShown || (mode === "desktop" && (creationStage === "ready" || creationStage === "completed"))) && active?.prompt && (
+          {(chatShown || (mode === "desktop" && !sheet && (creationStage === "logins" || creationStage === "ready" || creationStage === "completed" || planDuringRun))) && (active?.prompt || livePlan) && active && (
             <PlanPanel
             scheduleLabel={active?.schedule?.label}
               key="plan"
-              steps={parseSteps(active.prompt)}
+              steps={livePlan ? livePlan.steps : parseSteps(active.prompt ?? "")}
               apps={active.apps}
               running={running}
+              paused={active.status === "paused" && !running}
               completed={creationStage === "completed"}
-              completedStepIndex={completedStepIndex}
+              completedStepIndex={livePlan ? livePlan.done : completedStepIndex}
+              used={livePlan?.used}
+              planKey={`${active.id}|${livePlan ? livePlan.steps.join("\n") : active.prompt ?? ""}`}
               onEdit={() => {
                 setCreationStage("idle");
                 setPromptText(active.prompt ?? "");
@@ -859,7 +1222,7 @@ My answer: ${text}`, text);
       {/* bottom bar */}
       <div className="wk-bar">
         <div className="wk-bar-side">
-          <button className="wk-lpill is-icon" onClick={startNew} aria-label="New worker" title="New worker"><Plus size={17} /></button>
+          {mode !== "home" && <button className="wk-lpill is-icon" onClick={startNew} aria-label="New worker" title="New worker"><Plus size={17} /></button>}
           <div className="wk-workers-scroll">
             {draft && (
               <span className="wk-lpill is-active">
@@ -869,15 +1232,15 @@ My answer: ${text}`, text);
               </span>
             )}
             {workers.map((w) => (
-              <span key={w.id} className={`wk-lpill${w.id === activeId && mode === "desktop" ? " is-active" : ""}`} onClick={() => openWorker(w)} role="button" tabIndex={0}
+              <span key={w.id} className={`wk-lpill${w.id === activeId && mode === "desktop" ? " is-active" : ""}`} onMouseEnter={() => prewarm(w)} onClick={() => openWorker(w)} role="button" tabIndex={0}
                 onKeyDown={(e) => e.key === "Enter" && openWorker(w)}>
                 <Avatar w={w} />
                 <span className="wk-lpill-name">{w.name}</span>
                 <button
                   className={`wk-mini${w.status === "running" ? " is-stop" : ""}`}
-                  onClick={(e) => { e.stopPropagation(); if (w.status === "running") stop(w); else if (w.prompt) { openWorker(w); run(w); } else openWorker(w); }}
-                  aria-label={w.status === "running" ? `Pause ${w.name}` : `Run ${w.name}`}
-                  title={w.status === "running" ? "Pause" : "Run"}
+                  onClick={(e) => { e.stopPropagation(); if (w.status === "running") stop(w); else if (w.prompt) { openWorker(w); if (w.status === "paused") resume(w); else run(w); } else openWorker(w); }}
+                  aria-label={w.status === "running" ? `Pause ${w.name}` : w.status === "paused" ? `Continue ${w.name}` : `Run ${w.name}`}
+                  title={w.status === "running" ? "Pause" : w.status === "paused" ? "Continue" : "Run"}
                 >
                   {w.status === "running" ? <Pause size={12} fill="currentColor" strokeWidth={0} /> : <Play size={12} fill="currentColor" strokeWidth={0} style={{ marginLeft: 1 }} />}
                 </button>
@@ -895,13 +1258,21 @@ My answer: ${text}`, text);
               {running && <button className="wk-composer-pause" aria-label="Pause worker" onClick={event => { event.stopPropagation(); stop(active); }}><Pause size={19} fill="currentColor" strokeWidth={0} /></button>}
               <input className="wk-composer-input" aria-label="Describe your task" placeholder={active.status === "paused" ? "Suggest changes…" : "Describe your task"} value={composerText} disabled={running} onChange={event => setComposerText(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing && composerText.trim()) { event.preventDefault(); const text = composerText.trim(); setComposerText(''); setChatHidden(false); void planFor(active, text, text); } }} />
               {active.status === "paused" && !chatBusy && (
-                <button className="wk-continue" onClick={(e) => { e.stopPropagation(); run(); }}>
+                <button className="wk-continue" onClick={(e) => { e.stopPropagation(); resume(active); }}>
                   <Play size={13} fill="currentColor" strokeWidth={0} /> Continue
                 </button>
               )}
+              {/* Teach is in beta and hidden for now; only the send button shows, once something is typed.
+                  To bring Teach back, restore this button in place of the one below:
               <button className={`wk-mini wk-teach${composerText.trim() ? ' is-send' : ''}`} onClick={(e) => { e.stopPropagation(); if (composerText.trim()) { const text = composerText.trim(); setComposerText(''); setChatHidden(false); void planFor(active, text, text); return; } if (!promptOpen) setPromptText((t) => (t.trim() === (active.prompt ?? "").trim() ? "" : t)); setPromptOpen((o) => !o); }} aria-label={composerText.trim() ? 'Send message' : 'Open prompt'}>
                 {composerText.trim() ? <ArrowUp size={23} /> : <><TeachIcon /><span>Teach</span></>}
               </button>
+              */}
+              {composerText.trim() && (
+                <button className="wk-mini wk-teach is-send" onClick={(e) => { e.stopPropagation(); const text = composerText.trim(); setComposerText(''); setChatHidden(false); void planFor(active, text, text); }} aria-label="Send message">
+                  <ArrowUp size={23} />
+                </button>
+              )}
             </div>
             </>
           ) : mode === "home" ? (
@@ -915,7 +1286,7 @@ My answer: ${text}`, text);
         <div className="wk-bar-side wk-bar-right">
           <button className={`wk-lpill is-icon${sheet === "settings" ? " is-active" : ""}`} onClick={() => { setSettingsSection('account'); setSheet(sheet === "settings" ? null : "settings"); }} aria-label="Settings" title="Settings"><User size={20} /></button>
           <button className="wk-lpill is-icon" onClick={() => { setSettingsSection('notifications'); setSheet('settings'); }} aria-label="Notification settings" title="Notifications"><Bell size={20} /></button>
-          <button className="wk-lpill wk-ask" style={{ padding: "0 14px 0 12px" }} onClick={() => router.push("/chat")} aria-label="Ask EverFern" title="Ask EverFern"><CircleHelp size={20} /><span className="wk-ask-label">Ask EverFern</span></button>
+          <button className="wk-lpill wk-ask" style={{ padding: "0 14px 0 12px" }} onClick={goToChat} aria-label="Ask EverFern" title="Ask EverFern"><MessageCircle size={18} /><span className="wk-ask-label">Ask EverFern</span></button>
         </div>
       </div>
     </div>
@@ -942,7 +1313,7 @@ function ConfirmDelete({ worker, onCancel, onConfirm }: { worker: Worker; onCanc
       >
         <Avatar w={worker} size={44} />
         <h2 id="wk-del-t" className="wk-modal-t">Delete {worker.name}?</h2>
-        <p className="wk-modal-p">Its job, schedule and chat history are removed. This can&apos;t be undone.</p>
+        <p className="wk-modal-p">Its job, schedule, chat history, files, and saved logins are removed, and any run it has going is stopped. This can&apos;t be undone.</p>
         <div className="wk-modal-row">
           <button className="wk-gpill" onClick={onCancel} autoFocus>Cancel</button>
           <button className="wk-gpill is-danger" onClick={onConfirm}><Trash2 size={14} /> Delete worker</button>
@@ -953,8 +1324,8 @@ function ConfirmDelete({ worker, onCancel, onConfirm }: { worker: Worker; onCanc
   );
 }
 
-function Home({ ready, workers, onOpen, onNew, onDelete }: {
-  ready: boolean; workers: Worker[]; onOpen: (w: Worker) => void; onNew: () => void; onDelete: (id: string) => void;
+function Home({ ready, workers, onOpen, onNew, onAsk, onDelete }: {
+  ready: boolean; workers: Worker[]; onOpen: (w: Worker) => void; onNew: () => void; onAsk: () => void; onDelete: (id: string) => void;
 }) {
   const [doomed, setDoomed] = useState<Worker | null>(null);
   if (!ready) return null;
@@ -963,15 +1334,30 @@ function Home({ ready, workers, onOpen, onNew, onDelete }: {
       <div className="wk-step">
         <motion.h1 className="wk-title" {...rise}>Hire your first worker</motion.h1>
         <motion.p className="wk-sub" {...rise}>A worker is an AI teammate with its own computer. Teach it a job once and it keeps doing it.</motion.p>
-        <motion.div {...rise}><button className="wk-gpill is-lg" onClick={onNew}><Plus size={16} /> New worker</button></motion.div>
+        <motion.div {...rise} style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+          <button className="wk-gpill is-lg" onClick={onAsk}><MessageCircle size={16} /> Ask EverFern</button>
+          <button className="wk-gpill is-lg" onClick={onNew}><Plus size={16} /> New worker</button>
+        </motion.div>
       </div>
     );
   }
   return (
     <div className="wk-step" style={{ maxWidth: 900 }}>
       <motion.h1 className="wk-title" {...rise}>Your workers</motion.h1>
-      <motion.p className="wk-sub" {...rise}>Open a worker to watch it, change its job or run it.</motion.p>
+      <motion.p className="wk-sub" {...rise}>Chat with EverFern, or open a worker to watch it, change its job or run it.</motion.p>
       <div className="wk-home-grid">
+        {/* Chat is always the first place you can go: ask, and hand work to a worker from there. */}
+        <motion.div className="wk-card wk-wcard wk-ask-card" {...rise} onClick={onAsk} role="button" tabIndex={0} onKeyDown={(e) => e.key === "Enter" && onAsk()}>
+          <div className="wk-wcard-head">
+            <span className="wk-ask-card-icon" aria-hidden><MessageCircle size={18} /></span>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div className="wk-wcard-name">Ask EverFern</div>
+              <div className="wk-wcard-meta">Chat</div>
+            </div>
+          </div>
+          <div className="wk-wcard-job">Ask a question, think something through, or plan a job before you give it to a worker.</div>
+        </motion.div>
+        <motion.button className="wk-card wk-add-card" {...rise} onClick={onNew}><Plus size={18} /> New worker</motion.button>
         {workers.map((w) => (
           <motion.div key={w.id} className="wk-card wk-wcard" {...rise} onClick={() => onOpen(w)} role="button" tabIndex={0} onKeyDown={(e) => e.key === "Enter" && onOpen(w)}>
             <div className="wk-wcard-head">
@@ -989,7 +1375,6 @@ function Home({ ready, workers, onOpen, onNew, onDelete }: {
             <div style={{ marginTop: "auto" }}><AppLogoCluster apps={w.apps.slice(0, 5)} size={24} /></div>
           </motion.div>
         ))}
-        <motion.button className="wk-card wk-add-card" {...rise} onClick={onNew}><Plus size={18} /> New worker</motion.button>
       </div>
       <AnimatePresence>
         {doomed && <ConfirmDelete key="del" worker={doomed} onCancel={() => setDoomed(null)} onConfirm={() => { onDelete(doomed.id); setDoomed(null); }} />}
@@ -1032,7 +1417,7 @@ function TierStep({ value, onChange, onContinue, onBack }: { value: Worker["tier
             </div>
             <div className="wk-tier-row">
               <span className="wk-tier-name">{t.name}</span>
-              <span className="wk-tier-price" aria-label={`Price ${t.price.length} of 4`}>{t.price}</span>
+              <span className="wk-tier-price">{t.price}</span>
             </div>
             <div className="wk-tier-desc">{t.desc}</div>
           </motion.button>
@@ -1164,20 +1549,30 @@ function PromptCard({ worker, text, setText, onSubmit, onClose, onApps }: {
   );
 }
 
-/** Which installed apps a step mentions, for the chips under each step. */
-function appsInStep(step: string, apps: string[]) {
-  const t = step.toLowerCase();
-  return apps.filter((id) => {
-    const app = APPS[id];
-    if (!app) return false;
-    const n = app.name.toLowerCase();
-    if (t.includes(id)) return true;
-    if (t.includes(n)) return true;
-    if (id === "amazon" && (t.includes("amazon") || t.includes("amazon (.de)"))) return true;
-    if (n.startsWith("google ") && t.includes(n.slice(7))) return true;
-    return false;
-  });
+/** The worker's apps plus every app the job or its steps name (one-off jobs and workflows alike). */
+function withJobApps(apps: string[], text: string, steps: string[]): string[] {
+  const all = Object.keys(APPS);
+  const found = new Set<string>();
+  for (const st of [text, ...steps]) for (const a of appsInStep(st, all)) found.add(a);
+  const t = `${text} ${steps.join(" ")}`.toLowerCase();
+  for (const id of ["amazon", "canva", "moss", "linkedin"]) if (t.includes(id)) found.add(id);
+  // A web job with no named site still needs a browser window to show.
+  if (!found.size && /\b(search|browse|website|online|web|look ?up)\b/i.test(t) && !apps.includes("browser")) found.add("browser");
+  return Array.from(new Set([...apps, ...found]));
 }
+
+/** Which installed apps a step mentions, for the chips under each step. */
+/** One app in front: the chosen window opens and every other one goes to the 3D stack on the side. */
+function bringUp(ws: Win[], app: string): Win[] {
+  const top = Math.max(0, ...ws.map((x) => x.z)) + 1;
+  const rest = ws.map((x) => (x.app === app ? x : { ...x, min: true, max: false }));
+  return rest.some((x) => x.app === app)
+    ? rest.map((x) => (x.app === app ? { ...x, min: false, z: top } : x))
+    : [...rest, { app, min: false, max: false, z: top }];
+}
+
+/** Planning tools: shown as the plan column, never as chat pills. */
+const PLAN_TOOLS = new Set(["create_plan", "update_plan_step", "execution_plan", "todo_write", "update_todos"]);
 
 function parseStepParts(st: string) {
   if (st.includes("\n")) {
@@ -1203,27 +1598,17 @@ function CenterStepsCard({
   availableApps: string[];
 }) {
   const allSteps = partial ? [...steps, partial] : steps;
+  const [sentAt] = useState(() => new Date().toLocaleString("en-GB", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true }));
   const isSinglePill = allSteps.length === 0;
 
-  if (isSinglePill) {
-    return (
-      <motion.div
-        className="wk-center-steps is-single-pill"
-        initial={{ opacity: 0, scale: 0.985, y: 8 }}
-        animate={{ opacity: 1, scale: 1, y: 0, transition: TASK_SPRING }}
-        exit={{ opacity: 0, scale: 0.985, y: 8, transition: { duration: 0.16 } }}
-      >
-        <div className="wk-center-pill">
-          <span className="wk-step-spinner" />
-          <span className="wk-center-pill-text">{jobText}</span>
-        </div>
-      </motion.div>
-    );
-  }
+  // No centred message pill while the plan is still empty: the chat already shows what was sent.
+  if (isSinglePill) return null;
 
   return (
     <motion.div
       className="wk-center-steps"
+      layoutId="wk-plan-surface"
+      transition={{ layout: { duration: 0.7, ease: EASE } }}
       initial={{ opacity: 0, scale: 0.985, y: 8 }}
       animate={{ opacity: 1, scale: 1, y: 0, transition: TASK_SPRING }}
       exit={{ opacity: 0, scale: 0.985, y: 8, transition: { duration: 0.16 } }}
@@ -1291,41 +1676,23 @@ function AppLoginsModal({
       animate={{ opacity: 1, scale: 1, y: 0, transition: TASK_SPRING }}
       exit={{ opacity: 0, scale: 0.985, y: 8, transition: { duration: 0.16 } }}
     >
-      <div className="wk-login-card pointer-events-auto flex flex-col items-center w-[400px] select-none text-center">
-        <h2 className="text-2xl font-medium tracking-tight text-white mb-1.5">App logins</h2>
-        <p className="text-xs text-white/60 mb-5">Set up logins for the apps below, then continue.</p>
-
-        <div className="flex flex-col gap-2 w-full mb-6">
+      <div className="wk-lg-backdrop" />
+      <div className="wk-lg pointer-events-auto select-none">
+        <h2 className="wk-lg-title">App logins</h2>
+        <p className="wk-lg-sub">Set up logins for the apps below, then continue.</p>
+        <div className="wk-lg-list">
           {apps.map((app) => (
-            <button
-              key={app}
-              className="flex items-center justify-between w-full px-4 py-3 rounded-2xl bg-black/40 hover:bg-black/55 backdrop-blur-2xl border border-white/10 transition cursor-pointer text-white shadow-xl group"
-              onClick={() => handleAppClick(app)}
-            >
-              <div className="flex items-center gap-3">
-                <AppLogo app={app} size={22} radius={6} />
-                <span className="text-xs font-medium text-white/90 group-hover:text-white">{APPS[app]?.name ?? app}</span>
-              </div>
-              <span className={`inline-flex items-center justify-center w-5 h-5 rounded-full transition ${visited[app] ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40" : "text-white/20 border border-white/10"}`}>
-                <Check size={12} strokeWidth={2.4} />
-              </span>
+            <button key={app} className="wk-lg-row" onClick={() => handleAppClick(app)}>
+              <AppLogo app={app} size={16} radius={4} />
+              <span className="wk-lg-name">{APPS[app]?.name ?? app}</span>
+              <Check size={12} strokeWidth={2.4} className={`wk-lg-check${visited[app] ? " is-on" : ""}`} />
             </button>
           ))}
         </div>
-
-        <div className="flex items-center gap-4">
-          <button
-            className="px-6 py-2.5 rounded-full bg-white text-black font-semibold text-xs hover:bg-white/90 transition cursor-pointer shadow-lg active:scale-95"
-            onClick={onContinue}
-          >
-            Continue
-          </button>
-          <button
-            className="px-4 py-2 text-xs text-white/50 hover:text-white transition cursor-pointer"
-            onClick={onDismiss}
-          >
-            Dismiss login
-          </button>
+        <div className="wk-lg-actions">
+          <button className="wk-lg-continue" onClick={onContinue}>Continue</button>
+          <span className="wk-lg-divider" />
+          <button className="wk-lg-dismiss" onClick={onDismiss}>Dismiss login</button>
         </div>
       </div>
     </motion.div>
@@ -1379,133 +1746,30 @@ function WorkflowCreatedBanner({
   );
 }
 
-function WorkflowCompletedCard({
-  result,
-  onRunAgain,
-  onClose,
-}: {
-  result: {
-    title: string;
-    subtitle: string;
-    timeWorked: string;
-    durationLabel: string;
-    cost: string;
-    costLabel: string;
-    status: string;
-    summary: string;
-    accomplishments: string[];
-  };
-  onRunAgain: () => void;
-  onClose: () => void;
-}) {
+/** The end-of-run report, posted in the chat as the AI's reply. */
+function RunReportCard({ result, at, onRunAgain, actions }: { result: RunReport; at: string; onRunAgain: () => void; actions?: React.ReactNode }) {
   return (
-    <motion.div
-      className="absolute inset-0 flex items-center justify-center pointer-events-none z-30 px-6 py-6"
-      initial={{ opacity: 0, scale: 0.985, y: 8 }}
-      animate={{ opacity: 1, scale: 1, y: 0, transition: TASK_SPRING }}
-      exit={{ opacity: 0, scale: 0.985, y: 8, transition: { duration: 0.16 } }}
-    >
-      <div className="wk-report pointer-events-auto max-w-[580px] w-full flex flex-col items-center select-none">
-        {/* Subtle top indicator bar */}
-        <div className="w-8 h-1 bg-white/20 rounded-full mb-3" />
-
-        {/* Subtitle caption */}
-        <p className="text-center text-xs text-white/65 font-normal leading-relaxed max-w-lg mb-2">
-          {result.subtitle}
-        </p>
-
-        {/* Large Heading */}
-        <h1 className="text-center text-3xl font-medium tracking-tight text-white mb-6">
-          {result.title}
-        </h1>
-
-        {/* 3 Stat Cards Row */}
-        <div className="grid grid-cols-3 gap-3 w-full mb-3">
-          {/* Status Card */}
-          <div className="wk-report-section rounded-2xl p-4 flex flex-col justify-between">
-            <div className="flex items-center gap-1.5 text-xs text-white/50 mb-3">
-              <CircleDot size={13} className="text-white/60" />
-              <span>Status</span>
-            </div>
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 rounded-full text-xs font-medium w-fit">
-              <Check size={12} strokeWidth={2.8} />
-              <span>{result.status}</span>
-            </div>
-          </div>
-
-          {/* Time Worked Card */}
-          <div className="wk-report-section rounded-2xl p-4 flex flex-col justify-between">
-            <div className="flex items-center gap-1.5 text-xs text-white/50 mb-2">
-              <Clock size={13} className="text-white/60" />
-              <span>Time Worked</span>
-            </div>
-            <div>
-              <div className="text-xl font-semibold text-white tracking-tight">
-                {result.timeWorked}
-              </div>
-              <div className="text-[11px] text-white/40 mt-0.5">
-                {result.durationLabel}
-              </div>
-            </div>
-          </div>
-
-          {/* Cost Card */}
-          <div className="wk-report-section rounded-2xl p-4 flex flex-col justify-between">
-            <div className="flex items-center gap-1.5 text-xs text-white/50 mb-2">
-              <span className="text-xs text-white/60 font-semibold">€</span>
-              <span>Cost</span>
-            </div>
-            <div>
-              <div className="text-xl font-semibold text-white tracking-tight">
-                {result.cost}
-              </div>
-              <div className="text-[11px] text-white/40 mt-0.5">
-                {result.costLabel}
-              </div>
-            </div>
-          </div>
+    <div className="wk-msg-ai wk-run-report">
+      {/* Only show a cost tile when the run actually reported one; "Not reported" tells the reader nothing. */}
+      {result.cost && result.cost !== "Not reported" && (
+        <div className="wk-run-report-stats">
+          <div><span>{result.costLabel}</span><b>{result.cost}</b></div>
         </div>
-
-        {/* Summary Card */}
-        <div className="wk-report-section w-full rounded-2xl p-4 mb-3">
-          <h2 className="text-sm font-semibold text-white mb-2">Summary</h2>
-          <div className="wk-result-summary text-xs text-white/70 leading-relaxed font-normal"><ReplyText text={result.summary} /></div>
-        </div>
-
-        {/* Only show accomplishments explicitly supplied with a report. */}
-        {result.accomplishments.length > 0 && <div className="wk-report-section w-full rounded-2xl p-4 mb-4">
-          <h2 className="text-sm font-semibold text-white mb-3">Accomplishments</h2>
-          <div className="space-y-3">
-            {result.accomplishments.map((item, idx) => (
-              <div key={idx} className="flex items-start gap-2.5 text-xs text-white/75 leading-relaxed">
-                <span className="inline-flex items-center justify-center mt-0.5 text-white/50 shrink-0">
-                  <CircleDot size={12} />
-                </span>
-                <span>{item}</span>
-              </div>
-            ))}
-          </div>
-        </div>}
-
-        {/* Action buttons */}
-        <div className="flex items-center justify-center gap-3 w-full">
-          <button
-            onClick={onRunAgain}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-white text-xs font-medium transition cursor-pointer backdrop-blur-md active:scale-95"
-          >
-            <Play size={12} fill="currentColor" strokeWidth={0} />
-            <span>Run Again</span>
-          </button>
-          <button
-            onClick={onClose}
-            className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-white text-black font-semibold text-xs hover:bg-white/90 transition cursor-pointer shadow-lg active:scale-95"
-          >
-            <Check size={13} strokeWidth={2.8} />
-            <span>Done</span>
-          </button>
-        </div>
+      )}
+      <div className="wk-run-report-summary wk-reply-content"><ReplyText text={result.summary} /></div>
+      {result.accomplishments.length > 0 && (
+        <ul className="wk-run-report-list">
+          {result.accomplishments.map((item, idx) => <li key={idx}><Check size={11} strokeWidth={2.6} /> {item}</li>)}
+        </ul>
+      )}
+      <div className="wk-run-report-foot">
+        <span className="wk-run-report-actions">
+          <button onClick={onRunAgain}><Play size={11} fill="currentColor" strokeWidth={0} /> Run again</button>
+          {actions}
+        </span>
+        <span className="wk-msg-time">{result.timeWorked ? `Took ${result.timeWorked} · ` : ""}{at}</span>
       </div>
-    </motion.div>
+    </div>
   );
 }
 
@@ -1514,8 +1778,11 @@ function PlanPanel({
   steps,
   apps,
   running,
+  paused,
   completed,
   completedStepIndex = -1,
+  used,
+  planKey,
   onEdit,
   onSchedule,
 }: {
@@ -1523,101 +1790,143 @@ function PlanPanel({
   steps: string[];
   apps: string[];
   running: boolean;
+  paused?: boolean;
   completed?: boolean;
   completedStepIndex?: number;
+  used?: string[][];
+  planKey: string;
   onEdit: () => void;
   onSchedule: (label: string) => void;
 }) {
   const [picking, setPicking] = useState(false);
+  const [docked, setDocked] = useState(false);
+  // A new plan always opens in full on the right; it only steps aside when you move it.
+  useEffect(() => {
+    setDocked(false);
+    setPicking(false);
+  }, [planKey]);
+
+  const doneCount = completed ? steps.length : Math.max(0, Math.min(steps.length, completedStepIndex));
+  const current = completed ? -1 : running || paused ? Math.min(steps.length - 1, doneCount) : -1;
+  const stateOf = (k: number) => `${k < doneCount ? "is-done" : ""}${k === current ? (paused ? " is-paused" : " is-active") : ""}`;
+  const appsFor = (k: number) => stepApps(steps[k] ?? "", apps, used?.[k]);
+  const allApps = Array.from(new Set(steps.flatMap((_, k) => appsFor(k)))).slice(0, 6);
+
   return (
-    <motion.aside
-      className="wk-task-panel absolute right-5 top-5 w-[310px] flex flex-col gap-2.5 pointer-events-auto z-40 select-none"
-      initial={{ opacity: 0, x: 16 }}
-      animate={{ opacity: 1, x: 0, transition: { type: "spring", duration: 0.35, bounce: 0 } }}
-      exit={{ opacity: 0, x: 16, transition: { duration: 0.25 } }}
-    >
-      <div className="w-full flex justify-end">
-        {picking ? (
-          <div className="wk-task-schedule-menu w-full bg-black/40 backdrop-blur-2xl border border-white/10 rounded-2xl p-2.5 shadow-2xl flex flex-col gap-1.5 text-xs text-white">
-            <p className="px-3 py-2 text-white/80">Runs while EverFern stays open on Workers. Times use this computer’s timezone.</p>
-            {["Every weekday at 9:00", "Every hour", "Tomorrow at 8:00", ...(scheduleLabel ? ["Remove schedule"] : [])].map((l) => (
-              <button
-                key={l}
-                className="text-left px-3 py-2 rounded-xl bg-white/5 hover:bg-white/15 transition cursor-pointer"
-                onClick={() => { setPicking(false); onSchedule(l); }}
-              >
-                {l}
-              </button>
-            ))}
-            <button className="text-left px-3 py-1.5 text-white/40 hover:text-white text-xs transition cursor-pointer" onClick={() => setPicking(false)}>
-              Cancel
-            </button>
-          </div>
-        ) : (
-          <button
-            className="wk-task-schedule flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-2xl border border-white/15 text-xs text-white/80 transition cursor-pointer shadow-lg active:scale-95"
-            onClick={() => setPicking(true)}
+    <AnimatePresence initial={false} mode="popLayout">
+      {docked ? (
+        <div key="dock" className="wk-pl-dock">
+          <motion.button
+            className="wk-thumb wk-pl-thumb"
+            onClick={() => setDocked(false)}
+            initial={{ opacity: 0, x: 60, rotateY: -50 }}
+            animate={{ opacity: 1, x: 0, rotateY: -16, transition: { type: "spring", duration: 0.45, bounce: 0 } }}
+            exit={{ opacity: 0, x: 40, rotateY: -40, transition: { duration: 0.2, ease: EASE } }}
+            whileHover={{ rotateY: -5, x: -6, scale: 1.015, transition: { type: "spring", duration: 0.3, bounce: 0 } }}
+            title="Open the plan"
           >
-            <CalendarClock size={13} className="text-white/60" />
-            <span>{scheduleLabel || "Schedule: nothing set"}</span>
-          </button>
-        )}
-      </div>
-
-      <div className="wk-task-surface w-full bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 shadow-2xl flex flex-col h-fit max-h-[calc(100vh-140px)] overflow-hidden">
-        <button
-          className="wk-task-edit w-full flex items-center justify-center gap-1.5 px-4 py-2 rounded-full bg-white text-black font-semibold text-xs hover:bg-white/90 transition shadow-sm mb-3.5 cursor-pointer active:scale-95"
-          onClick={onEdit}
-        >
-          <Pencil size={11} strokeWidth={2.5} />
-          <span>Edit task</span>
-        </button>
-
-        <div className="overflow-y-auto pr-1 space-y-2.5 max-h-[calc(100vh-210px)]">
-          {steps.map((st, k) => {
-            const { title, rest } = parseStepParts(st);
-            const chips = appsInStep(st, apps);
-            const primaryApp = chips[0];
-            const isDone = completed || (completedStepIndex >= 0 && k < completedStepIndex);
-            const isActive = running && !completed && k === (completedStepIndex >= 0 ? completedStepIndex : 0);
-
-            return (
-              <div
-                key={k}
-                className={`flex items-start gap-2.5 p-2 rounded-xl transition ${
-                  isActive ? "bg-white/10 border border-white/15" : "hover:bg-white/5"
-                }`}
-              >
-                <div className="pt-0.5 shrink-0">
-                  {isDone ? (
-                    <span className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-emerald-400 bg-emerald-400/20 text-emerald-400">
-                      <Check size={9} strokeWidth={3} />
-                    </span>
-                  ) : isActive ? (
-                    <span className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-emerald-400 bg-emerald-400/20 text-emerald-300 animate-pulse">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-white/30" />
-                  )}
+            <div className="wk-thumb-bar">
+              <ListChecks size={14} strokeWidth={2} aria-hidden="true" />
+              <span className="wk-thumb-name">Plan</span>
+              <span className="wk-pl-count">{paused ? "Paused · " : ""}{doneCount}/{steps.length}</span>
+            </div>
+            <div className="wk-thumb-card wk-pl-mini">
+              <ol>
+                {steps.slice(0, 4).map((st, k) => (
+                  <li key={k} className={stateOf(k)}>
+                    <span className="wk-pl-mdot" aria-hidden="true">{k < doneCount && <Check size={6} strokeWidth={4} />}</span>
+                    <span className="wk-pl-mtext">{parseStepParts(st).title}</span>
+                    {appsFor(k).length > 0 && (
+                      <span className="wk-pl-mapp" title={appsFor(k).map((id) => APPS[id]?.name ?? id).join(", ")}>
+                        {appsFor(k).slice(0, 2).map((id) => <AppLogo key={id} app={id} size={12} radius={3} />)}
+                      </span>
+                    )}
+                  </li>
+                ))}
+                {steps.length > 4 && <li className="wk-pl-more">{steps.length - 4} more</li>}
+              </ol>
+              {allApps.length > 0 && (
+                <div className="wk-pl-mapps">
+                  {allApps.map((id) => <AppLogo key={id} app={id} size={14} radius={3.5} />)}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className={`text-xs leading-snug font-medium line-clamp-3 ${isDone ? "text-white/80" : isActive ? "text-white font-semibold" : "text-white/85"}`}>
-                    {title}
-                  </div>
-                  {rest && <div className="text-[11px] text-white/45 mt-0.5 line-clamp-2">{rest}</div>}
-                </div>
-                {primaryApp && (
-                  <div className="shrink-0 pt-0.5 ml-1.5">
-                    <AppLogo app={primaryApp} size={16} radius={4} />
-                  </div>
-                )}
-              </div>
-            );
-          })}
+              )}
+            </div>
+          </motion.button>
         </div>
-      </div>
-    </motion.aside>
+      ) : (
+        <motion.aside
+          key="open"
+          className="wk-lp"
+          aria-label="Task plan"
+          initial={{ opacity: 0, x: 28, scale: 0.97, filter: "blur(6px)" }}
+          animate={{ opacity: 1, x: 0, scale: 1, filter: "blur(0px)", transition: { type: "spring", duration: 0.5, bounce: 0 } }}
+          exit={{ opacity: 0, x: 40, scale: 0.94, filter: "blur(6px)", transition: { duration: 0.28, ease: EASE } }}
+        >
+          {picking ? (
+            <div className="wk-lp-card wk-lp-menu lg-glass" role="menu" aria-label="Task schedule">
+              <p>Runs while EverFern is open, in this computer's time zone.</p>
+              {[...SCHEDULE_LABELS, ...(scheduleLabel ? [REMOVE_SCHEDULE] : [])].map((l) => (
+                <button key={l} role="menuitem" className={l === scheduleLabel ? "is-on" : ""} onClick={() => { setPicking(false); onSchedule(l); }}>
+                  {l}{l === scheduleLabel && <Check size={13} strokeWidth={2.5} aria-hidden="true" />}
+                </button>
+              ))}
+              <button className="is-quiet" onClick={() => setPicking(false)}>Cancel</button>
+            </div>
+          ) : (
+            <button className="wk-lp-card wk-lp-sched lg-glass" onClick={() => setPicking(true)} aria-haspopup="menu">
+              <span className="wk-lp-sched-icon"><CalendarClock size={17} strokeWidth={1.8} /></span>
+              <span className="wk-lp-sched-text">
+                <b>{scheduleLabel || "Set a task schedule"}</b>
+                <small>{scheduleLabel ? "Scheduled" : "Run it on its own, daily or weekly"}</small>
+              </span>
+              <ChevronRight size={16} className="wk-lp-chev" aria-hidden="true" />
+            </button>
+          )}
+
+          <section className="wk-lp-card wk-lp-task lg-glass">
+            <header className="wk-lp-head">
+              <span className="wk-lp-status">
+                <span className={`wk-lp-led${completed ? " is-done" : paused ? " is-paused" : running ? " is-live" : ""}`} aria-hidden="true" />
+                {completed ? "Done" : paused ? "Paused" : running ? "Working" : "Plan"}
+              </span>
+              <span className="wk-lp-count">{doneCount} of {steps.length}</span>
+              <button className="wk-lp-iconbtn" onClick={() => setDocked(true)} title="Move to the side" aria-label="Move the plan to the side"><PanelRightClose size={15} /></button>
+            </header>
+            <button className="wk-lp-edit" onClick={onEdit}><Pencil size={14} strokeWidth={2} /> Edit task</button>
+
+            <ol className="wk-lp-steps">
+              {steps.map((st, k) => {
+                const { title, rest } = parseStepParts(st);
+                const chips = appsFor(k);
+                const isDone = k < doneCount;
+                return (
+                  <motion.li
+                    key={k}
+                    className={stateOf(k)}
+                    aria-current={k === current ? "step" : undefined}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0, transition: { delay: Math.min(k, 10) * 0.04, type: "spring", duration: 0.4, bounce: 0 } }}
+                  >
+                    <span className="wk-lp-dot" aria-hidden="true">{isDone && <Check size={9} strokeWidth={3.5} />}</span>
+                    <div className="wk-lp-body">
+                      <div className="wk-lp-t">{title}</div>
+                      {rest && <div className="wk-lp-d">{rest}</div>}
+                      {chips.length > 0 && (
+                        <div className="wk-lp-chips">
+                          {chips.map((id) => (
+                            <span key={id} className="wk-lp-chip"><AppLogo app={id} size={16} radius={4} />{APPS[id]?.name ?? id}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </motion.li>
+                );
+              })}
+            </ol>
+          </section>
+        </motion.aside>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -1649,9 +1958,18 @@ function AskCard({ question, options, disabled, onAnswer }: { question: string; 
   );
 }
 
-function Chat({ msgs, running, paused, canHide, withPlan, onHide, onRun, onStop, onEdit, onSchedule, onAnswer }: {
-  msgs: Msg[]; running: boolean; paused?: boolean; canHide?: boolean; withPlan: boolean; onHide: () => void; onRun: () => void; onStop: () => void; onEdit: () => void; onSchedule: (label: string) => void;
+function Chat({ msgs, running, pauseNote, workflow, canHide, withPlan, onHide, onRun, onRunSteps, onSaveWorkflow, onStop, onEdit, onSchedule, onAnswer, past }: {
+  msgs: Msg[]; running: boolean;
+  /** Set while the worker is paused mid-task: what happened and where Continue picks up. */
+  pauseNote?: string;
+  /** The worker's saved workflow (its prompt), to tell a one-off task from it. */
+  workflow?: string;
+  canHide?: boolean; withPlan: boolean; onHide: () => void; onRun: () => void; onStop: () => void; onEdit: () => void;
+  onRunSteps: (steps: string[]) => void; onSaveWorkflow: (steps: string[]) => void;
+  onSchedule: (label: string, patch?: Partial<Worker>) => void;
   onAnswer: (index: number, text: string) => void;
+  /** Set while a past session from History is shown. */
+  past?: { at?: number; onLatest: () => void };
 }) {
   const ref = useRef<HTMLDivElement>(null);
   // Follow new and streaming text, unless the user has scrolled up to read.
@@ -1668,28 +1986,52 @@ function Chat({ msgs, running, paused, canHide, withPlan, onHide, onRun, onStop,
     if (el && stick.current) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [msgs.length, tail, folded]);
   const lastFlow = useMemo(() => msgs.map((m, i) => (m.kind === "flow" ? i : -1)).filter((i) => i >= 0).pop(), [msgs]);
+  const lastReport = useMemo(() => msgs.map((m, i) => (m.kind === "report" ? i : -1)).filter((i) => i >= 0).pop(), [msgs]);
+  const saved = parseSteps(workflow ?? "").join("\n");
   const opened = useMemo(() => Date.now(), []);
   const time = (at?: number) => new Date(at ?? opened).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
   const thinking = [...msgs].reverse().find((m) => m.kind === "thinking") as { text: string } | undefined;
   // How far the run has got: one step per tool call since the latest plan, capped at the last step.
   const toolsSinceFlow = lastFlow === undefined ? 0 : msgs.slice(lastFlow).filter((m) => m.kind === "tool").length;
-  const reasoning = msgs.some((m) => m.kind === "reason" && m.live);
+  const liveReason = [...msgs].reverse().find((m) => m.kind === "reason" && m.live) as { text: string } | undefined;
+  const reasoning = !!liveReason;
   const busy = isWorkerChatBusy(msgs);
+  // A reply with a wide table (4+ columns) gets a wider column so the table isn't squeezed into a scroller.
+  const wide = useMemo(() => msgs.some((m) => {
+    const t = m.kind === "ai" ? m.text : m.kind === "report" ? m.result.summary : "";
+    return /^\s*\|(?:[^|\n]*\|){4,}\s*$/m.test(t);
+  }), [msgs]);
   const status = reasoning ? "Reasoning carefully..." : thinking?.text ? `${thinking.text.replace(/\.+$/, "")}...` : running ? "Working..." : "";
 
   const row = (m: Msg, i: number) => (
-    m.kind === "thinking" ? null : (
+    // Tool steps are kept for the model's context but not shown; the plan panel already tracks progress.
+    m.kind === "thinking" || m.kind === "tool" ? null : (
     <motion.div key={`${i}-${m.kind}`} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0, transition: { duration: 0.4, ease: EASE } }} exit={{ opacity: 0 }}
       style={{ display: "flex", flexDirection: "column" }}>
       {m.kind === "user" && <div className="wk-msg-user"><span>{m.text}</span><span className="wk-msg-time">{time(m.at)}</span></div>}
       {m.kind === "ai" && (
-        <div className={`wk-msg-ai${m.text.includes('\n\n') || /^#{1,3}\s/m.test(m.text) ? ' is-document' : ''}`}>
+        <div className={`wk-msg-ai${m.text.includes('\n\n') || /^#{1,3}\s/m.test(m.text) || /^```cards?\b|^\|.+\|$/m.test(m.text) ? ' is-document' : ''}`}>
           <div className="wk-reply-content"><ReplyText text={m.text} />{m.streaming && <span className="wk-caret" aria-hidden />}</div>
+          {m.failure && <ModelFailure {...m.failure} />}
           {!m.streaming && <span className="wk-msg-time">{time(m.at)}</span>}
         </div>
       )}
+      {m.kind === "report" && (() => {
+        const steps = m.steps ?? [];
+        // A task from the chat can be kept as the workflow; the worker's own workflow already is one.
+        const unsaved = !!steps.length && m.oneOff !== false && steps.join("\n") !== saved;
+        const latest = i === lastReport && !running && !busy;
+        return (
+          <RunReportCard result={m.result} at={time(m.at)} onRunAgain={() => (steps.length ? onRunSteps(steps) : onRun())}
+            actions={latest ? (
+              <>
+                {unsaved && <button onClick={() => onSaveWorkflow(steps)}><Workflow size={12} /> Save as workflow</button>}
+                <button onClick={() => onSchedule("Every weekday at 9:00", unsaved ? { prompt: steps.map((st, k) => `${k + 1}. ${st}`).join("\n") } : {})}><CalendarClock size={12} /> Schedule</button>
+              </>
+            ) : undefined} />
+        );
+      })()}
       {m.kind === "reason" && !m.live && <Reasoning text={m.text} live={false} />}
-      {m.kind === "tool" && <div className="wk-msg-tool"><Check size={11} strokeWidth={2.6} /> {m.text}</div>}
       {m.kind === "open" && (
         <div className="wk-open">
           <MessageCircle size={22} strokeWidth={1.6} className="wk-open-ic" />
@@ -1742,8 +2084,14 @@ function Chat({ msgs, running, paused, canHide, withPlan, onHide, onRun, onStop,
   const prevFrom = Math.max(0, lastUser - 2);
 
   return (
-    <motion.div className={`wk-chat${running ? " is-running" : ""}${withPlan || msgs.some(m => m.kind === 'ai' && /\n\n|^#{1,3}\s/m.test(m.text)) ? ' has-plan' : ''}`} initial={{ x: "-50%", opacity: 0, y: 14, scale: 0.98 }} animate={{ x: "-50%", opacity: 1, y: 0, scale: 1, transition: { duration: 0.45, ease: EASE } }}>
+    <motion.div className={`wk-chat${running ? " is-running" : ""}${wide ? " has-wide" : ""}${withPlan ? " beside-plan" : ""}${withPlan || msgs.some(m => m.kind === 'ai' && /\n\n|^#{1,3}\s/m.test(m.text)) ? ' has-plan' : ''}`} initial={{ x: "-50%", opacity: 0, y: 14, scale: 0.98 }} animate={{ x: "-50%", opacity: 1, y: 0, scale: 1, transition: { duration: 0.45, ease: EASE } }}>
       <div className="wk-chat-card">
+        {past && (
+          <div className="wk-chat-past" role="status">
+            <span>Past session{past.at ? ` · ${time(past.at)}` : ""}</span>
+            <button onClick={past.onLatest}>Back to latest</button>
+          </div>
+        )}
         <div className="wk-chat-scroll" ref={ref} onScroll={(e) => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60; }}>
           {folded && <div className="wk-chat-prev" aria-hidden>{msgs.slice(prevFrom, lastUser).map((m, k) => row(m, prevFrom + k))}</div>}
           {folded && fold}
@@ -1753,14 +2101,16 @@ function Chat({ msgs, running, paused, canHide, withPlan, onHide, onRun, onStop,
               return !folded && i === lastUser && fold ? [fold, row(m, i)] : [row(m, i)];
             })}
           </AnimatePresence>
-          {busy && <div className="wk-activity" role="status" aria-live="polite"><DotSpinner size={22} /><span>{status}</span></div>}
+          {busy && (liveReason
+            ? <Reasoning text={liveReason.text} live />
+            : <div className="wk-activity" role="status" aria-live="polite"><DotSpinner size={22} />{GENERIC_STATUS.test(status) ? <LoadingWord /> : <span className="wk-shimmer">{status}</span>}</div>)}
         </div>
       </div>
       <AnimatePresence>
-        {paused && !running && !busy && (
+        {pauseNote && !running && !busy && (
           <motion.div className="wk-paused" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0, transition: { duration: 0.4, ease: EASE } }} exit={{ opacity: 0 }}>
             <button className="wk-paused-btn" onClick={onRun} aria-label="Continue" title="Continue"><Play size={20} fill="currentColor" strokeWidth={0} /></button>
-            <p>Your worker is currently paused.</p>
+            <p>{pauseNote}</p>
           </motion.div>
         )}
       </AnimatePresence>
@@ -1793,25 +2143,82 @@ function DotSpinner({ size = 16 }: { size?: number }) {
   );
 }
 
-/** The model's reasoning: streams in while it thinks, then folds into a "Reasoned" line you can open. */
+const REASON_PHRASES = ["Thinking it through...", "Weighing the options...", "Checking the details...", "Forming a clear response..."];
+
+/** The model's reasoning: streams in under a rotating header while it thinks, then folds into a "Reasoned" line you can open. */
 function Reasoning({ text, live }: { text: string; live: boolean }) {
   const [open, setOpen] = useState(false);
-  const shown = live || open;
-  const body = (live ? text.slice(-700) : text).trim();
+  const [phrase, setPhrase] = useState(0);
+  useEffect(() => {
+    if (!live) return;
+    const t = setInterval(() => setPhrase((n) => Math.min(n + 1, REASON_PHRASES.length - 1)), 3500);
+    return () => clearInterval(t);
+  }, [live]);
+  // The label shimmers only while new thoughts are streaming in; once they stop it rests.
+  const [thinking, setThinking] = useState(live);
+  useEffect(() => {
+    if (!live) { setThinking(false); return; }
+    setThinking(true);
+    const t = setTimeout(() => setThinking(false), 1500);
+    return () => clearTimeout(t);
+  }, [live, text]);
+  const body = (live ? text.slice(-900) : text).trim();
+  if (live) {
+    return (
+      <div className="wk-reason is-live" role="status" aria-live="polite">
+        <div className="wk-reason-head">
+          <DotSpinner size={18} />
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.span key={phrase} className={thinking ? "wk-shimmer" : "wk-reason-label"} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.25 }}>
+              {REASON_PHRASES[phrase]}
+            </motion.span>
+          </AnimatePresence>
+        </div>
+        {body && <div className="wk-reason-body"><div className="wk-reason-stream">{body}</div></div>}
+      </div>
+    );
+  }
   return (
-    <div className={`wk-reason${live ? " is-live" : ""}`}>
-      <button className="wk-reason-head" onClick={() => !live && setOpen((o) => !o)} aria-expanded={shown} disabled={live}>
-        {live ? <DotSpinner size={20} /> : <Sparkles size={13} />}
-        <span>{live ? "Reasoning carefully..." : "Reasoned"}</span>
-        {!live && body && <ChevronDown size={13} style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform .2s" }} />}
+    <div className="wk-reason">
+      <button className="wk-reason-head" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+        <Sparkles size={13} />
+        <span className="wk-reason-label">Reasoned</span>
+        {body && <ChevronDown size={13} style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform .2s" }} />}
       </button>
       <AnimatePresence initial={false}>
-        {open && !live && body && (
+        {open && body && (
           <motion.div className="wk-reason-body" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}>
             {body}
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+const PROVIDER_NAMES: Record<string, string> = {
+  openai: "OpenAI", anthropic: "Anthropic", gemini: "Google Gemini", google: "Google", deepseek: "DeepSeek",
+  nvidia: "NVIDIA NIM", minimax: "MiniMax", ollama: "Ollama", "ollama-cloud": "Ollama Cloud",
+  lmstudio: "LM Studio", llamacpp: "llama.cpp", openrouter: "OpenRouter", groq: "Groq", everfern: "EverFern Cloud",
+};
+
+/** Which provider and model failed, with the raw error tucked behind a toggle. */
+function ModelFailure({ provider, model, error }: { provider?: string; model?: string; error?: string }) {
+  const [open, setOpen] = useState(false);
+  if (!provider && !model && !error) return null;
+  const name = provider ? PROVIDER_NAMES[provider] ?? provider : undefined;
+  return (
+    <div className="wk-fail">
+      <div className="wk-fail-row">
+        {name && <span className="wk-fail-chip"><Cpu size={11} strokeWidth={2.2} />{name}</span>}
+        {model && <span className="wk-fail-chip is-model">{model}</span>}
+        {error && (
+          <button type="button" className="wk-fail-toggle" onClick={() => setOpen((v) => !v)}>
+            <TriangleAlert size={11} strokeWidth={2.2} />{open ? "Hide details" : "Details"}
+          </button>
+        )}
+      </div>
+      {open && error && <pre className="wk-fail-err">{error}</pre>}
     </div>
   );
 }

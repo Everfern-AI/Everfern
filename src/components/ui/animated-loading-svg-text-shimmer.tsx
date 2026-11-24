@@ -100,65 +100,22 @@ export function LoadingBreadcrumb({
   text = "Thinking",
   className
 }: LoadingBreadcrumbProps) {
+  // A quiet live status line: a pulsing dot and the step name with a soft
+  // shimmer drawn from the theme's own text colours, so it stays readable on glass.
   return (
-      <>
-      <style>{`
-        @keyframes textShimmer {
-          0% {
-            background-position: -200% center;
-          }
-          100% {
-            background-position: 200% center;
-          }
-        }
-      `}</style>
-
-      <div className={cn(
-        "flex items-center gap-2 text-[15px] font-medium tracking-wide",
-        className
-      )}>
-        <Loader
-          size={18}
-          strokeWidth={2.5}
-          className="text-zinc-600 dark:text-zinc-200"
-        />
-
-        <span
-          className="bg-clip-text text-transparent shimmer-text"
-          style={{
-            backgroundSize: "200% auto",
-            animation: "textShimmer 2.5s linear infinite"
-          }}
-        >
-          {text}
-        </span>
-
-        <ChevronRight size={16} className="text-zinc-400 dark:text-zinc-500" />
-      </div>
-
-      <style>{`
-        .shimmer-text {
-          background-image: linear-gradient(
-            90deg,
-            rgb(113 113 122) 0%,
-            rgb(113 113 122) 35%,
-            rgb(255 255 255) 50%,
-            rgb(113 113 122) 65%,
-            rgb(113 113 122) 100%
-          );
-        }
-        .dark .shimmer-text {
-          background-image: linear-gradient(
-            90deg,
-            rgb(161 161 170) 0%,
-            rgb(161 161 170) 35%,
-            rgb(255 255 255) 50%,
-            rgb(161 161 170) 65%,
-            rgb(161 161 170) 100%
-          );
-        }
-      `}</style>
-    </>
+    <div
+      role="status"
+      aria-live="polite"
+      className={cn("flex items-center gap-2.5", className)}
+      style={{ fontSize: 14, fontWeight: 500, padding: "2px 0" }}
+    >
+      <span
+        aria-hidden
+        className="ef-tl-pulse"
+        style={{ width: 7, height: 7, borderRadius: 999, background: "var(--color-text-primary)", flexShrink: 0 }}
+      />
+      <span className="ef-tl-shimmer">{text}</span>
+    </div>
   );
 }
 

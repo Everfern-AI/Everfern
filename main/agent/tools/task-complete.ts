@@ -13,6 +13,7 @@
  */
 
 import type { AgentTool, ToolResult } from '../runner/types';
+import { execFile } from 'child_process';
 
 export const taskCompleteTool: AgentTool = {
   name: 'task_complete',
@@ -33,6 +34,23 @@ export const taskCompleteTool: AgentTool = {
   async execute(args: Record<string, unknown>): Promise<ToolResult> {
     const summary = String(args.summary || 'Task completed.');
     console.log(`[task_complete] ✅ Task completion signalled. Summary: ${summary.slice(0, 200)}`);
+    const native = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+    if (native) {
+      try {
+        return await new Promise<ToolResult>((resolve, reject) => {
+          const child = execFile(native, ['--ef-task-complete'], {
+            encoding: 'utf8', windowsHide: true, timeout: 10000,
+          }, (error, output) => {
+            if (error) return reject(error);
+            try { resolve(JSON.parse(output)); } catch (parseError) { reject(parseError); }
+          });
+          child.stdin?.once('error', reject);
+          child.stdin?.end(JSON.stringify({ summary }));
+        });
+      } catch (error) {
+        console.warn('[task_complete] Native result unavailable:', error);
+      }
+    }
     return {
       success: true,
       output: `Task marked as complete. Summary: ${summary}`,

@@ -4,7 +4,8 @@ import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Bot, Mountain, Plug } from "lucide-react";
-import { GlassShell, GlassTitle, GlassCard, GlassPill, stagger, rise } from "./components/onboarding/GlassShell";
+import { GlassShell, GlassTitle, GlassCard, GlassPill, stagger, rise, ONBOARDING_STEPS } from "./components/onboarding/GlassShell";
+import { secureSession } from "@/lib/secure-session";
 
 const PILLARS = [
   { icon: Bot, name: "Workers", meta: "Your digital team", desc: "Describe a job once. A worker does it on its own computer, every time." },
@@ -34,7 +35,7 @@ export default function OnboardingPage() {
       }
 
       // Check if logged in via EverFern Cloud
-      const stored = localStorage.getItem("everfern_cloud_session");
+      const stored = secureSession.getItem("everfern_cloud_session");
       if (stored) {
         try {
           const session = JSON.parse(stored);
@@ -68,7 +69,7 @@ export default function OnboardingPage() {
   if (isChecking) return <div style={{ position: "fixed", inset: 0, background: "#ececea" }} />;
 
   return (
-    <GlassShell photo="lake" progress={[1, 3]} bottomLeft={<span>Open source · runs on your machine</span>}>
+    <GlassShell photo="lake" progress={[1, ONBOARDING_STEPS]} bottomLeft={<span>Open source · runs on your machine</span>}>
       <motion.div
         variants={stagger}
         initial="hidden"

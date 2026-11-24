@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { loadWithTransition } from "@/lib/route-transition";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
@@ -9,7 +10,6 @@ import {
     MagnifyingGlassIcon, 
     Cog6ToothIcon, 
     SparklesIcon, 
-    CodeBracketIcon, 
     EllipsisHorizontalIcon, 
     TrashIcon, 
     BriefcaseIcon, 
@@ -30,6 +30,7 @@ import {
 } from "@heroicons/react/24/outline";
 import SearchPopup from "./SearchPopup";
 import { useTheme } from "@/components/ThemeProvider";
+import { secureSession } from "@/lib/secure-session";
 
 interface SidebarProps {
     isOpen: boolean;
@@ -136,7 +137,7 @@ export default function Sidebar({
             try {
                 let name = "User";
                 let avatar = null;
-                const sessionStr = localStorage.getItem('everfern_cloud_session');
+                const sessionStr = secureSession.getItem('everfern_cloud_session');
                 if (sessionStr) {
                     try {
                         const session = JSON.parse(sessionStr);
@@ -592,7 +593,7 @@ export default function Sidebar({
                 initial={false}
                 animate={{ width: isOpen ? sidebarWidth : collapsedWidth }}
                 transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                className="glossy-no-border"
+                className="glossy-no-border ef-sidebar-panel"
                 style={{
                     position: "fixed",
                     left: 0,
@@ -623,7 +624,9 @@ export default function Sidebar({
                         <button
                             type="button"
                             onClick={onToggle}
-                            style={{ background: "transparent", border: "none", color: "var(--sidebar-btn-color)", cursor: "pointer", display: "flex", alignItems: "center", padding: 0 }}
+                            aria-label={isOpen ? "Hide sidebar" : "Show sidebar"}
+                            title={isOpen ? "Hide sidebar" : "Show sidebar"}
+                            style={{ background: "transparent", border: "none", color: "var(--sidebar-btn-color)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, margin: -6, padding: 0, borderRadius: 8 }}
                             onMouseEnter={e => e.currentTarget.style.color = "var(--sidebar-btn-hover-color)"}
                             onMouseLeave={e => e.currentTarget.style.color = "var(--sidebar-btn-color)"}
                         >
@@ -635,6 +638,7 @@ export default function Sidebar({
                         {isOpen && (
                             <button
                                 type="button"
+                                aria-label="Account"
                                 style={{ background: "transparent", border: "none", color: "var(--sidebar-btn-color)", cursor: "pointer", display: "flex", alignItems: "center", padding: 0 }}
                                 onMouseEnter={e => e.currentTarget.style.color = "var(--sidebar-btn-hover-color)"}
                                 onMouseLeave={e => e.currentTarget.style.color = "var(--sidebar-btn-color)"}
@@ -672,6 +676,8 @@ export default function Sidebar({
                     <div style={{ padding: isOpen ? "8px 10px" : "8px 0", display: "flex", flexDirection: "column", gap: 2, alignItems: "center", flexShrink: 0 }}>
                         <button
                             onClick={onNewChat}
+                            aria-label="New chat"
+                            title={isOpen ? undefined : "New chat"}
                             style={{
                                 width: isOpen ? "100%" : 44,
                                 height: 36,
@@ -710,7 +716,6 @@ export default function Sidebar({
                                 { icon: ArchiveBoxIcon, label: "Projects" },
                                 { icon: ClockIcon, label: "Scheduled Tasks" },
                                 { icon: SquaresPlusIcon, label: "Artifacts" },
-                                { icon: CodeBracketIcon, label: "Code" },
                                 { icon: ChartBarIcon, label: "Analytics" },
                             ].map((item) => (
                                 <button
@@ -735,14 +740,13 @@ export default function Sidebar({
                                     onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--sidebar-bg-hover)"; e.currentTarget.style.color = "var(--sidebar-text-primary)"; }}
                                     onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "var(--sidebar-text-secondary)"; }}
                                     onClick={() => {
-                                        if (item.label === "Workers") { window.location.href = "/workers"; }
+                                        if (item.label === "Workers") { loadWithTransition("to-workers", "/workers"); }
                                         else if (item.label === "Search") triggerSearchOpen();
                                         else if (item.label === "Artifacts" && onArtifactsClick) onArtifactsClick();
                                         else if (item.label === "Customize" && onCustomizeClick) onCustomizeClick();
                                         else if (item.label === "Integrations" && onIntegrationClick) onIntegrationClick();
                                         else if (item.label === "Projects" && onProjectsClick) onProjectsClick();
                                         else if (item.label === "Scheduled Tasks" && onScheduledTasksClick) onScheduledTasksClick();
-                                        else if (item.label === "Code" && onCodeClick) onCodeClick();
                                         else if (item.label === "Analytics" && onAnalyticsClick) onAnalyticsClick();
                                     }}
                                     title={!isOpen ? item.label : undefined}
@@ -798,8 +802,23 @@ export default function Sidebar({
 
                 {/* Footer */}
                 <div style={{ padding: isOpen ? 12 : "12px 0", borderTop: "1px solid var(--sidebar-border)", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                    {!isOpen && onSettingsClick && (
+                        <button
+                            onClick={onSettingsClick}
+                            aria-label="Settings"
+                            title="Settings"
+                            style={{ width: 42, height: 40, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", border: "none", borderRadius: 10, color: "var(--sidebar-text-secondary)", cursor: "pointer", transition: "background-color 0.15s, color 0.15s" }}
+                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--sidebar-bg-hover)"; e.currentTarget.style.color = "var(--sidebar-text-primary)"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "var(--sidebar-text-secondary)"; }}
+                        >
+                            <Cog6ToothIcon width={17} height={17} />
+                        </button>
+                    )}
                     <div style={{ display: "flex", width: "100%", alignItems: "center", gap: 10, padding: isOpen ? "8px 10px" : "8px 0", justifyContent: isOpen ? "flex-start" : "center", borderRadius: 12 }}>
-                        <div style={{ width: 28, height: 28, borderRadius: 999, background: "var(--sidebar-avatar-bg)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid var(--sidebar-avatar-border)", overflow: "hidden" }}>
+                        {/* Collapsed rail: a cog sits above the avatar so Settings is a full-size target. */}
+                        <div
+                            {...(!isOpen && onSettingsClick ? { role: "button", tabIndex: -1, "aria-hidden": true, title: username, onClick: onSettingsClick } : {})}
+                            style={{ width: 28, height: 28, borderRadius: 999, background: "var(--sidebar-avatar-bg)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid var(--sidebar-avatar-border)", overflow: "hidden", cursor: !isOpen && onSettingsClick ? "pointer" : undefined }}>
                             {avatarUrl ? (
                                 <img src={avatarUrl} alt={username} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                             ) : (
@@ -840,6 +859,8 @@ export default function Sidebar({
                         {isOpen && onSettingsClick && (
                             <button
                                 onClick={onSettingsClick}
+                                aria-label="Settings"
+                                title="Settings"
                                 style={{
                                     width: 30, height: 30, borderRadius: 8, background: "var(--sidebar-settings-bg)",
                                     border: "1px solid var(--sidebar-settings-border)", color: "var(--sidebar-settings-text)",

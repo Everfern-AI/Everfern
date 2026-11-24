@@ -7,6 +7,25 @@
 
 import { getSubagentRegistry, type SubagentEntry } from './subagent-registry';
 import { emitTool } from '../infra/agent-events';
+import { spawnSync } from 'child_process';
+
+function nativeAggregationCall<T>(request: Record<string, unknown>): T | null {
+  const executable = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+  if (!executable) return null;
+  try {
+    const response = spawnSync(executable, ['--ef-subagent-aggregation'], {
+      input: JSON.stringify(request),
+      encoding: 'utf-8',
+      windowsHide: true,
+      timeout: 5000,
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    if (response.error || response.status !== 0 || !response.stdout) return null;
+    return JSON.parse(response.stdout) as T;
+  } catch {
+    return null;
+  }
+}
 
 export interface AggregationResult {
   success: boolean;
@@ -268,6 +287,14 @@ class SubagentResultAggregator {
     deduplicate: boolean = true,
     sortByRelevance: boolean = false
   ): string {
+    const native = nativeAggregationCall<string>({
+      operation: 'summary',
+      results,
+      deduplicate,
+      sortByRelevance,
+    });
+    if (native !== null) return native;
+
     const completedResults = results.filter(r => r.status === 'completed' && r.result);
     const failedResults = results.filter(r => r.status === 'failed');
     const timedOutResults = results.filter(r => r.status === 'timeout');
@@ -428,6 +455,13 @@ class SubagentResultAggregator {
     aggregationResult: AggregationResult,
     fallbackTask?: string
   ): Promise<string> {
+    const native = nativeAggregationCall<string>({
+      operation: 'partial_failure',
+      aggregationResult,
+      fallbackTask,
+    });
+    if (native !== null) return native;
+
     const successRate = aggregationResult.completedSubagents / aggregationResult.totalSubagents;
 
     if (successRate >= 0.5) {

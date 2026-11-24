@@ -124,7 +124,19 @@ function getCachedSnapshot(page: Page): AriaSnapshotResult | null {
   return cached.snapshot;
 }
 
+// Entries only live 0.5 s (refs 5 s) but were only removed when the same URL was read
+// again, so every page visited left a full aria snapshot behind. Sweep on each write.
+function pruneSnapshotCaches(now: number): void {
+  for (const [key, entry] of elementSnapshotCache) {
+    if (now - entry.timestamp > CACHE_TTL_MS) elementSnapshotCache.delete(key);
+  }
+  for (const [key, entry] of refMetadataCache) {
+    if (now - entry.timestamp > CACHE_TTL_MS * 10) refMetadataCache.delete(key);
+  }
+}
+
 function setCachedSnapshot(page: Page, snapshot: AriaSnapshotResult): void {
+  pruneSnapshotCaches(Date.now());
   const key = getCacheKey(page);
   elementSnapshotCache.set(key, {
     snapshot,

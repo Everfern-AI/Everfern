@@ -4,7 +4,8 @@ import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence, Variants } from "framer-motion";
 import { ChevronLeft, Loader2, ArrowRight, Check } from "lucide-react";
-import { GlassShell, GlassTitle, GlassPill, stagger, rise, EASE } from "../components/onboarding/GlassShell";
+import { GlassShell, GlassTitle, GlassPill, stagger, rise, EASE, ONBOARDING_STEPS } from "../components/onboarding/GlassShell";
+import { secureSession } from "@/lib/secure-session";
 
 const containerVariants: Variants = {
     hidden: {},
@@ -58,7 +59,7 @@ export default function AuthPage() {
     // ── On mount: restore session from storage ─────────────────
     useEffect(() => {
         try {
-            const stored = localStorage.getItem(STORAGE_KEY);
+            const stored = secureSession.getItem(STORAGE_KEY);
             if (stored) {
                 const session: StoredSession = JSON.parse(stored);
                 setSignedInUser(session.user);
@@ -106,7 +107,7 @@ export default function AuthPage() {
                         refreshToken: data.refreshToken,
                         user: data.user,
                     };
-                    localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+                    secureSession.setItem(STORAGE_KEY, JSON.stringify(session));
                     setSignedInUser(data.user);
                     setGoogleWaiting(false);
                     if (pollRef.current) clearInterval(pollRef.current);
@@ -145,7 +146,7 @@ export default function AuthPage() {
     };
 
     const handleSignOut = () => {
-        localStorage.removeItem(STORAGE_KEY);
+        secureSession.removeItem(STORAGE_KEY);
         setSignedInUser(null);
         if ((window as any).electronAPI?.saveConfig) {
             (window as any).electronAPI.saveConfig({});
@@ -154,7 +155,7 @@ export default function AuthPage() {
 
     const handleContinueAsUser = async () => {
         if (signedInUser?.onboardingDone) {
-            const stored = localStorage.getItem(STORAGE_KEY);
+            const stored = secureSession.getItem(STORAGE_KEY);
             if (stored) {
                 try {
                     const session = JSON.parse(stored);
@@ -196,7 +197,7 @@ export default function AuthPage() {
     return (
         <GlassShell
             photo="lake"
-            progress={[2, 3]}
+            progress={[2, ONBOARDING_STEPS]}
             bottomLeft={
                 !signedInUser && !googleWaiting ? (
                     <button className="ef-chip-btn" onClick={() => router.push("/")}>
@@ -256,7 +257,7 @@ export default function AuthPage() {
 
                         <motion.div variants={rise} style={{ marginTop: 22, width: "100%" }}>
                             <button type="button" className="ef-pill ef-pill-light" style={{ width: "100%", height: 46, fontSize: 14.5 }} onClick={handleGoogleLogin} disabled={busy}>
-                                {isGoogleLoading ? <Loader2 size={16} className="animate-spin" /> : <img src="/images/logos/black-logo-withoutbg.png" alt="" width={22} height={22} style={{ transform: "scale(1.3)" }} />}
+                                {isGoogleLoading ? <Loader2 size={16} className="animate-spin" /> : <img src="/images/logos/everfern-withoutbg.png" alt="" width={22} height={22} style={{ transform: "scale(1.3)" }} />}
                                 Sign in with EverFern Cloud
                             </button>
                         </motion.div>
@@ -264,9 +265,9 @@ export default function AuthPage() {
                         <motion.div variants={rise} style={{ marginTop: 26, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
                             <button type="button" className="ef-skip" onClick={handleGuestLogin} disabled={busy}>
                                 {isGuestLoading ? <Loader2 size={13} className="animate-spin" /> : null}
-                                Skip, and lose performance
+                                Skip for now
                             </button>
-                            <span className="ef-note" style={{ fontSize: 11.5, opacity: 0.8 }}>
+                            <span className="ef-note">
                                 Bring your own API key or local model. Workers are only as good as the model you pick.
                             </span>
                         </motion.div>

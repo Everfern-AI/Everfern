@@ -1,11 +1,13 @@
 'use client';
-import { useDialogFocus } from "@/lib/use-dialog-focus";
+import { User as LuUser, Sparkles as LuSparkles, Wrench as LuWrench, CircleHelp as LuCircleHelp, Search as LuSearch, X as LuX, Mountain as LuMountain } from "lucide-react";
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '@/components/ThemeProvider';
+import McpServersSection from './components/McpServersSection';
 import {
     XMarkIcon,
+    InformationCircleIcon,
     CheckIcon,
     GlobeAltIcon,
     KeyIcon,
@@ -29,7 +31,6 @@ import {
     ExclamationTriangleIcon,
     ArrowPathIcon,
     PencilIcon,
-    PaintBrushIcon,
 } from '@heroicons/react/24/outline';
 import { ToolSettingsSection } from './components/ToolSettingsSection';
 import PdfOcrPanel from './components/PdfOcrPanel';
@@ -77,13 +78,15 @@ const MORE_PROVIDERS = [
     { id: 'huggingface', name: 'Hugging Face', Logo: ({ size = 18 }: any) => <Image unoptimized src="/images/ai-providers/hf-logo.svg" alt="Hugging Face" width={size} height={size} /> }
 ];
 
+/** Sections that apply changes immediately (or have their own buttons), so they get no Save/Cancel bar. */
+const INSTANT_SECTIONS = new Set(['profile', 'privacy', 'general', 'system', 'keybinds', 'memory', 'skills', 'tools', 'mcp', 'tool-permissions', 'dispatch', 'linux-vm', 'help']);
+
 export const navCategories = [
     {
         category: 'Account & System',
         items: [
             { id: 'profile', label: 'Profile', icon: UserCircleIcon, keywords: 'user name avatar email account tier plan cloud support' },
-            { id: 'general', label: 'General', icon: Cog6ToothIcon, keywords: 'theme dark light interface language default home view font typography sf pro segoe ui segueo customization' },
-            { id: 'customization', label: 'Customization', icon: PaintBrushIcon, keywords: 'customization font typography sf pro segoe ui segueo default theme appearance interface font-family font style text windows' },
+            { id: 'general', label: 'General', icon: Cog6ToothIcon, keywords: 'theme dark light interface language default home view' },
             { id: 'system', label: 'System & Hardware', icon: ComputerDesktopIcon, keywords: 'system hardware gpu cpu vram memory ram specs performance tps benchmarks models compatible compatibility accelerate huggingface' },
             { id: 'keybinds', label: 'Keybindings & Shortcuts', icon: CommandLineIcon, keywords: 'keyboard shortcuts keybinds hotkeys commands ctrl cmd bind key toggle' },
             { id: 'linux-vm', label: 'Linux VM', icon: ComputerDesktopIcon, keywords: 'wsl docker container ubuntu linux terminal environment sandbox' },
@@ -105,7 +108,8 @@ export const navCategories = [
     {
         category: 'Tools & Execution',
         items: [
-            { id: 'tools', label: 'Registered Tools', icon: ServerIcon, keywords: 'mcp tools registered bash python web filesystem terminal navis' },
+            { id: 'tools', label: 'Registered Tools', icon: ServerIcon, keywords: 'tools registered bash python web filesystem terminal navis' },
+            { id: 'mcp', label: 'MCP Servers', icon: ServerIcon, keywords: 'mcp model context protocol server connector integration plugin npx docker remote url claude desktop cursor' },
             { id: 'tool-settings', label: 'Tool Settings', icon: WrenchScrewdriverIcon, keywords: 'search tavily crawl fetch website web google duckduckgo' },
             { id: 'tool-permissions', label: 'Tool Permissions', icon: ShieldCheckIcon, keywords: 'security auto-approval rules permissions grants allow authorize' },
             { id: 'skills', label: 'Custom Skills', icon: BoltIcon, keywords: 'skill custom scripts functions instructions prompt workflow' },
@@ -124,23 +128,23 @@ const navSections = navCategories.flatMap(c => c.items);
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 const SectionTitle = ({ children }: { children: React.ReactNode }) => (
-    <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: 28, fontWeight: 400, color: 'var(--color-text-primary)', margin: '0 0 6px', letterSpacing: '-0.01em' }}>
+    <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: 17, fontWeight: 600, color: 'var(--color-text-primary)', margin: '4px 0 4px' }}>
         {children}
     </h2>
 );
 
 const SectionSubtitle = ({ children }: { children: React.ReactNode }) => (
-    <p style={{ fontSize: 14, color: 'var(--color-text-tertiary)', margin: '0 0 28px', lineHeight: 1.5 }}>{children}</p>
+    <p style={{ fontSize: 12.5, color: 'var(--color-text-tertiary)', margin: '0 0 18px', lineHeight: 1.5 }}>{children}</p>
 );
 
 const Card = ({ children, style = {} }: { children: React.ReactNode; style?: React.CSSProperties }) => (
-    <div style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', borderRadius: 16, padding: 24, marginBottom: 16, ...style }}>
+    <div style={{ backgroundColor: 'transparent', border: '1px solid var(--color-border)', borderRadius: 14, padding: 18, marginBottom: 12, ...style }}>
         {children}
     </div>
 );
 
 const Label = ({ children }: { children: React.ReactNode }) => (
-    <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+    <p style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 6 }}>
         {children}
     </p>
 );
@@ -433,7 +437,7 @@ const ToolPermissionsSection = () => {
     return (
         <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                <SectionTitle>Tool Permissions (Always Allow)</SectionTitle>
+                <SectionTitle>Tool Permissions</SectionTitle>
                 {policies.length > 0 && (
                     <button
                         onClick={handleClearAll}
@@ -643,8 +647,7 @@ const ToolPermissionsSection = () => {
                                                         backgroundColor: policy.type === 'exact' ? 'var(--color-bg-subtle)' : 'rgba(59, 130, 246, 0.1)',
                                                         color: policy.type === 'exact' ? 'var(--color-text-secondary)' : '#3b82f6',
                                                         border: policy.type === 'exact' ? '1px solid var(--color-border)' : '1px solid rgba(59, 130, 246, 0.2)',
-                                                        textTransform: 'uppercase', letterSpacing: '0.04em'
-                                                    }}>
+                                                        }}>
                                                         {policy.type} match
                                                     </span>
                                                 </div>
@@ -742,7 +745,7 @@ const LinuxVMSection = () => {
                 if (plat === 'darwin') {
                     const isInstalled = await (window as any).electronAPI?.system?.checkDocker?.();
                     if (isInstalled) {
-                        setWslStatus({ installed: true, healthy: true, osName: 'Docker (Ubuntu)', uptime: 'Active' });
+                        setWslStatus({ installed: true, healthy: true, osName: 'Alpine Linux (Docker)', uptime: 'Active' });
                         checkDeps();
                     } else {
                         setWslStatus({ installed: false, healthy: null });
@@ -777,11 +780,11 @@ const LinuxVMSection = () => {
                     const stepNum = data.step;
                     const stepPct = Math.min(100, Math.max(15, stepNum * 20));
                     const stepTitles: Record<number, string> = {
-                        1: "Initializing VM sandbox & resource limits...",
+                        1: "Starting the Alpine VM...",
                         2: "Verifying Python 3 & Node.js runtimes...",
-                        3: "Provisioning isolated virtualenv (~/.everfern/venv)...",
+                        3: "Setting up the shared Python environment (~/.everfern/venv)...",
                         4: "Installing pypdf, pandas, python-pptx, openpyxl, matplotlib, docx...",
-                        5: "Toolchain setup complete & verified ✓"
+                        5: "Toolchain set up and verified"
                     };
                     setDepsProgress({
                         percent: stepPct,
@@ -818,15 +821,15 @@ const LinuxVMSection = () => {
                 }
                 const res = await (window as any).electronAPI?.system?.setupDockerUbuntu?.();
                 if (res?.success) {
-                    setWslStatus({ installed: true, healthy: true, osName: 'Docker (Ubuntu)', uptime: 'Active (just now)' });
+                    setWslStatus({ installed: true, healthy: true, osName: 'Alpine Linux (Docker)', uptime: 'Active (just now)' });
                     checkDeps();
                 } else {
-                    setInstallError(res?.error || 'Failed to set up Docker Ubuntu container.');
+                    setInstallError(res?.error || 'Failed to set up the Alpine container in Docker.');
                 }
             } else {
                 const res = await (window as any).electronAPI?.system?.installWSL?.();
                 if (res?.success) {
-                    setWslStatus({ installed: true, healthy: true, osName: 'Ubuntu', uptime: 'Active (just now)' });
+                    setWslStatus({ installed: true, healthy: true, osName: 'Alpine Linux', uptime: 'Active (just now)' });
                     if (res.warning) setInstallWarning(res.warning);
                     checkDeps();
                 } else {
@@ -865,13 +868,13 @@ const LinuxVMSection = () => {
                 detail: 'Toolchain ready'
             });
             await checkDeps();
-            setDepsMessage('✓ All dependencies installed and ready!');
+            setDepsMessage('All dependencies are installed.');
             setTimeout(() => {
                 setDepsMessage('');
                 setDepsProgress({ percent: 0, step: 0, title: '', detail: '' });
             }, 4000);
         } catch (err: any) {
-            setDepsMessage(`✗ ${err?.message || 'Installation failed'}`);
+            setDepsMessage(`${err?.message || 'Installation failed'}`);
         } finally {
             setDepsInstalling(false);
         }
@@ -879,13 +882,13 @@ const LinuxVMSection = () => {
 
     return (
         <div style={{ animation: 'fadeIn 0.3s ease' }}>
-            <SectionTitle>Linux VM & Skill Environment</SectionTitle>
+            <SectionTitle>Linux VM</SectionTitle>
             <SectionSubtitle>
                 {platform === 'darwin'
-                    ? 'Manage the local Linux sandbox (Docker) and Python virtual environment used by EverFern for file skills, PDF processing, spreadsheets, and code execution.'
+                    ? 'EverFern runs code, PDF work, spreadsheets and skills in a small Alpine Linux VM inside Docker. It is the same VM workers use: each task gets its own workspace and user, and the Python and Node tools are installed once and shared.'
                     : platform === 'linux'
                     ? 'Manage the local Linux toolchain and Python virtual environment used by EverFern for advanced tasks and code execution.'
-                    : 'Manage the local Linux virtual machine (WSL 2) and Python virtual environment used by EverFern for advanced tasks, PDF generation, spreadsheets, and code execution.'}
+                    : 'EverFern runs code, PDF work, spreadsheets and skills in a small Alpine Linux VM on WSL 2. It is the same VM workers use: each task gets its own workspace and user, and the Python and Node tools are installed once and shared.'}
             </SectionSubtitle>
 
             {/* Sandbox VM Status */}
@@ -893,11 +896,9 @@ const LinuxVMSection = () => {
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                     <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width={20} height={20}>
-                                <path fill="#DD4814" d="M64 3.246C30.445 3.246 3.245 30.446 3.245 64c0 33.552 27.2 60.754 60.755 60.754 33.554 0 60.755-27.202 60.755-60.754 0-33.554-27.2-60.754-60.755-60.754zm13.631 20.922a8.108 8.108 0 1114.046 8.108A8.105 8.105 0 0180.6 35.243a8.11 8.11 0 01-2.969-11.075zM64 28.763c3.262 0 6.417.453 9.414 1.281a11.357 11.357 0 005.548 8.042 11.378 11.378 0 009.725.789c5.998 5.898 9.901 13.919 10.47 22.854l-11.558.17C86.532 49.796 76.377 40.306 64 40.306a23.6 23.6 0 00-9.98 2.203L48.383 32.41A35.116 35.116 0 0164 28.763zM22.689 72.112A8.112 8.112 0 0114.576 64a8.111 8.111 0 018.113-8.113 8.113 8.113 0 010 16.225zm7.191.722A11.377 11.377 0 0034.08 64c0-3.565-1.639-6.747-4.2-8.836 2.194-8.489 7.475-15.738 14.571-20.483l5.931 9.934C44.29 48.902 40.308 55.984 40.308 64s3.981 15.098 10.074 19.383l-5.931 9.937c-7.099-4.744-12.38-11.995-14.571-20.486zm58.831 33.964a8.105 8.105 0 01-11.077-2.969c-2.241-3.877-.911-8.835 2.969-11.076 3.877-2.239 8.838-.908 11.077 2.969a8.106 8.106 0 01-2.969 11.076zm-.024-17.673a11.357 11.357 0 00-9.725.788 11.36 11.36 0 00-5.547 8.042A35.232 35.232 0 0164 99.239a35.097 35.097 0 01-15.616-3.649l5.636-10.1A23.6 23.6 0 0064 87.694c12.378 0 22.532-9.488 23.596-21.592l11.561.169c-.569 8.935-4.472 16.956-10.47 22.854z"/>
-                            </svg>
+                            <LuMountain size={20} strokeWidth={1.75} color="#0D597F" />
                             <h3 style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-primary)', margin: 0 }}>
-                                {platform === 'darwin' ? 'Docker Container (Ubuntu)' : platform === 'linux' ? 'Linux Environment' : 'Windows Subsystem for Linux (Ubuntu)'}
+                                {platform === 'darwin' ? 'EverFern Alpine VM (Docker)' : platform === 'linux' ? 'Linux Environment' : 'EverFern Alpine VM (WSL 2)'}
                             </h3>
                             {wslStatus.installed === null ? (
                                 <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>Checking...</span>
@@ -914,10 +915,10 @@ const LinuxVMSection = () => {
                         <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)', margin: 0 }}>
                             {wslStatus.installed === false 
                                 ? (platform === 'darwin' 
-                                    ? 'Docker is required to run the Linux VM on macOS.'
+                                    ? 'Docker is needed to run the Alpine VM on macOS.'
                                     : platform === 'linux'
                                     ? 'A Linux environment is required for many tools to function properly.'
-                                    : 'A Linux VM (WSL) is required for many tools to function properly on Windows.')
+                                    : 'The Alpine VM is needed for code, PDFs and spreadsheets. It uses WSL 2 and does not touch your other Linux distros.')
                                 : wslStatus.osName ? `OS: ${wslStatus.osName}` : 'Virtual machine environment'}
                         </p>
                         {wslStatus.uptime && (
@@ -940,7 +941,7 @@ const LinuxVMSection = () => {
                                 opacity: isInstalling ? 0.7 : 1, transition: 'opacity 0.2s'
                             }}
                         >
-                            {isInstalling ? 'Installing...' : (platform === 'darwin' ? 'Set up Linux VM' : 'Install Linux VM')}
+                            {isInstalling ? 'Setting up...' : 'Set up Alpine VM'}
                         </button>
                     )}
                 </div>
@@ -966,7 +967,7 @@ const LinuxVMSection = () => {
                                 Skill Toolchain & Dependencies
                             </h3>
                             <p style={{ fontSize: 12.5, color: 'var(--color-text-tertiary)', margin: '4px 0 0 0' }}>
-                                Pre-installed Python virtual environment (<code>~/.everfern/venv</code>) and Node.js packages for document processing.
+                                Python (<code>~/.everfern/venv</code>) and Node.js packages inside the Alpine VM, shared by chat and workers.
                             </p>
                         </div>
                         <button
@@ -1062,7 +1063,7 @@ const LinuxVMSection = () => {
                                 </div>
                             </div>
                             <span style={{ fontSize: 11.5, fontWeight: 600, color: depsStatus?.pythonInstalled && depsStatus?.nodeInstalled && depsStatus?.venvReady ? '#10b981' : '#f59e0b' }}>
-                                {depsStatus?.pythonInstalled && depsStatus?.nodeInstalled && depsStatus?.venvReady ? '✓ Ready' : 'Incomplete'}
+                                {depsStatus?.pythonInstalled && depsStatus?.nodeInstalled && depsStatus?.venvReady ? 'Ready' : 'Incomplete'}
                             </span>
                         </div>
 
@@ -1086,7 +1087,7 @@ const LinuxVMSection = () => {
                                 </div>
                             </div>
                             <span style={{ fontSize: 11.5, fontWeight: 600, color: depsStatus?.pipPackagesInstalled ? '#10b981' : '#f59e0b' }}>
-                                {depsStatus?.pipPackagesInstalled ? '✓ Ready' : 'Incomplete'}
+                                {depsStatus?.pipPackagesInstalled ? 'Ready' : 'Incomplete'}
                             </span>
                         </div>
                     </div>
@@ -1243,7 +1244,7 @@ const DispatchSection = ({ isCloudUser }: { isCloudUser: boolean }) => {
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                     <SectionTitle>EverFern Dispatch</SectionTitle>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, backgroundColor: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Beta</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, backgroundColor: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', }}>Beta</span>
                 </div>
                 <SectionSubtitle>Control your desktop remotely from EverFern Cloud.</SectionSubtitle>
 
@@ -1254,26 +1255,26 @@ const DispatchSection = ({ isCloudUser }: { isCloudUser: boolean }) => {
                     gap: 12,
                     padding: '14px 16px',
                     borderRadius: 12,
-                    backgroundColor: 'rgba(245, 158, 11, 0.08)',
-                    border: '1px solid rgba(245, 158, 11, 0.25)',
+                    backgroundColor: 'var(--color-bg-subtle)',
+                    border: '1px solid var(--color-border)',
                     marginBottom: 20,
                 }}>
-                    <ExclamationTriangleIcon width={20} height={20} style={{ color: '#f59e0b', flexShrink: 0, marginTop: 2 }} />
+                    <InformationCircleIcon width={18} height={18} style={{ color: 'var(--color-text-tertiary)', flexShrink: 0, marginTop: 1 }} />
                     <div>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: '#f59e0b', marginBottom: 2 }}>
-                            Experimental Beta Feature
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 2 }}>
+                            Dispatch is in beta
                         </div>
                         <div style={{ fontSize: 12.5, color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
-                            EverFern Dispatch is currently in beta with known instability and connection issues. You may experience dropped sessions, latency, or out-of-sync states. We are actively refining remote dispatch reliability.
+                            Sessions can drop or fall out of sync. Keep important work local for now.
                         </div>
                     </div>
                 </div>
 
                 <Card style={{ textAlign: 'center', padding: '40px 20px' }}>
                     <ServerIcon width={48} height={48} style={{ color: 'var(--color-text-tertiary)', margin: '0 auto 16px' }} />
-                    <h3 style={{ fontSize: 18, color: 'var(--color-text-primary)', margin: '0 0 8px' }}>EverFern Cloud Required</h3>
+                    <h3 style={{ fontSize: 18, color: 'var(--color-text-primary)', margin: '0 0 8px' }}>Sign in to use Dispatch</h3>
                     <p style={{ fontSize: 14, color: 'var(--color-text-tertiary)', margin: '0 auto', maxWidth: 400, lineHeight: 1.5 }}>
-                        To use EverFern Dispatch, please log into EverFern Cloud in the <strong>Profile</strong> tab first.
+                        Dispatch runs through EverFern Cloud. Sign in from the <strong>Profile</strong> tab.
                     </p>
                 </Card>
             </motion.div>
@@ -1284,7 +1285,7 @@ const DispatchSection = ({ isCloudUser }: { isCloudUser: boolean }) => {
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                 <SectionTitle>EverFern Dispatch</SectionTitle>
-                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, backgroundColor: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Beta</span>
+                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, backgroundColor: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', }}>Beta</span>
             </div>
             <SectionSubtitle>Connect your desktop to EverFern Cloud to control it remotely.</SectionSubtitle>
 
@@ -1295,17 +1296,17 @@ const DispatchSection = ({ isCloudUser }: { isCloudUser: boolean }) => {
                 gap: 12,
                 padding: '14px 16px',
                 borderRadius: 12,
-                backgroundColor: 'rgba(245, 158, 11, 0.08)',
-                border: '1px solid rgba(245, 158, 11, 0.25)',
+                backgroundColor: 'var(--color-bg-subtle)',
+                border: '1px solid var(--color-border)',
                 marginBottom: 20,
             }}>
-                <ExclamationTriangleIcon width={20} height={20} style={{ color: '#f59e0b', flexShrink: 0, marginTop: 2 }} />
+                <InformationCircleIcon width={18} height={18} style={{ color: 'var(--color-text-tertiary)', flexShrink: 0, marginTop: 1 }} />
                 <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#f59e0b', marginBottom: 2 }}>
-                        Experimental Beta Feature — Known Issues & Active Development
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 2 }}>
+                        Dispatch is in beta
                     </div>
                     <div style={{ fontSize: 12.5, color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
-                        EverFern Dispatch is currently in active development and beta. You may encounter connection drops, high latency, or synchronization issues. We recommend keeping important sessions local while we work on stability improvements.
+                        Sessions can drop or fall out of sync. Keep important work local for now.
                     </div>
                 </div>
             </div>
@@ -1343,7 +1344,7 @@ const DispatchSection = ({ isCloudUser }: { isCloudUser: boolean }) => {
                     {(status === 'pending' || status === 'connected') && (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24, padding: '10px 0' }}>
                             <div style={{ textAlign: 'center' }}>
-                                <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700, marginBottom: 8 }}>
+                                <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)', fontWeight: 700, marginBottom: 8 }}>
                                     Your Dispatch PIN
                                 </p>
                                 <div style={{ fontSize: 42, letterSpacing: '0.2em', fontFamily: 'monospace', color: 'var(--color-text-primary)', fontWeight: 600, backgroundColor: 'var(--color-bg-subtle)', padding: '12px 32px', borderRadius: 16 }}>
@@ -1446,8 +1447,6 @@ interface SettingsPageProps {
     setSettingsCustomModel: (v: string) => void;
     settingsShowuiUrl: string;
     setSettingsShowuiUrl: (v: string) => void;
-    settingsVlmEnabled: boolean;
-    setSettingsVlmEnabled: (v: boolean) => void;
     settingsVlmMode: 'local' | 'cloud';
     setSettingsVlmMode: React.Dispatch<React.SetStateAction<'local' | 'cloud'>>;
     settingsVlmCloudProvider: string;
@@ -1604,7 +1603,7 @@ const SystemHardwareSection: React.FC = () => {
                         return;
                     }
                 } catch (ipcErr) {
-                    console.warn('[EverFern] IPC query failed:', ipcErr);
+                    console.warn('[EverFern] ⚠️ IPC query failed:', ipcErr);
                 }
             }
 
@@ -1880,7 +1879,7 @@ const SystemHardwareSection: React.FC = () => {
                             <GraphicsCardIcon size={24} />
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 2 }}>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', marginBottom: 2 }}>
                                 Graphics Processor
                             </div>
                             <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -1925,7 +1924,7 @@ const SystemHardwareSection: React.FC = () => {
                             <CpuChipIcon width={24} height={24} />
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 2 }}>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', marginBottom: 2 }}>
                                 System CPU &amp; Memory
                             </div>
                             <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -2072,7 +2071,7 @@ const SystemHardwareSection: React.FC = () => {
                                     transition: 'all 0.15s'
                                 }}
                             >
-                                {st === 'all' ? 'All Models' : st === 'full_gpu' ? 'Full GPU' : st === 'cpu_offload' ? 'CPU Offload' : 'Cloud'}
+                                {st === 'all' ? 'All Models' : st === 'full_gpu' ? 'Full GPU' : st === 'cpu_offload' ? 'CPU offload' : 'Cloud'}
                             </button>
                         ))}
                     </div>
@@ -2185,7 +2184,6 @@ export default function SettingsPage({
     settingsApiKey, setSettingsApiKey,
     settingsCustomModel, setSettingsCustomModel,
     settingsShowuiUrl, setSettingsShowuiUrl,
-    settingsVlmEnabled, setSettingsVlmEnabled,
     settingsVlmMode, setSettingsVlmMode,
     settingsVlmCloudProvider, setSettingsVlmCloudProvider,
     settingsVlmCloudModel, setSettingsVlmCloudModel,
@@ -2203,8 +2201,7 @@ export default function SettingsPage({
     handleSaveSettings,
     onOpenVlmOnboarding,
 }: SettingsPageProps) {
-    const dialogRef = useDialogFocus<HTMLDivElement>(true, onClose);
-    const { theme, setTheme, font, setFont } = useTheme();
+    const { theme, setTheme } = useTheme();
     const [activeSection, setActiveSection] = useState(initialSection || 'general');
     const [showStarPopup, setShowStarPopup] = useState(false);
 
@@ -2238,23 +2235,6 @@ export default function SettingsPage({
         } else {
             onOpenVlmOnboarding();
         }
-    };
-
-    const handleVisionEnabledChange = async (nextEnabled: boolean) => {
-        if (!nextEnabled) {
-            setSettingsVlmEnabled(false);
-            return;
-        }
-
-        if (settingsVlmMode === 'local') {
-            const status = await (window as any).electronAPI?.system?.ollamaStatus?.();
-            if (!status?.installed || !status?.modelInstalled) {
-                setSettingsVlmEnabled(false);
-                await handleVisionLocalSetup();
-                return;
-            }
-        }
-        setSettingsVlmEnabled(true);
     };
     const [soul, setSoul] = useState('');
     const [agents, setAgents] = useState('');
@@ -2299,8 +2279,8 @@ export default function SettingsPage({
     };
     const [toastState, setToastState] = useState<'idle' | 'saving' | 'saved'>('idle');
     const [settingsSearch, setSettingsSearch] = useState('');
-    const [profileName, setProfileName] = useState(username || 'User');
-    const [displayName, setDisplayName] = useState(username || 'User');
+    const [profileName, setProfileName] = useState(username || '');
+    const [displayName, setDisplayName] = useState(username || '');
     const [preferences, setPreferences] = useState('');
     const [workFunction, setWorkFunction] = useState('');
     const [isSavingProfile, setIsSavingProfile] = useState<boolean>(false);
@@ -2366,10 +2346,6 @@ export default function SettingsPage({
     const [showVectorsModal, setShowVectorsModal] = useState(false);
     const [vectorsData, setVectorsData] = useState<any[]>([]);
     const [loadingVectors, setLoadingVectors] = useState(false);
-    const [showWipeConfirm, setShowWipeConfirm] = useState(false);
-    const [wipePhrase, setWipePhrase] = useState('');
-    // Must match main/ipc/system/window-fs-handlers WIPE_ACCOUNT_CONFIRM_PHRASE (renderer can't import main's constant).
-    const WIPE_CONFIRM_PHRASE = 'DELETE MY DATA';
     const router = useRouter();
 
     // ── Local Model Discovery & Benchmark State ──────────────────────────────
@@ -2407,7 +2383,7 @@ export default function SettingsPage({
                         setRecommendedLocalModels(res.recommendedModels);
                     }
                     if (!res.running) {
-                        setLocalProviderError(res.error || `${curProv === 'llamacpp' ? 'llama.cpp' : curProv === 'lmstudio' ? 'LM Studio' : 'Ollama'} is not reachable.`);
+                        setLocalProviderError(res.error || `${curProv === 'lmstudio' ? 'LM Studio' : 'Ollama'} is not reachable.`);
                     }
                     return;
                 }
@@ -2432,17 +2408,15 @@ export default function SettingsPage({
                     ...cur,
                     engine: 'local',
                     provider: settingsProvider || 'ollama',
-                    ...(settingsProvider === 'llamacpp' && { apiKey: '' }),
                     model: modelName,
-                    baseUrl: settingsApiKey?.trim() || (settingsProvider === 'llamacpp' ? 'http://localhost:8080/v1' : settingsProvider === 'lmstudio' ? 'http://localhost:1234/v1' : 'http://localhost:11434')
+                    baseUrl: settingsApiKey?.trim() || (settingsProvider === 'lmstudio' ? 'http://localhost:1234/v1' : 'http://localhost:11434')
                 });
             }
             if ((window as any).electronAPI?.agent?.setProvider) {
                 await (window as any).electronAPI.agent.setProvider({
                     provider: settingsProvider || 'ollama',
-                    ...(settingsProvider === 'llamacpp' && { apiKey: '' }),
                     model: modelName,
-                    baseUrl: settingsApiKey?.trim() || (settingsProvider === 'llamacpp' ? 'http://localhost:8080/v1' : settingsProvider === 'lmstudio' ? 'http://localhost:1234/v1' : 'http://localhost:11434')
+                    baseUrl: settingsApiKey?.trim() || (settingsProvider === 'lmstudio' ? 'http://localhost:1234/v1' : 'http://localhost:11434')
                 });
             }
         } catch (err) {
@@ -2702,12 +2676,9 @@ export default function SettingsPage({
                 if (!name && (window as any).electronAPI?.system?.getUsername) {
                     name = await (window as any).electronAPI.system.getUsername();
                 }
-                if (!dispName) {
-                    dispName = name || "User";
-                }
-                if (!name) {
-                    name = "User";
-                }
+                // Leave the fields empty rather than filling in a fake "User"; the placeholders say what goes there.
+                if (!dispName) dispName = name || "";
+                if (!name) name = "";
 
                 setProfileName(name);
                 setDisplayName(dispName);
@@ -2720,524 +2691,7 @@ export default function SettingsPage({
         fetchProfileData();
     }, []);
 
-    // ── Theme Selector Cards ──────────────────────────────────────────────────
-    const ThemeSelectorCards = () => (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginTop: 8, marginBottom: 12 }}>
-            {/* Light Mode Selector Card */}
-            <div 
-                onClick={() => setTheme('light')}
-                style={{ 
-                    border: `2px solid ${theme === 'light' ? 'var(--color-accent)' : 'var(--color-border)'}`, 
-                    borderRadius: 16, 
-                    padding: 16, 
-                    cursor: 'pointer',
-                    backgroundColor: 'var(--color-bg-surface)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 12,
-                    transition: 'all 0.2s ease',
-                    boxShadow: theme === 'light' ? '0 4px 12px rgba(20, 184, 166, 0.1)' : 'none'
-                }}
-            >
-                {/* Mini Window Mockup */}
-                <div style={{ 
-                    backgroundColor: '#f5f4f0', 
-                    border: '1px solid #e8e6d9', 
-                    borderRadius: 8, 
-                    height: 100, 
-                    display: 'flex', 
-                    flexDirection: 'column', 
-                    overflow: 'hidden',
-                    userSelect: 'none'
-                }}>
-                    {/* Mock Title Bar */}
-                    <div style={{ display: 'flex', gap: 4, padding: '6px 8px', borderBottom: '1px solid #e8e6d9', backgroundColor: '#fcfcfb' }}>
-                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#ff5f56' }} />
-                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#ffbd2e' }} />
-                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#27c93f' }} />
-                    </div>
-                    {/* Mock Layout */}
-                    <div style={{ display: 'flex', flex: 1 }}>
-                        {/* Mock Sidebar */}
-                        <div style={{ width: '25%', borderRight: '1px solid #e8e6d9', backgroundColor: '#f5f4f0', padding: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            <div style={{ width: '100%', height: 6, backgroundColor: '#e8e6d9', borderRadius: 2 }} />
-                            <div style={{ width: '80%', height: 4, backgroundColor: '#e8e6d9', borderRadius: 2 }} />
-                            <div style={{ width: '90%', height: 4, backgroundColor: '#e8e6d9', borderRadius: 2 }} />
-                        </div>
-                        {/* Mock Content / Chat */}
-                        <div style={{ flex: 1, backgroundColor: '#ffffff', padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                            <div style={{ alignSelf: 'flex-end', backgroundColor: '#edeacc', border: '1px solid #e0ddbc', borderRadius: 6, padding: '3px 6px', width: '60%' }}>
-                                <div style={{ width: '100%', height: 3, backgroundColor: '#4a4846', borderRadius: 1 }} />
-                            </div>
-                            <div style={{ alignSelf: 'flex-start', backgroundColor: '#ffffff', border: '1px solid #e8e6d9', borderRadius: 6, padding: '3px 6px', width: '70%' }}>
-                                <div style={{ width: '100%', height: 3, backgroundColor: '#8a8886', borderRadius: 1 }} />
-                                <div style={{ width: '60%', height: 3, backgroundColor: '#8a8886', borderRadius: 1, marginTop: 2 }} />
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                {/* Radio Button Selector */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div style={{
-                        width: 18,
-                        height: 18,
-                        borderRadius: '50%',
-                        border: `2px solid ${theme === 'light' ? 'var(--color-accent)' : 'var(--color-border-strong)'}`,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        transition: 'all 0.2s'
-                    }}>
-                        {theme === 'light' && (
-                            <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: 'var(--color-accent)' }} />
-                        )}
-                    </div>
-                    <span style={{ fontSize: 13, fontWeight: theme === 'light' ? 600 : 500, color: 'var(--color-text-primary)' }}>Light (Beach)</span>
-                </div>
-            </div>
-
-            {/* Dark Mode Selector Card */}
-            <div 
-                onClick={() => setTheme('dark')}
-                style={{ 
-                    border: `2px solid ${theme === 'dark' ? 'var(--color-accent)' : 'var(--color-border)'}`, 
-                    borderRadius: 16, 
-                    padding: 16, 
-                    cursor: 'pointer',
-                    backgroundColor: 'var(--color-bg-surface)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 12,
-                    transition: 'all 0.2s ease',
-                    boxShadow: theme === 'dark' ? '0 4px 12px rgba(20, 184, 166, 0.15)' : 'none'
-                }}
-            >
-                {/* Mini Window Mockup */}
-                <div style={{ 
-                    backgroundColor: '#22201b', 
-                    border: '1px solid #333029', 
-                    borderRadius: 8, 
-                    height: 100, 
-                    display: 'flex', 
-                    flexDirection: 'column', 
-                    overflow: 'hidden',
-                    userSelect: 'none'
-                }}>
-                    {/* Mock Title Bar */}
-                    <div style={{ display: 'flex', gap: 4, padding: '6px 8px', borderBottom: '1px solid #333029', backgroundColor: '#181714' }}>
-                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#ff5f56' }} />
-                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#ffbd2e' }} />
-                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#27c93f' }} />
-                    </div>
-                    {/* Mock Layout */}
-                    <div style={{ display: 'flex', flex: 1 }}>
-                        {/* Mock Sidebar */}
-                        <div style={{ width: '25%', borderRight: '1px solid #333029', backgroundColor: '#22201b', padding: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            <div style={{ width: '100%', height: 6, backgroundColor: '#333029', borderRadius: 2 }} />
-                            <div style={{ width: '80%', height: 4, backgroundColor: '#333029', borderRadius: 2 }} />
-                            <div style={{ width: '90%', height: 4, backgroundColor: '#333029', borderRadius: 2 }} />
-                        </div>
-                        {/* Mock Content / Chat */}
-                        <div style={{ flex: 1, backgroundColor: '#181714', padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                            <div style={{ alignSelf: 'flex-end', backgroundColor: '#2d2a20', border: '1px solid #3e3a2c', borderRadius: 6, padding: '3px 6px', width: '60%' }}>
-                                <div style={{ width: '100%', height: 3, backgroundColor: '#c2c0b8', borderRadius: 1 }} />
-                            </div>
-                            <div style={{ alignSelf: 'flex-start', backgroundColor: '#181714', border: '1px solid #333029', borderRadius: 6, padding: '3px 6px', width: '70%' }}>
-                                <div style={{ width: '100%', height: 3, backgroundColor: '#96948d', borderRadius: 1 }} />
-                                <div style={{ width: '60%', height: 3, backgroundColor: '#96948d', borderRadius: 1, marginTop: 2 }} />
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                {/* Radio Button Selector */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div style={{
-                        width: 18,
-                        height: 18,
-                        borderRadius: '50%',
-                        border: `2px solid ${theme === 'dark' ? 'var(--color-accent)' : 'var(--color-border-strong)'}`,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        transition: 'all 0.2s'
-                    }}>
-                        {theme === 'dark' && (
-                            <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: 'var(--color-accent)' }} />
-                        )}
-                    </div>
-                    <span style={{ fontSize: 13, fontWeight: theme === 'dark' ? 600 : 500, color: 'var(--color-text-primary)' }}>Dark (Charcoal)</span>
-                </div>
-            </div>
-        </div>
-    );
-
-    // ── Font Selector Component ────────────────────────────────────────────────
-    const FontSelector = () => {
-        const activeFontName = font === 'sf-pro' ? 'SF Pro Display Active' : font === 'segoe-ui' ? 'Segoe UI Active' : 'Default (Figtree) Active';
-        const activeFontFamily = font === 'sf-pro' ? "'SF Pro Display', 'SF Pro', -apple-system, sans-serif" : font === 'segoe-ui' ? "'Segoe UI', 'Segoe UI Variable', -apple-system, BlinkMacSystemFont, Roboto, sans-serif" : "'Figtree', 'Inter', sans-serif";
-
-        return (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 16 }}>
-                    {/* Default Font Option */}
-                    <div
-                        onClick={() => setFont('default')}
-                        style={{
-                            border: `2px solid ${font === 'default' ? 'var(--color-accent)' : 'var(--color-border)'}`,
-                            borderRadius: 16,
-                            padding: 16,
-                            cursor: 'pointer',
-                            backgroundColor: 'var(--color-bg-surface)',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: 12,
-                            transition: 'all 0.2s ease',
-                            boxShadow: font === 'default' ? '0 4px 16px rgba(20, 184, 166, 0.12)' : 'none',
-                        }}
-                    >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <div style={{
-                                    width: 34,
-                                    height: 34,
-                                    borderRadius: 10,
-                                    backgroundColor: font === 'default' ? 'var(--color-accent-dim)' : 'var(--color-bg-subtle)',
-                                    color: font === 'default' ? 'var(--color-accent)' : 'var(--color-text-secondary)',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    fontFamily: "'Figtree', 'Inter', sans-serif",
-                                    fontWeight: 600,
-                                    fontSize: 15
-                                }}>
-                                    Aa
-                                </div>
-                                <div>
-                                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>
-                                        Default
-                                    </div>
-                                    <div style={{ fontSize: 11.5, color: 'var(--color-text-tertiary)' }}>
-                                        Figtree & Inter
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div style={{
-                                width: 18,
-                                height: 18,
-                                borderRadius: '50%',
-                                border: `2px solid ${font === 'default' ? 'var(--color-accent)' : 'var(--color-border-strong)'}`,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                transition: 'all 0.2s'
-                            }}>
-                                {font === 'default' && (
-                                    <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: 'var(--color-accent)' }} />
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Preview Box */}
-                        <div style={{
-                            padding: '10px 12px',
-                            borderRadius: 10,
-                            backgroundColor: 'var(--color-bg-subtle)',
-                            border: '1px solid var(--color-border)',
-                            fontFamily: "'Figtree', 'Inter', -apple-system, sans-serif"
-                        }}>
-                            <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)', marginBottom: 2 }}>
-                                The quick brown fox jumps
-                            </div>
-                            <div style={{ fontSize: 11.5, color: 'var(--color-text-secondary)', lineHeight: 1.4 }}>
-                                Modern geometric sans-serif for balanced clarity.
-                            </div>
-                            <div style={{ fontSize: 10.5, color: 'var(--color-text-tertiary)', marginTop: 4, letterSpacing: '0.03em' }}>
-                                0123456789 • ABCDEFGH
-                            </div>
-                        </div>
-
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-                            <span style={{
-                                display: 'inline-block',
-                                padding: '2px 7px',
-                                borderRadius: 6,
-                                backgroundColor: font === 'default' ? 'var(--color-accent-dim)' : 'var(--color-bg-subtle)',
-                                color: font === 'default' ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
-                                fontWeight: 600,
-                                fontSize: 10
-                            }}>
-                                STANDARD
-                            </span>
-                            <span style={{ fontSize: 11 }}>Balanced UI</span>
-                        </div>
-                    </div>
-
-                    {/* SF Pro Display Option */}
-                    <div
-                        onClick={() => setFont('sf-pro')}
-                        style={{
-                            border: `2px solid ${font === 'sf-pro' ? 'var(--color-accent)' : 'var(--color-border)'}`,
-                            borderRadius: 16,
-                            padding: 16,
-                            cursor: 'pointer',
-                            backgroundColor: 'var(--color-bg-surface)',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: 12,
-                            transition: 'all 0.2s ease',
-                            boxShadow: font === 'sf-pro' ? '0 4px 16px rgba(20, 184, 166, 0.12)' : 'none',
-                        }}
-                    >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <div style={{
-                                    width: 34,
-                                    height: 34,
-                                    borderRadius: 10,
-                                    backgroundColor: font === 'sf-pro' ? 'var(--color-accent-dim)' : 'var(--color-bg-subtle)',
-                                    color: font === 'sf-pro' ? 'var(--color-accent)' : 'var(--color-text-secondary)',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    fontFamily: "'SF Pro Display', 'SF Pro', -apple-system, sans-serif",
-                                    fontWeight: 400,
-                                    fontSize: 15
-                                }}>
-                                    Aa
-                                </div>
-                                <div>
-                                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>
-                                        SF Pro
-                                    </div>
-                                    <div style={{ fontSize: 11.5, color: 'var(--color-text-tertiary)' }}>
-                                        Apple San Francisco
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div style={{
-                                width: 18,
-                                height: 18,
-                                borderRadius: '50%',
-                                border: `2px solid ${font === 'sf-pro' ? 'var(--color-accent)' : 'var(--color-border-strong)'}`,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                transition: 'all 0.2s'
-                            }}>
-                                {font === 'sf-pro' && (
-                                    <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: 'var(--color-accent)' }} />
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Preview Box */}
-                        <div style={{
-                            padding: '10px 12px',
-                            borderRadius: 10,
-                            backgroundColor: 'var(--color-bg-subtle)',
-                            border: '1px solid var(--color-border)',
-                            fontFamily: "'SF Pro Display', 'SF Pro', -apple-system, BlinkMacSystemFont, sans-serif"
-                        }}>
-                            <div style={{ fontSize: 13, fontWeight: 400, color: 'var(--color-text-primary)', marginBottom: 2 }}>
-                                The quick brown fox jumps
-                            </div>
-                            <div style={{ fontSize: 11.5, color: 'var(--color-text-secondary)', lineHeight: 1.4 }}>
-                                Apple's crisp design typography with natural regular weight.
-                            </div>
-                            <div style={{ fontSize: 10.5, color: 'var(--color-text-tertiary)', marginTop: 4, letterSpacing: '0.03em' }}>
-                                0123456789 • ABCDEFGH
-                            </div>
-                        </div>
-
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-                            <span style={{
-                                display: 'inline-block',
-                                padding: '2px 7px',
-                                borderRadius: 6,
-                                backgroundColor: font === 'sf-pro' ? 'var(--color-accent-dim)' : 'var(--color-bg-subtle)',
-                                color: font === 'sf-pro' ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
-                                fontWeight: 600,
-                                fontSize: 10
-                            }}>
-                                APPLE NATIVE
-                            </span>
-                            <span style={{ fontSize: 11 }}>Regular weight</span>
-                        </div>
-                    </div>
-
-                    {/* Segoe UI Option */}
-                    <div
-                        onClick={() => setFont('segoe-ui')}
-                        style={{
-                            border: `2px solid ${font === 'segoe-ui' ? 'var(--color-accent)' : 'var(--color-border)'}`,
-                            borderRadius: 16,
-                            padding: 16,
-                            cursor: 'pointer',
-                            backgroundColor: 'var(--color-bg-surface)',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: 12,
-                            transition: 'all 0.2s ease',
-                            boxShadow: font === 'segoe-ui' ? '0 4px 16px rgba(20, 184, 166, 0.12)' : 'none',
-                        }}
-                    >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <div style={{
-                                    width: 34,
-                                    height: 34,
-                                    borderRadius: 10,
-                                    backgroundColor: font === 'segoe-ui' ? 'var(--color-accent-dim)' : 'var(--color-bg-subtle)',
-                                    color: font === 'segoe-ui' ? 'var(--color-accent)' : 'var(--color-text-secondary)',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    fontFamily: "'Segoe UI', 'Segoe UI Variable', sans-serif",
-                                    fontWeight: 400,
-                                    fontSize: 15
-                                }}>
-                                    Aa
-                                </div>
-                                <div>
-                                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>
-                                        Segoe UI
-                                    </div>
-                                    <div style={{ fontSize: 11.5, color: 'var(--color-text-tertiary)' }}>
-                                        Microsoft Windows
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div style={{
-                                width: 18,
-                                height: 18,
-                                borderRadius: '50%',
-                                border: `2px solid ${font === 'segoe-ui' ? 'var(--color-accent)' : 'var(--color-border-strong)'}`,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                transition: 'all 0.2s'
-                            }}>
-                                {font === 'segoe-ui' && (
-                                    <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: 'var(--color-accent)' }} />
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Preview Box */}
-                        <div style={{
-                            padding: '10px 12px',
-                            borderRadius: 10,
-                            backgroundColor: 'var(--color-bg-subtle)',
-                            border: '1px solid var(--color-border)',
-                            fontFamily: "'Segoe UI', 'Segoe UI Variable', -apple-system, BlinkMacSystemFont, Roboto, sans-serif"
-                        }}>
-                            <div style={{ fontSize: 13, fontWeight: 400, color: 'var(--color-text-primary)', marginBottom: 2 }}>
-                                The quick brown fox jumps
-                            </div>
-                            <div style={{ fontSize: 11.5, color: 'var(--color-text-secondary)', lineHeight: 1.4 }}>
-                                Ergonomic Windows and Fluent Design system typeface.
-                            </div>
-                            <div style={{ fontSize: 10.5, color: 'var(--color-text-tertiary)', marginTop: 4, letterSpacing: '0.03em' }}>
-                                0123456789 • ABCDEFGH
-                            </div>
-                        </div>
-
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-                            <span style={{
-                                display: 'inline-block',
-                                padding: '2px 7px',
-                                borderRadius: 6,
-                                backgroundColor: font === 'segoe-ui' ? 'var(--color-accent-dim)' : 'var(--color-bg-subtle)',
-                                color: font === 'segoe-ui' ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
-                                fontWeight: 600,
-                                fontSize: 10
-                            }}>
-                                WINDOWS NATIVE
-                            </span>
-                            <span style={{ fontSize: 11 }}>Fluent Typography</span>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Interactive Live Preview Box */}
-                <div style={{
-                    marginTop: 4,
-                    padding: '16px 20px',
-                    borderRadius: 14,
-                    backgroundColor: 'var(--color-bg-subtle)',
-                    border: '1px solid var(--color-border)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 10
-                }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                            Live Typography Preview
-                        </span>
-                        <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-accent)' }}>
-                            {activeFontName}
-                        </span>
-                    </div>
-                    <div style={{
-                        fontFamily: activeFontFamily
-                    }}>
-                        <h4 style={{ fontSize: 17, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 4px', letterSpacing: '-0.01em' }}>
-                            Autonomous AI Workplace Intelligence
-                        </h4>
-                        <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: '0 0 10px', lineHeight: 1.5, fontWeight: 400 }}>
-                            EverFern pairs local reasoning engines with persistent memory graphs to orchestrate complex developer and workplace workflows.
-                        </p>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-                            <span style={{ padding: '3px 10px', borderRadius: 6, backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)' }}>
-                                v1.2.0 Production
-                            </span>
-                            <span style={{ padding: '3px 10px', borderRadius: 6, backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', fontSize: 12, color: 'var(--color-text-secondary)' }}>
-                                120 tokens/sec
-                            </span>
-                            <span style={{ padding: '3px 10px', borderRadius: 6, backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border)', fontSize: 12, color: 'var(--color-text-secondary)' }}>
-                                Sub-pixel ClearType & Antialiasing
-                            </span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        );
-    };
-
-    // ── Customization Section ──────────────────────────────────────────────────
-    const CustomizationSection = () => (
-        <div>
-            <SectionTitle>Customization</SectionTitle>
-            <SectionSubtitle>Personalize EverFern's typography, appearance, and visual styling.</SectionSubtitle>
-
-            <Card>
-                <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 6px' }}>
-                    Interface Typography
-                </h3>
-                <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)', margin: '0 0 18px', lineHeight: 1.4 }}>
-                    Choose the font family used across the application interface, code snippets, and chat sessions.
-                </p>
-                <FontSelector />
-            </Card>
-
-            <Card>
-                <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 16px' }}>
-                    Appearance & Theme
-                </h3>
-                <div>
-                    <Label>App Theme</Label>
-                    <ThemeSelectorCards />
-                </div>
-            </Card>
-        </div>
-    );
-
-    // ── General Section ────────────────────────────────────────────────────────
+    // ── General ───────────────────────────────────────────────────────────────
     const GeneralSection = () => (
         <div>
             <SectionTitle>General</SectionTitle>
@@ -3245,14 +2699,158 @@ export default function SettingsPage({
 
             <Card>
                 <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 16px' }}>Interface</h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                     <div>
                         <Label>App Theme</Label>
-                        <ThemeSelectorCards />
-                    </div>
-                    <div>
-                        <Label>App Font</Label>
-                        <FontSelector />
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginTop: 8, marginBottom: 12 }}>
+                            {/* Light Mode Selector Card */}
+                            <div 
+                                onClick={() => setTheme('light')}
+                                style={{ 
+                                    border: `2px solid ${theme === 'light' ? 'var(--color-accent)' : 'var(--color-border)'}`, 
+                                    borderRadius: 16, 
+                                    padding: 16, 
+                                    cursor: 'pointer',
+                                    backgroundColor: 'var(--color-bg-surface)',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 12,
+                                    transition: 'all 0.2s ease',
+                                    boxShadow: theme === 'light' ? '0 4px 12px rgba(20, 184, 166, 0.1)' : 'none'
+                                }}
+                            >
+                                {/* Mini Window Mockup */}
+                                <div style={{ 
+                                    backgroundColor: '#f5f4f0', 
+                                    border: '1px solid #e8e6d9', 
+                                    borderRadius: 8, 
+                                    height: 100, 
+                                    display: 'flex', 
+                                    flexDirection: 'column', 
+                                    overflow: 'hidden',
+                                    userSelect: 'none'
+                                }}>
+                                    {/* Mock Title Bar */}
+                                    <div style={{ display: 'flex', gap: 4, padding: '6px 8px', borderBottom: '1px solid #e8e6d9', backgroundColor: '#fcfcfb' }}>
+                                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#ff5f56' }} />
+                                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#ffbd2e' }} />
+                                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#27c93f' }} />
+                                    </div>
+                                    {/* Mock Layout */}
+                                    <div style={{ display: 'flex', flex: 1 }}>
+                                        {/* Mock Sidebar */}
+                                        <div style={{ width: '25%', borderRight: '1px solid #e8e6d9', backgroundColor: '#f5f4f0', padding: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                            <div style={{ width: '100%', height: 6, backgroundColor: '#e8e6d9', borderRadius: 2 }} />
+                                            <div style={{ width: '80%', height: 4, backgroundColor: '#e8e6d9', borderRadius: 2 }} />
+                                            <div style={{ width: '90%', height: 4, backgroundColor: '#e8e6d9', borderRadius: 2 }} />
+                                        </div>
+                                        {/* Mock Content / Chat */}
+                                        <div style={{ flex: 1, backgroundColor: '#ffffff', padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                            <div style={{ alignSelf: 'flex-end', backgroundColor: '#edeacc', border: '1px solid #e0ddbc', borderRadius: 6, padding: '3px 6px', width: '60%' }}>
+                                                <div style={{ width: '100%', height: 3, backgroundColor: '#4a4846', borderRadius: 1 }} />
+                                            </div>
+                                            <div style={{ alignSelf: 'flex-start', backgroundColor: '#ffffff', border: '1px solid #e8e6d9', borderRadius: 6, padding: '3px 6px', width: '70%' }}>
+                                                <div style={{ width: '100%', height: 3, backgroundColor: '#8a8886', borderRadius: 1 }} />
+                                                <div style={{ width: '60%', height: 3, backgroundColor: '#8a8886', borderRadius: 1, marginTop: 2 }} />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                {/* Radio Button Selector */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <div style={{
+                                        width: 18,
+                                        height: 18,
+                                        borderRadius: '50%',
+                                        border: `2px solid ${theme === 'light' ? 'var(--color-accent)' : 'var(--color-border-strong)'}`,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        transition: 'all 0.2s'
+                                    }}>
+                                        {theme === 'light' && (
+                                            <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: 'var(--color-accent)' }} />
+                                        )}
+                                    </div>
+                                    <span style={{ fontSize: 13, fontWeight: theme === 'light' ? 600 : 500, color: 'var(--color-text-primary)' }}>Light (Beach)</span>
+                                </div>
+                            </div>
+
+                            {/* Dark Mode Selector Card */}
+                            <div 
+                                onClick={() => setTheme('dark')}
+                                style={{ 
+                                    border: `2px solid ${theme === 'dark' ? 'var(--color-accent)' : 'var(--color-border)'}`, 
+                                    borderRadius: 16, 
+                                    padding: 16, 
+                                    cursor: 'pointer',
+                                    backgroundColor: 'var(--color-bg-surface)',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 12,
+                                    transition: 'all 0.2s ease',
+                                    boxShadow: theme === 'dark' ? '0 4px 12px rgba(20, 184, 166, 0.15)' : 'none'
+                                }}
+                            >
+                                {/* Mini Window Mockup */}
+                                <div style={{ 
+                                    backgroundColor: '#22201b', 
+                                    border: '1px solid #333029', 
+                                    borderRadius: 8, 
+                                    height: 100, 
+                                    display: 'flex', 
+                                    flexDirection: 'column', 
+                                    overflow: 'hidden',
+                                    userSelect: 'none'
+                                }}>
+                                    {/* Mock Title Bar */}
+                                    <div style={{ display: 'flex', gap: 4, padding: '6px 8px', borderBottom: '1px solid #333029', backgroundColor: '#181714' }}>
+                                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#ff5f56' }} />
+                                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#ffbd2e' }} />
+                                        <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#27c93f' }} />
+                                    </div>
+                                    {/* Mock Layout */}
+                                    <div style={{ display: 'flex', flex: 1 }}>
+                                        {/* Mock Sidebar */}
+                                        <div style={{ width: '25%', borderRight: '1px solid #333029', backgroundColor: '#22201b', padding: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                            <div style={{ width: '100%', height: 6, backgroundColor: '#333029', borderRadius: 2 }} />
+                                            <div style={{ width: '80%', height: 4, backgroundColor: '#333029', borderRadius: 2 }} />
+                                            <div style={{ width: '90%', height: 4, backgroundColor: '#333029', borderRadius: 2 }} />
+                                        </div>
+                                        {/* Mock Content / Chat */}
+                                        <div style={{ flex: 1, backgroundColor: '#181714', padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                            <div style={{ alignSelf: 'flex-end', backgroundColor: '#2d2a20', border: '1px solid #3e3a2c', borderRadius: 6, padding: '3px 6px', width: '60%' }}>
+                                                <div style={{ width: '100%', height: 3, backgroundColor: '#c2c0b8', borderRadius: 1 }} />
+                                            </div>
+                                            <div style={{ alignSelf: 'flex-start', backgroundColor: '#181714', border: '1px solid #333029', borderRadius: 6, padding: '3px 6px', width: '70%' }}>
+                                                <div style={{ width: '100%', height: 3, backgroundColor: '#96948d', borderRadius: 1 }} />
+                                                <div style={{ width: '60%', height: 3, backgroundColor: '#96948d', borderRadius: 1, marginTop: 2 }} />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                {/* Radio Button Selector */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <div style={{
+                                        width: 18,
+                                        height: 18,
+                                        borderRadius: '50%',
+                                        border: `2px solid ${theme === 'dark' ? 'var(--color-accent)' : 'var(--color-border-strong)'}`,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        transition: 'all 0.2s'
+                                    }}>
+                                        {theme === 'dark' && (
+                                            <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: 'var(--color-accent)' }} />
+                                        )}
+                                    </div>
+                                    <span style={{ fontSize: 13, fontWeight: theme === 'dark' ? 600 : 500, color: 'var(--color-text-primary)' }}>Dark (Charcoal)</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     <div>
                         <Label>Language</Label>
@@ -3343,7 +2941,7 @@ export default function SettingsPage({
                         <Label>Full name</Label>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                             <div style={{ width: 38, height: 38, borderRadius: '50%', backgroundColor: 'var(--color-text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-inverse)' }}>{profileName.charAt(0).toUpperCase()}</span>
+                                <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-inverse)' }}>{(profileName.trim().charAt(0) || '?').toUpperCase()}</span>
                             </div>
                             <Input value={profileName} onChange={e => setProfileName(e.target.value)} placeholder="Your full name" />
                         </div>
@@ -3383,7 +2981,7 @@ export default function SettingsPage({
                     <div>
                         {profileSaveSuccess && (
                             <span style={{ fontSize: 13, color: '#10b981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                ✓ Profile saved successfully
+                                Profile saved
                             </span>
                         )}
                     </div>
@@ -3416,8 +3014,6 @@ export default function SettingsPage({
                                     <span style={{
                                         fontSize: 10,
                                         fontWeight: 700,
-                                        textTransform: 'uppercase',
-                                        letterSpacing: '0.05em',
                                         padding: '2px 8px',
                                         borderRadius: 6,
                                         backgroundColor: cloudUsage?.plan === 'max' ? 'rgba(168, 85, 247, 0.15)' : cloudUsage?.plan === 'pro' ? 'rgba(16, 185, 129, 0.15)' : 'var(--color-bg-surface)',
@@ -3571,7 +3167,7 @@ export default function SettingsPage({
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div>
                                 <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 4 }}>EverFern Cloud</h3>
-                                <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', margin: 0 }}>Login to access cloud models, dispatch, and sync.</p>
+                                <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', margin: 0 }}>Sign in to use cloud models, Dispatch and sync.</p>
                             </div>
                             <button
                                 onClick={() => router.push('/auth')}
@@ -3579,7 +3175,7 @@ export default function SettingsPage({
                                 onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-text-secondary)'}
                                 onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--color-text-primary)'}
                             >
-                                Login
+                                Sign in
                             </button>
                         </div>
                     </div>
@@ -3652,14 +3248,12 @@ export default function SettingsPage({
                                         onChange={(e) => {
                                             const val = e.target.value;
                                             setSettingsProvider(val);
-                                            if (val === 'llamacpp') setSettingsApiKey('http://localhost:8080/v1');
                                             if (val === 'lmstudio') setSettingsApiKey('http://localhost:1234/v1');
                                             else if (val === 'ollama') setSettingsApiKey('http://localhost:11434');
                                         }}
                                     >
                                         <option value="ollama">Ollama (Default)</option>
                                         <option value="lmstudio">LM Studio</option>
-                                        <option value="llamacpp">llama.cpp</option>
                                     </Select>
                                 </div>
 
@@ -3669,7 +3263,7 @@ export default function SettingsPage({
                                         <GlobeAltIcon width={16} height={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-tertiary)' }} />
                                         <Input 
                                             type="text" 
-                                            placeholder={settingsProvider === 'llamacpp' ? 'http://localhost:8080/v1' : settingsProvider === 'lmstudio' ? "http://localhost:1234/v1" : "http://localhost:11434"} 
+                                            placeholder={settingsProvider === 'lmstudio' ? "http://localhost:1234/v1" : "http://localhost:11434"} 
                                             value={settingsApiKey} 
                                             onChange={e => setSettingsApiKey(e.target.value)} 
                                             style={{ paddingLeft: 40 }} 
@@ -3689,7 +3283,7 @@ export default function SettingsPage({
                                         <CpuChipIcon width={18} height={18} style={{ color: 'var(--color-text-primary)' }} />
                                     </div>
                                     <div style={{ minWidth: 0 }}>
-                                        <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: 'uppercase' }}>GPU Processor</div>
+                                        <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--color-text-tertiary)' }}>GPU Processor</div>
                                         <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                             {localHardwareInfo?.gpuName || 'GPU Processor'}
                                         </div>
@@ -3704,7 +3298,7 @@ export default function SettingsPage({
                                         <CircleStackIcon width={18} height={18} style={{ color: 'var(--color-text-primary)' }} />
                                     </div>
                                     <div style={{ minWidth: 0 }}>
-                                        <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: 'uppercase' }}>System Memory</div>
+                                        <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--color-text-tertiary)' }}>System Memory</div>
                                         <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)' }}>
                                             {localHardwareInfo?.ramGB || 16} GB RAM
                                         </div>
@@ -3719,13 +3313,13 @@ export default function SettingsPage({
                                         <ServerIcon width={18} height={18} style={{ color: 'var(--color-text-primary)' }} />
                                     </div>
                                     <div style={{ minWidth: 0 }}>
-                                        <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: 'uppercase' }}>Server Status</div>
+                                        <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--color-text-tertiary)' }}>Server Status</div>
                                         <div style={{ fontSize: 12, fontWeight: 600, color: localProviderRunning ? '#22c55e' : '#f59e0b', display: 'flex', alignItems: 'center', gap: 4 }}>
                                             <span style={{ width: 6, height: 6, borderRadius: 999, backgroundColor: localProviderRunning ? '#22c55e' : '#f59e0b' }} />
                                             {localProviderRunning ? 'Connected' : 'Offline'}
                                         </div>
                                         <div style={{ fontSize: 10.5, color: 'var(--color-text-tertiary)' }}>
-                                            {settingsProvider === 'llamacpp' ? 'llama.cpp' : settingsProvider === 'lmstudio' ? 'LM Studio' : 'Ollama'}
+                                            {settingsProvider === 'lmstudio' ? 'LM Studio' : 'Ollama'}
                                         </div>
                                     </div>
                                 </div>
@@ -3740,7 +3334,7 @@ export default function SettingsPage({
                                 }}>
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                         <span style={{ fontSize: 12, fontWeight: 600, color: '#d97706' }}>
-                                            {settingsProvider === 'llamacpp' ? 'llama.cpp server is not reachable' : settingsProvider === 'lmstudio' ? "LM Studio Local Server is not reachable" : "Ollama service is offline"}
+                                            {settingsProvider === 'lmstudio' ? "LM Studio Local Server is not reachable" : "Ollama service is offline"}
                                         </span>
                                         <button
                                             onClick={() => loadLocalModelsForSection(settingsProvider || 'ollama', settingsApiKey)}
@@ -3754,9 +3348,7 @@ export default function SettingsPage({
                                         </button>
                                     </div>
                                     <p style={{ fontSize: 11, color: 'var(--color-text-secondary)', margin: 0 }}>
-                                        {settingsProvider === 'llamacpp'
-                                            ? 'Start llama-server -m /path/to/model.gguf --port 8080 --jinja, then refresh to select the loaded model.'
-                                            : settingsProvider === 'lmstudio'
+                                        {settingsProvider === 'lmstudio'
                                             ? "Open LM Studio -> Developer tab (<->) -> Start Server on port 1234."
                                             : "Ensure Ollama is running in background or installed on your machine."}
                                     </p>
@@ -3778,7 +3370,7 @@ export default function SettingsPage({
                                         Installed Models ({installedLocalModels.length})
                                     </button>
 
-                                    {settingsProvider !== 'llamacpp' && (<button
+                                    <button
                                         onClick={() => setLocalModelTab('recommended')}
                                         style={{
                                             padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer',
@@ -3787,8 +3379,8 @@ export default function SettingsPage({
                                             display: 'flex', alignItems: 'center', gap: 6
                                         }}
                                     >
-                                        ★ AI Recommended
-                                    </button>)}
+                                        Recommended
+                                    </button>
                                 </div>
 
                                 <button
@@ -3803,7 +3395,7 @@ export default function SettingsPage({
                             </div>
 
                             {/* Tab 1: Installed Models */}
-                            {(settingsProvider === 'llamacpp' || localModelTab === 'installed') && (
+                            {localModelTab === 'installed' && (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 260, overflowY: 'auto' }}>
                                     {installedLocalModels.length > 0 ? (
                                         installedLocalModels.map(m => {
@@ -3833,7 +3425,7 @@ export default function SettingsPage({
                                                             </span>
                                                         </div>
                                                         <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-                                                            {m.size_gb ? `${m.size_gb} GB disk` : `${m.quantized_q4_vram_gb} GB VRAM`} • {m.isRunnable ? "✓ Fully Runnable" : "Heavy"}
+                                                            {m.size_gb ? `${m.size_gb} GB disk` : `${m.quantized_q4_vram_gb} GB VRAM`} • {m.isRunnable ? "Runs well" : "Heavy for this PC"}
                                                         </div>
                                                     </div>
 
@@ -3854,7 +3446,7 @@ export default function SettingsPage({
                                                                 padding: '4px 10px', borderRadius: 6, backgroundColor: 'rgba(34, 197, 94, 0.15)',
                                                                 border: '1px solid rgba(34, 197, 94, 0.3)', color: '#16a34a', fontSize: 11, fontWeight: 600
                                                             }}>
-                                                                ✓ Active
+                                                                Active
                                                             </span>
                                                         ) : (
                                                             <button
@@ -3873,11 +3465,11 @@ export default function SettingsPage({
                                         })
                                     ) : (
                                         <div style={{ padding: '20px', borderRadius: 10, backgroundColor: 'var(--color-bg-subtle)', textAlign: 'center' }}>
-                                            <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 4 }}>No models installed in {settingsProvider === 'llamacpp' ? 'llama.cpp' : settingsProvider === 'lmstudio' ? 'LM Studio' : 'Ollama'}</div>
+                                            <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 4 }}>No models installed in {settingsProvider === 'lmstudio' ? 'LM Studio' : 'Ollama'}</div>
                                             <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', margin: '0 0 10px' }}>
-                                                {settingsProvider === 'llamacpp' ? 'Load a GGUF model in llama-server, then refresh this list.' : 'Switch to AI Recommended to download top-performing models for your GPU in 1 click.'}
+                                                Switch to AI Recommended to download top-performing models for your GPU in 1 click.
                                             </p>
-                                            {settingsProvider !== 'llamacpp' && (<button
+                                            <button
                                                 onClick={() => setLocalModelTab('recommended')}
                                                 style={{
                                                     padding: '5px 12px', borderRadius: 6, backgroundColor: 'var(--color-text-primary)', color: 'var(--color-bg-base)',
@@ -3885,14 +3477,14 @@ export default function SettingsPage({
                                                 }}
                                             >
                                                 View AI Recommended →
-                                            </button>)}
+                                            </button>
                                         </div>
                                     )}
                                 </div>
                             )}
 
                             {/* Tab 2: AI Recommended for Your Hardware */}
-                            {settingsProvider !== 'llamacpp' && localModelTab === 'recommended' && (
+                            {localModelTab === 'recommended' && (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 260, overflowY: 'auto' }}>
                                     {recommendedLocalModels.map(m => {
                                         const modelTag = (m.tags && m.tags[0]) || m.name;
@@ -3918,7 +3510,7 @@ export default function SettingsPage({
                                                         </span>
                                                         {isTopMatch && (
                                                             <span style={{ fontSize: 9.5, fontWeight: 700, padding: '1px 5px', borderRadius: 4, backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6' }}>
-                                                                ★ Top Match
+                                                                Top match
                                                             </span>
                                                         )}
                                                         <span style={{
@@ -3956,7 +3548,7 @@ export default function SettingsPage({
                                                                     border: '1px solid rgba(34, 197, 94, 0.3)', color: '#16a34a', fontSize: 11, fontWeight: 600, cursor: 'pointer'
                                                                 }}
                                                             >
-                                                                ✓ Ready
+                                                                Ready
                                                             </button>
                                                         ) : (
                                                             <button
@@ -4093,8 +3685,8 @@ export default function SettingsPage({
                                                         ? 'Enter the full model ID from OpenRouter.'
                                                         : 'Enter the full model ID (e.g., provider/model-name).'}
                                                 </p>
-                                                {modelValidationStatus === 'success' && <p style={{ fontSize: 12, color: 'var(--color-success)', marginTop: 6 }}>✓ Model verified with vision capabilities.</p>}
-                                                {modelValidationStatus === 'error' && <p style={{ fontSize: 12, color: 'var(--color-error)', marginTop: 6 }}>✗ Model not found or missing vision support.</p>}
+                                                {modelValidationStatus === 'success' && <p style={{ fontSize: 12, color: 'var(--color-success)', marginTop: 6 }}>Model verified with vision capabilities.</p>}
+                                                {modelValidationStatus === 'error' && <p style={{ fontSize: 12, color: 'var(--color-error)', marginTop: 6 }}>Model not found or missing vision support.</p>}
                                             </div>
                                         )}
                                     </motion.div>
@@ -4163,7 +3755,7 @@ export default function SettingsPage({
     const VoiceSection = () => (
         <div>
             <SectionTitle>Voice Mode</SectionTitle>
-            <SectionSubtitle>Configure voice input and output for Jarvis-style interaction.</SectionSubtitle>
+            <SectionSubtitle>Talk to EverFern and hear it answer.</SectionSubtitle>
 
             <Card>
                 <Label>Voice Provider</Label>
@@ -4296,7 +3888,7 @@ export default function SettingsPage({
 
             <Card>
                 <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 12px' }}>About Voice Mode</h3>
-                <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.6, margin: 0 }}>Voice Mode enables natural conversation with Fern. Speak naturally, and Fern will understand context, execute tasks, and respond with both text and audio. Uses your configured AI model for reasoning.</p>
+                <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.6, margin: 0 }}>Speak to EverFern the way you would type. It can run tasks while you talk and answers in text and audio, using the model you picked in Models & Providers.</p>
             </Card>
         </div>
     );
@@ -4305,33 +3897,7 @@ export default function SettingsPage({
     const VisionSection = () => (
         <div>
             <SectionTitle>Vision Grounding</SectionTitle>
-            <SectionSubtitle>Optional screen understanding for desktop automation. This is separate from your EverFern Cloud chat model.</SectionSubtitle>
-
-            <Card>
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 24 }}>
-                    <div style={{ minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 5 }}>
-                            <h3 style={{ fontSize: 15, fontWeight: 650, color: 'var(--color-text-primary)', margin: 0 }}>Use Vision Grounding</h3>
-                            <span style={{ padding: '3px 8px', borderRadius: 999, fontSize: 11, fontWeight: 650, color: settingsVlmEnabled ? '#059669' : 'var(--color-text-tertiary)', background: settingsVlmEnabled ? 'rgba(16, 185, 129, 0.12)' : 'var(--color-bg-subtle)' }}>
-                                {settingsVlmEnabled ? 'On' : 'Off'}
-                            </span>
-                        </div>
-                        <p style={{ fontSize: 12, lineHeight: 1.55, color: 'var(--color-text-secondary)', margin: 0, maxWidth: 560 }}>
-                            When on, EverFern may capture the current screen for requests such as “click this button.” If the vision model is unavailable, normal cloud chat remains online.
-                        </p>
-                    </div>
-                    <button
-                        type="button"
-                        role="switch"
-                        aria-checked={settingsVlmEnabled}
-                        aria-label="Use Vision Grounding"
-                        onClick={() => void handleVisionEnabledChange(!settingsVlmEnabled)}
-                        style={{ width: 46, height: 26, padding: 3, border: '1px solid var(--color-border)', borderRadius: 999, background: settingsVlmEnabled ? '#10b981' : 'var(--color-bg-subtle)', cursor: 'pointer', flexShrink: 0, transition: 'background-color 160ms ease-out' }}
-                    >
-                        <span style={{ display: 'block', width: 18, height: 18, borderRadius: '50%', background: '#fff', transform: settingsVlmEnabled ? 'translateX(18px)' : 'translateX(0)', transition: 'transform 180ms cubic-bezier(0.22, 1, 0.36, 1)', boxShadow: '0 2px 5px rgba(0,0,0,0.22)' }} />
-                    </button>
-                </div>
-            </Card>
+            <SectionSubtitle>Connect a vision model to enable precise GUI automation and screen understanding.</SectionSubtitle>
 
             <Card>
                 <Label>ShowUI Endpoint</Label>
@@ -4344,7 +3910,7 @@ export default function SettingsPage({
                 </p>
             </Card>
 
-            <Card style={{ opacity: settingsVlmEnabled ? 1 : 0.72 }}>
+            <Card>
                 <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 16px' }}>Vision Model Source</h3>
                 {/* Toggle */}
                 <div style={{ display: 'flex', gap: 4, padding: 4, backgroundColor: 'var(--color-bg-subtle)', borderRadius: 12, border: '1px solid var(--color-border)', marginBottom: 20, width: 'fit-content' }}>
@@ -4704,7 +4270,7 @@ export default function SettingsPage({
                             </div>
                             {saveResult && (
                                 <div style={{ padding: '10px 14px', borderRadius: 10, backgroundColor: saveResult.success ? 'var(--color-success-dim)' : 'var(--color-error-dim)', color: saveResult.success ? 'var(--color-success)' : 'var(--color-error)', border: `1px solid ${saveResult.success ? 'var(--color-success-dim)' : 'var(--color-error-dim)'}`, fontSize: 13 }}>
-                                    {saveResult.success ? '✓ Skill saved successfully!' : `✗ ${saveResult.error}`}
+                                    {saveResult.success ? 'Skill saved.' : `${saveResult.error}`}
                                 </div>
                             )}
                             <div style={{ display: 'flex', gap: 8 }}>
@@ -4732,7 +4298,7 @@ export default function SettingsPage({
                     <Card>
                         <div style={{ textAlign: 'center', padding: 20 }}>
                             <p style={{ fontSize: 14, color: 'var(--color-text-tertiary)', marginBottom: 12 }}>No custom skills yet</p>
-                            <p style={{ fontSize: 12, color: 'var(--color-text-placeholder)', marginBottom: 16 }}>Create your first skill to extend EverFern's capabilities</p>
+                            <p style={{ fontSize: 12, color: 'var(--color-text-placeholder)', marginBottom: 16 }}>A skill is a set of instructions EverFern follows for one kind of task.</p>
                         </div>
                     </Card>
                 ) : (
@@ -4881,68 +4447,42 @@ export default function SettingsPage({
                 </div>
             )}
 
-            <div style={{ backgroundColor: 'var(--color-error-dim)', border: '1px solid var(--color-error-dim)', borderRadius: 16, padding: 24 }}>
-                <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-error)', margin: '0 0 8px' }}>Danger Zone</h3>
+            <div style={{ border: '1px solid var(--color-border)', borderRadius: 16, padding: 24 }}>
+                <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)', margin: '0 0 8px' }}>Reset EverFern</h3>
                 <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)', margin: '0 0 16px', lineHeight: 1.6 }}>Wipe all local data, search API keys, tool configurations, and reset your account. This cannot be undone.</p>
-                {!showWipeConfirm ? (
-                    <button
-                        onClick={() => setShowWipeConfirm(true)}
-                        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', backgroundColor: 'var(--color-error-dim)', color: 'var(--color-error)', borderRadius: 10, fontWeight: 600, fontSize: 13, border: '1px solid var(--color-error-dim)', cursor: 'pointer', transition: 'all 0.2s' }}
-                    >
-                        <TrashIcon width={16} height={16} />
-                        Reset Account & Delete All Data
-                    </button>
-                ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                        <input
-                            type="text"
-                            value={wipePhrase}
-                            onChange={e => setWipePhrase(e.target.value)}
-                            placeholder={`Type "${WIPE_CONFIRM_PHRASE}" to confirm`}
-                            autoFocus
-                            style={{ padding: '10px 14px', backgroundColor: 'var(--color-bg-elevated)', color: 'var(--color-text-primary)', borderRadius: 8, fontSize: 13, border: '1px solid var(--color-border)', outline: 'none', fontFamily: 'monospace' }}
-                        />
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <button
-                                disabled={wipePhrase.trim() !== WIPE_CONFIRM_PHRASE}
-                                onClick={async () => {
-                                    try {
-                                        try {
-                                            await (window as any).electronAPI?.toolSettings?.set?.({
-                                                webSearch: { mode: 'local', provider: 'exa', headless: true, apiKey: '', exaApiKey: '', firecrawlApiKey: '' },
-                                                webCrawl: { mode: 'local', headless: true, apiKey: '' },
-                                                browserUse: { mode: 'local', headless: false, apiKey: '' },
-                                                navis: { useVision: false, onlyVision: false, headless: false, maxSteps: 200, useChromeProfile: true, selectedBrowserId: 'chrome', useIsolatedBrowser: false, automationMode: 'extension-first' },
-                                            });
-                                        } catch (e) {
-                                            console.warn('toolSettings reset error:', e);
-                                        }
-                                        const result = await (window as any).electronAPI?.system.wipeAccount(wipePhrase.trim());
-                                        if (result?.success) {
-                                            localStorage.clear();
-                                            sessionStorage.clear();
-                                            window.location.reload();
-                                        } else {
-                                            alert(`Reset failed: ${result?.error || 'Unknown error'}`);
-                                        }
-                                    } catch (err: any) {
-                                        alert(`Reset failed: ${err?.message || 'Unknown error'}`);
-                                    }
-                                }}
-                                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', backgroundColor: wipePhrase.trim() === WIPE_CONFIRM_PHRASE ? 'var(--color-error)' : 'var(--color-error-dim)', color: wipePhrase.trim() === WIPE_CONFIRM_PHRASE ? '#ffffff' : 'var(--color-error)', borderRadius: 10, fontWeight: 600, fontSize: 13, border: '1px solid var(--color-error)', cursor: wipePhrase.trim() === WIPE_CONFIRM_PHRASE ? 'pointer' : 'not-allowed', opacity: wipePhrase.trim() === WIPE_CONFIRM_PHRASE ? 1 : 0.6, transition: 'all 0.2s' }}
-                            >
-                                <TrashIcon width={16} height={16} />
-                                Confirm Reset
-                            </button>
-                            <button
-                                onClick={() => { setShowWipeConfirm(false); setWipePhrase(''); }}
-                                style={{ padding: '10px 20px', backgroundColor: 'var(--color-bg-subtle)', color: 'var(--color-text-primary)', borderRadius: 10, fontWeight: 500, fontSize: 13, border: '1px solid var(--color-border)', cursor: 'pointer', transition: 'all 0.2s' }}
-                            >
-                                Cancel
-                            </button>
-                        </div>
-                    </div>
-                )}
+                <button
+                    onClick={async () => {
+                        if (!window.confirm('Are you sure you want to reset your account? This will permanently delete all conversations, search API keys, settings, and local data.')) return;
+                        try {
+                            try {
+                                await (window as any).electronAPI?.toolSettings?.set?.({
+                                    webSearch: { mode: 'local', provider: 'exa', headless: true, apiKey: '', exaApiKey: '', firecrawlApiKey: '' },
+                                    webCrawl: { mode: 'local', headless: true, apiKey: '' },
+                                    browserUse: { mode: 'local', headless: false, apiKey: '' },
+                                    navis: { useVision: false, onlyVision: false, headless: false, maxSteps: 200, useChromeProfile: true, selectedBrowserId: 'chrome', useIsolatedBrowser: false, automationMode: 'extension-first' },
+                                });
+                            } catch (e) {
+                                console.warn('toolSettings reset error:', e);
+                            }
+                            const result = await (window as any).electronAPI?.system.wipeAccount();
+                            if (result?.success) {
+                                localStorage.clear();
+                                sessionStorage.clear();
+                                window.location.reload();
+                            } else {
+                                alert(`Reset failed: ${result?.error || 'Unknown error'}`);
+                            }
+                        } catch (err: any) {
+                            alert(`Reset failed: ${err?.message || 'Unknown error'}`);
+                        }
+                    }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', backgroundColor: 'var(--color-error-dim)', color: 'var(--color-error)', borderRadius: 10, fontWeight: 600, fontSize: 13, border: '1px solid var(--color-error-dim)', cursor: 'pointer', transition: 'all 0.2s' }}
+                    onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-error-dim)'}
+                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--color-error-dim)'}
+                >
+                    <TrashIcon width={16} height={16} />
+                    Reset Account & Delete All Data
+                </button>
             </div>
         </div>
     );
@@ -4950,7 +4490,7 @@ export default function SettingsPage({
     // ── Help & Architecture ──────────────────────────────────────────────────
     const HelpSection = () => (
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-            <SectionTitle>Architecture & Help</SectionTitle>
+            <SectionTitle>Help & Architecture</SectionTitle>
             <SectionSubtitle>Understand how the EverFern AI Brain and Swarm Architecture works.</SectionSubtitle>
 
             <Card>
@@ -5044,7 +4584,7 @@ export default function SettingsPage({
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.2 }}
             >
-                <SectionTitle>Personality & Agent Customization</SectionTitle>
+                <SectionTitle>Personality & Routing</SectionTitle>
                 <SectionSubtitle>Configure the behavior core (SOUL.md) and agent routing rules (agents.md) using custom behavior rules.</SectionSubtitle>
 
                 {activeProjectId && (
@@ -5084,7 +4624,7 @@ export default function SettingsPage({
                     <Card style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                         <div>
                             <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 4 }}>SOUL.md (Personality Core)</div>
-                            <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>Defines how the AI speaks, acts, and behaves. You can make it AGI-like, direct, concise, or give it a custom persona.</div>
+                            <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>Defines how the AI speaks, acts, and behaves. For example: direct, concise, or a custom persona.</div>
                         </div>
                         <textarea
                             value={soul}
@@ -5825,7 +5365,7 @@ export default function SettingsPage({
                             onClick={() => setShowAddModal(true)}
                             style={{
                                 padding: '7px 14px', borderRadius: 10, border: 'none',
-                                backgroundColor: 'var(--color-accent, #3b82f6)', color: '#ffffff', fontSize: 12.5, fontWeight: 600,
+                                backgroundColor: 'var(--color-text-primary)', color: 'var(--color-text-inverse)', fontSize: 12.5, fontWeight: 600,
                                 cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
                                 boxShadow: 'var(--shadow-sm)'
                             }}
@@ -5873,33 +5413,33 @@ export default function SettingsPage({
                         <button
                             onClick={handleShareMemoryGraph}
                             disabled={!!isBusy || graph.nodes.length === 0}
-                            title="Generate a beautiful image of your memory globe to share"
+                            title="Save an image of your memory graph"
                             style={{
-                                padding: '7px 14px', borderRadius: 10, border: 'none',
-                                backgroundColor: 'var(--color-text-primary)', color: 'var(--color-text-inverse)', fontSize: 12.5, fontWeight: 600,
+                                padding: '7px 14px', borderRadius: 10, border: '1px solid var(--color-border)',
+                                backgroundColor: 'var(--color-bg-surface)', color: 'var(--color-text-primary)', fontSize: 12.5, fontWeight: 600,
                                 cursor: (isBusy || graph.nodes.length === 0) ? 'not-allowed' : 'pointer',
                                 opacity: (isBusy || graph.nodes.length === 0) ? 0.6 : 1,
                                 display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
                                 boxShadow: 'var(--shadow-sm)'
                             }}
-                            onMouseEnter={e => { if (!isBusy && graph.nodes.length > 0) e.currentTarget.style.backgroundColor = 'var(--color-text-secondary)'; }}
-                            onMouseLeave={e => { if (!isBusy) e.currentTarget.style.backgroundColor = 'var(--color-text-primary)'; }}
+                            onMouseEnter={e => { if (!isBusy && graph.nodes.length > 0) e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; }}
+                            onMouseLeave={e => { if (!isBusy) e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)'; }}
                         >
                             {isBusy === 'share' ? <CircleNotch size={15} className="animate-spin" /> : <ShareNetwork size={15} weight="bold" />}
-                            {isBusy === 'share' ? 'Generating…' : 'Share & Flex'}
+                            {isBusy === 'share' ? 'Creating image…' : 'Share image'}
                         </button>
                     </div>
                 </div>
 
                 <div style={{
-                    background: 'linear-gradient(135deg, var(--color-accent-dim, rgba(59, 130, 246, 0.08)) 0%, var(--color-navis-active-bg, rgba(59, 130, 246, 0.04)) 100%)',
-                    border: '1px solid var(--color-accent, #3b82f6)',
+                    backgroundColor: 'var(--color-bg-subtle)',
+                    border: '1px solid var(--color-border)',
                     borderRadius: 12, padding: '12px 16px', marginBottom: 20,
                     display: 'flex', gap: 12, alignItems: 'flex-start'
                 }}>
-                    <Lightbulb size={20} weight="duotone" color="var(--color-accent, #3b82f6)" style={{ flexShrink: 0, marginTop: 2 }} />
+                    <Lightbulb size={18} color="var(--color-text-tertiary)" style={{ flexShrink: 0, marginTop: 2 }} />
                     <div>
-                        <p style={{ margin: 0, fontSize: 12.5, fontWeight: 600, color: 'var(--color-accent-dark, #2563eb)', marginBottom: 3 }}>How Memory Works</p>
+                        <p style={{ margin: 0, fontSize: 12.5, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 3 }}>How memory works</p>
                         <p style={{ margin: 0, fontSize: 12, lineHeight: 1.6, color: 'var(--color-text-secondary)' }}>
                             EverFern learns your preferences, habits, and facts as you chat. Nodes are draggable on the 3D globe — click any node to see its full details.
                             Use <strong>Export ZIP</strong> to back up your memory, <strong>Import &amp; Merge</strong> to restore across devices, or <strong>Add Memory</strong> to record facts directly.
@@ -6028,12 +5568,12 @@ export default function SettingsPage({
 
                 {isLoading ? (
                     <div style={{ textAlign: 'center', padding: 80, color: 'var(--color-text-tertiary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-                        <CircleNotch size={28} className="animate-spin" color="var(--color-accent, #3b82f6)" />
+                        <CircleNotch size={28} className="animate-spin" color="var(--color-text-tertiary)" />
                         <span style={{ fontSize: 13, fontWeight: 500 }}>Loading Memory Graph...</span>
                     </div>
                 ) : graph.nodes.length === 0 ? (
                     <Card style={{ padding: 48, textAlign: 'center', color: 'var(--color-text-tertiary)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                        <Brain size={52} weight="duotone" color="var(--color-accent, #3b82f6)" />
+                        <Brain size={36} color="var(--color-text-tertiary)" />
                         <h3 style={{ margin: '16px 0 8px', fontSize: 16, fontWeight: 600, color: 'var(--color-text-primary)' }}>No memory established yet</h3>
                         <p style={{ fontSize: 13, margin: '0 0 20px', lineHeight: 1.5, maxWidth: 440 }}>
                             As you chat with EverFern, your preferences, coding habits, and facts are automatically remembered. You can also manually add memories right now.
@@ -6042,7 +5582,7 @@ export default function SettingsPage({
                             onClick={() => setShowAddModal(true)}
                             style={{
                                 padding: '8px 16px', borderRadius: 10, border: 'none',
-                                backgroundColor: 'var(--color-accent, #3b82f6)', color: '#ffffff', fontSize: 13, fontWeight: 600,
+                                backgroundColor: 'var(--color-text-primary)', color: 'var(--color-text-inverse)', fontSize: 13, fontWeight: 600,
                                 cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
                                 boxShadow: 'var(--shadow-sm)'
                             }}
@@ -6262,7 +5802,7 @@ export default function SettingsPage({
                                 {selectedNode ? (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, height: '100%' }}>
                                         <div>
-                                            <span style={{ padding: '3px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', backgroundColor: selectedNode.type === 'preference' ? 'rgba(244, 63, 94, 0.1)' : selectedNode.type === 'habit' ? 'rgba(16, 185, 129, 0.1)' : selectedNode.type === 'fact' ? 'rgba(59, 130, 246, 0.1)' : 'var(--color-bg-subtle)', color: selectedNode.type === 'preference' ? '#f43f5e' : selectedNode.type === 'habit' ? '#10b981' : selectedNode.type === 'fact' ? '#3b82f6' : 'var(--color-text-secondary)' }}>{selectedNode.type}</span>
+                                            <span style={{ padding: '3px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700, backgroundColor: selectedNode.type === 'preference' ? 'rgba(244, 63, 94, 0.1)' : selectedNode.type === 'habit' ? 'rgba(16, 185, 129, 0.1)' : selectedNode.type === 'fact' ? 'rgba(59, 130, 246, 0.1)' : 'var(--color-bg-subtle)', color: selectedNode.type === 'preference' ? '#f43f5e' : selectedNode.type === 'habit' ? '#10b981' : selectedNode.type === 'fact' ? '#3b82f6' : 'var(--color-text-secondary)' }}>{selectedNode.type}</span>
                                             <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary)', marginTop: 10, marginBottom: 4 }}>{selectedNode.name || selectedNode.category}</h3>
                                             <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontFamily: 'monospace' }}>ID: {selectedNode.id.split('_').slice(-1)[0]}</span>
                                         </div>
@@ -6436,7 +5976,6 @@ export default function SettingsPage({
     const renderActiveSection = () => {
         switch (activeSection) {
             case 'general': return <GeneralSection />;
-            case 'customization': return <CustomizationSection />;
             case 'system': return <SystemHardwareSection />;
             case 'keybinds': return <KeybindsSection />;
             case 'openclaw': return <OpenClawSection />;
@@ -6454,6 +5993,7 @@ export default function SettingsPage({
                     <RegisteredToolsList />
                 </div>
             );
+            case 'mcp': return <McpServersSection />;
             case 'tool-settings': return (
                 <div>
                     <SectionTitle>Tool Settings</SectionTitle>
@@ -6475,291 +6015,117 @@ export default function SettingsPage({
         }
     };
 
+    const groupIcons: Record<string, React.ElementType> = { 'Account & System': LuUser, 'AI & Intelligence': LuSparkles, 'Tools & Execution': LuWrench, 'Help': LuCircleHelp };
+    const groupLabels: Record<string, string> = { 'Account & System': 'Account', 'AI & Intelligence': 'AI', 'Tools & Execution': 'Tools', 'Help': 'Help' };
+    const activeGroup = navCategories.find(c => c.items.some(i => i.id === activeSection)) || navCategories[0];
+    const searchQuery = settingsSearch.trim().toLowerCase();
+    const searchHits = searchQuery ? navSections.filter(i => i.label.toLowerCase().includes(searchQuery) || i.keywords.toLowerCase().includes(searchQuery)) : [];
+    const saveDisabled = settingsEngine === 'online' && (!settingsProvider || !settingsApiKey);
+
     return (
-        <motion.div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Settings"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            style={{ position: 'fixed', inset: 0, zIndex: 200, display: 'flex', flexDirection: 'column', backgroundColor: 'var(--color-bg-base)', fontFamily: 'var(--font-sans)' }}
+        <motion.div
+            className="cs"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Settings"
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0, transition: { duration: 0.45, ease: [0.16, 1, 0.3, 1] } }}
+            exit={{ opacity: 0, y: 12, transition: { duration: 0.2, ease: [0.16, 1, 0.3, 1] } }}
         >
-            {/* Top bar */}
-            <div style={{ height: 52, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 24px', borderBottom: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-base)', flexShrink: 0, WebkitAppRegion: 'drag' } as any}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, WebkitAppRegion: 'no-drag' } as any}>
-                    <Cog6ToothIcon width={16} height={16} style={{ color: 'var(--color-text-tertiary)' }} />
-                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>Settings</span>
-                </div>
-                <button
-                    onClick={onClose}
-                    style={{ width: 32, height: 32, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-bg-overlay)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', cursor: 'pointer', transition: 'all 0.2s', WebkitAppRegion: 'no-drag' } as any}
-                    onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'}
-                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-overlay)'}
-                >
-                    <XMarkIcon width={16} height={16} />
-                </button>
+            <div className="cs-drag" />
+            <button className="cs-close" onClick={onClose} aria-label="Close settings" title="Close settings"><LuX size={14} /></button>
+
+            <nav className="cs-tabs" aria-label="Settings groups">
+                {navCategories.map(cat => {
+                    const Icon = groupIcons[cat.category] || LuUser;
+                    const on = !searchQuery && cat === activeGroup;
+                    return (
+                        <button key={cat.category} className={on ? 'is-on' : ''} aria-current={on ? 'page' : undefined}
+                            onClick={() => { setSettingsSearch(''); setActiveSection(cat.items[0].id); }}>
+                            <Icon size={15} /> <span>{groupLabels[cat.category] || cat.category}</span>
+                        </button>
+                    );
+                })}
+            </nav>
+
+            <div className="cs-search">
+                <LuSearch size={13} aria-hidden="true" />
+                <input type="text" placeholder="Search settings" aria-label="Search settings" value={settingsSearch} onChange={e => setSettingsSearch(e.target.value)} />
             </div>
 
-            <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-                {/* Left nav */}
-                <div style={{ width: 240, backgroundColor: 'var(--color-bg-subtle)', borderRight: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', padding: '16px 12px', flexShrink: 0, overflowY: 'auto' }}>
-                    {/* Search Input */}
-                    <div style={{ marginBottom: 16 }}>
-                        <input
-                            type="text"
-                            placeholder="Search settings..."
-                            value={settingsSearch}
-                            onChange={e => setSettingsSearch(e.target.value)}
-                            style={{
-                                width: '100%',
-                                padding: '8px 12px',
-                                backgroundColor: 'var(--color-bg-surface)',
-                                border: '1px solid var(--color-border)',
-                                borderRadius: 10,
-                                fontSize: 13,
-                                color: 'var(--color-text-primary)',
-                                outline: 'none',
-                                boxSizing: 'border-box',
-                                fontFamily: 'var(--font-sans)',
-                                transition: 'border-color 0.15s'
-                            }}
-                            onFocus={e => e.target.style.borderColor = 'var(--color-border-focus)'}
-                            onBlur={e => e.target.style.borderColor = 'var(--color-border)'}
-                        />
-                    </div>
-
-                    <nav style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                        {navCategories.map(cat => {
-                            const filteredItems = cat.items.filter(item => {
-                                if (!settingsSearch.trim()) return true;
-                                const q = settingsSearch.toLowerCase();
-                                return item.label.toLowerCase().includes(q) || item.keywords.toLowerCase().includes(q);
-                            });
-
-                            if (filteredItems.length === 0) return null;
-
-                            return (
-                                <div key={cat.category}>
-                                    <div style={{
-                                        fontSize: 10,
-                                        fontWeight: 700,
-                                        color: 'var(--color-text-tertiary)',
-                                        textTransform: 'uppercase',
-                                        letterSpacing: '0.08em',
-                                        padding: '0 10px 6px',
-                                    }}>
-                                        {cat.category}
-                                    </div>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                        {filteredItems.map(({ id, label, icon: Icon, keywords }) => {
-                                            const isActive = activeSection === id;
-                                            const query = settingsSearch.trim().toLowerCase();
-
-                                            // Contextual status badge or specific match subtitle
-                                            let badgeText = '';
-                                            let badgeColor = '';
-                                            if (id === 'models') {
-                                                badgeText = settingsProvider ? settingsProvider.toUpperCase() : 'OLLAMA';
-                                                badgeColor = 'var(--color-text-tertiary)';
-                                            } else if (id === 'profile' && isCloudUser) {
-                                                badgeText = cloudUsage?.plan ? cloudUsage.plan.toUpperCase() : 'FREE';
-                                                badgeColor = cloudUsage?.plan === 'pro' ? '#10b981' : '#a855f7';
-                                            } else if (id === 'dispatch') {
-                                                badgeText = 'BETA';
-                                                badgeColor = '#f59e0b';
-                                            }
-
-                                            // Find specific sub-option matched by search query
-                                            let matchedOption = '';
-                                            if (query && !label.toLowerCase().includes(query)) {
-                                                const match = keywords.split(' ').find(k => k.toLowerCase().includes(query));
-                                                if (match) matchedOption = match;
-                                            }
-
-                                            return (
-                                                <button
-                                                    key={id}
-                                                    onClick={() => setActiveSection(id)}
-                                                    style={{
-                                                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                                        padding: '8px 10px', borderRadius: 10, border: 'none',
-                                                        backgroundColor: isActive ? 'var(--color-bg-surface)' : 'transparent',
-                                                        color: isActive ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-                                                        fontSize: 13, fontWeight: isActive ? 600 : 400,
-                                                        cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s',
-                                                        boxShadow: isActive ? 'var(--shadow-xs)' : 'none',
-                                                        fontFamily: 'var(--font-sans)',
-                                                    }}
-                                                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; }}
-                                                    onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = 'transparent'; }}
-                                                >
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, overflow: 'hidden' }}>
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                            <Icon width={16} height={16} style={{ flexShrink: 0 }} />
-                                                            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
-                                                        </div>
-                                                        {matchedOption && (
-                                                            <span style={{ fontSize: 10, color: '#10b981', paddingLeft: 24, textTransform: 'capitalize' }}>
-                                                                ↳ matches "{matchedOption}"
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    {badgeText && !matchedOption && (
-                                                        <span style={{
-                                                            fontSize: 7.5,
-                                                            fontWeight: 700,
-                                                            padding: '1px 4px',
-                                                            borderRadius: 4,
-                                                            backgroundColor: 'var(--color-bg-subtle)',
-                                                            color: badgeColor,
-                                                            border: '1px solid var(--color-border)',
-                                                            flexShrink: 0,
-                                                            letterSpacing: '0.03em',
-                                                            maxWidth: 70,
-                                                            overflow: 'hidden',
-                                                            textOverflow: 'ellipsis',
-                                                            whiteSpace: 'nowrap'
-                                                        }}>
-                                                            {badgeText}
-                                                        </span>
-                                                    )}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </nav>
-
-                    {/* Version & Update Check */}
-                    <div style={{ marginTop: 'auto', padding: '12px 14px', borderTop: '1px solid var(--color-border)' }}>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
-                            App Version
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <span style={{ fontSize: 13, color: 'var(--color-text-secondary)', fontWeight: 500 }}>v{appVersion}</span>
-                            <button 
-                                onClick={handleCheckUpdate}
-                                disabled={isCheckingUpdate}
-                                style={{ 
-                                    fontSize: 11, color: 'var(--color-navis-active-text)', background: 'none', border: 'none', 
-                                    cursor: isCheckingUpdate ? 'default' : 'pointer', fontWeight: 600, padding: 0,
-                                    opacity: isCheckingUpdate ? 0.6 : 1
-                                }}
-                            >
-                                {isCheckingUpdate ? 'Checking...' : 'Check for updates'}
+            <div className="cs-body">
+                {searchQuery ? (
+                    <div className="cs-results">
+                        {searchHits.length === 0 && <div className="cs-empty">No settings match “{settingsSearch.trim()}”.</div>}
+                        {searchHits.map(({ id, label, icon: Icon }) => (
+                            <button key={id} className="cs-result" onClick={() => { setActiveSection(id); setSettingsSearch(''); }}>
+                                <Icon width={15} height={15} />
+                                <span>{label}</span>
+                                <em>{groupLabels[navCategories.find(c => c.items.some(i => i.id === id))?.category || ''] || ''}</em>
                             </button>
-                        </div>
-                        {updateInfo?.hasUpdate && (
-                            <div style={{ marginTop: 10, padding: 8, backgroundColor: 'var(--color-navis-active-bg)', borderRadius: 8, border: '1px solid var(--color-navis-active-border)' }}>
-                                <div style={{ fontSize: 11, color: 'var(--color-text-primary)', fontWeight: 600, marginBottom: 2 }}>Update Available: v{updateInfo.latestVersion}</div>
-                                {autoUpdateDownloaded ? (
-                                    <button 
-                                        onClick={() => (window as any).electronAPI?.system?.restartAndUpdate?.()}
-                                        style={{ fontSize: 11, color: 'var(--color-text-inverse)', backgroundColor: 'var(--color-navis-active-border)', border: 'none', borderRadius: 4, padding: '4px 8px', width: '100%', cursor: 'pointer', marginTop: 4 }}
-                                    >
-                                        Restart &amp; Install
+                        ))}
+                    </div>
+                ) : (
+                    <>
+                        {activeGroup.items.length > 1 && (
+                            <div className="cs-seg" role="tablist">
+                                {activeGroup.items.map(({ id, label }) => (
+                                    <button key={id} role="tab" aria-selected={activeSection === id} className={activeSection === id ? 'is-on' : ''} onClick={() => setActiveSection(id)}>
+                                        {label}
                                     </button>
-                                ) : autoUpdateProgress !== null ? (
-                                    <div style={{ marginTop: 4 }}>
-                                        <div style={{ fontSize: 10, color: 'var(--color-text-secondary)', marginBottom: 2 }}>Downloading... {autoUpdateProgress.toFixed(1)}%</div>
-                                        <div style={{ height: 4, backgroundColor: 'var(--color-border)', borderRadius: 2, overflow: 'hidden' }}>
-                                            <div style={{ height: '100%', width: `${autoUpdateProgress}%`, backgroundColor: 'var(--color-navis-active-border)', transition: 'width 0.3s' }} />
-                                        </div>
-                                    </div>
-                                ) : autoUpdateAvailable ? (
-                                    <div style={{ fontSize: 10, color: 'var(--color-text-secondary)', marginTop: 4 }}>Downloading update in background...</div>
-                                ) : (
-                                    <button 
-                                        onClick={() => (window as any).electronAPI?.system?.openExternal?.(`https://github.com/Everfern-AI/Everfern/releases/tag/v${updateInfo.latestVersion}`)}
-                                        style={{ fontSize: 11, color: 'var(--color-text-inverse)', backgroundColor: 'var(--color-navis-active-border)', border: 'none', borderRadius: 4, padding: '4px 8px', width: '100%', cursor: 'pointer', marginTop: 4 }}
-                                    >
-                                        Download from GitHub
-                                    </button>
-                                )}
+                                ))}
                             </div>
                         )}
-                        <button
-                            onClick={() => {
-                                (window as any).electronAPI?.system?.openExternal?.(GITHUB_REPO_URL) ||
-                                    window.open(GITHUB_REPO_URL, '_blank');
-                            }}
-                            style={{
-                                marginTop: 12, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                                padding: '8px 12px', borderRadius: 8,
-                                border: '1px solid var(--color-border)',
-                                backgroundColor: 'transparent', color: 'var(--color-text-secondary)',
-                                fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                                transition: 'all 0.15s ease',
-                            }}
-                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
-                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
-                        >
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
-                            GitHub
-                        </button>
-                    </div>
-                </div>
-
-                {/* Right content area - Rounded floating sheet */}
-                <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px 32px', backgroundColor: 'var(--color-bg-base)' }}>
-                    <div style={{
-                        maxWidth: activeSection === 'system' ? 1040 : (activeSection === 'dispatch' ? 960 : 720),
-                        margin: '0 auto',
-                        backgroundColor: 'var(--color-bg-surface)',
-                        border: '1px solid var(--color-border)',
-                        borderRadius: 28,
-                        padding: activeSection === 'system' ? '36px 44px' : '40px 52px',
-                        minHeight: '100%',
-                        boxShadow: 'var(--shadow-xs)',
-                        transition: 'max-width 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
-                    }}>
                         <AnimatePresence mode="wait">
                             <motion.div
                                 key={activeSection}
-                                initial={{ opacity: 0, y: 10 }}
+                                initial={{ opacity: 0, y: 8 }}
                                 animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: -6 }}
+                                exit={{ opacity: 0, y: -4 }}
                                 transition={{ duration: 0.18 }}
                             >
                                 {renderActiveSection()}
                             </motion.div>
                         </AnimatePresence>
-                    </div>
-                </div>
-            </div>
 
-            {/* Footer save bar */}
-            <div style={{ height: 60, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12, padding: '0 48px', borderTop: '1px solid var(--color-border)', backgroundColor: 'var(--color-bg-base)', flexShrink: 0 }}>
-                <button
-                    onClick={onClose}
-                    style={{ padding: '9px 22px', backgroundColor: 'transparent', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)', borderRadius: 10, fontWeight: 500, fontSize: 14, cursor: 'pointer', transition: 'all 0.2s', fontFamily: 'var(--font-sans)' }}
-                    onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)'}
-                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                >
-                    Cancel
-                </button>
-                <button
-                    onClick={() => {
-                        setToastState('saving');
-                        setTimeout(() => setToastState('saved'), 600);
-                        setTimeout(() => setToastState('idle'), 4200);
-                        handleSaveSettings(profileName, displayName, preferences, workFunction);
-                    }}
-                    disabled={settingsEngine === 'online' && (!settingsProvider || !settingsApiKey)}
-                    style={{
-                        display: 'flex', alignItems: 'center', gap: 8,
-                        padding: '9px 22px', backgroundColor: 'var(--color-text-primary)', color: 'var(--color-text-inverse)',
-                        border: 'none', borderRadius: 10, fontWeight: 600, fontSize: 14,
-                        cursor: (settingsEngine === 'online' && (!settingsProvider || !settingsApiKey)) ? 'not-allowed' : 'pointer',
-                        opacity: (settingsEngine === 'online' && (!settingsProvider || !settingsApiKey)) ? 0.4 : 1,
-                        transition: 'all 0.2s', fontFamily: 'var(--font-sans)',
-                    }}
-                    onMouseEnter={e => { if (!(settingsEngine === 'online' && (!settingsProvider || !settingsApiKey))) e.currentTarget.style.backgroundColor = 'var(--color-text-secondary)'; }}
-                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--color-text-primary)'}
-                >
-                    <ArrowDownOnSquareIcon width={16} height={16} />
-                    Save Changes
-                </button>
+                        {/* Only sections whose fields wait for Save get a button; the rest apply as you change them. */}
+                        {!INSTANT_SECTIONS.has(activeSection) && (
+                            <div className="cs-actions">
+                                <button
+                                    className="cs-save"
+                                    disabled={saveDisabled}
+                                    onClick={() => {
+                                        setToastState('saving');
+                                        setTimeout(() => setToastState('saved'), 600);
+                                        setTimeout(() => setToastState('idle'), 4200);
+                                        handleSaveSettings(profileName, displayName, preferences, workFunction);
+                                    }}
+                                >
+                                    Save changes
+                                </button>
+                            </div>
+                        )}
+
+                        {activeSection === 'help' && (
+                            <div className="cs-version">
+                                <span>EverFern v{appVersion}</span>
+                                <button onClick={handleCheckUpdate} disabled={isCheckingUpdate}>{isCheckingUpdate ? 'Checking…' : 'Check for updates'}</button>
+                                <button onClick={() => { (window as any).electronAPI?.system?.openExternal?.(GITHUB_REPO_URL) || window.open(GITHUB_REPO_URL, '_blank'); }}>GitHub</button>
+                                {updateInfo?.hasUpdate && (
+                                    autoUpdateDownloaded ? (
+                                        <button className="is-primary" onClick={() => (window as any).electronAPI?.system?.restartAndUpdate?.()}>Restart to install v{updateInfo.latestVersion}</button>
+                                    ) : autoUpdateProgress !== null ? (
+                                        <span>Downloading v{updateInfo.latestVersion}… {autoUpdateProgress.toFixed(0)}%</span>
+                                    ) : autoUpdateAvailable ? (
+                                        <span>Downloading v{updateInfo.latestVersion} in the background…</span>
+                                    ) : (
+                                        <button className="is-primary" onClick={() => (window as any).electronAPI?.system?.openExternal?.(`https://github.com/Everfern-AI/Everfern/releases/tag/v${updateInfo.latestVersion}`)}>Get v{updateInfo.latestVersion}</button>
+                                    )
+                                )}
+                            </div>
+                        )}
+                    </>
+                )}
             </div>
 
             {/* Toast notification */}

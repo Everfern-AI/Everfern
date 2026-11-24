@@ -8,12 +8,29 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { execFile } from 'child_process';
+import { currentScope } from '../agent/agent-scope';
 import type { Conversation, ConversationSummary, ChatMessage } from '../acp/types';
 import { dbOps } from '../lib/db';
 import { getSystemEmbeddingConfig, getEmbeddingModel } from '../lib/embeddings';
 
 const LEGACY_CONVERSATIONS_DIR = path.join(os.homedir(), '.everfern', 'store', 'conversations');
 const LEGACY_TIMELINE_DIR = path.join(os.homedir(), '.everfern', 'store', 'timeline');
+
+export function nativeHistoryOperation<T>(operation: 'list' | 'listByProject' | 'load' | 'save' | 'togglePin' | 'toggleUnread' | 'updateTitle' | 'setProject' | 'delete', fields: object = {}): Promise<T> | undefined {
+  const executable = process.env.EF_NATIVE_EXE;
+  if (process.env.EVERFERN_SHELL !== 'tauri' || !executable) return undefined;
+  return new Promise((resolve, reject) => {
+    const child = execFile(executable, ['--ef-history-read'], {
+      windowsHide: true, maxBuffer: 64 * 1024 * 1024,
+    }, (error, output) => {
+      if (error) return reject(error);
+      try { resolve(JSON.parse(output)); } catch (parseError) { reject(parseError); }
+    });
+    child.stdin?.once('error', reject);
+    child.stdin?.end(JSON.stringify({ ...fields, operation, scope: currentScope() }));
+  });
+}
 
 // Defensive parse: one corrupted column must never null out a whole conversation.
 export function parseJsonField<T>(raw: unknown, fallback: T, label: string): T {
@@ -75,6 +92,13 @@ export class ChatHistoryStore {
    * Asynchronously generates an embedding for a message and stores it in the vector DB.
    * This is a fire-and-forget method that doesn't block UI saves.
    */
+  /** Embeds messages saved by the Rust data layer (Tauri), which has no embedding model. */
+  indexMessages(tasks: Array<{ id: string; content: string }>): void {
+    for (const task of Array.isArray(tasks) ? tasks : []) {
+      if (task && typeof task.id === 'string') this.indexMessage(task.id, task.content).catch(() => {});
+    }
+  }
+
   private async indexMessage(id: string, content: string, maxRetries = 3): Promise<void> {
     if (!content || typeof content !== 'string' || content.trim().length === 0) return;
 
@@ -173,6 +197,8 @@ export class ChatHistoryStore {
   async list(): Promise<ConversationSummary[]> {
     await this.init();
     try {
+      const native = nativeHistoryOperation<ConversationSummary[]>('list');
+      if (native) return await native;
       const rows = await dbOps.all(`
         SELECT c.*, p.name as projectName, COUNT(m.id) as messageCount
         FROM conversations c
@@ -208,6 +234,8 @@ export class ChatHistoryStore {
   async listByProject(projectId: string): Promise<ConversationSummary[]> {
     await this.init();
     try {
+      const native = nativeHistoryOperation<ConversationSummary[]>('listByProject', { id: projectId });
+      if (native) return await native;
       const rows = await dbOps.all(`
         SELECT c.*, p.name as projectName, COUNT(m.id) as messageCount
         FROM conversations c
@@ -244,6 +272,8 @@ export class ChatHistoryStore {
   async togglePin(id: string): Promise<{ success: boolean; isPinned: boolean; error?: string }> {
     await this.init();
     try {
+      const native = nativeHistoryOperation<Awaited<ReturnType<ChatHistoryStore['togglePin']>>>('togglePin', { id });
+      if (native) return await native;
       const row = await dbOps.get('SELECT is_pinned, is_bookmarked FROM conversations WHERE id = ?', [id]);
       if (!row) return { success: false, isPinned: false, error: 'Conversation not found' };
 
@@ -269,6 +299,8 @@ export class ChatHistoryStore {
   async toggleUnread(id: string): Promise<{ success: boolean; isUnread: boolean; error?: string }> {
     await this.init();
     try {
+      const native = nativeHistoryOperation<Awaited<ReturnType<ChatHistoryStore['toggleUnread']>>>('toggleUnread', { id });
+      if (native) return await native;
       const row = await dbOps.get('SELECT is_unread FROM conversations WHERE id = ?', [id]);
       if (!row) return { success: false, isUnread: false, error: 'Conversation not found' };
 
@@ -293,6 +325,8 @@ export class ChatHistoryStore {
   async updateTitle(id: string, title: string): Promise<{ success: boolean; error?: string }> {
     await this.init();
     try {
+      const native = nativeHistoryOperation<Awaited<ReturnType<ChatHistoryStore['updateTitle']>>>('updateTitle', { id, title });
+      if (native) return await native;
       await dbOps.run('UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?', [
         title.trim(),
         new Date().toISOString(),
@@ -312,6 +346,8 @@ export class ChatHistoryStore {
   async setProject(id: string, projectId: string | null): Promise<{ success: boolean; error?: string }> {
     await this.init();
     try {
+      const native = nativeHistoryOperation<Awaited<ReturnType<ChatHistoryStore['setProject']>>>('setProject', { id, projectId });
+      if (native) return await native;
       await dbOps.run('UPDATE conversations SET project_id = ?, updated_at = ? WHERE id = ?', [
         projectId || null,
         new Date().toISOString(),
@@ -331,6 +367,8 @@ export class ChatHistoryStore {
   async load(id: string): Promise<Conversation | null> {
     await this.init();
     try {
+      const native = nativeHistoryOperation<Conversation | null>('load', { id });
+      if (native) return await native;
       const convRow = await dbOps.get(`
         SELECT c.*, p.name as projectName
         FROM conversations c
@@ -397,6 +435,16 @@ export class ChatHistoryStore {
     const indexTasks: Array<{ id: string; content: string }> = [];
 
     try {
+      const native = nativeHistoryOperation<{
+        success: boolean;
+        error?: string;
+        __index?: Array<{ id: string; content: string }>;
+      }>('save', { conversation });
+      if (native) {
+        const { __index, ...result } = await native;
+        if (__index) this.indexMessages(__index);
+        return result;
+      }
       await dbOps.run('SAVEPOINT save_conv');
       transactionStarted = true;
 
@@ -538,6 +586,8 @@ export class ChatHistoryStore {
    */
   async delete(id: string): Promise<{ success: boolean; error?: string }> {
     try {
+      const native = nativeHistoryOperation<Awaited<ReturnType<ChatHistoryStore['delete']>>>('delete', { id });
+      if (native) return await native;
       await dbOps.run('DELETE FROM conversations WHERE id = ?', [id]);
       // Cascading delete handles messages
       return { success: true };

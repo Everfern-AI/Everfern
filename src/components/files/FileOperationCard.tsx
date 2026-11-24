@@ -247,7 +247,7 @@ export const FileOperationCard: React.FC<FileOperationCardProps> = ({
                     >
                         <div className="border-t border-gray-100 px-4 py-3">
                             <div className="flex items-center justify-between mb-2">
-                                <span className="text-[11px] font-medium text-gray-500 uppercase tracking-wider">
+                                <span className="text-[11px] font-medium text-gray-500r">
                                     Preview
                                 </span>
                                 <button

@@ -2,6 +2,7 @@
 
 import React from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { FolderOpen, Folder, FolderPlus, Package, PenLine, Trash2, File, FileText, FileCode, Image as ImageIcon, Film, Music, Archive, Type, Cog, Check, type LucideIcon } from "lucide-react";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -27,12 +28,12 @@ interface FileExplorerViewProps {
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-const ACTION_CONFIG: Record<string, { icon: string; verb: string; color: string }> = {
-    list: { icon: '📂', verb: 'Listed', color: '#60a5fa' },
-    mkdirp: { icon: '📁', verb: 'Created', color: '#4ade80' },
-    move: { icon: '📦', verb: 'Moved', color: '#fbbf24' },
-    rename: { icon: '✏️', verb: 'Renamed', color: '#c084fc' },
-    delete: { icon: '🗑️', verb: 'Deleted', color: '#f87171' },
+const ACTION_CONFIG: Record<string, { icon: LucideIcon; verb: string; color: string }> = {
+    list: { icon: FolderOpen, verb: 'Listed', color: '#60a5fa' },
+    mkdirp: { icon: FolderPlus, verb: 'Created', color: '#4ade80' },
+    move: { icon: Package, verb: 'Moved', color: '#fbbf24' },
+    rename: { icon: PenLine, verb: 'Renamed', color: '#c084fc' },
+    delete: { icon: Trash2, verb: 'Deleted', color: '#f87171' },
 };
 
 function formatSize(bytes?: number): string {
@@ -42,20 +43,20 @@ function formatSize(bytes?: number): string {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function getFileIcon(path: string, type: 'file' | 'dir'): string {
-    if (type === 'dir') return '📁';
+function getFileIcon(path: string, type: 'file' | 'dir'): LucideIcon {
+    if (type === 'dir') return Folder;
     const ext = path.split('.').pop()?.toLowerCase() ?? '';
-    const iconMap: Record<string, string> = {
-        ttf: '🔤', otf: '🔤', woff: '🔤', woff2: '🔤', fon: '🔤',
-        png: '🖼️', jpg: '🖼️', jpeg: '🖼️', gif: '🖼️', webp: '🖼️', svg: '🖼️', ico: '🖼️',
-        mp4: '🎬', mkv: '🎬', avi: '🎬', mov: '🎬', webm: '🎬',
-        mp3: '🎵', wav: '🎵', flac: '🎵', aac: '🎵', ogg: '🎵',
-        zip: '📦', rar: '📦', '7z': '📦', tar: '📦', gz: '📦',
-        pdf: '📕', doc: '📝', docx: '📝', txt: '📄', md: '📄',
-        exe: '⚙️', msi: '⚙️', bat: '⚙️', sh: '⚙️',
-        js: '💛', ts: '💙', py: '🐍', json: '📋', css: '🎨', html: '🌐',
-    };
-    return iconMap[ext] || '📄';
+    const groups: [LucideIcon, string[]][] = [
+        [Type, ['ttf', 'otf', 'woff', 'woff2', 'fon']],
+        [ImageIcon, ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico']],
+        [Film, ['mp4', 'mkv', 'avi', 'mov', 'webm']],
+        [Music, ['mp3', 'wav', 'flac', 'aac', 'ogg']],
+        [Archive, ['zip', 'rar', '7z', 'tar', 'gz']],
+        [FileText, ['pdf', 'doc', 'docx', 'txt', 'md']],
+        [Cog, ['exe', 'msi', 'bat', 'sh']],
+        [FileCode, ['js', 'ts', 'tsx', 'jsx', 'py', 'json', 'css', 'html']],
+    ];
+    return groups.find(([, exts]) => exts.includes(ext))?.[0] ?? File;
 }
 
 function basename(p: string): string {
@@ -152,7 +153,7 @@ const TreeRow = ({ node, depth, defaultOpen }: { node: TreeNode; depth: number; 
                     <span style={{ fontSize: 9, color: 'var(--color-text-secondary)', width: 10, textAlign: 'center', transition: 'transform 0.15s', transform: open ? 'rotate(90deg)' : 'none' }}>▶</span>
                 )}
                 {!isDir && <span style={{ width: 10 }} />}
-                <span style={{ fontSize: 13 }}>{getFileIcon(node.name, node.type)}</span>
+                {React.createElement(getFileIcon(node.name, node.type), { size: 13, strokeWidth: 1.75, style: { flexShrink: 0, color: 'var(--color-text-secondary)' } })}
                 <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{node.name}</span>
                 {node.size !== undefined && (
                     <span style={{ fontSize: 10, color: 'var(--color-text-secondary)', flexShrink: 0 }}>{formatSize(node.size)}</span>
@@ -187,7 +188,7 @@ const OperationLog = ({ op, index }: { op: FileOp; index: number }) => {
                 fontSize: 12,
             }}
         >
-            <span>{cfg.icon}</span>
+            <cfg.icon size={13} strokeWidth={1.75} style={{ flexShrink: 0, color: cfg.color }} />
             <span style={{ color: cfg.color, fontWeight: 600, flexShrink: 0 }}>{cfg.verb}</span>
             <span style={{ color: 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {op.action === 'move' || op.action === 'rename'
@@ -202,7 +203,7 @@ const OperationLog = ({ op, index }: { op: FileOp; index: number }) => {
                 />
             )}
             {op.status === 'done' && (
-                <span style={{ marginLeft: 'auto', fontSize: 11, color: '#4ade80' }}>✓</span>
+                <Check size={12} strokeWidth={2} style={{ marginLeft: 'auto', color: '#4ade80' }} />
             )}
         </motion.div>
     );
@@ -233,7 +234,7 @@ export const FileExplorerView: React.FC<FileExplorerViewProps> = ({ operations }
                 display: 'flex', alignItems: 'center', gap: 8,
                 background: 'rgba(255,255,255,0.02)',
             }}>
-                <span style={{ fontSize: 14 }}>📂</span>
+                <FolderOpen size={14} strokeWidth={1.75} style={{ color: 'var(--color-text-secondary)' }} />
                 <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-border)' }}>File Explorer</span>
                 <span style={{ fontSize: 10, color: 'var(--color-text-secondary)', marginLeft: 'auto' }}>
                     {allEntries.length} items

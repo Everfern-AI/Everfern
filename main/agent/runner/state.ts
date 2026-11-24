@@ -154,6 +154,8 @@ export const GraphState = Annotation.Root({
   isInteractiveTask: Annotation<boolean>(),
   codingComplete: Annotation<boolean>(),
   codingSpecialistSelfLoopCount: Annotation<number>(),
+  // Consecutive coding_specialist passes that ended with text and no tool call.
+  codingTextOnlyStreak: Annotation<number>(),
   dataAnalysisComplete: Annotation<boolean>(),
   dataAnalysisSelfLoopCount: Annotation<number>(),
   computerUseComplete: Annotation<boolean>(),

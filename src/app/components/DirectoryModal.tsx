@@ -33,6 +33,20 @@ interface MCPConnector {
     fields: { key: string; label: string; type: string; placeholder?: string }[];
 }
 
+/** A local logo when we ship one; otherwise the connector's initial, so no card shows a generic placeholder. */
+function ConnectorLogo({ connector, size }: { connector: MCPConnector; size: number }) {
+    const [failed, setFailed] = useState(false);
+    if (connector.logo && !failed) {
+        // eslint-disable-next-line @next/next/no-img-element
+        return <img src={`/images/integrations/${connector.logo}`} alt="" style={{ width: size, height: size, objectFit: "contain" }} onError={() => setFailed(true)} />;
+    }
+    return (
+        <span aria-hidden="true" style={{ fontSize: Math.round(size * 0.62), fontWeight: 600, lineHeight: 1, color: "var(--color-text-secondary)" }}>
+            {connector.name.charAt(0)}
+        </span>
+    );
+}
+
 const MCP_CONNECTORS: MCPConnector[] = [
     {
         id: "github",
@@ -52,8 +66,8 @@ const MCP_CONNECTORS: MCPConnector[] = [
     },
     {
         id: "atlassian_rovo",
-        name: "Atlassian Rovo (Jira)",
-        description: "Access Jira & Confluence from Claude",
+        name: "Jira & Confluence",
+        description: "Search and update Jira issues and Confluence pages",
         domain: "atlassian.com",
         fields: [
             { key: "domain", label: "Atlassian Domain", type: "text", placeholder: "your-domain.atlassian.net" },
@@ -105,7 +119,7 @@ const MCP_CONNECTORS: MCPConnector[] = [
     {
         id: "close",
         name: "Close",
-        description: "Connect Claude to Close CRM to securely access and act on data",
+        description: "Read and update leads, contacts and deals in Close CRM",
         domain: "close.com",
         fields: [{ key: "apiKey", label: "API Key", type: "password", placeholder: "..." }]
     },
@@ -319,7 +333,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                         style={{ position: "absolute", inset: 0, backgroundColor: colors.overlay, backdropFilter: "blur(2px)" }}
                     />
 
-                    <motion.div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Extensions directory"
+                    <motion.div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" 
                         aria-labelledby="directory-modal-title"
                         initial={{ opacity: 0, scale: 0.95, y: 10 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -327,8 +341,8 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                         transition={{ type: "spring", damping: 25, stiffness: 300 }}
                         style={{
                             position: "relative",
-                            width: "min(900px, calc(100vw - 32px))",
-                            height: "min(600px, calc(100vh - 32px))",
+                            width: "min(900px, calc(var(--ef-vw) - 32px))",
+                            height: "min(600px, calc(var(--ef-vh) - 32px))",
                             backgroundColor: colors.background,
                             borderRadius: "16px",
                             border: `1px solid ${colors.border}`,
@@ -339,11 +353,11 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                     >
                         {/* Sidebar */}
                         <div style={{ width: "clamp(176px, 26vw, 240px)", backgroundColor: colors.sidebarBg, borderRight: `1px solid ${colors.border}`, display: "flex", flexDirection: "column", padding: "20px" }}>
-                            <div id="directory-modal-title" style={{ fontSize: "20px", fontWeight: 600, color: colors.textPrimary, marginBottom: "24px", fontFamily: 'var(--font-serif, Georgia, serif)' }}>
-                                Directory
+                            <div id="directory-modal-title" style={{ fontSize: "17px", fontWeight: 600, color: colors.textPrimary, marginBottom: "24px" }}>
+                                Customize
                             </div>
 
-                            <div role="tablist" aria-label="Directory sections" style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <div role="tablist" aria-label="Customize sections" style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                                 {[
                                     { id: 'skills', label: 'Skills', icon: WrenchIcon },
                                     { id: 'mcp', label: 'MCP', icon: CpuChipIcon },
@@ -571,15 +585,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                                         display: "flex", alignItems: "center", justifyContent: "center",
                                                         overflow: "hidden"
                                                     }}>
-                                                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                        <img
-                                                            src={mcp.logo ? `/images/integrations/${mcp.logo}` : `https://logo.clearbit.com/${mcp.domain}`}
-                                                            alt={mcp.name}
-                                                            style={{ width: "24px", height: "24px", objectFit: "contain" }}
-                                                            onError={(e) => {
-                                                                (e.target as HTMLImageElement).src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="%23999999"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>';
-                                                            }}
-                                                        />
+                                                        <ConnectorLogo connector={mcp} size={24} />
                                                     </div>
                                                     <div style={{ fontSize: "14px", fontWeight: 600, color: colors.textPrimary }}>
                                                         {mcp.name}
@@ -801,15 +807,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                                     display: "flex", alignItems: "center", justifyContent: "center",
                                                     overflow: "hidden"
                                                 }}>
-                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                    <img
-                                                        src={selectedMCP.logo ? `/images/integrations/${selectedMCP.logo}` : `https://logo.clearbit.com/${selectedMCP.domain}`}
-                                                        alt={selectedMCP.name}
-                                                        style={{ width: "20px", height: "20px", objectFit: "contain" }}
-                                                        onError={(e) => {
-                                                            (e.target as HTMLImageElement).src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="%23999999"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>';
-                                                        }}
-                                                    />
+                                                    <ConnectorLogo connector={selectedMCP} size={20} />
                                                 </div>
                                                 <div style={{ fontSize: "16px", fontWeight: 600, color: colors.textPrimary }}>
                                                     Add {selectedMCP.name}
@@ -1085,7 +1083,7 @@ export default function DirectoryModal({ isOpen, onClose }: DirectoryModalProps)
                                             </div>
                                             {skillResult && (
                                                 <div style={{ padding: "10px 14px", borderRadius: 8, backgroundColor: skillResult.success ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', color: skillResult.success ? '#16a34a' : '#dc2626', fontSize: 13 }}>
-                                                    {skillResult.success ? '✓ Skill saved! It will be available in the Skills tab.' : skillResult.error}
+                                                    {skillResult.success ? 'Skill saved. It will be available in the Skills tab.' : skillResult.error}
                                                 </div>
                                             )}
                                             <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>

@@ -1,7 +1,23 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { execFile } from 'child_process';
 import { assertSafeSegment, resolveWithin } from '../lib/path-guard';
+
+function nativeArtifact<T>(operation: string, fields: object): Promise<T> | undefined {
+  const executable = process.env.EF_NATIVE_EXE;
+  if (process.env.EVERFERN_SHELL !== 'tauri' || !executable) return undefined;
+  return new Promise((resolve, reject) => {
+    const child = execFile(executable, ['--ef-artifact-store'], {
+      windowsHide: true, maxBuffer: 64 * 1024 * 1024,
+    }, (error, stdout) => {
+      if (error) return reject(error);
+      try { resolve(JSON.parse(stdout)); } catch (parseError) { reject(parseError); }
+    });
+    child.stdin?.once('error', reject);
+    child.stdin?.end(JSON.stringify({ ...fields, operation }));
+  });
+}
 
 // MP-SEC-02: sandbox root every global artifact path must stay within.
 const ARTIFACTS_DIR = path.join(os.homedir(), '.everfern', 'artifacts');
@@ -34,6 +50,8 @@ async function exists(p: string): Promise<boolean> {
  * Scans ~/.everfern/artifacts/ and projectPath/.everfern/artifacts/ if provided.
  */
 export async function listArtifacts(chatId?: string, projectPath?: string): Promise<ArtifactMeta[]> {
+  const native = nativeArtifact<ArtifactMeta[]>('list', { chatId, projectPath });
+  if (native) return native;
   const globalArtifactsDir = ARTIFACTS_DIR;
   const results: ArtifactMeta[] = [];
 
@@ -123,6 +141,8 @@ async function scanDir(dirPath: string, chatId: string, results: ArtifactMeta[])
  * Reads the actual content of an artifact.
  */
 export async function readArtifact(chatId: string, filename: string, projectPath?: string): Promise<string | null> {
+  const native = nativeArtifact<string | null>('read', { chatId, filename, projectPath });
+  if (native) return native;
   let filepath: string;
   
   if (projectPath && chatId === 'project') {
@@ -152,6 +172,8 @@ export async function readArtifact(chatId: string, filename: string, projectPath
  * Writes (creates or overwrites) an artifact file.
  */
 export async function writeArtifact(chatId: string, filename: string, content: string, projectPath?: string): Promise<{ success: boolean; error?: string }> {
+  const native = nativeArtifact<{ success: boolean; error?: string }>('write', { chatId, filename, content, projectPath });
+  if (native) return native.catch(() => ({ success: false, error: 'Native artifact write failed' }));
   try {
     let dir: string;
     if (projectPath) {
@@ -174,6 +196,8 @@ export async function writeArtifact(chatId: string, filename: string, content: s
  * Deletes an artifact file.
  */
 export async function deleteArtifact(chatId: string, filename: string, projectPath?: string): Promise<{ success: boolean }> {
+  const native = nativeArtifact<{ success: boolean }>('delete', { chatId, filename, projectPath });
+  if (native) return native.catch(() => ({ success: false }));
   try {
     let p: string;
     if (projectPath && chatId === 'project') {
@@ -196,6 +220,9 @@ export async function deleteArtifact(chatId: string, filename: string, projectPa
  * This prevents corruption if the write operation is interrupted.
  */
 export async function writeArtifactAtomic(chatId: string, filename: string, content: string, projectPath?: string): Promise<{ success: boolean; error?: string }> {
+  if (process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE) {
+    return writeArtifact(chatId, filename, content, projectPath);
+  }
   let dir: string;
   let filePath: string;
   let tempPath: string | undefined;
@@ -239,6 +266,10 @@ export async function writeArtifactAtomic(chatId: string, filename: string, cont
  */
 export async function updateArtifactTimestamp(chatId: string, filename: string, projectPath?: string): Promise<{ success: boolean; error?: string }> {
   try {
+    const native = nativeArtifact<{ success: boolean; error?: string }>('touch', {
+      chatId, filename, projectPath: chatId === 'project' ? projectPath : undefined,
+    });
+    if (native) return await native;
     let filePath: string;
     if (projectPath && chatId === 'project') {
       filePath = resolveWithin(path.join(projectPath, '.everfern', 'artifacts'), filename);

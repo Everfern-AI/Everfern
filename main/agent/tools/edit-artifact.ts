@@ -11,7 +11,7 @@ import { ArtifactResolver } from './artifact-resolver';
 import { ArtifactParser } from './artifact-parser';
 import { ArtifactEditor, type EditArtifactArgs } from './artifact-editor';
 import { readArtifact, writeArtifactAtomic, updateArtifactTimestamp } from '../../store/artifacts';
-import * as cheerio from 'cheerio';
+import type * as cheerio from 'cheerio';
 
 export const editArtifactTool = (runner?: any): AgentTool => ({
   name: 'edit_artifact',
@@ -211,7 +211,7 @@ export const editArtifactTool = (runner?: any): AgentTool => ({
 
       // Validate HTML structure before writing
       try {
-        cheerio.load(updatedHTML);
+        (require('cheerio') as typeof cheerio).load(updatedHTML);
       } catch (err) {
         return {
           success: false,

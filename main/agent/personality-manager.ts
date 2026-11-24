@@ -1,3 +1,4 @@
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -51,6 +52,7 @@ When delegating tasks, follow these strict routing rules:
 `;
 
 export function initializeOpenClawConfigs(): void {
+  if (process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE) return;
   try {
     if (!fs.existsSync(PROMPTS_DIR)) {
       fs.mkdirSync(PROMPTS_DIR, { recursive: true });
@@ -70,7 +72,33 @@ export function initializeOpenClawConfigs(): void {
   }
 }
 
+type PersonalityConfigs = { soul: string; agents: string };
+
+function loadNativeConfigs(workspaceRoot?: string): PersonalityConfigs | undefined {
+  const native = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+  if (!native) return undefined;
+  try {
+    return JSON.parse(execFileSync(native, ['--ef-personality-read'], {
+      input: JSON.stringify(workspaceRoot ?? null), encoding: 'utf8', windowsHide: true,
+      timeout: 10000, maxBuffer: 16 * 1024 * 1024,
+    }));
+  } catch (error) {
+    console.warn('[EverFern] Native personality read failed:', error);
+    return undefined;
+  }
+}
+
+export function loadPersonalityConfigs(workspaceRoot?: string): PersonalityConfigs {
+  return loadNativeConfigs(workspaceRoot) ?? {
+    soul: loadSoulFile(workspaceRoot), agents: loadAgentsFile(workspaceRoot),
+  };
+}
+
 export function loadSoul(workspaceRoot?: string): string {
+  return loadNativeConfigs(workspaceRoot)?.soul ?? loadSoulFile(workspaceRoot);
+}
+
+function loadSoulFile(workspaceRoot?: string): string {
   try {
     if (workspaceRoot) {
       const workspaceSoul = path.join(workspaceRoot, 'SOUL.md');
@@ -88,7 +116,7 @@ export function loadSoul(workspaceRoot?: string): string {
   return DEFAULT_SOUL;
 }
 
-export function loadAgents(workspaceRoot?: string): string {
+function loadAgentsFile(workspaceRoot?: string): string {
   try {
     if (workspaceRoot) {
       const workspaceAgents = path.join(workspaceRoot, 'agents.md');

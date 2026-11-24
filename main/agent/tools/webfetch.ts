@@ -6,6 +6,26 @@
  */
 
 import type { AgentTool, ToolResult } from '../runner/types';
+import { execFile } from 'child_process';
+import { assertPublicUrl, fetchPublicOnly } from './net-guard';
+
+function fetchWithNative(request: unknown): Promise<(ToolResult & { data?: any }) | null> | undefined {
+  const executable = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+  if (!executable) return;
+  return new Promise(resolve => {
+    const child = execFile(executable, ['--ef-web-fetch'], {
+      encoding: 'utf8', windowsHide: true, timeout: 50000, maxBuffer: 16 * 1024 * 1024,
+    }, (error, output) => {
+      if (error) return resolve(null);
+      try {
+        const result = JSON.parse(output);
+        resolve(result && typeof result === 'object' && typeof result.success === 'boolean' ? result : null);
+      } catch { resolve(null); }
+    });
+    child.stdin?.once('error', () => resolve(null));
+    child.stdin?.end(JSON.stringify(request));
+  });
+}
 
 // ── HTML to Text Conversion ──────────────────────────────────────────
 
@@ -184,7 +204,30 @@ export const webFetchTool: AgentTool = {
       };
     }
 
+    // Worker runs (set by guardWorkerTools) may only reach public addresses, on every redirect.
+    const publicOnly = !!(anyArgs && typeof anyArgs === 'object' && anyArgs.__publicOnly === true);
+    if (publicOnly) {
+      try { await assertPublicUrl(url); } catch (e) {
+        return { success: false, output: `Error: ${e instanceof Error ? e.message : String(e)}`, error: 'blocked_private_address' };
+      }
+    }
+
     onUpdate?.(`Fetching ${url}...`);
+
+    const nativeResult = await fetchWithNative({ args: anyArgs, url, __publicOnly: publicOnly });
+    if (nativeResult) {
+      if (nativeResult.success && nativeResult.data) {
+        emitEvent?.({
+          type: 'web_fetch',
+          url: nativeResult.data.url,
+          title: nativeResult.data.title,
+          metadata: nativeResult.data.metadata,
+          contentLength: nativeResult.data.contentLength,
+          truncated: nativeResult.data.truncated,
+        });
+      }
+      return nativeResult;
+    }
 
     let html = '';
     let contentType = '';
@@ -193,7 +236,7 @@ export const webFetchTool: AgentTool = {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 20000);
 
-      const response = await fetch(url, {
+      const response = await (publicOnly ? fetchPublicOnly : fetch)(url, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
@@ -208,12 +251,14 @@ export const webFetchTool: AgentTool = {
           'Upgrade-Insecure-Requests': '1',
         },
         signal: controller.signal,
-        redirect: 'follow',
+        ...(publicOnly ? {} : { redirect: 'follow' as const }),
       });
 
       clearTimeout(timeout);
 
-      if (!response.ok) {
+      if (!response.ok && publicOnly) {
+        return { success: false, output: `Error: HTTP ${response.status} ${response.statusText} when fetching ${url}`, error: `http_${response.status}` };
+      } else if (!response.ok) {
         // Fallback to curl if HTTP error (like 403 Forbidden from bot mitigation)
         const curlRes = await fetchWithCurl(url);
         if (curlRes && curlRes.text) {
@@ -231,8 +276,8 @@ export const webFetchTool: AgentTool = {
         html = await response.text();
       }
     } catch (fetchErr) {
-      // Fallback to curl on network error or abort
-      const curlRes = await fetchWithCurl(url);
+      // Fallback to curl on network error or abort (not for worker runs: curl follows redirects unchecked)
+      const curlRes = publicOnly ? null : await fetchWithCurl(url);
       if (curlRes && curlRes.text) {
         html = curlRes.text;
         contentType = curlRes.contentType;

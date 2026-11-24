@@ -7,7 +7,9 @@
 
 import type { AIClient } from '../../../lib/ai-client';
 import * as crypto from 'crypto';
-import sharp from 'sharp';
+// sharp is loaded on first use, not at import.
+const loadSharp = (): typeof import('sharp') => require('sharp');
+import { hasNativeImage, nativeImageSize } from '../../../lib/native-image';
 import { BrowserSession } from './session';
 import {
   captureHtmlDomParserContext,
@@ -1471,13 +1473,14 @@ async function getImageDimensions(screenshotB64: string | null): Promise<{ width
       const parts = cleanB64.split(',');
       cleanB64 = parts[parts.length - 1];
     }
+    if (hasNativeImage()) return await nativeImageSize(cleanB64);
     const buffer = Buffer.from(cleanB64, 'base64');
-    const metadata = await sharp(buffer).metadata();
+    const metadata = await loadSharp()(buffer).metadata();
     if (metadata.width && metadata.height) {
       return { width: metadata.width, height: metadata.height };
     }
   } catch (err) {
-    console.error('[Navis] Failed to get image dimensions with sharp:', err);
+    console.error('[Navis] Failed to get image dimensions:', err);
   }
   return null;
 }

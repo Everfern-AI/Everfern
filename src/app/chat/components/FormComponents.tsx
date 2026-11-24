@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Siren as LuSiren, Check as LuCheck, X as LuX, Cog as LuCog, Paperclip as LuPaperclip } from "lucide-react";
 import { MarkdownRenderer } from './MarkdownComponents';
 import {
     CommandLineIcon,
@@ -224,8 +225,6 @@ const ToolCard = ({ tool }: { tool: ParsedTool }) => {
                                             fontSize: 10,
                                             fontWeight: 700,
                                             color: 'var(--color-text-tertiary)',
-                                            textTransform: 'uppercase',
-                                            letterSpacing: '0.07em',
                                         }}>
                                             {k.replace(/_/g, ' ')}
                                         </span>
@@ -395,7 +394,7 @@ const HitlApprovalForm = ({
                         background: userDecision === 'approved' ? '#f0fdf4' : '#fef2f2',
                         border: `1px solid ${userDecision === 'approved' ? '#bbf7d0' : '#fecaca'}`,
                     }}>
-                        <span style={{ fontSize: 15 }}>{userDecision === 'approved' ? '✓' : '✕'}</span>
+                        {userDecision === 'approved' ? <LuCheck size={15} strokeWidth={2} /> : <LuX size={15} strokeWidth={2} />}
                         <span style={{
                             fontSize: 13.5, fontWeight: 600,
                             color: userDecision === 'approved' ? '#166534' : '#991b1b',
@@ -533,7 +532,7 @@ const HitlApprovalForm = ({
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, color: '#dc2626', fontSize: 13, fontWeight: 600 }}>
-                <span>🚨</span>
+                <LuSiren size={14} strokeWidth={2} />
                 <span>Dangerous tool detected</span>
             </div>
 
@@ -581,7 +580,7 @@ const HitlApprovalForm = ({
 
             {userDecision && (
                 <div style={{ backgroundColor: userDecision === 'approved' ? 'var(--color-bg-hover)' : 'rgba(239, 68, 68, 0.15)', border: `1px solid ${userDecision === 'approved' ? 'var(--color-border)' : 'var(--color-error)'}`, borderRadius: 8, padding: 12, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 16 }}>{userDecision === 'approved' ? '✅' : '❌'}</span>
+                    {userDecision === 'approved' ? <LuCheck size={16} strokeWidth={2} color="var(--color-success)" /> : <LuX size={16} strokeWidth={2} color="var(--color-error)" />}
                     <span style={{ color: userDecision === 'approved' ? 'var(--color-success)' : 'var(--color-error)', fontWeight: 600, fontSize: 14 }}>
                         {userDecision === 'approved'
                             ? `Operation ${sendAsMessage ? 'approved (message sent)' : 'approved (silent)'}`
@@ -1034,7 +1033,7 @@ const UserQuestionForm = ({
                                 headerPart
                                     .replace('⚠️ High-risk action requires your approval', '')
                                     .replace('⚠️ Security Check Required', '')
-                                    .replace('Dangerous tool detected', '🚨 **Dangerous tool detected**')
+                                    .replace('Dangerous tool detected', '**Dangerous tool detected**')
                                     .trim()
                             } />
                         </div>
@@ -1048,13 +1047,11 @@ const UserQuestionForm = ({
                                 marginBottom: 10,
                                 color: 'var(--color-text-primary)',
                                 fontSize: 11,
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.08em',
                                 display: 'flex',
                                 alignItems: 'center',
                                 gap: 6,
                             }}>
-                                <span>⚙️</span> Actions to execute
+                                <LuCog size={12} strokeWidth={2} /> Actions to execute
                                 {toolEntries.length > 0 && (
                                     <span style={{
                                         backgroundColor: 'var(--color-text-tertiary)',
@@ -1431,12 +1428,12 @@ const UserQuestionForm = ({
                                     <span style={{ color: 'var(--color-text-primary)' }}>{option.label}</span>
                                     {isFileOption && (
                                         <span style={{ fontSize: 11, color: 'var(--color-text-primary)', marginLeft: 4, opacity: 0.8 }}>
-                                            📎 {fileAttached ? '✓ File attached' : 'Click to attach file'}
+                                            {fileAttached ? 'File attached' : 'Click to attach file'}
                                         </span>
                                     )}
                                     {option.isRecommended && (
                                         <span style={{ fontSize: 10, fontWeight: 700, color: '#166534', backgroundColor: '#dcfce7', border: '1px solid #bbf7d0', padding: '2px 8px', borderRadius: 20, marginLeft: 'auto', letterSpacing: '0.04em' }}>
-                                            RECOMMENDED
+                                            Recommended
                                         </span>
                                     )}
                                 </div>
@@ -1464,7 +1461,7 @@ const UserQuestionForm = ({
                 <div style={{ marginBottom: 12, padding: '8px 12px', backgroundColor: '#e8f5e9', border: '1px solid #c8e6c9', borderRadius: 8 }}>
                     {attachedFiles.map((f, i) => (
                         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#1b5e20' }}>
-                            <span>📎</span>
+                            <LuPaperclip size={13} strokeWidth={1.75} />
                             <span style={{ fontWeight: 500 }}>{f.name}</span>
                             <button onClick={() => setAttachedFiles(prev => prev.filter((_, j) => j !== i))}
                                 style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: '#c62828', fontSize: 12 }}>

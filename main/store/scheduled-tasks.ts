@@ -6,7 +6,37 @@
 
 import { dbOps } from '../lib/db';
 import * as crypto from 'crypto';
+import { spawnNative } from '../lib/native-process';
 import { SchedulerService } from '../integrations/scheduler-service';
+import { currentScope } from '../agent/agent-scope';
+
+function nativeTaskStore(operation: 'save' | 'run-times' | 'list' | 'get' | 'delete' | 'retry', payload: object): Promise<string> | undefined {
+  const executable = process.env.EF_NATIVE_EXE;
+  if (process.env.EVERFERN_SHELL !== 'tauri' || !executable) return undefined;
+  const request = JSON.stringify({ ...payload, scope: currentScope() });
+  return new Promise((resolve, reject) => {
+    const child = spawnNative(executable, [`--ef-task-${operation}`]);
+    const chunks: Buffer[] = [];
+    let bytes = 0;
+    child.stdout.on('data', (chunk: Buffer) => {
+      bytes += chunk.length;
+      if (bytes > 1024 * 1024) {
+        child.kill();
+        reject(new Error('Native scheduled task response exceeded 1 MiB'));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    child.once('error', reject);
+    child.once('close', (code, signal) => {
+      if (code === 0) resolve(Buffer.concat(chunks).toString('utf8'));
+      else reject(new Error(`Native scheduled task operation ${operation} exited with ${signal ?? code}`));
+    });
+    child.stdin.once('error', reject);
+    if (operation === 'retry') child.stdin.write(request + '\n');
+    else child.stdin.end(request);
+  });
+}
 
 export interface ScheduledTask {
   id: string;
@@ -31,6 +61,8 @@ export class ScheduledTasksStore {
    */
   async list(projectId?: string): Promise<ScheduledTask[]> {
     try {
+      const native = nativeTaskStore('list', { projectId });
+      if (native) return JSON.parse(await native);
       let rows;
       if (projectId) {
         rows = await dbOps.all('SELECT * FROM scheduled_tasks WHERE project_id = ? ORDER BY created_at DESC', [projectId]);
@@ -65,6 +97,8 @@ export class ScheduledTasksStore {
    */
   async get(id: string): Promise<ScheduledTask | null> {
     try {
+      const native = nativeTaskStore('get', { id });
+      if (native) return JSON.parse(await native);
       const row = await dbOps.get('SELECT * FROM scheduled_tasks WHERE id = ?', [id]);
       if (!row) return null;
 
@@ -94,6 +128,8 @@ export class ScheduledTasksStore {
    * Save a task (create or update).
    */
   async save(task: Partial<ScheduledTask>): Promise<ScheduledTask> {
+    const native = nativeTaskStore('save', { task });
+    if (native) return JSON.parse(await native);
     const id = task.id || crypto.randomUUID();
     const now = new Date().toISOString();
 
@@ -165,8 +201,27 @@ export class ScheduledTasksStore {
   /**
    * Update task run times.
    */
+  prepareNativeRun(task: Pick<ScheduledTask, 'id' | 'updatedAt'>): Promise<{
+    conversationId: string;
+    task: ScheduledTask;
+  } | null> | undefined {
+    return nativeTaskStore('run-times', {
+      id: task.id,
+      updatedAt: task.updatedAt, prepare: true,
+    })?.then(result => JSON.parse(result));
+  }
+
+  prepareNativeRetry(task: ScheduledTask, attempt: number): Promise<string | null> | undefined {
+    return nativeTaskStore('retry', { retryTask: task, retryAttempt: attempt })?.then(result => JSON.parse(result));
+  }
+
   async updateRunTimes(id: string, lastRun: string, nextRun: string): Promise<void> {
     try {
+      const native = nativeTaskStore('run-times', { id, lastRun, nextRun });
+      if (native) {
+        await native;
+        return;
+      }
       await dbOps.run(
         'UPDATE scheduled_tasks SET last_run = ?, next_run = ?, updated_at = ? WHERE id = ?',
         [lastRun, nextRun, new Date().toISOString(), id]
@@ -181,6 +236,11 @@ export class ScheduledTasksStore {
    */
   async delete(id: string): Promise<void> {
     try {
+      const native = nativeTaskStore('delete', { id });
+      if (native) {
+        await native;
+        return;
+      }
       await dbOps.run('DELETE FROM scheduled_tasks WHERE id = ?', [id]);
     } catch (err) {
       console.error(`[ScheduledTasks] Failed to delete task ${id}:`, err);

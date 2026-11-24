@@ -10,8 +10,26 @@
  */
 
 import { dbOps } from '../../lib/db';
+import { execFile } from 'child_process';
+import { currentScope, type AgentScope } from '../agent-scope';
+
+type Checkpoint = { conversation_id: string; state_json: string; interrupt_data_json: string | null };
+
+type NativeCheckpoint = Pick<SessionState, 'conversationId' | 'currentState' | 'interruptData' | 'scope'>;
+
+function loadNativeCheckpoints(executable: string): Promise<{ checkpoints: NativeCheckpoint[]; errors: string[] }> {
+  return new Promise((resolve, reject) => {
+    const child = execFile(executable, ['--ef-checkpoint-load'], { windowsHide: true, maxBuffer: 128 * 1024 * 1024 }, (error, stdout) => {
+      if (error) return reject(error);
+      try { resolve(JSON.parse(stdout)); } catch (parseError) { reject(parseError); }
+    });
+    child.stdin?.once('error', reject);
+    child.stdin?.end(JSON.stringify({ scope: 'all' }));
+  });
+}
 
 interface SessionState {
+  scope?: AgentScope;
   conversationId: string;
   currentState: any;
   history: any[];
@@ -29,6 +47,23 @@ const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 class StateManager {
   private sessions: Map<string, SessionState> = new Map();
   private persistenceReady = false;
+  private checkpointWrites = Promise.resolve();
+
+  private writeNativeCheckpoint(id: string, scope: AgentScope, state?: unknown, interruptData?: unknown): Promise<void> | undefined {
+    const executable = process.env.EF_NATIVE_EXE;
+    if (process.env.EVERFERN_SHELL !== 'tauri' || !executable) return undefined;
+    const payload = JSON.stringify({ id, state, interruptData, scope });
+    const write = this.checkpointWrites.then(() => new Promise<void>((resolve, reject) => {
+      const child = execFile(executable, ['--ef-checkpoint-write'], { windowsHide: true }, error => {
+        if (error) reject(error);
+        else resolve();
+      });
+      child.stdin?.once('error', reject);
+      child.stdin?.end(payload);
+    }));
+    this.checkpointWrites = write.catch(() => {});
+    return write;
+  }
 
   constructor() {
     // Initialize persistence table
@@ -42,6 +77,24 @@ class StateManager {
    */
   private async initPersistence(): Promise<void> {
     try {
+      const executable = process.env.EF_NATIVE_EXE;
+      if (process.env.EVERFERN_SHELL === 'tauri' && executable) {
+        const restored = await loadNativeCheckpoints(executable).catch(error => ({ checkpoints: [], errors: [String(error)] }));
+        for (const checkpoint of restored.checkpoints) {
+          if (this.sessions.has(checkpoint.conversationId)) continue;
+          this.sessions.set(checkpoint.conversationId, {
+            ...checkpoint,
+            history: [],
+            lastUpdate: Date.now(),
+            isInterrupted: true,
+          });
+        }
+        for (const error of restored.errors) {
+          console.warn('[StateManager] Failed to restore checkpoints:', error);
+        }
+        this.persistenceReady = true;
+        return;
+      }
       await dbOps.run(`
         CREATE TABLE IF NOT EXISTS hitl_state (
           conversation_id TEXT PRIMARY KEY,
@@ -69,7 +122,16 @@ class StateManager {
       const rows = await dbOps.all(
         'SELECT * FROM hitl_state WHERE is_interrupted = 1'
       );
-      for (const row of rows) {
+      this.restoreRows(rows);
+    } catch (err) {
+      console.warn('[StateManager] Failed to load persisted states:', err);
+    }
+  }
+
+  private restoreRows(rows: Checkpoint[]): void {
+    for (const row of rows) {
+      if (this.sessions.has(row.conversation_id)) continue;
+      try {
         const state: SessionState = {
           conversationId: row.conversation_id,
           currentState: JSON.parse(row.state_json),
@@ -79,12 +141,9 @@ class StateManager {
           interruptData: row.interrupt_data_json ? JSON.parse(row.interrupt_data_json) : undefined,
         };
         this.sessions.set(row.conversation_id, state);
+      } catch (error) {
+        console.warn('[StateManager] Skipping malformed checkpoint:', row.conversation_id, error);
       }
-      if (rows.length > 0) {
-        console.log(`[StateManager] 📖 Restored ${rows.length} interrupted state(s) from disk`);
-      }
-    } catch (err) {
-      console.warn('[StateManager] Failed to load persisted states:', err);
     }
   }
 
@@ -94,6 +153,13 @@ class StateManager {
   private async persistInterruptedState(session: SessionState): Promise<void> {
     if (!this.persistenceReady) return;
     try {
+      const native = this.writeNativeCheckpoint(
+        session.conversationId,
+        session.scope ?? currentScope(),
+        session.currentState,
+        session.interruptData || undefined,
+      );
+      if (native) return await native;
       await dbOps.run(
         `INSERT OR REPLACE INTO hitl_state (conversation_id, state_json, interrupt_data_json, is_interrupted, updated_at)
          VALUES (?, ?, ?, ?, datetime('now'))`,
@@ -112,9 +178,11 @@ class StateManager {
   /**
    * BUG-07 FIX: Remove persisted state from disk
    */
-  private async removePersistedState(conversationId: string): Promise<void> {
+  private async removePersistedState(conversationId: string, scope = currentScope()): Promise<void> {
     if (!this.persistenceReady) return;
     try {
+      const native = this.writeNativeCheckpoint(conversationId, scope);
+      if (native) return await native;
       await dbOps.run('DELETE FROM hitl_state WHERE conversation_id = ?', [conversationId]);
     } catch (err) {
       console.warn('[StateManager] Failed to remove persisted state:', err);
@@ -129,6 +197,7 @@ class StateManager {
     
     this.sessions.set(conversationId, {
       conversationId,
+      scope: existing?.scope ?? currentScope(),
       currentState: state,
       history: existing?.history || [],
       lastUpdate: Date.now(),
@@ -192,7 +261,7 @@ class StateManager {
     console.log(`[StateManager] ▶️  Resuming conversation: ${conversationId}`);
 
     // BUG-07 FIX: Remove persisted state from disk since it's been resumed
-    this.removePersistedState(conversationId).catch(err => {
+    this.removePersistedState(conversationId, session.scope).catch(err => {
       console.warn('[StateManager] Failed to remove persisted state on resume:', err);
     });
 
@@ -222,8 +291,9 @@ class StateManager {
    * Clear conversation state
    */
   clearState(conversationId: string): void {
+    const scope = this.sessions.get(conversationId)?.scope;
     this.sessions.delete(conversationId);
-    this.removePersistedState(conversationId).catch(() => {});
+    this.removePersistedState(conversationId, scope).catch(() => {});
     console.log(`[StateManager] 🗑️  Cleared state for conversation: ${conversationId}`);
   }
 

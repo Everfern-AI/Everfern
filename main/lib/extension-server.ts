@@ -142,6 +142,12 @@ class ExtensionBridgeServer extends EventEmitter {
         req.on('end', () => {
           try {
             const event = JSON.parse(body);
+            // Tasks start an agent run, so they are only taken from the extension's socket.
+            if (event?.type === 'user-task') {
+              res.writeHead(403);
+              res.end('Tasks must come from the extension');
+              return;
+            }
             this.emit('extension-event', event);
             res.writeHead(200);
             res.end(JSON.stringify({ received: true }));
@@ -462,4 +468,174 @@ class ExtensionBridgeServer extends EventEmitter {
   }
 }
 
-export const bridgeServer = new ExtensionBridgeServer();
+/**
+ * Under the Tauri shell the bridge port belongs to Rust (src-tauri/src/navis.rs), so the
+ * extension can connect while Node is not running. Node connects to it as the one desktop
+ * client and keeps the same API, so callers do not change.
+ */
+class RustBridgeClient extends EventEmitter {
+  private socket: WebSocket | null = null;
+  private port = Number(process.env.EF_NAVIS_PORT) || 4001;
+  private bridgeToken = '';
+  private running = false;
+  private retryMs = 500;
+  private retryTimer: NodeJS.Timeout | null = null;
+  private connected = 0;
+  private sessions: Array<{ id: string; url: string; title: string }> = [];
+  private nextRequestId = 1;
+  private pendingRequests = new Map<string, { resolve: (value: any) => void; reject: (reason?: any) => void; timeout: NodeJS.Timeout }>();
+  /** The last session update, replayed after a reconnect. */
+  private lastSession: { id: string | null; url: string; title: string } | null = null;
+  private warnedError = false;
+  /** Extension events that arrive before anything listens (the sidecar connects early). */
+  private backlog: any[] = [];
+
+  constructor() {
+    super();
+    this.on('newListener', (event: string | symbol) => {
+      if (event !== 'extension-event' || !this.backlog.length) return;
+      // After the listener is attached.
+      setImmediate(() => {
+        const held = this.backlog.splice(0);
+        for (const payload of held) this.emit('extension-event', payload);
+      });
+    });
+  }
+
+  getBridgeToken(): string {
+    return this.bridgeToken;
+  }
+
+  start() {
+    if (this.running) return;
+    this.running = true;
+    try {
+      const parsed = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.everfern', 'bridge-token.json'), 'utf8'));
+      this.bridgeToken = typeof parsed?.token === 'string' ? parsed.token : '';
+    } catch {
+      this.bridgeToken = '';
+    }
+    this.connect();
+  }
+
+  private connect() {
+    if (!this.running) return;
+    const ws = new WebSocket(`ws://127.0.0.1:${this.port}/desktop?token=${encodeURIComponent(this.bridgeToken)}`);
+    this.socket = ws;
+    ws.on('open', () => {
+      this.retryMs = 500;
+      this.warnedError = false;
+      console.log(`[Bridge] Connected to the Navis bridge on 127.0.0.1:${this.port}`);
+      if (this.lastSession) ws.send(JSON.stringify({ type: 'session', ...this.lastSession }));
+    });
+    ws.on('message', raw => {
+      let msg: any;
+      try {
+        msg = JSON.parse(raw.toString());
+      } catch {
+        return;
+      }
+      if (msg.type === 'bridge-status') {
+        const had = this.connected;
+        this.connected = Number(msg.connected) || 0;
+        this.sessions = Array.isArray(msg.sessions) ? msg.sessions : [];
+        if (!had && this.connected) this.emit('extension-connected', {});
+      } else if (msg.type === 'response' && msg.requestId && this.pendingRequests.has(msg.requestId)) {
+        const pending = this.pendingRequests.get(msg.requestId)!;
+        clearTimeout(pending.timeout);
+        this.pendingRequests.delete(msg.requestId);
+        if (msg.success === false) pending.reject(new Error(msg.error || 'Navis extension command failed'));
+        else pending.resolve(msg.data);
+      } else if (msg.type === 'extension-connected') {
+        this.emit('extension-connected', msg.payload);
+      } else if (msg.type === 'extension-event') {
+        if (this.listenerCount('extension-event')) this.emit('extension-event', msg.payload);
+        else if (this.backlog.push(msg.payload) > 200) this.backlog.shift();
+      }
+    });
+    ws.on('error', err => {
+      // Reconnects on close; warn once per outage.
+      if (!this.warnedError) console.warn(`[Bridge] Navis bridge on port ${this.port} unreachable: ${err.message}`);
+      this.warnedError = true;
+    });
+    ws.on('close', () => {
+      if (this.socket === ws) this.socket = null;
+      this.connected = 0;
+      for (const [id, pending] of this.pendingRequests) {
+        clearTimeout(pending.timeout);
+        pending.reject(new Error('Navis bridge connection closed'));
+        this.pendingRequests.delete(id);
+      }
+      if (!this.running) return;
+      this.retryTimer = setTimeout(() => this.connect(), this.retryMs);
+      this.retryMs = Math.min(this.retryMs * 2, 10000);
+    });
+  }
+
+  private send(message: any): boolean {
+    if (this.socket?.readyState !== WebSocket.OPEN) return false;
+    this.socket.send(JSON.stringify(message));
+    return true;
+  }
+
+  setSession(id: string | null, url = '', title = '') {
+    this.lastSession = { id, url, title };
+    this.send({ type: 'session', id, url, title });
+  }
+
+  broadcastCommand(command: string, data: any = {}) {
+    this.send({ type: 'broadcast', command, data });
+  }
+
+  hasConnectedExtensions(): boolean {
+    return this.connected > 0;
+  }
+
+  getStatus() {
+    return {
+      listening: this.socket?.readyState === WebSocket.OPEN,
+      port: this.port,
+      connectedExtensions: this.connected,
+      sessions: this.sessions,
+    };
+  }
+
+  waitForExtensionConnection(timeoutMs = 10000): Promise<boolean> {
+    if (this.hasConnectedExtensions()) return Promise.resolve(true);
+    return new Promise(resolve => {
+      const onConnected = () => {
+        clearTimeout(timeout);
+        resolve(true);
+      };
+      const timeout = setTimeout(() => {
+        this.off('extension-connected', onConnected);
+        resolve(false);
+      }, timeoutMs);
+      this.once('extension-connected', onConnected);
+    });
+  }
+
+  sendRequest(command: string, data: any = {}, timeoutMs = 10000): Promise<any> {
+    if (this.socket?.readyState !== WebSocket.OPEN) return Promise.reject(new Error('Extension bridge server is not running'));
+    if (!this.connected) return Promise.reject(new Error('No Navis companion extension is connected'));
+    const requestId = `navis-${Date.now()}-${this.nextRequestId++}`;
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pendingRequests.delete(requestId);
+        reject(new Error(`Timed out waiting for Navis extension command: ${command}`));
+      }, timeoutMs);
+      this.pendingRequests.set(requestId, { resolve, reject, timeout });
+      this.send({ type: 'request', command, requestId, data });
+    });
+  }
+
+  stop() {
+    this.running = false;
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.socket?.close();
+    this.socket = null;
+  }
+}
+
+export const bridgeServer: ExtensionBridgeServer | RustBridgeClient =
+  process.env.EVERFERN_SHELL === 'tauri' ? new RustBridgeClient() : new ExtensionBridgeServer();

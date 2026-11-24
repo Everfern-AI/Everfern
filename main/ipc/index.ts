@@ -15,6 +15,7 @@ import { registerVectorHandlers } from './vector-handlers';
 import { registerSkillsHandlers } from './skills-handlers';
 import { registerToolApprovalHandlers } from './tool-approval-handlers';
 import { registerIntegrationHandlers } from './integration-handlers';
+import { registerMcpHandlers } from './mcp-handlers';
 import { ChatHistoryStore } from '../store/history';
 
 export function setupIPC(historyStore: ChatHistoryStore) {
@@ -25,6 +26,7 @@ export function setupIPC(historyStore: ChatHistoryStore) {
   // 2. AI Agent & Execution
   registerAgentHandlers();
   registerToolApprovalHandlers();
+  registerMcpHandlers();
 
   // 3. Workspace, History, Projects & Vectors
   registerHistoryHandlers(historyStore);

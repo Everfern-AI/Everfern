@@ -193,8 +193,8 @@ export const HealthCheckScreen: React.FC<HealthCheckScreenProps> = ({
         setIsComplete(true);
         setErrors(newErrors);
 
-        // Brief pause after completion before dismissing
-        await new Promise((r) => setTimeout(r, 800));
+        // Linger only when something failed, so the error can be read.
+        await new Promise((r) => setTimeout(r, newErrors.length ? 800 : 150));
         onCompleteRef.current(newErrors.length === 0, newErrors);
       } catch (err) {
         console.error("Health check error:", err);
@@ -219,7 +219,7 @@ export const HealthCheckScreen: React.FC<HealthCheckScreenProps> = ({
           check.id === id ? { ...check, status, message } : check
         )
       );
-      setTimeout(resolve, 250);
+      requestAnimationFrame(() => resolve());
     });
   };
 
@@ -304,8 +304,8 @@ export const HealthCheckScreen: React.FC<HealthCheckScreenProps> = ({
               lineHeight: 1.5,
             }}
           >
-            <span style={{ fontWeight: 600, color: "var(--color-text-tertiary, rgba(255,255,255,0.35))", textTransform: "uppercase", fontSize: 10, letterSpacing: "0.08em", display: "block", marginBottom: 6 }}>
-              Pro Tip
+            <span style={{ fontWeight: 500, color: "var(--color-text-tertiary, rgba(255,255,255,0.35))", fontSize: 12, display: "block", marginBottom: 4 }}>
+              Tip
             </span>
             {PRO_TIPS[tipIndex]}
           </motion.p>

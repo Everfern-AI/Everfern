@@ -34,15 +34,38 @@ Module._resolveFilename = function (request, parent, isMain, options) {
 
 const shim = require(shimPath);
 globalThis.__efNativeCloudRequest = (route, token, body) => shim.__ef.nativeCloudRequest(route, token, body);
+globalThis.__efClaimScheduledWorker = () => shim.__ef.shell('claimScheduledWorker');
 shim.__ef.startServer();
 
 // If the shell goes away, so do we.
 process.stdin.on('end', () => process.exit(0));
 process.stdin.on('error', () => process.exit(0));
-process.stdin.resume();
+require('readline').createInterface({ input: process.stdin }).on('line', line => {
+  try {
+    const { scheduledTasks } = JSON.parse(line);
+    if (Array.isArray(scheduledTasks)) {
+      const { schedulerService } = require(path.join(appRoot, 'dist-electron/main/integrations/scheduler-service.js'));
+      schedulerService.dispatchNativeTasks(scheduledTasks);
+    }
+  } catch (error) {
+    process.stderr.write(`[sidecar] scheduler dispatch failed: ${error.message}\n`);
+  }
+});
 
 process.on('uncaughtException', (e) => process.stderr.write(`[sidecar] uncaught: ${(e && e.stack) || e}\n`));
 process.on('unhandledRejection', (e) => process.stderr.write(`[sidecar] unhandled rejection: ${(e && e.stack) || e}\n`));
+
+// Connect to the Rust Navis bridge before the main process loads (that takes about 15 s),
+// so extension messages that started this process are picked up at once. main.ts calls
+// start() again later; it is a no-op. Lite mode skips the bridge, as main.ts does.
+if (!['1', 'true'].includes(process.env.EVERFERN_LITE || '')) {
+  try {
+    require(path.join(appRoot, 'dist-electron', 'main', 'lib', 'extension-server.js')).bridgeServer.start();
+  } catch (e) {
+    process.stderr.write(`[sidecar] Navis bridge client not started early: ${(e && e.message) || e}
+`);
+  }
+}
 
 // Let the listening callback notify Rust before the large compatibility backend
 // loads synchronously. Otherwise the window waits for every tool dependency.

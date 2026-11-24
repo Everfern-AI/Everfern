@@ -1,8 +1,9 @@
 import * as crypto from 'crypto';
+import { execFile } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { getActiveFilesFromHistory, getWorkspaceProjection } from '../workspace-projection';
+import { getWorkspaceProjection } from '../workspace-projection';
 import { SystemMessage, AIMessage } from '@langchain/core/messages';
 import { AIClient, ChatMessage, ChatRequest, ToolDefinition } from '../../../lib/ai-client';
 import { GraphStateType, StreamEvent } from '../state';
@@ -17,6 +18,7 @@ import {
   initializeSessionPersistenceManager,
 } from '../../persistence/session-manager';
 import { loadSoul } from '../../personality-manager';
+import { currentScope } from '../../agent-scope';
 import { readRunFindings } from '../run-findings';
 import { StreamingThoughtFilter, scrubReasoningTags } from '../../helpers/thinking';
 
@@ -207,6 +209,30 @@ function applyRestorationDefaults(state: Partial<GraphStateType>): GraphStateTyp
   } as GraphStateType;
 }
 
+function restoreStateWithNative(state: GraphStateType): Promise<{
+  compatible: boolean;
+  warnings: string[];
+  restoredState: GraphStateType;
+} | null> | undefined {
+  const executable = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+  if (!executable) return;
+  return new Promise(resolve => {
+    const child = execFile(executable, ['--ef-agent-state-restore'], {
+      encoding: 'utf8', windowsHide: true, timeout: 5000, maxBuffer: 8 * 1024 * 1024,
+    }, (error, output) => {
+      if (error) return resolve(null);
+      try {
+        const result = JSON.parse(output);
+        if (typeof result?.compatible !== 'boolean' || !Array.isArray(result?.warnings) ||
+            !result.restoredState || typeof result.restoredState !== 'object') return resolve(null);
+        resolve(result as { compatible: boolean; warnings: string[]; restoredState: GraphStateType });
+      } catch { resolve(null); }
+    });
+    child.stdin?.once('error', () => resolve(null));
+    child.stdin?.end(JSON.stringify({ state, currentVersion: SERIALIZATION_VERSION }));
+  });
+}
+
 // ── State restoration entry point ─────────────────────────────────────
 
 /**
@@ -273,7 +299,8 @@ export async function initializeRestoredAgentState(
 
     // Validate compatibility with current code version
     // Requirement 11.4: Validate state structure
-    const { compatible, warnings } = validateRestoredStateCompatibility(
+    const nativeRestoration = await restoreStateWithNative(rawState);
+    const { compatible, warnings } = nativeRestoration ?? validateRestoredStateCompatibility(
       rawState as GraphStateType & { serializationVersion?: string; timestamp?: number }
     );
 
@@ -296,7 +323,7 @@ export async function initializeRestoredAgentState(
 
     // Apply defaults to fill missing fields from the restored state
     // Requirement 1.6: Resume from exact state, filling gaps with safe defaults
-    const restoredState = applyRestorationDefaults(rawState);
+    const restoredState = nativeRestoration?.restoredState ?? applyRestorationDefaults(rawState);
 
     console.log(
       `[AgentRuntime] State restored successfully for task ${resumeFromTaskId}: ` +
@@ -445,7 +472,7 @@ export async function runAgentStep(
         normalizedMessages.unshift(systemMsg);
       }
       
-      if (typeof systemMsg.content === 'string' && !systemMsg.content.includes('# PERSONALITY & BEHAVIOR CORE')) {
+      if (currentScope() === 'chat' && typeof systemMsg.content === 'string' && !systemMsg.content.includes('# PERSONALITY & BEHAVIOR CORE')) {
         systemMsg.content += `\n\n# PERSONALITY & BEHAVIOR CORE (SOUL.md)\n${soulContent}\n`;
         console.log(`[AgentRuntime] 🎭 Injected SOUL.md personality into ${nodeName} step`);
       }
@@ -475,8 +502,10 @@ export async function runAgentStep(
     try {
       const workspaceRoot = runner.workspaceDir;
       if (workspaceRoot && fs.existsSync(workspaceRoot)) {
-        const activeFiles = getActiveFilesFromHistory(state.toolCallRecords || state.toolCallHistory || []);
-        const projection = await getWorkspaceProjection(workspaceRoot, activeFiles);
+        const projection = await getWorkspaceProjection(
+          workspaceRoot,
+          state.toolCallRecords || state.toolCallHistory || [],
+        );
         
         let systemMsg = normalizedMessages.find(m => m.role === 'system');
         if (!systemMsg) {
@@ -658,20 +687,38 @@ ${projection.activeDependencies}
         };
 
         const nudgeMessages = [...limitedMessages, nudgeMsg];
-        response = await client.chat({ ...request, messages: nudgeMessages });
+        // The refusal is already on screen. Stream the retry as a fresh paragraph and track only
+        // its text, so the final-delta check below compares against this response, not the refusal.
+        streamedText = '';
+        let retryStarted = false;
+        const retryFilter = new StreamingThoughtFilter();
+        const emitRetry = (content: string) => {
+          if (!content) return;
+          if (!retryStarted) { retryStarted = true; eventQueue?.push({ type: 'chunk', content: '\n\n' }); }
+          eventQueue?.push({ type: 'chunk', content });
+          streamedText += content;
+        };
+        const emitThought = (thought: string) => { eventQueue?.push({ type: 'thought', content: thought }); };
+        response = await client.chat({
+          ...request,
+          messages: nudgeMessages,
+          onStreamChunk: (chunk: string) => retryFilter.process(chunk, emitRetry, emitThought),
+        });
+        retryFilter.flush(emitRetry, emitThought);
     }
+    const finalResponseText = typeof response.content === 'string' ? response.content : JSON.stringify(response.content || '');
 
     // Natural Completion: When a specialized agent produces text without tool calls, signal completion cleanly
     if (isSpecializedAgent && (!response.toolCalls || response.toolCalls.length === 0)) {
       runner.telemetry.info(`[AgentRuntime] ${nodeName} produced text output without tool calls — completing step naturally.`);
       return {
-        messages: responseText ? [new AIMessage(responseText)] : [],
+        messages: finalResponseText ? [new AIMessage(finalResponseText)] : [],
         pendingToolCalls: [],
         codingComplete: nodeName === 'coding_specialist' ? true : undefined,
         dataAnalysisComplete: nodeName === 'data_analyst' ? true : undefined,
         webExplorerComplete: nodeName === 'web_explorer' ? true : undefined,
         computerUseComplete: nodeName === 'computer_use_agent' ? true : undefined,
-        finalResponse: responseText || `${nodeName} step completed.`,
+        finalResponse: finalResponseText || `${nodeName} step completed.`,
         iterations: iterations + 1,
       };
     }
@@ -761,9 +808,15 @@ ${projection.activeDependencies}
 
     // Always send the final response to frontend if it's not a tool call
     if (response.finishReason !== 'tool_calls' && scrubbed) {
-      const needsFinalChunk = !streamedText || streamedText.trim() !== scrubbed.trim();
-      if (needsFinalChunk) {
+      // Only send what the user hasn't already seen. Re-sending the whole answer when the
+      // streamed text differs slightly from the scrubbed text (thought filter vs tag scrub)
+      // used to append a second full copy of the answer to the bubble.
+      const seen = streamedText.trim();
+      const final = scrubbed.trim();
+      if (!seen) {
         eventQueue?.push({ type: 'chunk', content: scrubbed });
+      } else if (final.length > seen.length && final.startsWith(seen)) {
+        eventQueue?.push({ type: 'chunk', content: final.slice(seen.length) });
       }
     }
 

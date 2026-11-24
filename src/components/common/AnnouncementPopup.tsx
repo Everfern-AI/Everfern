@@ -171,7 +171,7 @@ export function AnnouncementPopup() {
                   {/* Badge if present */}
                   {current.badge && (
                     <div style={{ position: 'absolute', top: '24px', left: '24px', zIndex: 10 }}>
-                      <span style={{ padding: '6px 16px', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.1em', borderRadius: '9999px', border: '1px solid rgba(255,255,255,0.2)', backgroundColor: 'rgba(0,0,0,0.5)', color: '#fff', backdropFilter: 'blur(12px)' }}>
+                      <span style={{ padding: '6px 16px', fontSize: '12px', borderRadius: '9999px', border: '1px solid rgba(255,255,255,0.2)', backgroundColor: 'rgba(0,0,0,0.5)', color: '#fff', backdropFilter: 'blur(12px)' }}>
                         {current.badge}
                       </span>
                     </div>

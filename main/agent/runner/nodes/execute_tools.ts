@@ -5,7 +5,7 @@ import * as fsPromises from 'fs/promises';
 import { GraphStateType, StreamEvent } from '../state';
 import { ToolCallRecord, AgentTool, AgentRunnerConfig } from '../types';
 import { analyzeTask } from '../task-decomposer';
-import { analyzeToolDependencies, groupParallelTools, executeSynchronizedParallelGroup } from '../parallel-executor';
+import { analyzeAndGroupToolDependencies, analyzeToolDependencies, groupParallelTools, executeSynchronizedParallelGroup } from '../parallel-executor';
 import { validateAndCorrectToolArgs } from '../utils';
 import { getAgentEvents } from '../../infra/agent-events';
 import { getDefaultToolPolicyPipeline } from '../tool-policy';
@@ -203,7 +203,7 @@ export const createExecuteToolsNode = (
       setPiToolsWorkspaceDir(workspaceRoot);
     } catch {}
 
-    const analysis = analyzeToolDependencies(calls.map(tc => {
+    const preparedCalls = calls.map(tc => {
       const corrected = validateAndCorrectToolArgs(tc.name, tc.arguments || {}, homedirNorm, safeConvId);
       if (['executePwsh', 'terminal_execute'].includes(tc.name)) {
         if (!corrected.cwd && !corrected.Cwd) {
@@ -220,9 +220,10 @@ export const createExecuteToolsNode = (
         args: corrected,
         id: tc.id
       };
-    }));
-
-    const parallelGroups = groupParallelTools(analysis);
+    });
+    const nativeGrouping = await analyzeAndGroupToolDependencies(preparedCalls);
+    const analysis = nativeGrouping?.analysis ?? analyzeToolDependencies(preparedCalls);
+    const parallelGroups = nativeGrouping?.groups ?? groupParallelTools(analysis);
     // PERF: executeSynchronizedParallelGroup is now a static import (was dynamic await import)
 
     // Set agent context for rollback tracking before executing tools.

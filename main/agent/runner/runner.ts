@@ -44,7 +44,7 @@ import { presentFilesTool } from '../tools/present-files';
 import { NavisOrchestrator } from '../tools/navis/agent/orchestrator';
 
 // Tool Truncator
-import { truncateTools } from './tool-truncator';
+import { truncateToolsForDesktop } from './tool-truncator';
 
 // Lifecycle/Infra
 import { getAgentEvents, emitLifecycle } from '../infra/agent-events';
@@ -1022,7 +1022,7 @@ export class AgentRunner {
             .map((m) => (typeof m.content === 'string' ? m.content : ''))
             .join('\n');
           const userText = typeof userInput === 'string' ? userInput : userInput.map((p: any) => p.text || '').filter(Boolean).join(' ');
-          const truncated = truncateTools(toolDefs, userText, recentAssistant);
+          const truncated = await truncateToolsForDesktop(toolDefs, userText, recentAssistant);
           toolDefs = truncated.tools;
           this.lastTruncationDetails = {
             toolSchemaTokens: truncated.details.totalSchemaTokens,
@@ -1031,20 +1031,21 @@ export class AgentRunner {
           };
         }
 
-        let currentDepth = 0;
+        // Hide spawn tools when the spawner would reject the call anyway. This used to check
+        // only the hard limit, so an agent whose maxDepth was 2 still saw spawn_agent and
+        // burned a turn on a "Maximum spawn depth exceeded" error.
+        let canSpawn = true;
         if (this.currentAgentSessionKey) {
           try {
             const { getSubagentRegistry } = await import('./subagent-registry');
-            const registry = getSubagentRegistry();
-            const entry = registry.getBySessionKey(this.currentAgentSessionKey);
-            if (entry) {
-              currentDepth = entry.currentDepth;
-            }
+            const { canSpawnChildren } = await import('./subagent-spawn');
+            const entry = getSubagentRegistry().getBySessionKey(this.currentAgentSessionKey);
+            canSpawn = canSpawnChildren(entry);
           } catch (e) {
             console.warn('[AgentRunner] Failed to fetch current agent depth:', e);
           }
         }
-        if (isSubagent && currentDepth >= 4) {
+        if (isSubagent && !canSpawn) {
           toolDefs = toolDefs.filter(t => t.name !== 'spawn_agent' && t.name !== 'spawn_swarm');
         }
         const graph = await Promise.resolve().then(() => buildGraph(

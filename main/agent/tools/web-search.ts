@@ -10,6 +10,8 @@
  *   3. DuckDuckGo Lite HTML scrape (last resort)
  */
 
+import { BrowserWindow } from 'electron';
+import { execFile } from 'child_process';
 import type { AgentTool, ToolResult } from '../runner/types';
 import { toolSettingsStore } from '../../store/tool-settings';
 import { playwrightWebSearch } from './web-playwright';
@@ -23,6 +25,35 @@ interface SearchResult {
   url: string;
   snippet: string;
   description?: string;
+}
+
+interface NativeSearchResult {
+  results: SearchResult[];
+  totalCount: number;
+}
+
+function searchWithNative(query: string, config: Record<string, unknown>): Promise<NativeSearchResult | null> | undefined {
+  const executable = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+  if (!executable) return;
+  return new Promise(resolve => {
+    const child = execFile(executable, ['--ef-web-search'], {
+      encoding: 'utf8', windowsHide: true, timeout: 40000, maxBuffer: 8 * 1024 * 1024,
+    }, (error, output) => {
+      if (error) return resolve(null);
+      try {
+        const response = JSON.parse(output);
+        const results = response?.data?.results;
+        if (!response?.success || !Array.isArray(results) || results.length === 0) return resolve(null);
+        resolve({
+          results: results.filter((item: any) => item && typeof item.url === 'string' && typeof item.title === 'string')
+            .map((item: any) => ({ title: item.title, url: item.url, snippet: String(item.snippet || item.description || '') })),
+          totalCount: Number(response.data.totalCount) || results.length,
+        });
+      } catch { resolve(null); }
+    });
+    child.stdin?.once('error', () => resolve(null));
+    child.stdin?.end(JSON.stringify({ query, config }));
+  });
 }
 
 function searchViaEngine(engine: 'Google' | 'Yahoo', query: string): Promise<SearchResult[]> {
@@ -220,6 +251,40 @@ async function enrichResults(results: SearchResult[]): Promise<SearchResult[]> {
   return Promise.all(promises);
 }
 
+// ── Native Search app replay ─────────────────────────────────────────
+// The worker desktop's Search app listens on 'worker:search': on 'start' its
+// cursor clicks the search box and types the query, on 'result' the results
+// page appears. Calls made from the app itself (_fromApp) skip the replay.
+
+function broadcastSearch(payload: unknown, delayMs = 0): void {
+  const send = () => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      try { win.webContents.send('worker:search', payload); } catch { /* window closing */ }
+    }
+  };
+  if (delayMs > 0) setTimeout(send, delayMs); else send();
+}
+
+let searchSeq = 0;
+const nextSearchId = () => `s${Date.now().toString(36)}-${(searchSeq++).toString(36)}`;
+/** How long the app takes to move, click and type the query. */
+const typingMs = (query: string) => Math.min(5200, 1700 + Math.min(query.length, 120) * 30);
+const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Searches in flight, so the Search app's Stop button can end one at once. A stopped
+ * search returns to its caller immediately; whatever the engine was still doing
+ * is ignored (its requests time out on their own within seconds).
+ */
+const activeSearches = new Map<string, () => void>();
+/** Stops one search (by id), or every search in flight when no id is given. Returns how many stopped. */
+export function cancelWebSearch(id?: string): number {
+  const ids = id ? [id] : [...activeSearches.keys()];
+  let n = 0;
+  for (const key of ids) { const stop = activeSearches.get(key); if (stop) { stop(); n++; } }
+  return n;
+}
+
 // ── Tool Definition ──────────────────────────────────────────────────
 
 export const webSearchTool: AgentTool = {
@@ -286,21 +351,83 @@ export const webSearchTool: AgentTool = {
       };
     }
 
-    try {
+    // Only agent runs (which stream events) are replayed; internal callers such
+    // as deep research and the app's own searches are not.
+    const replay = !args['_fromApp'] && typeof emitEvent === 'function';
+    const askedId = typeof args['_searchId'] === 'string' && /^[\w-]{1,64}$/.test(args['_searchId'] as string) ? args['_searchId'] as string : '';
+    const id = askedId || nextSearchId();
+    const started = Date.now();
+    let cancelled = false;
+    const stopped = new Promise<ToolResult>((resolve) => {
+      activeSearches.set(id, () => {
+        cancelled = true;
+        activeSearches.delete(id);
+        if (replay) broadcastSearch({ id, type: 'cancelled', query });
+        resolve({ success: false, output: `Search for "${query}" was stopped by the user. Do not retry it unless asked.`, error: 'cancelled' });
+      });
+    });
+    if (replay) {
+      emitEvent?.({
+        type: 'subagent-progress',
+        data: { type: 'action', workerApp: 'websearch', action: { type: 'ui', params: { app: 'websearch' }, description: `Searching ${query.slice(0, 60)}` } },
+      });
+      // A short delay gives the Search window time to open before the cursor starts.
+      broadcastSearch({ id, type: 'start', query }, 250);
+    }
+    const finish = async (results: SearchResult[], error?: string) => {
+      if (!replay || cancelled) return;
+      const wait = typingMs(query) - (Date.now() - started);
+      if (wait > 0) await pause(wait);
+      if (cancelled) return;
+      broadcastSearch({
+        id,
+        type: 'result',
+        query,
+        error,
+        results: results.map((r) => ({ title: r.title, url: r.url, snippet: r.snippet })),
+      });
+    };
+
+    const work = (async (): Promise<ToolResult> => { try {
       const config = toolSettingsStore.get().webSearch;
       let results: SearchResult[];
+      let nativeEnriched = false;
+      let totalCount: number | undefined;
 
       if (config.mode === 'local') {
         try {
           const pwResults = await playwrightWebSearch(query, config.headless);
           results = pwResults.map(r => ({ title: r.title, url: r.url, snippet: r.snippet }));
+          if (results.length === 0) {
+            const native = await searchWithNative(query, { mode: 'scrape' });
+            if (native) {
+              results = native.results;
+              totalCount = native.totalCount;
+              nativeEnriched = true;
+            } else {
+              results = await search(query);
+            }
+          }
         } catch (err) {
           console.log(`[WebSearch] Playwright failed, falling back to scraper: ${err instanceof Error ? err.message : String(err)}`);
-          results = await search(query);
+          const native = await searchWithNative(query, { mode: 'scrape' });
+          if (native) {
+            results = native.results;
+            totalCount = native.totalCount;
+            nativeEnriched = true;
+          } else {
+            results = await search(query);
+          }
         }
       } else if (config.mode === 'api') {
-        const provider = config.provider || 'exa';
-        if (provider === 'firecrawl') {
+        const native = await searchWithNative(query, config as unknown as Record<string, unknown>);
+        if (native) {
+          results = native.results;
+          totalCount = native.totalCount;
+          nativeEnriched = true;
+        } else {
+          const provider = config.provider || 'exa';
+          if (provider === 'firecrawl') {
           try {
             const key = config.firecrawlApiKey || config.apiKey;
             const fcResults = await firecrawlSearch(query, key);
@@ -309,24 +436,33 @@ export const webSearchTool: AgentTool = {
             console.log(`[WebSearch] Firecrawl API search failed, falling back to scraper: ${err instanceof Error ? err.message : String(err)}`);
             results = await search(query);
           }
-        } else {
-          try {
-            const key = config.exaApiKey || config.apiKey;
-            const exaResults = await exaSearch(query, key);
-            results = exaResults.map(r => ({ title: r.title, url: r.url, snippet: r.snippet }));
-          } catch (err) {
-            console.log(`[WebSearch] Exa API failed, falling back to scraper: ${err instanceof Error ? err.message : String(err)}`);
-            results = await search(query);
+          } else {
+            try {
+              const key = config.exaApiKey || config.apiKey;
+              const exaResults = await exaSearch(query, key);
+              results = exaResults.map(r => ({ title: r.title, url: r.url, snippet: r.snippet }));
+            } catch (err) {
+              console.log(`[WebSearch] Exa API failed, falling back to scraper: ${err instanceof Error ? err.message : String(err)}`);
+              results = await search(query);
+            }
           }
         }
       } else {
-        results = await search(query);
+        const native = await searchWithNative(query, { mode: 'scrape' });
+        if (native) {
+          results = native.results;
+          totalCount = native.totalCount;
+          nativeEnriched = true;
+        } else {
+          results = await search(query);
+        }
       }
 
       if (results.length === 0) {
+        await finish([]);
         return {
           success: true,
-          output: `🔍 No results found for "${query}". Try rephrasing with different keywords or use navis to open relevant browser pages directly.`,
+          output: `No results found for "${query}". Try rephrasing with different keywords or use navis to open relevant browser pages directly.`,
           data: { query, results: [] },
         };
       }
@@ -342,7 +478,8 @@ export const webSearchTool: AgentTool = {
       }));
 
       // Enrich results with actual page titles and OG descriptions
-      const enrichedResults = await enrichResults(truncatedResults);
+      const enrichedResults = nativeEnriched ? truncatedResults : await enrichResults(truncatedResults);
+      await finish(enrichedResults);
 
       const formatted = enrichedResults
         .map((r, i) => `${i + 1}. **${r.title}**\n   ${r.url}\n   ${r.snippet}`)
@@ -350,15 +487,19 @@ export const webSearchTool: AgentTool = {
 
       return {
         success: true,
-        output: `🔍 Found ${results.length} result(s) for "${query}" (showing top ${enrichedResults.length}):\n\n${formatted}`,
-        data: { query, results: enrichedResults, totalCount: results.length },
+        output: `Found ${totalCount ?? results.length} result(s) for "${query}" (showing top ${enrichedResults.length}):\n\n${formatted}`,
+        data: { query, results: enrichedResults, totalCount: totalCount ?? results.length },
       };
     } catch (err) {
+      await finish([], err instanceof Error ? err.message : String(err));
       return {
         success: false,
         output: `Search failed: ${err instanceof Error ? err.message : String(err)}`,
         error: String(err),
       };
-    }
+    } })();
+
+    try { return await Promise.race([work, stopped]); }
+    finally { activeSearches.delete(id); }
   },
 };

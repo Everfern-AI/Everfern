@@ -18,6 +18,11 @@ export function registerHistoryHandlers(historyStore: ChatHistoryStore) {
     return await historyStore.save(conv);
   });
 
+  // Tauri: the Rust data layer saves chats, then hands the new messages here for embedding.
+  ipcMain.on('history:index-messages', (_event, tasks) => {
+    historyStore.indexMessages(tasks);
+  });
+
   ipcMain.handle('history:delete', async (_event, id: string) => {
     return await historyStore.delete(id);
   });

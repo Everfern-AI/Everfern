@@ -3,8 +3,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bold, Italic, Underline, Strikethrough, AlignLeft, AlignCenter, AlignRight,
-  Download, Upload, Plus, Trash2, Copy, Undo2, Redo2, Merge, ArrowUpDown,
-  ChartBar, Eraser, Check, Sparkles, X,
+  Download, Plus, Trash2, Copy, Undo2, Redo2, Merge, ArrowUpDown,
+  ChartBar, Eraser, Sparkles, X, Scissors, ClipboardPaste, FolderOpen, Save, PaintBucket, Baseline,
+  Rows3, Columns3, BetweenVerticalStart, BetweenHorizontalStart, Split,
 } from "lucide-react";
 
 const workersApi = () => (typeof window !== "undefined" ? (window as any).electronAPI?.workers : undefined);
@@ -314,7 +315,7 @@ export function SheetsApp({ workerId }: { workerId?: string }) {
   const [active, setActive] = useState(0);
   const [selA, setSelA] = useState<Pos>({ r: 0, c: 0 });
   const [selB, setSelB] = useState<Pos>({ r: 0, c: 0 });
-  const [editing, setEditing] = useState<{ r: number; c: number; draft: string } | null>(null);
+  const [editing, setEditing] = useState<{ r: number; c: number; draft: string; bar?: boolean } | null>(null);
   const [activeTyping, setActiveTyping] = useState<ActiveTyping>(null);
   const [aiBusy, setAiBusy] = useState(false);
   const [notice, setNotice] = useState("");
@@ -395,6 +396,24 @@ export function SheetsApp({ workerId }: { workerId?: string }) {
   }, [api, workerId, loaded, workbookName, columns, rows, tabs, active]);
 
   /* AI replay */
+  /** Where AI typing goes next: the selection now, or where queued typing will leave it. */
+  const selPos = useRef(selA);
+  selPos.current = selA;
+  const typeNext = useRef<Pos | null>(null);
+  const editingRef = useRef(editing);
+  editingRef.current = editing;
+
+  /** Show the AI cursor on a cell (the window's overlay listens for this). */
+  const pointAt = (ref: string, press: boolean) => {
+    const el = document.querySelector<HTMLElement>(`[data-sheet-cell="${ref}"]`);
+    if (!el) return;
+    el.scrollIntoView({ block: "nearest", inline: "nearest" });
+    const r = el.getBoundingClientRect();
+    window.dispatchEvent(new CustomEvent("everfern-ai-pointer", {
+      detail: { app: "sheets", clientX: r.left + Math.min(r.width / 2, 28), clientY: r.top + r.height / 2, press },
+    }));
+  };
+
   const runQueue = useCallback(async () => {
     if (pumpingRef.current) return;
     pumpingRef.current = true;
@@ -404,7 +423,7 @@ export function SheetsApp({ workerId }: { workerId?: string }) {
       const fast = queueRef.current.length > 60;
       const pos = parseRef(op.ref);
       if (pos) { setSelA(pos); setSelB(pos); }
-      requestAnimationFrame(() => document.querySelector(`[data-sheet-cell="${op.ref}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest" }));
+      requestAnimationFrame(() => pointAt(op.ref, !fast));
       if (fast || op.value.length > 120) {
         setActiveTyping({ ref: op.ref, typing: op.value, shown: op.value });
         await sleep(fast ? 18 : 220);
@@ -426,6 +445,9 @@ export function SheetsApp({ workerId }: { workerId?: string }) {
       await sleep(55);
       setActiveTyping(null);
     }
+    // Typing ends on the next cell, like pressing Tab or Enter.
+    const after = typeNext.current;
+    if (after) { typeNext.current = null; setSelA(after); setSelB(after); requestAnimationFrame(() => pointAt(cellRef(after.r, after.c), false)); }
     setAiBusy(false);
     pumpingRef.current = false;
   }, [active]);
@@ -458,6 +480,34 @@ export function SheetsApp({ workerId }: { workerId?: string }) {
     });
     return () => { try { off?.(); } catch { /* ignore */ } };
   }, [api, enqueue, mutateTab]);
+
+  // worker_type into Sheets: text goes into the selected cell; Tab moves right, a new line or
+  // submit moves down to the column typing started in. An open cell editor gets the text appended.
+  useEffect(() => {
+    const onType = (e: Event) => {
+      const d = (e as CustomEvent<{ text?: string; submit?: boolean }>).detail;
+      if (!d || typeof d.text !== "string") return;
+      const start = typeNext.current ?? selPos.current;
+      let r = start.r, c = start.c;
+      const ops: Array<{ ref: string; value: string }> = [];
+      const ed = editingRef.current;
+      let prefix = "";
+      if (ed && ed.r === r && ed.c === c) { prefix = ed.draft; setEditing(null); }
+      for (const part of d.text.split(/(\t|\r?\n)/)) {
+        if (part === "\t") { c = Math.min(columns - 1, c + 1); continue; }
+        if (part === "\n" || part === "\r\n") { r = Math.min(rows - 1, r + 1); c = start.c; continue; }
+        if (!part && !prefix) continue;
+        ops.push({ ref: cellRef(r, c), value: prefix + part });
+        prefix = "";
+      }
+      if (d.submit) { r = Math.min(rows - 1, r + 1); c = start.c; }
+      typeNext.current = { r, c };
+      if (ops.length) enqueue(ops);
+      else { const p = typeNext.current; typeNext.current = null; setSelA(p); setSelB(p); }
+    };
+    window.addEventListener("everfern-sheet-type", onType);
+    return () => window.removeEventListener("everfern-sheet-type", onType);
+  }, [columns, rows, enqueue]);
 
   useEffect(() => {
     if (!notice) return;
@@ -817,87 +867,126 @@ export function SheetsApp({ workerId }: { workerId?: string }) {
   const displayRows = Math.min(rows, 150);
   const displayCols = Math.min(columns, 24);
 
+  const saveNow = () => {
+    const data = buildSheetData(workbookName, columns, rows, tabs, active);
+    try { localStorage.setItem(`everfern_sheet_${workerId ?? "local"}`, JSON.stringify(data)); } catch { /* ignore */ }
+    try { if (api?.sheetSave && workerId) void api.sheetSave(workerId, data); } catch { /* ignore */ }
+    setNotice("Saved");
+  };
+  const clearIn = (key: "cells" | "styles") => mutateTab((t) => {
+    const q = rectOf(selA, selB);
+    const next = { ...t[key] };
+    for (let r = q.r1; r <= q.r2; r++) for (let c = q.c1; c <= q.c2; c++) delete next[cellRef(r, c)];
+    return { ...t, [key]: next };
+  });
+
   return (
-    <div className="wk-sheets" data-worker-app="sheets">
-      <div className="wk-sheets-bar">
-        <div className="wk-sheets-title">
-          <span className="wk-sheets-logo">▦</span>
-          <input aria-label="Workbook name" className="wk-sheets-name" value={workbookName} onChange={(e) => setWorkbookName(e.target.value)} />
+    <div className="wk-sheets is-v2" data-worker-app="sheets">
+      <div className="wk-sh-top">
+        <input aria-label="Workbook name" className="wk-sh-name" value={workbookName} onChange={(e) => setWorkbookName(e.target.value)} />
+        <div className="wk-sh-history">
+          <button onClick={undo} aria-label="Undo" title="Undo (Ctrl+Z)"><Undo2 size={13} /></button>
+          <button onClick={redo} aria-label="Redo" title="Redo (Ctrl+Y)"><Redo2 size={13} /></button>
         </div>
-        <div className="wk-sheets-formula">
-          <span>{selRef}</span>
-          <input
-            aria-label="Formula bar"
-            value={editing && editing.r === selA.r && editing.c === selA.c ? editing.draft : selRaw}
-            onChange={(e) => setEditing({ r: selA.r, c: selA.c, draft: e.target.value })}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") { commitEdit(selA.r, selA.c, (e.target as HTMLInputElement).value, "down"); }
-              if (e.key === "Escape") setEditing(null);
-            }}
-            onBlur={() => { if (editing) commitEdit(selA.r, selA.c, editing.draft); }}
-          />
-        </div>
-        <div className="wk-sheets-actions">
-          <button onClick={() => fileRef.current?.click()} title="Import CSV"><Upload size={13} /></button>
-          <button onClick={exportCSV} title="Export CSV"><Download size={13} /></button>
-          <button onClick={undo} title="Undo (Ctrl+Z)"><Undo2 size={13} /></button>
-          <button onClick={redo} title="Redo (Ctrl+Y)"><Redo2 size={13} /></button>
+        <div className="wk-sh-file">
+          <div className="wk-sh-seg">
+            <button onClick={() => fileRef.current?.click()} aria-label="Import CSV" title="Import CSV"><FolderOpen size={13} /></button>
+            <button onClick={exportCSV} aria-label="Export CSV" title="Export CSV"><Download size={13} /></button>
+            <button onClick={() => void pasteSelection()} aria-label="Paste" title="Paste (Ctrl+V)"><ClipboardPaste size={13} /></button>
+          </div>
+          <button className="wk-sh-save" onClick={saveNow}><Save size={12} /> Save</button>
         </div>
       </div>
 
-      <div className="wk-sheets-format">
-        <div className="wk-sheets-group">
-          <button className={activeStyle.b ? "is-on" : ""} onClick={() => applyStyle({ b: !activeStyle.b })} title="Bold"><Bold size={13} /></button>
-          <button className={activeStyle.i ? "is-on" : ""} onClick={() => applyStyle({ i: !activeStyle.i })} title="Italic"><Italic size={13} /></button>
-          <button className={activeStyle.u ? "is-on" : ""} onClick={() => applyStyle({ u: !activeStyle.u })} title="Underline"><Underline size={13} /></button>
-          <button className={activeStyle.s ? "is-on" : ""} onClick={() => applyStyle({ s: !activeStyle.s })} title="Strikethrough"><Strikethrough size={13} /></button>
+      <div className="wk-sh-tabs">
+        {tabs.map((t, i) => (
+          <div key={t.id} className={`wk-sh-tab${i === active ? " is-active" : ""}`}>
+            <input
+              aria-label={`Sheet ${i + 1}`}
+              value={t.name}
+              size={Math.max(4, t.name.length)}
+              onChange={(e) => renameTab(i, e.target.value)}
+              onFocus={() => { setActive(i); setSelA({ r: 0, c: 0 }); setSelB({ r: 0, c: 0 }); }}
+            />
+            {tabs.length > 1 && <button onClick={(e) => { e.stopPropagation(); deleteTab(i); }} aria-label={`Delete ${t.name}`}><X size={10} /></button>}
+          </div>
+        ))}
+        <button className="wk-sh-addtab" onClick={addTab} aria-label="Add sheet" title="Add sheet"><Plus size={13} /></button>
+      </div>
+
+      <div className="wk-sh-formula">
+        <span className="wk-sh-ref" title={selRange}>{selRef}</span>
+        <span className="wk-sh-fx">fx</span>
+        <input
+          aria-label="Formula bar"
+          placeholder="Type a value or =formula"
+          value={editing && editing.r === selA.r && editing.c === selA.c ? editing.draft : selRaw}
+          onChange={(e) => setEditing({ r: selA.r, c: selA.c, draft: e.target.value, bar: true })}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { commitEdit(selA.r, selA.c, (e.target as HTMLInputElement).value, "down"); }
+            if (e.key === "Escape") setEditing(null);
+          }}
+          onBlur={() => { if (editing?.bar) commitEdit(selA.r, selA.c, editing.draft); }}
+        />
+      </div>
+
+      <div className="wk-sh-tools">
+        <div className="wk-sh-group">
+          <button onClick={() => void copySelection()} aria-label="Copy" title="Copy (Ctrl+C)"><Copy size={13} /></button>
+          <button onClick={() => void cutSelection()} aria-label="Cut" title="Cut (Ctrl+X)"><Scissors size={13} /></button>
+          <button onClick={() => clearIn("cells")} aria-label="Clear cells" title="Clear cells"><Trash2 size={13} /></button>
         </div>
-        <div className="wk-sheets-group">
-          <label className="wk-sheets-color" title="Text colour"><input type="color" value={activeStyle.color ?? "#1c2421"} onChange={(e) => applyStyle({ color: e.target.value })} /><span>A</span></label>
-          <label className="wk-sheets-color is-fill" title="Fill colour"><input type="color" value={activeStyle.bg ?? "#ffffff"} onChange={(e) => applyStyle({ bg: e.target.value })} /><span>▧</span></label>
+        <div className="wk-sh-group is-plain">
+          <select className="wk-sh-select" aria-label="Number format" value={activeStyle.fmt ?? "general"} onChange={(e) => applyStyle({ fmt: e.target.value as NumberFormat })}>
+            <option value="general">General</option>
+            <option value="number">Number</option>
+            <option value="currency">Currency</option>
+            <option value="percent">Percent</option>
+          </select>
+          <select className="wk-sh-select is-narrow" aria-label="Font size" value={activeStyle.fs ?? 12} onChange={(e) => applyStyle({ fs: Number(e.target.value) })}>
+            {[9, 10, 11, 12, 13, 14, 16, 18, 20, 24].map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
         </div>
-        <div className="wk-sheets-group">
-          <button className={activeStyle.align === "left" ? "is-on" : ""} onClick={() => applyStyle({ align: "left" })} title="Align left"><AlignLeft size={13} /></button>
-          <button className={activeStyle.align === "center" ? "is-on" : ""} onClick={() => applyStyle({ align: "center" })} title="Align centre"><AlignCenter size={13} /></button>
-          <button className={activeStyle.align === "right" ? "is-on" : ""} onClick={() => applyStyle({ align: "right" })} title="Align right"><AlignRight size={13} /></button>
+        <div className="wk-sh-group">
+          <button className={activeStyle.b ? "is-on" : ""} onClick={() => applyStyle({ b: !activeStyle.b })} aria-label="Bold" title="Bold"><Bold size={13} /></button>
+          <button className={activeStyle.i ? "is-on" : ""} onClick={() => applyStyle({ i: !activeStyle.i })} aria-label="Italic" title="Italic"><Italic size={13} /></button>
+          <button className={activeStyle.u ? "is-on" : ""} onClick={() => applyStyle({ u: !activeStyle.u })} aria-label="Underline" title="Underline"><Underline size={13} /></button>
+          <button className={activeStyle.s ? "is-on" : ""} onClick={() => applyStyle({ s: !activeStyle.s })} aria-label="Strikethrough" title="Strikethrough"><Strikethrough size={13} /></button>
         </div>
-        <select
-          className="wk-sheets-select"
-          aria-label="Number format"
-          value={activeStyle.fmt ?? "general"}
-          onChange={(e) => applyStyle({ fmt: e.target.value as NumberFormat })}
-        >
-          <option value="general">General</option>
-          <option value="number">Number</option>
-          <option value="currency">Currency</option>
-          <option value="percent">Percent</option>
-        </select>
-        <select
-          className="wk-sheets-select is-narrow"
-          aria-label="Font size"
-          value={activeStyle.fs ?? 12}
-          onChange={(e) => applyStyle({ fs: Number(e.target.value) })}
-        >
-          {[9, 10, 11, 12, 13, 14, 16, 18, 20, 24].map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <div className="wk-sheets-group">
-          <button onClick={mergeCells} title="Merge cells"><Merge size={13} /></button>
-          <button onClick={unmerge} title="Unmerge"><X size={13} /></button>
+        <div className="wk-sh-group">
+          <button className={activeStyle.align === "left" ? "is-on" : ""} onClick={() => applyStyle({ align: "left" })} aria-label="Align left" title="Align left"><AlignLeft size={13} /></button>
+          <button className={activeStyle.align === "center" ? "is-on" : ""} onClick={() => applyStyle({ align: "center" })} aria-label="Align centre" title="Align centre"><AlignCenter size={13} /></button>
+          <button className={activeStyle.align === "right" ? "is-on" : ""} onClick={() => applyStyle({ align: "right" })} aria-label="Align right" title="Align right"><AlignRight size={13} /></button>
         </div>
-        <div className="wk-sheets-group">
-          <button onClick={() => sort(1)} title="Sort ascending"><ArrowUpDown size={13} /></button>
+        <div className="wk-sh-group">
+          <label className="wk-sh-color" title="Text colour" style={{ ["--swatch" as string]: activeStyle.color ?? "#e03131" }}>
+            <input type="color" aria-label="Text colour" value={activeStyle.color ?? "#1c2421"} onChange={(e) => applyStyle({ color: e.target.value })} />
+            <Baseline size={13} />
+          </label>
+          <label className="wk-sh-color" title="Fill colour" style={{ ["--swatch" as string]: activeStyle.bg ?? "#f5c542" }}>
+            <input type="color" aria-label="Fill colour" value={activeStyle.bg ?? "#ffffff"} onChange={(e) => applyStyle({ bg: e.target.value })} />
+            <PaintBucket size={13} />
+          </label>
+          <button onClick={() => clearIn("styles")} aria-label="Clear formatting" title="Clear formatting"><Eraser size={13} /></button>
         </div>
-        <div className="wk-sheets-group">
-          <button onClick={() => insertRow(true)} title="Insert row above">R+</button>
-          <button onClick={deleteRow} title="Delete row">R−</button>
-          <button onClick={() => insertCol(true)} title="Insert column left">C+</button>
-          <button onClick={deleteCol} title="Delete column">C−</button>
+        <div className="wk-sh-group">
+          <button onClick={mergeCells} aria-label="Merge cells" title="Merge cells"><Merge size={13} /></button>
+          <button onClick={unmerge} aria-label="Unmerge cells" title="Unmerge cells"><Split size={13} /></button>
+          <button onClick={() => sort(1)} aria-label="Sort ascending" title="Sort ascending"><ArrowUpDown size={13} /></button>
         </div>
-        <div className="wk-sheets-group">
-          <button onClick={showChart} title="Chart from selection"><ChartBar size={13} /></button>
-          <button onClick={() => mutateTab((t) => ({ ...t, cells: {}, styles: {}, merges: [] }))} title="Clear sheet"><Eraser size={13} /></button>
+        <div className="wk-sh-group">
+          <button onClick={() => insertCol(true)} aria-label="Insert column" title="Insert column left"><BetweenVerticalStart size={13} /></button>
+          <button onClick={deleteCol} aria-label="Delete column" title="Delete column"><Columns3 size={13} /></button>
+          <button onClick={() => insertRow(true)} aria-label="Insert row" title="Insert row above"><BetweenHorizontalStart size={13} /></button>
+          <button onClick={deleteRow} aria-label="Delete row" title="Delete row"><Rows3 size={13} /></button>
+          <button onClick={showChart} aria-label="Chart from selection" title="Chart from selection"><ChartBar size={13} /></button>
         </div>
-        <span className="wk-sheets-hint">{selRange}</span>
+        <span className="wk-sh-status">
+          {aiBusy
+            ? <b className="is-ai"><Sparkles size={11} /> AI typing{activeTyping ? ` ${activeTyping.ref}` : ""}</b>
+            : <b>{notice || "Ready"}</b>}
+          <span>{rows} rows · {columns} columns</span>
+        </span>
       </div>
 
       <input
@@ -907,13 +996,6 @@ export function SheetsApp({ workerId }: { workerId?: string }) {
         style={{ display: "none" }}
         onChange={(e) => { const f = e.target.files?.[0]; if (f) void importCSV(f); e.currentTarget.value = ""; }}
       />
-
-      {(notice || aiBusy) && (
-        <div className="wk-sheets-notice">
-          {aiBusy && <span className="wk-sheets-ai"><Sparkles size={12} /> AI is working{activeTyping ? ` · typing ${activeTyping.ref}` : ""}</span>}
-          {notice && <span className="wk-sheets-ok"><Check size={12} /> {notice}</span>}
-        </div>
-      )}
 
       <div className="wk-sheets-grid" ref={gridRef} tabIndex={0} onKeyDown={onGridKeyDown}>
         <table>
@@ -942,7 +1024,8 @@ export function SheetsApp({ workerId }: { workerId?: string }) {
                   if (merge === "covered") return null;
                   const isSel = inRect(r, c, selA, selB);
                   const isActive = activeTyping?.ref === ref;
-                  const isEditing = !!editing && editing.r === r && editing.c === c;
+                  const isEditing = !!editing && !editing.bar && editing.r === r && editing.c === c;
+                  const barPreview = !!editing && !!editing.bar && editing.r === r && editing.c === c;
                   const style = styles[ref] ?? {};
                   const value = displayValue(cells, ref, style);
                   return (
@@ -981,6 +1064,8 @@ export function SheetsApp({ workerId }: { workerId?: string }) {
                             if (e.key === "Tab") { commitEdit(r, c, editing.draft, "right"); e.preventDefault(); }
                           }}
                         />
+                      ) : barPreview ? (
+                        <span className="wk-sheets-ghost">{editing!.draft}</span>
                       ) : isActive ? (
                         <span className="wk-sheets-ghost">{activeTyping!.shown}<span className="wk-sheets-caret" /></span>
                       ) : value}
@@ -991,21 +1076,6 @@ export function SheetsApp({ workerId }: { workerId?: string }) {
             ))}
           </tbody>
         </table>
-      </div>
-
-      <div className="wk-sheets-tabs">
-        {tabs.map((t, i) => (
-          <div key={t.id} className={`wk-sheets-tab${i === active ? " is-active" : ""}`}>
-            <input
-              aria-label={`Sheet ${i + 1}`}
-              value={t.name}
-              onChange={(e) => renameTab(i, e.target.value)}
-              onFocus={() => { setActive(i); setSelA({ r: 0, c: 0 }); setSelB({ r: 0, c: 0 }); }}
-            />
-            {tabs.length > 1 && <button onClick={(e) => { e.stopPropagation(); deleteTab(i); }} aria-label={`Delete ${t.name}`}><X size={10} /></button>}
-          </div>
-        ))}
-        <button className="wk-sheets-addtab" onClick={addTab} title="Add sheet"><Plus size={13} /></button>
       </div>
 
       {chart && (
@@ -1036,11 +1106,11 @@ function ChartSvg({ data }: { data: { type: "bar" | "line"; labels: string[]; va
       <line x1={pad} y1={h - pad} x2={w - pad} y2={h - pad} stroke="#cfd8d3" />
       {data.type === "bar"
         ? data.values.map((v, i) => (
-            <rect key={i} x={pad + i * slot + slot * 0.18} y={y(v)} width={slot * 0.64} height={Math.max(0, h - pad - y(v))} fill="#43d17a" rx={2} />
+            <rect key={i} x={pad + i * slot + slot * 0.18} y={y(v)} width={slot * 0.64} height={Math.max(0, h - pad - y(v))} fill="#3b7ddd" rx={2} />
           ))
         : <polyline
             fill="none"
-            stroke="#169c4b"
+            stroke="#2f6fd0"
             strokeWidth={2}
             points={data.values.map((v, i) => `${pad + i * slot + slot / 2},${y(v)}`).join(" ")}
           />}

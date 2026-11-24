@@ -202,8 +202,6 @@ export function PDFViewer({ file }: { file: { name: string; path: string } }) {
                         color: '#ef4444',
                         fontSize: 11,
                         fontWeight: 700,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.04em'
                     }}>
                         <DocumentTextIcon width={14} height={14} />
                         PDF Document
@@ -381,7 +379,7 @@ export function PDFViewer({ file }: { file: { name: string; path: string } }) {
                                         overflow: 'hidden'
                                     }}
                                 >
-                                    <div style={{ padding: '4px 10px', fontSize: 10, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase' }}>
+                                    <div style={{ padding: '4px 10px', fontSize: 10, fontWeight: 700, color: 'var(--color-text-tertiary)', }}>
                                         Open with
                                     </div>
                                     {apps.map(app => (
@@ -605,7 +603,7 @@ export function MarkdownViewer({ content }: { content: string }) {
                             <thead>
                                 <tr style={{ backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)' }}>
                                     {headers.map((h, j) => (
-                                        <th key={j} style={{ padding: '8px 12px', borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid rgba(0, 0, 0, 0.08)', textAlign: 'left', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }} dangerouslySetInnerHTML={{ __html: formatInline(h) }} />
+                                        <th key={j} style={{ padding: '8px 12px', borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid rgba(0, 0, 0, 0.08)', textAlign: 'left', color: 'var(--color-text-secondary)', fontWeight: 600, fontSize: 11, }} dangerouslySetInnerHTML={{ __html: formatInline(h) }} />
                                     ))}
                                 </tr>
                             </thead>
@@ -1506,9 +1504,9 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                     className="glossy"
                     style={{
                         position: 'relative',
-                        width: isFullscreen ? '100vw' : '92%',
-                        maxWidth: isFullscreen ? '100vw' : 1240,
-                        height: isFullscreen ? '100vh' : '86vh',
+                        width: isFullscreen ? 'var(--ef-vw)' : '92%',
+                        maxWidth: isFullscreen ? 'var(--ef-vw)' : 1240,
+                        height: isFullscreen ? 'var(--ef-vh)' : 'calc(var(--ef-vh) * .86)',
                         backgroundColor: 'var(--color-bg-surface)',
                         border: isFullscreen ? 'none' : (isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.1)'),
                         borderRadius: isFullscreen ? 0 : 16,
@@ -1777,7 +1775,7 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                                 >
                                     {/* File Info */}
                                     <div style={{ minWidth: 240 }}>
-                                        <h4 style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 10px 0' }}>File Info</h4>
+                                        <h4 style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-tertiary)', margin: '0 0 10px 0' }}>File Info</h4>
                                         <div style={{
                                             display: 'flex',
                                             flexDirection: 'column',
@@ -1793,7 +1791,7 @@ export default function FileViewerModal({ file, onClose, chatId, projectPath }: 
                                             </div>
                                             <div>
                                                 <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>Format</div>
-                                                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)', textTransform: 'uppercase', marginTop: 2 }}>{extension || 'Unknown'}</div>
+                                                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)', marginTop: 2 }}>{extension || 'Unknown'}</div>
                                             </div>
                                             <div>
                                                 <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>Path</div>

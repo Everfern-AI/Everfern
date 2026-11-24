@@ -364,6 +364,24 @@ export interface RollbackImpact {
  *
  * Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 17.4, 17.5
  */
+function runNativeRollback<T>(native: string, command: string, request: unknown): Promise<T> {
+  const { execFile } = require('child_process') as typeof import('child_process');
+  return new Promise<T>((resolve, reject) => {
+    const child = execFile(native, [command], {
+      encoding: 'utf8', windowsHide: true, timeout: 60000,
+    }, (error, stdout) => {
+      if (error) return reject(error);
+      try {
+        resolve(JSON.parse(stdout));
+      } catch (parseError) {
+        reject(parseError);
+      }
+    });
+    child.stdin?.on('error', reject);
+    child.stdin?.end(JSON.stringify(request));
+  });
+}
+
 export class RollbackManager {
   private initialized = false;
   private exclusionPatterns: RegExp[] = DEFAULT_EXCLUSION_PATTERNS;
@@ -697,6 +715,11 @@ export class RollbackManager {
   async restoreFileFromSnapshot(snapshotId: string): Promise<FileRestorationResult> {
     try {
       this.ensureInitialized();
+
+      const native = process.env.EF_NATIVE_EXE;
+      if (process.env.EVERFERN_SHELL === 'tauri' && native) {
+        return await runNativeRollback<FileRestorationResult>(native, '--ef-restore-snapshot', snapshotId);
+      }
 
       const snapshot = await this.getFileSnapshot(snapshotId);
       if (!snapshot) {
@@ -3340,28 +3363,37 @@ export class RollbackManager {
       // ── Phase 1: Retrieve and rollback file changes ─────────────────
 
       try {
-        const fileRows = await dbOps.all(
-          `SELECT * FROM file_snapshots
-           WHERE task_id = ? AND timestamp >= ?
-           ORDER BY timestamp DESC`,
-          [taskId, timestampMs]
-        );
+        const native = process.env.EF_NATIVE_EXE;
+        if (process.env.EVERFERN_SHELL === 'tauri' && native) {
+          const result = await runNativeRollback<{ filesRestored: string[]; errors: string[] }>(
+            native, '--ef-restore-turn-files', [taskId, timestampMs]
+          );
+          filesRestored.push(...result.filesRestored);
+          errors.push(...result.errors);
+        } else {
+          const fileRows = await dbOps.all(
+            `SELECT * FROM file_snapshots
+             WHERE task_id = ? AND timestamp >= ?
+             ORDER BY timestamp DESC`,
+            [taskId, timestampMs]
+          );
 
-        const fileSnapshots = fileRows.map(this.rowToSnapshot);
+          const fileSnapshots = fileRows.map(this.rowToSnapshot);
 
-        for (const snapshot of fileSnapshots) {
-          try {
-            const result = await this.rollbackFileChange(snapshot.id);
-            if (result.success) {
-              filesRestored.push(snapshot.filePath);
-              console.log(`[RollbackManager] Restored file: ${snapshot.filePath}`);
-            } else {
-              errors.push(`File restoration failed for ${snapshot.filePath}: ${result.error}`);
+          for (const snapshot of fileSnapshots) {
+            try {
+              const result = await this.rollbackFileChange(snapshot.id);
+              if (result.success) {
+                filesRestored.push(snapshot.filePath);
+                console.log(`[RollbackManager] Restored file: ${snapshot.filePath}`);
+              } else {
+                errors.push(`File restoration failed for ${snapshot.filePath}: ${result.error}`);
+              }
+            } catch (error) {
+              errors.push(
+                `Exception during file restoration for ${snapshot.filePath}: ${(error as Error).message}`
+              );
             }
-          } catch (error) {
-            errors.push(
-              `Exception during file restoration for ${snapshot.filePath}: ${(error as Error).message}`
-            );
           }
         }
       } catch (error) {

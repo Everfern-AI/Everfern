@@ -1,0 +1,458 @@
+/*
+ * Liquid Glass — one material for everything that floats over the desktop (docs/LIQUID-GLASS.md).
+ *
+ * Not frosted glassmorphism (blur + a tinted fill + a 1px border). This material:
+ *  - refracts: the #ef-lg SVG lens bends the backdrop inward at the edges;
+ *  - stays clear: a light blur only, high saturation, almost no fill;
+ *  - has thickness: soft light pooled at the top and bottom, and an inner glow;
+ *  - floats: a soft, wide shadow. No border, rim or hairline: a bright 1px edge reads as a white outline.
+ */
+.lg-glass {
+  --lg-tint: rgba(255, 255, 255, 0.04);
+  --lg-blur: 10px;
+  position: relative;
+  isolation: isolate;
+  border: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0) 46%), var(--lg-tint);
+  backdrop-filter: blur(var(--lg-blur)) saturate(1.8) brightness(1.05);
+  backdrop-filter: url(#ef-lg) blur(var(--lg-blur)) saturate(1.8) brightness(1.05);
+  /* No ring and no hairline: the edge is light pooling inside the glass and the shadow under it. */
+  box-shadow:
+    inset 0 14px 24px -18px rgba(255, 255, 255, 0.42),
+    inset 0 -14px 24px -20px rgba(255, 255, 255, 0.12),
+    inset 0 0 18px -6px rgba(255, 255, 255, 0.08),
+    0 16px 40px -18px rgba(4, 14, 20, 0.5),
+    0 2px 8px -4px rgba(4, 14, 20, 0.18);
+}
+/* The old 1px gradient rim read as a white outline, so it is gone. */
+.lg-glass::before { content: none; }
+/* The sheen: a broad, soft highlight across the upper part of the glass. */
+.lg-glass::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(120% 70% at 18% -10%, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 60%);
+}
+
+/* ── The AI cursor: a cyan glass orb (its centre is the exact spot) and a cyan glass pill ──
+ * One accent for everything the AI does on screen, so its cursor never reads as the user's. */
+.wk-ai-cursor {
+  --ai-cyan: 94, 222, 236;
+  --ai-ink: #04363d;
+  position: absolute;
+  width: 0;
+  height: 0;
+  z-index: 2;
+}
+.wk-ai-cursor > svg, .wk-ai-pointer, .wk-ai-verb { display: none; }
+.wk-ai-orb.lg-glass {
+  /* A clear cyan ball: brighter at the top where the light hits, deeper cyan at the bottom. */
+  --lg-tint: radial-gradient(90% 90% at 35% 25%, rgba(214, 252, 255, 0.95), rgba(var(--ai-cyan), 0.9) 55%, rgba(38, 190, 210, 0.92));
+  --lg-blur: 3px;
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  translate: -50% -50%;
+  display: grid;
+  place-items: center;
+  box-shadow:
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.9),
+    inset 0 -1.5px 2px rgba(255, 255, 255, 0.3),
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.55),
+    inset 0 -6px 10px -6px rgba(0, 120, 140, 0.35),
+    0 0 18px rgba(var(--ai-cyan), 0.6),
+    0 6px 16px -4px rgba(4, 30, 36, 0.45),
+    0 1px 3px rgba(4, 30, 36, 0.25);
+}
+/* The exact spot: a small white point with a soft glow. No dark ring, so the centre never reads as a black dot. */
+.wk-ai-orb-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 99px;
+  background: #fff;
+  box-shadow: 0 0 4px 1px rgba(255, 255, 255, 0.85);
+}
+/* A click: the orb presses in, overshoots a little and settles. */
+.wk-ai-orb.is-pressing { animation: wk-ai-press 0.46s cubic-bezier(0.3, 0.7, 0.4, 1) var(--ai-press-delay, 0s) both; }
+@keyframes wk-ai-press {
+  0% { scale: 1; }
+  30% { scale: 0.62; }
+  70% { scale: 1.12; }
+  100% { scale: 1; }
+}
+.wk-ai-ping {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  translate: -50% -50%;
+  border: 1.5px solid rgba(var(--ai-cyan), 0.95);
+  box-shadow: 0 0 12px rgba(var(--ai-cyan), 0.6);
+  opacity: 0;
+  animation: wk-ai-ripple 0.7s cubic-bezier(0.2, 0.7, 0.3, 1) calc(var(--ai-press-delay, 0s) + 0.12s) forwards;
+}
+@keyframes wk-ai-ripple {
+  from { scale: 0.6; opacity: 1; }
+  to { scale: 2.4; opacity: 0; }
+}
+.wk-ai-bubble.lg-glass {
+  --lg-tint: linear-gradient(180deg, rgba(196, 247, 251, 0.82), rgba(var(--ai-cyan), 0.62));
+  --lg-blur: 14px;
+  position: absolute;
+  left: 22px;
+  right: auto;
+  top: 0;
+  translate: 0 -50%;
+  height: 36px;
+  padding: 0 16px 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  border-radius: 999px;
+  max-width: min(320px, var(--ai-room, 320px));
+  white-space: nowrap;
+  color: var(--ai-ink);
+  font: 500 13.5px/1 "Satoshi", -apple-system, BlinkMacSystemFont, sans-serif;
+  letter-spacing: -0.005em;
+}
+.wk-ai-bubble.lg-glass.is-left { left: auto; right: 22px; }
+/* Its own line box: with the bubble's line-height of 1, overflow: hidden cut off the tails of g, p and y. */
+.wk-ai-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; line-height: 1.4; }
+.wk-ai-bubble .wk-ai-spin {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  border-radius: 99px;
+  border: 2px solid rgba(4, 54, 61, 0.18);
+  border-top-color: var(--ai-ink);
+  animation: wk-spin 0.8s linear infinite;
+}
+/* The window the AI is in: a quiet white edge light, no colour wash. */
+.wk-ai-glow {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: none;
+  box-shadow: inset 0 0 0 1.5px rgba(94, 222, 236, 0.55), inset 0 0 36px rgba(94, 222, 236, 0.18);
+}
+
+/* ── Plan on the right: a schedule card, then the task with its step timeline ── */
+.wk .wk-lp {
+  position: absolute;
+  right: 16px;
+  top: 16px;
+  z-index: 40;
+  width: 360px;
+  max-height: calc(100% - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  color: #fff;
+  font-family: "Satoshi", -apple-system, BlinkMacSystemFont, sans-serif;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+.wk .wk-lp-card { --lg-tint: rgba(12, 20, 24, 0.2); --lg-blur: 12px; border-radius: 26px; }
+.wk .wk-lp-sched {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 0;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: scale 120ms ease-out, --lg-tint 160ms ease;
+}
+.wk .wk-lp-sched:hover { --lg-tint: rgba(255, 255, 255, 0.08); }
+.wk .wk-lp-sched:active { scale: 0.985; }
+.wk .wk-lp-sched:focus-visible, .wk .wk-lp-edit:focus-visible, .wk .wk-lp-iconbtn:focus-visible, .wk .wk-lp-menu button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.wk .wk-lp-sched-icon {
+  width: 38px;
+  height: 38px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 10px 16px -12px rgba(255, 255, 255, 0.4);
+}
+.wk .wk-lp-sched-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.wk .wk-lp-sched-text b { font-weight: 600; font-size: 14.5px; line-height: 1.15; letter-spacing: -0.012em; }
+.wk .wk-lp-sched-text small { font-size: 12px; line-height: 1.2; color: rgba(255, 255, 255, 0.66); }
+.wk .wk-lp-chev { flex: none; opacity: 0.55; }
+
+.wk .wk-lp-task { min-height: 0; display: flex; flex-direction: column; padding: 16px 16px 6px; }
+.wk .wk-lp-head { display: flex; align-items: center; gap: 8px; padding: 0 4px 14px; }
+.wk .wk-lp-status {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.78);
+}
+.wk .wk-lp-led { width: 7px; height: 7px; border-radius: 99px; background: rgba(255, 255, 255, 0.5); }
+.wk .wk-lp-led.is-live { background: #7fe7c0; box-shadow: 0 0 0 3px rgba(127, 231, 192, 0.2); animation: wk-lp-live 1.6s ease-in-out infinite; }
+.wk .wk-lp-led.is-paused { background: #f5b54a; }
+.wk .wk-lp-led.is-done { background: #7fe7c0; }
+@keyframes wk-lp-live { 50% { box-shadow: 0 0 0 5px rgba(127, 231, 192, 0.08); } }
+.wk .wk-lp-count { font-size: 12px; font-weight: 500; color: rgba(255, 255, 255, 0.62); font-variant-numeric: tabular-nums; }
+.wk .wk-lp-iconbtn {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 99px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.75);
+  cursor: pointer;
+}
+.wk .wk-lp-iconbtn:hover { background: rgba(255, 255, 255, 0.14); color: #fff; }
+.wk .wk-lp-iconbtn:active { scale: 0.94; }
+.wk .wk-lp-edit {
+  width: 100%;
+  height: 42px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.88);
+  color: #0b1317;
+  text-shadow: none;
+  font: 600 13.5px/1 "Satoshi", -apple-system, BlinkMacSystemFont, sans-serif;
+  letter-spacing: -0.005em;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 #fff, inset 0 -1px 1px rgba(0, 0, 0, 0.06), 0 8px 18px -10px rgba(0, 0, 0, 0.45);
+  transition: background 120ms ease, scale 100ms ease-out;
+}
+.wk .wk-lp-edit:hover { background: #fff; }
+.wk .wk-lp-edit:active { scale: 0.98; }
+
+.wk .wk-lp-steps { list-style: none; margin: 0; padding: 0 2px 8px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+.wk .wk-lp-steps::-webkit-scrollbar { display: none; }
+.wk .wk-lp-steps li { position: relative; display: flex; gap: 12px; padding-bottom: 20px; }
+.wk .wk-lp-steps li::before {
+  content: "";
+  position: absolute;
+  left: 9px;
+  top: 22px;
+  bottom: 2px;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.2);
+}
+.wk .wk-lp-steps li:last-child { padding-bottom: 8px; }
+.wk .wk-lp-steps li:last-child::before { display: none; }
+.wk .wk-lp-steps li.is-done::before { background: rgba(255, 255, 255, 0.5); }
+.wk .wk-lp-dot {
+  width: 19px;
+  height: 19px;
+  flex: none;
+  margin-top: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 99px;
+  border: 1.5px solid rgba(255, 255, 255, 0.42);
+  background: rgba(255, 255, 255, 0.06);
+  color: #0b1317;
+}
+.wk .wk-lp-steps li.is-done .wk-lp-dot { background: #fff; border-color: #fff; }
+.wk .wk-lp-steps li.is-active .wk-lp-dot { border-color: #fff; background: radial-gradient(circle, #fff 0 3.5px, transparent 4px); box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.16); }
+.wk .wk-lp-steps li.is-paused .wk-lp-dot { border-color: #f5b54a; background: radial-gradient(circle, #f5b54a 0 3.5px, transparent 4px); box-shadow: 0 0 0 4px rgba(245, 181, 74, 0.18); }
+.wk .wk-lp-body { flex: 1; min-width: 0; padding-top: 1px; }
+.wk .wk-lp-t { font-size: 13.5px; font-weight: 500; line-height: 1.4; letter-spacing: -0.006em; overflow-wrap: anywhere; }
+.wk .wk-lp-steps li.is-done .wk-lp-t { color: rgba(255, 255, 255, 0.6); }
+.wk .wk-lp-d { margin-top: 2px; font-size: 12.5px; line-height: 1.45; color: rgba(255, 255, 255, 0.62); overflow-wrap: anywhere; }
+.wk .wk-lp-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.wk .wk-lp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 11px 0 6px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.13);
+  box-shadow: inset 0 8px 12px -10px rgba(255, 255, 255, 0.35);
+}
+
+.wk .wk-lp-menu { display: flex; flex-direction: column; gap: 2px; padding: 12px; }
+.wk .wk-lp-menu p { margin: 2px 8px 8px; font-size: 12px; line-height: 1.4; color: rgba(255, 255, 255, 0.66); }
+.wk .wk-lp-menu button {
+  height: 38px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 0;
+  border-radius: 13px;
+  background: transparent;
+  color: #fff;
+  font: 500 13.5px/1 "Satoshi", -apple-system, BlinkMacSystemFont, sans-serif;
+  text-align: left;
+  cursor: pointer;
+}
+.wk .wk-lp-menu button:hover, .wk .wk-lp-menu button.is-on { background: rgba(255, 255, 255, 0.12); }
+.wk .wk-lp-menu button.is-quiet { color: rgba(255, 255, 255, 0.6); }
+
+/* While the plan is open in full, the chat centres in the space left of it instead of sliding under it. */
+@media (min-width: 851px) {
+  .wk .ef-screen:has(> .wk-lp) .wk-chat.has-plan,
+  .wk.is-desktop .ef-screen:has(> .wk-lp) .wk-chat.has-plan,
+  .wk.is-desktop .ef-screen:has(> .wk-lp) .wk-chat.has-wide.has-plan {
+    left: calc((100% - 392px) / 2);
+    width: min(642px, calc(100% - 392px - 40px));
+  }
+}
+
+@media (max-width: 850px) {
+  .wk .wk-lp { position: relative; right: auto; top: auto; width: min(100% - 32px, 440px); margin: 84px auto 12px; max-height: 340px; }
+}
+
+/* ── Liquid Glass on the chrome the Warmwind references put it on, and nowhere else ──
+ * Dark glass pills: History, the collapsed chat, suggested answers and the answer field.
+ * Light glass: the "Still open" card, app login rows and Continue, the side window labels.
+ * The AI's own text, reports, buttons inside cards and scrims stay as they are (docs/LIQUID-GLASS.md).
+ * These keep their own pseudo-elements; their edge is soft inset light, never a ring. */
+.wk.wk :is(.wk-history, .wk-chat-peek, .wk-q-opt, .wk-q-input) {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0) 55%), rgba(12, 20, 26, 0.3);
+  backdrop-filter: blur(14px) saturate(1.7) brightness(0.97);
+  backdrop-filter: url(#ef-lg) blur(14px) saturate(1.7) brightness(0.97);
+  border-color: transparent;
+  box-shadow:
+    inset 0 12px 20px -16px rgba(255, 255, 255, 0.3),
+    inset 0 0 14px -6px rgba(255, 255, 255, 0.06),
+    0 10px 26px -14px rgba(0, 0, 0, 0.45);
+}
+.wk.wk :is(.wk-history, .wk-chat-peek, .wk-q-opt:not(:disabled)):hover,
+.wk.wk .wk-q-input:focus-within {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0) 55%), rgba(12, 20, 26, 0.42);
+  box-shadow:
+    inset 0 12px 20px -16px rgba(255, 255, 255, 0.4),
+    inset 0 0 14px -6px rgba(255, 255, 255, 0.1),
+    0 12px 28px -14px rgba(0, 0, 0, 0.5);
+}
+.wk.wk :is(.wk-open, .wk-lg-row, .wk-lg-continue, .wk-thumb-bar) {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.04) 60%), rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(12px) saturate(1.8) brightness(1.05);
+  backdrop-filter: url(#ef-lg) blur(12px) saturate(1.8) brightness(1.05);
+  border-color: transparent;
+  box-shadow:
+    inset 0 12px 20px -14px rgba(255, 255, 255, 0.5),
+    inset 0 -10px 18px -14px rgba(255, 255, 255, 0.16),
+    0 12px 30px -16px rgba(4, 14, 20, 0.4);
+}
+.wk.wk :is(.wk-lg-row, .wk-lg-continue, .wk-thumb-bar):hover {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.06) 60%), rgba(255, 255, 255, 0.08);
+}
+
+/* ── The chat: glass without white outlines, and one spacing rhythm ──
+ * Every surface here used a 1px white border (0.08 to 0.36 alpha). Over a bright wallpaper that border is the
+ * loudest thing on screen, so it is gone: edges come from soft inset light and the shadow under the surface. */
+.wk.wk .wk-thumb-card, .wk.wk .wk-thumb:hover .wk-thumb-card {
+  border-color: transparent;
+  box-shadow: 0 18px 36px -14px rgba(0, 0, 0, 0.5), 0 3px 10px -4px rgba(0, 0, 0, 0.22);
+}
+.wk.wk .wk-thumb:hover .wk-thumb-card { box-shadow: 0 22px 44px -14px rgba(0, 0, 0, 0.6), 0 4px 12px -4px rgba(0, 0, 0, 0.28); }
+.wk.wk .wk-thumb-bar { border-color: transparent; }
+
+/* "Workflow created": dark glass, with the check, the step numbers and the buttons on one left edge. */
+.wk.wk .wk-wf {
+  padding: 14px 8px 14px;
+  border: 0;
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0) 50%), rgba(12, 20, 26, 0.3);
+  backdrop-filter: blur(18px) saturate(1.7) brightness(0.98);
+  backdrop-filter: url(#ef-lg) blur(18px) saturate(1.7) brightness(0.98);
+  box-shadow: inset 0 14px 24px -18px rgba(255, 255, 255, 0.32), 0 16px 36px -18px rgba(0, 0, 0, 0.45);
+  text-shadow: none;
+}
+.wk.wk .wk-wf-head { gap: 12px; margin: 0 8px 6px; padding: 0 8px; font-size: 14px; font-weight: 600; letter-spacing: -0.01em; color: #fff; }
+.wk.wk .wk-wf-steps { gap: 0; }
+.wk.wk .wk-wf-steps li { gap: 12px; padding: 7px 16px; border-radius: 12px; font-size: 13.5px; line-height: 1.45; color: rgba(255, 255, 255, 0.84); }
+.wk.wk .wk-wf-steps li.is-now { background: rgba(255, 255, 255, 0.09); }
+.wk.wk .wk-wf-dot { width: 18px; height: 18px; margin-top: 1px; font-size: 10.5px; font-variant-numeric: tabular-nums; background: rgba(255, 255, 255, 0.14); }
+.wk.wk .wk-wf-actions { gap: 8px; margin: 12px 16px 0; }
+
+/* Buttons that sit on the wallpaper in the chat: dark glass pills, no border. */
+.wk.wk :is(.wk-run-report-foot button, .wk-chat .wk-gpill:not(.is-white, .is-danger)) {
+  height: 32px;
+  padding: 0 14px;
+  gap: 6px;
+  border: 0;
+  border-radius: 999px;
+  font: 500 12.5px/1 "Satoshi", -apple-system, BlinkMacSystemFont, sans-serif;
+  color: #fff;
+  text-shadow: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0) 60%), rgba(12, 20, 26, 0.32);
+  backdrop-filter: blur(14px) saturate(1.7);
+  box-shadow: inset 0 10px 16px -12px rgba(255, 255, 255, 0.35), 0 6px 16px -10px rgba(0, 0, 0, 0.45);
+  transition: background 140ms ease, scale 100ms ease-out;
+}
+.wk.wk :is(.wk-run-report-foot button, .wk-chat .wk-gpill:not(.is-white, .is-danger)):hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0) 60%), rgba(12, 20, 26, 0.44);
+  transform: none;
+}
+.wk.wk :is(.wk-run-report-foot button, .wk-chat .wk-gpill):active:not(:disabled) { scale: 0.97; transform: none; }
+.wk.wk .wk-chat .wk-gpill.is-white { height: 32px; padding: 0 14px; border: 0; box-shadow: 0 6px 16px -10px rgba(0, 0, 0, 0.45); }
+.wk.wk .wk-run-report-foot { gap: 12px; }
+
+/* Reply tables, cards, code and stats: the same glass, no border. Rows keep their thin dividers. */
+.wk.wk .wk-chat :is(.wk-r-table, .wk-r-card, .wk-r-code, .wk-run-report-stats > div) { border-color: transparent; }
+.wk.wk .wk-chat .wk-r-table {
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02) 40%), rgba(12, 20, 26, 0.24);
+  box-shadow: inset 0 14px 24px -18px rgba(255, 255, 255, 0.28), 0 14px 32px -18px rgba(0, 0, 0, 0.4);
+}
+.wk.wk .wk-chat .wk-r-table th { background: rgba(255, 255, 255, 0.05); }
+.wk.wk .wk-chat .wk-r-table :is(th, td) { padding: 10px 16px; border-bottom-color: rgba(255, 255, 255, 0.08); }
+.wk.wk .wk-chat .wk-r-card { box-shadow: inset 0 14px 24px -18px rgba(255, 255, 255, 0.3), 0 14px 32px -18px rgba(0, 0, 0, 0.35); }
+.wk.wk .wk-chat .wk-msg-user { border-color: transparent; }
+
+/* The chat column keeps clear of the window thumbnails on the left (they are 196px plus their padding)
+ * and of the plan on the right, and centres in the space between. Doubled classes beat the older placements. */
+@media (min-width: 851px) {
+  .wk.wk.wk .ef-screen:has(.wk-thumbs .wk-thumb) .wk-chat.wk-chat { --chat-gl: 240px; }
+  .wk.wk.wk .ef-screen:has(> .wk-lp) .wk-chat.wk-chat.has-plan { --chat-gr: 392px; }
+  .wk.wk.wk .ef-screen:has(.wk-thumbs .wk-thumb) .wk-chat.wk-chat {
+    left: calc(var(--chat-gl) + (100% - var(--chat-gl) - var(--chat-gr, 0px)) / 2);
+    max-width: calc(100% - var(--chat-gl) - var(--chat-gr, 0px) - 40px);
+  }
+}
+
+/* ── Accessibility: solid surfaces, no lens, no motion when asked ── */
+@media (prefers-reduced-transparency: reduce) {
+  .lg-glass { backdrop-filter: none; background: #26343b; }
+  .lg-glass::before, .lg-glass::after { display: none; }
+  .wk-ai-bubble.lg-glass { background: #c4f7fb; }
+  .wk-ai-orb.lg-glass { background: rgb(94, 222, 236); }
+  .wk.wk :is(.wk-history, .wk-chat-peek, .wk-q-opt, .wk-q-input) { backdrop-filter: none; background: #1d272c; }
+  .wk.wk :is(.wk-open, .wk-lg-row, .wk-lg-continue, .wk-thumb-bar) { backdrop-filter: none; background: #3a474e; }
+  .wk.wk :is(.wk-wf, .wk-run-report-foot button, .wk-chat .wk-gpill:not(.is-white, .is-danger), .wk-chat .wk-r-table) { backdrop-filter: none; background: #1d272c; }
+}
+@media (prefers-contrast: more) {
+  .lg-glass,
+  .wk.wk :is(.wk-history, .wk-chat-peek, .wk-q-opt, .wk-q-input, .wk-open, .wk-lg-row, .wk-lg-continue, .wk-thumb-bar, .wk-wf, .wk-run-report-foot button, .wk-chat .wk-gpill:not(.is-white, .is-danger), .wk-chat .wk-r-table, .wk-thumb-card) { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.85), 0 8px 24px -12px rgba(0, 0, 0, 0.5); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wk-ai-orb.is-pressing, .wk-ai-ping, .wk .wk-lp-led.is-live, .wk-ai-bubble .wk-ai-spin { animation: none; }
+}

@@ -26,6 +26,10 @@ fs.copyFileSync(process.execPath, path.join(node, process.platform === 'win32' ?
 // and icon source trees out of the compatibility runtime.
 const runtimePackage = JSON.parse(fs.readFileSync(path.join(app, 'package.json'), 'utf8'));
 for (const name of ['@assistant-ui/react', '@assistant-ui/react-markdown', '@base-ui/react', '@heroicons/react', '@livekit/components-react', '@openuidev/react-lang', '@phosphor-icons/react', 'ansi-to-react', 'framer-motion', 'lottie-react', 'lucide-react', 'next', 'radix-ui', 'shadcn', 'tailwind-merge', 'tw-animate-css', 'tw-shimmer']) delete runtimePackage.dependencies[name];
+// The Rust shell does these natively (src-tauri/src/sqlite_server.rs, input.rs, keyhook.rs),
+// so their Node addons aren't shipped. sharp stays: @xenova/transformers needs it.
+delete runtimePackage.dependencies.sqlite3;
+if (process.platform === 'win32') for (const name of ['@jitsi/robotjs', 'uiohook-napi']) delete runtimePackage.dependencies[name];
 delete runtimePackage.devDependencies;
 fs.writeFileSync(path.join(app, 'package.json'), JSON.stringify(runtimePackage, null, 2));
 const runtimeLock = JSON.parse(fs.readFileSync(path.join(app, 'package-lock.json'), 'utf8'));

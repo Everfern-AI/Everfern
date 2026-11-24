@@ -9,10 +9,11 @@ import type { AIClient } from '../../../lib/ai-client';
 import { globalAbortManager } from '../abort-manager';
 import { nodeLifecycle } from '../services/node-utils';
 import { getCheckpointEngine, type Checkpoint, type FailedCheckpoint } from '../../persistence/checkpoint-engine';
-import { loadSoul, loadAgents } from '../../personality-manager';
+import { loadPersonalityConfigs } from '../../personality-manager';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { currentScope, scopePaths } from '../../agent-scope';
 import { readRunFindings } from '../run-findings';
 
 type CompletionReason = 'task_complete' | 'waiting_for_user_input' | 'needs_hitl' | 'cannot_proceed';
@@ -58,6 +59,19 @@ export function buildAskUserQuestionToolCall(
  * Prevents historical tools (like `present_files` or `task_complete` from a previous turn) from prematurely
  * terminating subsequent turns.
  */
+const EMPTY_TURN_RETRIES = 2;
+const EMPTY_TURN_NOTE = 'Your previous reply was empty: it had no text and no tool call, and the task is not finished.';
+const EMPTY_TURN_NUDGE = `${EMPTY_TURN_NOTE} Continue the task now by calling the next tool. If the task is truly finished, write the final answer for the user.`;
+
+/** Text of a chat message whose content may be a string, a {text} object or an array of parts. */
+function messageText(msg: any): string {
+  const c = msg?.content;
+  if (!c) return '';
+  if (typeof c === 'string') return c;
+  if (Array.isArray(c)) return c.map((p: any) => (typeof p === 'string' ? p : p?.type === 'text' || p?.text ? p.text || '' : '')).join('');
+  return typeof c.text === 'string' ? c.text : '';
+}
+
 function getCurrentTurnExecutedTools(messages: any[]): string[] {
   if (!Array.isArray(messages) || messages.length === 0) return [];
   let lastUserIdx = -1;
@@ -408,7 +422,7 @@ export const createBrainNode = (
     // Load the main system prompt from synchronized location
     let systemPrompt = systemPromptOverride;
     if (!systemPrompt) {
-      const mainSystemPrompt = loadPrompt('SYSTEM_PROMPT.md');
+      const mainSystemPrompt = loadPrompt(scopePaths().basePrompt);
       if (mainSystemPrompt) {
         systemPrompt = mainSystemPrompt;
         console.log('[Brain] 📖 Using main SYSTEM_PROMPT.md from ~/.everfern/prompts/');
@@ -419,8 +433,7 @@ export const createBrainNode = (
 
     // Inject graph-based persistent memories (USER_PROFILE.md and PROJECT_STATE.md)
     try {
-      const os = require('os');
-      const memoryDir = path.join(os.homedir(), '.everfern', 'memory');
+      const memoryDir = scopePaths().memoryDir;
       const profilePath = path.join(memoryDir, 'USER_PROFILE.md');
       const projectPath = path.join(memoryDir, 'PROJECT_STATE.md');
 
@@ -443,10 +456,9 @@ export const createBrainNode = (
     // Inject OpenClaw personality and routing configurations
     try {
       const workspaceRoot = runner.workspaceDir;
-      const soulContent = loadSoul(workspaceRoot);
-      const agentsContent = loadAgents(workspaceRoot);
+      const { soul: soulContent, agents: agentsContent } = loadPersonalityConfigs(workspaceRoot);
       
-      if (systemPrompt) {
+      if (systemPrompt && currentScope() === 'chat') { // Fern's personality and sub-agent routing belong to the chat; a worker has its own laws
         systemPrompt += `\n\n# PERSONALITY & BEHAVIOR CORE (SOUL.md)\n${soulContent}\n`;
         systemPrompt += `\n\n# SUB-AGENTS & ROUTING RULES (AGENTS.md)\n${agentsContent}\n`;
         console.log('[Brain] 🎭 Injected SOUL.md and AGENTS.md into system prompt');
@@ -487,7 +499,7 @@ export const createBrainNode = (
       // Don't route back automatically - let the normal routing logic decide
     }
 
-    const result = await integrator.wrapNode(
+    let result = await integrator.wrapNode(
       'brain',
       () => runAgentStep(state, {
         runner,
@@ -498,6 +510,27 @@ export const createBrainNode = (
       }),
       'Processing request with Brain orchestrator'
     );
+
+    // Some models (Gemini in particular) occasionally answer a tool result with reasoning only:
+    // no text and no tool call. Mid-task that used to trip the "no output" circuit breaker below
+    // and end the run silently right after a tool. Ask again, telling the model to keep going.
+    for (let retry = 1; retry <= EMPTY_TURN_RETRIES; retry++) {
+      const pending = result.pendingToolCalls && result.pendingToolCalls.length > 0;
+      const msgs = result.messages as any[] | undefined;
+      const text = messageText(msgs && msgs.length ? msgs[msgs.length - 1] : null);
+      if (pending || text.trim() || getCurrentTurnExecutedTools(state.messages || []).length === 0) break;
+      if (globalAbortManager.checkAbort()) break;
+      runner.telemetry.warn(`[Brain] Model returned an empty turn after a tool result — retrying (${retry}/${EMPTY_TURN_RETRIES})`);
+      result = await runAgentStep(state, {
+        runner,
+        toolDefs: allTools,
+        eventQueue,
+        nodeName: 'brain',
+        systemPromptOverride: `${systemPrompt || ''}
+
+${EMPTY_TURN_NUDGE}`,
+      });
+    }
 
     // Create checkpoint after agent step completion
     // Requirements: 1.1, 1.6, 2.1, 2.5
@@ -511,9 +544,7 @@ export const createBrainNode = (
     // Extract the brain's response text for analysis
     const messages = result.messages as any[] | undefined;
     const lastMsg = messages && messages.length > 0 ? messages[messages.length - 1] : null;
-    const responseContent = lastMsg
-      ? (typeof lastMsg.content === 'string' ? lastMsg.content : (lastMsg.content?.text || ''))
-      : '';
+    const responseContent = messageText(lastMsg);
 
     // Emit analysis of pending tools
     if (result.pendingToolCalls && result.pendingToolCalls.length > 0) {
@@ -689,6 +720,16 @@ export const createBrainNode = (
     // Skip routing decision if web_explorer has completed and we're returning from it (Sub-task 3.2)
     let routingDecision: { decision: RoutingDecision; explanation: string } | null = null;
 
+    // A plain question or chat reply with no tools pending is already the answer. Asking the
+    // routing LLM (and then the completion-signal LLM) after it only added seconds of latency
+    // and occasionally sent a finished reply off to a research specialist.
+    const isReadOnlyIntent = state.currentIntent === 'question' || state.currentIntent === 'conversation';
+    if (!skipRouting && isReadOnlyIntent && !hasNoOutput) {
+      skipRouting = true;
+      routingDecision = { decision: 'complete_task', explanation: 'Answered a read-only request directly.' };
+      runner.telemetry.info(`[Brain] ${state.currentIntent} answered directly — skipping routing`);
+    }
+
     if (!skipRouting) {
       routingDecision = await determineRouting(runner, state, responseContent, eventQueue);
 
@@ -719,7 +760,9 @@ export const createBrainNode = (
         }
       }
     } else {
-      console.log('[Brain] Skipping routing decision because web explorer complete and returning from it');
+      console.log(isReadOnlyIntent
+        ? '[Brain] Skipping routing decision: read-only request already answered'
+        : '[Brain] Skipping routing decision because web explorer complete and returning from it');
     }
 
     // Check if the target specialist (or task) has already completed in the current run
@@ -739,6 +782,19 @@ export const createBrainNode = (
           explanation: 'Specialist task has already completed.'
         };
       }
+    }
+
+    // The brain already researched (tools ran this turn) and wrote a full answer, which the user
+    // has seen streamed. Handing the same question to a research specialist only produced a
+    // second and third copy of that answer, so treat the answer as the result.
+    if (
+      routingDecision &&
+      (routingDecision.decision === 'route_deep_research' || routingDecision.decision === 'route_web_explorer') &&
+      currentTurnTools.length > 0 &&
+      responseContent.trim().length >= 600
+    ) {
+      runner.telemetry.info(`[Brain] Already answered after ${currentTurnTools.length} tool(s) — skipping ${routingDecision.decision}`);
+      routingDecision = { decision: 'complete_task', explanation: 'Brain answered the request directly after researching.' };
     }
 
     // If routing to a specialized agent, set the routing decision
@@ -825,9 +881,11 @@ export const createBrainNode = (
       }
 
       if (signal.reason === 'cannot_proceed' && signal.explanation) {
-        const existingResponse = responseContent.trim().toLowerCase();
+        // Only speak up when the brain said nothing. If it already replied, that reply is the
+        // explanation the user sees; appending a second "I can't proceed" line glued onto it
+        // read as a duplicate, contradictory answer.
         const explanation = signal.explanation.trim();
-        if (!existingResponse || !existingResponse.includes(explanation.toLowerCase().slice(0, 80))) {
+        if (!responseContent.trim()) {
           eventQueue?.push({
             type: 'chunk',
             content: `I can't proceed with that request: ${explanation}`,

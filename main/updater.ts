@@ -95,7 +95,9 @@ export function initializeUpdater(mainWindow: BrowserWindow) {
   // Listen for renderer confirming restart and update (support both send and invoke)
   const performRestart = () => {
     log.info('[Updater] Received restart-and-update from renderer. Quitting and installing...');
-    autoUpdater.quitAndInstall(false, true); // (isSilent, isForceRunAfter)
+    // The bridge hands off to the Tauri installer silently; its install hook
+    // relaunches EverFern, so a visible finish page would open a second copy.
+    autoUpdater.quitAndInstall(bridge, true); // (isSilent, isForceRunAfter)
   };
 
   ipcMain.on('restart-and-update', performRestart);

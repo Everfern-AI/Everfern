@@ -2,6 +2,8 @@ import { dbOps, ensureVectorTable } from './db';
 import { getEmbeddingModel, EmbeddingConfig, getSystemEmbeddingConfig } from './embeddings';
 import { ChatResponse } from './ai-client';
 import crypto from 'crypto';
+import { execFile } from 'child_process';
+import { currentScope } from '../agent/agent-scope';
 
 const SIMILARITY_THRESHOLD = 0.96;
 const CACHE_RETRY_ATTEMPTS = 3;
@@ -12,6 +14,21 @@ let cacheHealthy = true;
 let lastHealthCheck = 0;
 let cacheSavepointCounter = 0;
 const HEALTH_CHECK_INTERVAL = 60000; // 1 minute
+
+function nativeCache<T>(request: object, timeout = CACHE_TIMEOUT_MS): Promise<T> | undefined {
+  const native = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+  if (!native) return undefined;
+  return new Promise((resolve, reject) => {
+    const child = execFile(native, ['--ef-memory-graph'], {
+      encoding: 'utf8', windowsHide: true, timeout,
+    }, (error, output) => {
+      if (error) return reject(error);
+      try { resolve(JSON.parse(output)); } catch (parseError) { reject(parseError); }
+    });
+    child.stdin?.on('error', reject);
+    child.stdin?.end(JSON.stringify({ operation: 'semantic-cache', scope: currentScope(), request }));
+  });
+}
 
 // Circuit breaker pattern for cache reliability
 class CacheCircuitBreaker {
@@ -68,7 +85,7 @@ async function checkCacheHealth(): Promise<boolean> {
 
   try {
     // Simple health check - try to query the database
-    await withTimeout(dbOps.get('SELECT 1'), 2000);
+    await (nativeCache({ operation: 'health' }, 2000) ?? withTimeout(dbOps.get('SELECT 1'), 2000));
     cacheHealthy = true;
     lastHealthCheck = Date.now();
     return true;
@@ -88,23 +105,37 @@ export async function lookupCache(prompt: string): Promise<ChatResponse | null> 
     return null;
   }
 
+  const direct = nativeCache<{ response_json: string } | null>({
+    operation: 'lookup', prompt, threshold: 1 - SIMILARITY_THRESHOLD,
+  });
+  if (direct) {
+    try {
+      const row = await direct;
+      const response = row ? JSON.parse(row.response_json) as ChatResponse : null;
+      circuitBreaker.recordSuccess();
+      return response;
+    } catch {
+      // The existing path can still embed through the local fallback.
+    }
+  }
+
   for (let attempt = 1; attempt <= CACHE_RETRY_ATTEMPTS; attempt++) {
     try {
       const config = getSystemEmbeddingConfig();
       const { embeddings, dimensions } = getEmbeddingModel(config);
 
-      await ensureVectorTable(dimensions);
-
       const promptVector = await withTimeout(
         embeddings.embedQuery(prompt), 
         CACHE_TIMEOUT_MS
       );
-      const vectorBuffer = Buffer.from(new Float32Array(promptVector).buffer);
-
-      const row = await withTimeout(
+      const native = nativeCache<{ response_json: string; distance: number } | null>({
+        operation: 'lookup', vector: promptVector, threshold: 1 - SIMILARITY_THRESHOLD,
+      });
+      if (!native) await ensureVectorTable(dimensions);
+      const row = native ? await native : await withTimeout(
         dbOps.get(
           'SELECT c.response_json, vec_distance_cosine(v.embedding, ?) as distance FROM semantic_cache_vec v JOIN semantic_cache c ON v.id = c.id WHERE distance < ? ORDER BY distance ASC LIMIT 1', 
-          [vectorBuffer, 1 - SIMILARITY_THRESHOLD]
+          [Buffer.from(new Float32Array(promptVector).buffer), 1 - SIMILARITY_THRESHOLD]
         ),
         CACHE_TIMEOUT_MS
       );
@@ -157,6 +188,17 @@ export async function saveCache(prompt: string, response: ChatResponse) {
     return;
   }
 
+  const direct = nativeCache<null>({ operation: 'save', prompt, response });
+  if (direct) {
+    try {
+      await direct;
+      circuitBreaker.recordSuccess();
+      return;
+    } catch {
+      // The existing path can still embed through the local fallback.
+    }
+  }
+
   // Unique-named SAVEPOINT instead of BEGIN/COMMIT to avoid colliding with
   // other SAVEPOINT users of the shared connection under concurrency.
   const spName = `sp_cache_${Date.now()}_${++cacheSavepointCounter}`;
@@ -166,13 +208,18 @@ export async function saveCache(prompt: string, response: ChatResponse) {
       const config = getSystemEmbeddingConfig();
       const { embeddings, dimensions } = getEmbeddingModel(config);
 
-      await ensureVectorTable(dimensions);
-
-      const id = crypto.createHash('sha256').update(prompt).digest('hex');
       const promptVector = await withTimeout(
         embeddings.embedQuery(prompt), 
         CACHE_TIMEOUT_MS
       );
+      const native = nativeCache<null>({ operation: 'save', prompt, response, vector: promptVector, provider: config.provider });
+      if (native) {
+        await native;
+        circuitBreaker.recordSuccess();
+        return;
+      }
+      await ensureVectorTable(dimensions);
+      const id = crypto.createHash('sha256').update(prompt).digest('hex');
       const vectorBuffer = Buffer.from(new Float32Array(promptVector).buffer);
 
       await withTimeout(dbOps.run(`SAVEPOINT ${spName}`), CACHE_TIMEOUT_MS);

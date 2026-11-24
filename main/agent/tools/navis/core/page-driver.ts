@@ -15,7 +15,8 @@ export type PagePoint = { x: number; y: number; w: number; h: number };
 
 export interface PageDriver {
   workspace?(params: Record<string, unknown>): Promise<any>;
-  uploadFiles?(paths: string[], selector?: string): Promise<any>;
+  /** Where uploadFiles reads paths: 'vm' = inside the Alpine VM; otherwise this computer (cloud drivers resolve workspace paths themselves). */
+  readonly uploadFrom?: 'vm' | 'host';
   desktopState?(): { title: string; text: string } | null;
   desktopScroll?(delta: number): Promise<boolean>;
   desktopClick?(x: number, y: number, opts: ClickOpts): Promise<boolean>;
@@ -43,7 +44,8 @@ export interface PageDriver {
   /** JPEG data URL, at most 1280 px wide. */
   screenshot(quality: number): Promise<string>;
   /** Where a page point is in Navis's 1280x720 frame of what the user sees (for the AI cursor). */
-  frame(p: PagePoint): Promise<{ x: number; y: number }>;
+  /** aspect: the screen's width/height when the point is on a whole VM screen, so the window can allow for letterboxing. */
+  frame(p: PagePoint): Promise<{ x: number; y: number; aspect?: number }>;
 }
 
 export const VIEW = { w: 1280, h: 720 };
@@ -53,6 +55,18 @@ export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export const pageFrame = (p: PagePoint) => ({
   x: Math.round((p.x / Math.max(1, p.w)) * VIEW.w),
   y: Math.round((p.y / Math.max(1, p.h)) * VIEW.h),
+});
+
+/** Where the page's window sits on its screen, read inside the page. */
+export const SCREEN_OF_PAGE = `(() => { const bx = Math.max(0, (outerWidth - innerWidth) / 2);
+  return { left: screenX + bx, top: screenY + Math.max(0, outerHeight - innerHeight - bx), sw: screen.width, sh: screen.height }; })()`;
+export type ScreenBox = { left: number; top: number; sw: number; sh: number };
+
+/** A page point placed on the whole screen, for windows that show the full VM desktop (VNC). */
+export const screenFrame = (p: PagePoint, s: ScreenBox) => ({
+  x: Math.round(Math.min(1, Math.max(0, (s.left + p.x) / s.sw)) * VIEW.w),
+  y: Math.round(Math.min(1, Math.max(0, (s.top + p.y) / s.sh)) * VIEW.h),
+  aspect: s.sw / s.sh,
 });
 
 /** Selects the focused field's content, so typed text replaces it. */

@@ -1,9 +1,14 @@
 import Image from "next/image";
 
+// Single-color marks drawn with the current text color, so they read in light and dark themes.
+const MonoLogo = ({ src, label, size }: { src: string; label: string; size: number }) => (
+    <span role="img" aria-label={label} style={{ display: "inline-block", width: size, height: size, flex: "none", backgroundColor: "currentColor", opacity: 0.9, WebkitMask: `url(${src}) center / contain no-repeat`, mask: `url(${src}) center / contain no-repeat` }} />
+);
+
 // ── Provider Logos ──────────────────────────────────────────────────────────
 
 const OpenAILogo = ({ size = 16 }: { size?: number }) => (
-    <Image unoptimized src="/images/ai-providers/openai.svg" alt="OpenAI Logo" width={size} height={size} className="invert opacity-90" />
+    <MonoLogo src="/images/ai-providers/openai.svg" label="OpenAI" size={size} />
 );
 
 const AnthropicLogo = ({ size = 16 }: { size?: number }) => (
@@ -27,11 +32,7 @@ const OpenRouterLogo = ({ size = 16 }: { size?: number }) => (
 );
 
 const OllamaLogo = ({ size = 16 }: { size?: number }) => (
-    <Image unoptimized src="/images/ai-providers/ollama.svg" alt="Ollama Logo" width={size} height={size} className="invert opacity-90" />
-);
-
-const LlamaCppLogo = ({ size = 16 }: { size?: number }) => (
-    <Image unoptimized src="/images/ai-providers/llamacpp.png" alt="llama.cpp" width={size} height={size} />
+    <MonoLogo src="/images/ai-providers/ollama.svg" label="Ollama" size={size} />
 );
 
 const LMStudioLogo = ({ size = 16 }: { size?: number }) => (
@@ -59,7 +60,6 @@ export {
     OpenRouterLogo,
     OllamaLogo,
     LMStudioLogo,
-    LlamaCppLogo,
     HuggingFaceLogo,
     EverFernBglessLogo,
     MiniMaxLogo

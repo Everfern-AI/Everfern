@@ -36,8 +36,7 @@ export interface LearningMemoryExtension {
   queryUserPreferences(userId?: string): Promise<LearnedKnowledge[]>;
 }
 
-const MEMORY_FILE_PATH = path.join(os.homedir(), '.everfern', 'MEMORY.md');
-const LEARNING_DB_PATH = path.join(os.homedir(), '.everfern', 'learning.json');
+import { type AgentScope, currentScope, scopePaths } from '../agent/agent-scope';
 
 // Signals that indicate the agent failed or didn't actually do anything useful
 const FAILURE_SIGNALS = [
@@ -100,20 +99,23 @@ function isSuccessfulInteraction(userInput: string, response: string): boolean {
 export class LearningMemoryManager implements LearningMemoryExtension {
   private learningData: Map<string, LearnedKnowledge> = new Map();
   private initialized = false;
+  private readonly file: string;
 
-  constructor() {
+  /** Each agent (chat, worker) learns into its own file. */
+  constructor(scope: AgentScope = 'chat') {
+    this.file = scopePaths(scope).learningFile;
     this.initializeLearningStorage();
   }
 
   private async initializeLearningStorage(): Promise<void> {
     try {
-      const dir = path.dirname(LEARNING_DB_PATH);
+      const dir = path.dirname(this.file);
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
 
-      if (fs.existsSync(LEARNING_DB_PATH)) {
-        const data = fs.readFileSync(LEARNING_DB_PATH, 'utf8');
+      if (fs.existsSync(this.file)) {
+        const data = fs.readFileSync(this.file, 'utf8');
         const parsed = JSON.parse(data);
 
         for (const [id, knowledge] of Object.entries(parsed)) {
@@ -131,7 +133,7 @@ export class LearningMemoryManager implements LearningMemoryExtension {
   private async persistLearningData(): Promise<void> {
     try {
       const data = Object.fromEntries(this.learningData);
-      fs.writeFileSync(LEARNING_DB_PATH, JSON.stringify(data, null, 2));
+      fs.writeFileSync(this.file, JSON.stringify(data, null, 2));
     } catch (error) {
       console.error('[Learning Memory] ❌ Failed to persist learning data:', error);
     }
@@ -244,7 +246,16 @@ export class LearningMemoryManager implements LearningMemoryExtension {
 }
 
 // Global instance for learning memory
-export const learningMemoryManager = new LearningMemoryManager();
+const learningManagers: Partial<Record<AgentScope, LearningMemoryManager>> = {};
+/** The learning store of the agent this call belongs to. */
+export const learningMemoryManager = new Proxy({} as LearningMemoryManager, {
+  get(_target, prop) {
+    const scope = currentScope();
+    const manager = (learningManagers[scope] ??= new LearningMemoryManager(scope));
+    const value = (manager as any)[prop];
+    return typeof value === 'function' ? value.bind(manager) : value;
+  },
+});
 /**
  * Non-blocking memory reflection.
  * Only stores memories when the agent actually accomplished something meaningful.
@@ -268,6 +279,9 @@ export function reflectAndRemember(
     console.log('[Memory] ⏭️ Skipping reflection — no meaningful work was done or errors occurred');
     return;
   }
+
+  // Chat turns and worker runs remember into separate files.
+  const MEMORY_FILE_PATH = scopePaths().memoryFile;
 
   // Fire and forget - do not await
   (async () => {

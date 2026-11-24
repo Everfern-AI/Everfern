@@ -5,6 +5,7 @@
  * Fetches live pricing from OpenRouter API.
  */
 
+import { execFile } from 'child_process';
 import { dbOps } from '../lib/db';
 import * as https from 'https';
 import * as os from 'os';
@@ -172,8 +173,6 @@ export async function recordUsage(params: {
   imageOutputCost?: number;
   totalCost?: number;
 }): Promise<void> {
-  await ensurePricingFresh();
-
   const {
     conversationId,
     model,
@@ -186,29 +185,44 @@ export async function recordUsage(params: {
     imageOutputCost,
     totalCost
   } = params;
-  const totalTokens = promptTokens + completionTokens;
-
-  const pricing = getModelPricing(model);
-  const fallbackInputCost = (promptTokens / 1_000_000) * pricing.inputCostPer1M;
-  const fallbackOutputCost = (completionTokens / 1_000_000) * pricing.outputCostPer1M;
-
-  const inputCost = promptTokensCost ?? fallbackInputCost;
-  const outputCost = completionTokensCost ?? fallbackOutputCost;
-  const imageInCost = imageInputCost ?? 0;
-  const imageOutCost = imageOutputCost ?? 0;
-
-  const finalTotalCost = totalCost ?? (inputCost + outputCost + imageInCost + imageOutCost);
-
   const id = `usage-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+  const createdAt = new Date().toISOString();
 
   try {
+    const native = process.env.EF_NATIVE_EXE;
+    if (process.env.EVERFERN_SHELL === 'tauri' && native) {
+      await new Promise<void>((resolve, reject) => {
+        const child = execFile(native, ['--ef-usage-insert'], {
+          windowsHide: true, timeout: 45000,
+        }, error => error ? reject(error) : resolve());
+        child.stdin?.on('error', reject);
+        child.stdin?.end(JSON.stringify({ id, usage: params, createdAt }));
+      });
+      return;
+    }
+    await ensurePricingFresh();
+    const pricing = getModelPricing(model);
+    const totalTokens = promptTokens + completionTokens;
+
+    const fallbackInputCost = (promptTokens / 1_000_000) * pricing.inputCostPer1M;
+    const fallbackOutputCost = (completionTokens / 1_000_000) * pricing.outputCostPer1M;
+
+    const inputCost = promptTokensCost ?? fallbackInputCost;
+    const outputCost = completionTokensCost ?? fallbackOutputCost;
+    const imageInCost = imageInputCost ?? 0;
+    const imageOutCost = imageOutputCost ?? 0;
+
+    const finalTotalCost = totalCost ?? (inputCost + outputCost + imageInCost + imageOutCost);
+
+    const row = [id, conversationId || null, model, provider, promptTokens, completionTokens, totalTokens,
+      inputCost + imageInCost, outputCost + imageOutCost, finalTotalCost, pricing.contextWindow, createdAt];
+
     await dbOps.run(
       `INSERT OR IGNORE INTO usage_events
        (id, conversation_id, model, provider, prompt_tokens, completion_tokens, total_tokens,
         input_cost_usd, output_cost_usd, total_cost_usd, context_window, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, conversationId || null, model, provider, promptTokens, completionTokens, totalTokens,
-       inputCost + imageInCost, outputCost + imageOutCost, finalTotalCost, pricing.contextWindow, new Date().toISOString()]
+      row
     );
   } catch (err) {
     console.error('[Analytics] Failed to record usage:', err);
@@ -360,4 +374,6 @@ export async function getModelPricingList(): Promise<Array<{
 }
 
 // Initialize pricing cache on module load
-ensurePricingFresh().catch(() => { });
+if (process.env.EVERFERN_SHELL !== 'tauri' || !process.env.EF_NATIVE_EXE) {
+  ensurePricingFresh().catch(() => { });
+}

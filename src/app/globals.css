@@ -1385,11 +1385,11 @@ a:hover {
 }
 
 .dashboard-toast-success {
-  border-left: 4px solid #10b981 !important;
+  border: 1px solid color-mix(in srgb, #10b981 45%, transparent) !important;
 }
 
 .dashboard-toast-error {
-  border-left: 4px solid var(--color-error) !important;
+  border: 1px solid color-mix(in srgb, var(--color-error) 45%, transparent) !important;
 }
 
 .dashboard-toast-content {
@@ -1835,3 +1835,13 @@ a:hover {
   .user-msg-glass::before { display: none; }
 }
 
+
+/* Agent timeline (AgentTimeline.tsx) */
+.ef-tl-row:not(:disabled):hover{background:var(--color-bg-subtle)}
+.ef-tl-row:focus-visible{outline:2px solid var(--color-accent, #3b82f6);outline-offset:1px}
+.ef-tl-link:hover{color:var(--color-text-primary)!important;text-decoration:underline}
+@keyframes ef-tl-pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.ef-tl-pulse{animation:ef-tl-pulse 1.2s ease-in-out infinite}
+@keyframes ef-tl-shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
+.ef-tl-shimmer{background:linear-gradient(90deg,var(--color-text-tertiary) 30%,var(--color-text-primary) 50%,var(--color-text-tertiary) 70%);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:ef-tl-shimmer 1.8s linear infinite}
+@media (prefers-reduced-motion: reduce){.ef-tl-pulse,.ef-tl-shimmer{animation:none}.ef-tl-shimmer{color:var(--color-text-tertiary);background:none}}

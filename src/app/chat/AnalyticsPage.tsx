@@ -112,7 +112,7 @@ function StatCard({ icon: Icon, label, value, sub, color }: {
                 }}>
                     <Icon style={{ width: 19, height: 19, color }} />
                 </div>
-                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", letterSpacing: "0.02em", textTransform: "uppercase" }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", }}>
                     {label}
                 </div>
             </div>
@@ -472,7 +472,7 @@ function DonutChart({ segments, size = 120 }: {
                 <span style={{ fontSize: 13, fontWeight: 700, color: "var(--color-text-primary)" }}>
                     {formatCost(total)}
                 </span>
-                <span style={{ fontSize: 9.5, color: "var(--color-text-tertiary)", textTransform: "uppercase" }}>Total</span>
+                <span style={{ fontSize: 9.5, color: "var(--color-text-tertiary)", }}>Total</span>
             </div>
         </div>
     );
@@ -581,11 +581,14 @@ export default function AnalyticsPage({ onClose, sidebarOpen }: AnalyticsPagePro
         setLoading(true);
         setError(null);
         try {
-            const res = await (window as any).electronAPI?.analytics?.getSummary();
-            if (res?.success && res?.data) {
-                setSummary(res.data);
+            const api = (window as any).electronAPI?.analytics;
+            // No analytics bridge or no recorded usage yet is the empty state, not a failure.
+            if (!api?.getSummary) { setSummary(null); return; }
+            const res = await api.getSummary();
+            if (res?.success) {
+                setSummary(res.data ?? null);
             } else {
-                setError(res?.error || "Failed to load analytics");
+                setError(res?.error || "The usage log could not be read.");
             }
         } catch (e) {
             setError(String(e));
@@ -620,30 +623,24 @@ export default function AnalyticsPage({ onClose, sidebarOpen }: AnalyticsPagePro
         >
             {/* Header */}
             <div style={{
-                height: 64,
+                minHeight: 64,
                 display: "flex",
-                alignItems: "center",
+                alignItems: "flex-end",
                 justifyContent: "space-between",
-                padding: "0 28px",
+                padding: "36px 40px 20px",
                 borderBottom: "1px solid var(--color-border)",
                 background: "var(--color-bg-base)",
                 flexShrink: 0,
                 WebkitAppRegion: "drag"
             } as any}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12, WebkitAppRegion: "no-drag" } as any}>
-                    <div style={{
-                        width: 36, height: 36, borderRadius: 10,
-                        display: "flex", alignItems: "center", justifyContent: "center"
-                    }}>
-                        <ChartBarIcon style={{ width: 22, height: 22, color: "var(--color-text-primary)" }} />
-                    </div>
                     <div>
-                        <div style={{ fontSize: 17, fontWeight: 600, color: "var(--color-text-primary)", letterSpacing: "-0.02em" }}>Analytics</div>
-                        <div style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>Cost efficiency & usage telemetry</div>
+                        <h1 style={{ margin: 0, fontFamily: "var(--font-serif)", fontSize: 32, fontWeight: 400, color: "var(--color-text-primary)" }}>Analytics</h1>
+                        <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginTop: 2 }}>Usage and cost</div>
                     </div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, WebkitAppRegion: "no-drag" } as any}>
-                    <button
+                    {summary && <button
                         onClick={handleShareAnalytics}
                         disabled={sharing || !summary}
                         className="glossy"
@@ -661,8 +658,8 @@ export default function AnalyticsPage({ onClose, sidebarOpen }: AnalyticsPagePro
                             boxShadow: "var(--glossy-inner), 0 2px 8px rgba(0,0,0,0.12)"
                         }}
                     >
-                        {sharing ? "Generating..." : "✨ Share & Flex"}
-                    </button>
+                        {sharing ? "Creating image…" : "Share"}
+                    </button>}
                     <button
                         onClick={loadData}
                         className="glossy"
@@ -750,18 +747,18 @@ export default function AnalyticsPage({ onClose, sidebarOpen }: AnalyticsPagePro
                 )}
 
                 {error && !loading && (
-                    <div className="glossy" style={{
-                        background: "#fff5f5", border: "1px solid #fecaca",
-                        borderTop: "1px solid var(--glossy-highlight)",
-                        borderRadius: 16, padding: 24, color: "#ef4444",
-                        fontSize: 14, marginBottom: 20,
-                        boxShadow: "var(--glossy-inner), var(--glossy-outer)"
+                    <div role="alert" style={{
+                        border: "1px solid var(--color-border)", borderRadius: 12, padding: "16px 18px",
+                        background: "var(--color-bg-subtle)", marginBottom: 20,
+                        display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16
                     }}>
-                        <strong>Error:</strong> {error}
-                        <br />
-                        <span style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 8, display: "block" }}>
-                            Analytics data will appear here once you start using EverFern with a configured AI provider.
-                        </span>
+                        <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)" }}>Couldn't load analytics</div>
+                            <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginTop: 4 }}>{error}</div>
+                        </div>
+                        <button type="button" onClick={loadData} style={{ flexShrink: 0, padding: "6px 12px", borderRadius: 8, border: "1px solid var(--color-border)", background: "var(--color-bg-base)", color: "var(--color-text-primary)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                            Try again
+                        </button>
                     </div>
                 )}
 
@@ -896,7 +893,7 @@ function OverviewTab({ summary }: { summary: AnalyticsSummary }) {
                     }}
                 >
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>Monthly Projection</span>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", }}>Monthly Projection</span>
                         <span style={{ fontSize: 11, fontWeight: 600, color: "#10b981", background: "rgba(16,185,129,0.1)", padding: "2px 8px", borderRadius: 10 }}>Forecast</span>
                     </div>
                     <div style={{ fontSize: 20, fontWeight: 600, color: "var(--color-text-primary)", fontVariantNumeric: "tabular-nums" }}>
@@ -923,7 +920,7 @@ function OverviewTab({ summary }: { summary: AnalyticsSummary }) {
                     }}
                 >
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>Cost Per 1K Tokens</span>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", }}>Cost Per 1K Tokens</span>
                         <span style={{ fontSize: 11, fontWeight: 600, color: "#6366f1", background: "rgba(99,102,241,0.1)", padding: "2px 8px", borderRadius: 10 }}>Efficiency</span>
                     </div>
                     <div style={{ fontSize: 20, fontWeight: 600, color: "var(--color-text-primary)", fontVariantNumeric: "tabular-nums" }}>
@@ -950,7 +947,7 @@ function OverviewTab({ summary }: { summary: AnalyticsSummary }) {
                     }}
                 >
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>Cache Savings</span>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", }}>Cache Savings</span>
                         <span style={{ fontSize: 11, fontWeight: 600, color: "#f59e0b", background: "rgba(245,158,11,0.1)", padding: "2px 8px", borderRadius: 10 }}>Prompt Cache</span>
                     </div>
                     <div style={{ fontSize: 20, fontWeight: 600, color: "var(--color-text-primary)", fontVariantNumeric: "tabular-nums" }}>
@@ -1065,7 +1062,7 @@ function OverviewTab({ summary }: { summary: AnalyticsSummary }) {
                             </div>
                         </div>
                         <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2, lineHeight: 1.4 }}>
-                            💡 Generated tokens are billed ~3-4x higher than prompt input tokens.
+                            Generated tokens usually cost 3–4× more than prompt tokens.
                         </div>
                     </div>
                 </div>
@@ -1097,19 +1094,19 @@ function OverviewTab({ summary }: { summary: AnalyticsSummary }) {
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
                     <div>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>Error Rate</div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", }}>Error Rate</div>
                         <div style={{ fontSize: 15, fontWeight: 600, color: "#10b981", display: "flex", alignItems: "center", gap: 4 }}>
                             <CheckCircleIcon style={{ width: 15, height: 15 }} /> 0.0%
                         </div>
                     </div>
                     <div style={{ width: 1, height: 28, background: "var(--color-border)" }} />
                     <div>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>Avg Latency</div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", }}>Avg Latency</div>
                         <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)" }}>~1.2s</div>
                     </div>
                     <div style={{ width: 1, height: 28, background: "var(--color-border)" }} />
                     <div>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>Status</div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", }}>Status</div>
                         <div style={{ fontSize: 13, fontWeight: 600, color: "#10b981" }}>All Systems Active</div>
                     </div>
                 </div>
@@ -1169,7 +1166,7 @@ function ModelsTab({ summary }: { summary: AnalyticsSummary }) {
                         <thead>
                             <tr style={{ borderBottom: "1px solid var(--color-border)" }}>
                                 {["Model", "Provider", "Requests", "Tokens", "Cost"].map(h => (
-                                    <th key={h} style={{ textAlign: "left", padding: "10px 12px", color: "var(--color-text-secondary)", fontWeight: 600, fontSize: 11.5, textTransform: "uppercase" }}>{h}</th>
+                                    <th key={h} style={{ textAlign: "left", padding: "10px 12px", color: "var(--color-text-secondary)", fontWeight: 600, fontSize: 11.5, }}>{h}</th>
                                 ))}
                             </tr>
                         </thead>
@@ -1275,7 +1272,7 @@ function TimelineTab({ summary }: { summary: AnalyticsSummary }) {
                         <thead>
                             <tr style={{ borderBottom: "1px solid var(--color-border)" }}>
                                 {["Month", "Requests", "Tokens", "Cost"].map(h => (
-                                    <th key={h} style={{ textAlign: "left", padding: "10px 12px", color: "var(--color-text-secondary)", fontWeight: 600, fontSize: 11.5, textTransform: "uppercase" }}>{h}</th>
+                                    <th key={h} style={{ textAlign: "left", padding: "10px 12px", color: "var(--color-text-secondary)", fontWeight: 600, fontSize: 11.5, }}>{h}</th>
                                 ))}
                             </tr>
                         </thead>

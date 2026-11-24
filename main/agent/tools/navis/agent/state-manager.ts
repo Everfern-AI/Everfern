@@ -72,7 +72,7 @@ export class StateManager {
    * Get a stuck-loop warning message to inject into the prompt.
    */
   getStuckLoopWarning(): string {
-    return `\n\n⚠️ STUCK LOOP DETECTED: You have attempted the same goal "${this.goalState.lastGoal}" ${this.goalState.goalRepeatCount + 1} times without success. Try a completely different approach or use a different element/action.`;
+    return `\n\nSTUCK LOOP DETECTED: You have attempted the same goal "${this.goalState.lastGoal}" ${this.goalState.goalRepeatCount + 1} times without success. Try a completely different approach or use a different element/action.`;
   }
 
   /**

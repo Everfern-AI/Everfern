@@ -1,6 +1,6 @@
 import { START } from '@langchain/langgraph';
 import { GraphStateType, IntentType, IntentClassification, StreamEvent } from '../state';
-import { classifyIntent } from '../triage';
+import { classifyIntent, finalizeIntentClassification } from '../triage';
 import { AgentRunner } from '../runner';
 import type { MissionTracker } from '../mission-tracker';
 import { createMissionIntegrator } from '../mission-integrator';
@@ -44,13 +44,7 @@ export const createTriageNode = (runner: AgentRunner, eventQueue?: StreamEvent[]
         classification = { intent: 'task', confidence: 0.5, reasoning: `Classification unavailable: ${msg}` };
       }
 
-      if (classification.intent === 'operator' && !state.operatorMode) {
-        classification = {
-          intent: 'task',
-          confidence: Math.min(classification.confidence, 0.75),
-          reasoning: 'Operator mode requires the user to enable Pursue goal manually.',
-        };
-      }
+      classification = await finalizeIntentClassification(classification, !!state.operatorMode);
 
       runner.telemetry.info(`Intent identified: ${classification.intent.toUpperCase()} (${Math.round(classification.confidence * 100)}% confidence)`);
 

@@ -19,10 +19,49 @@ import type {
   CompactionOptions,
   DAGNodeState,
 } from './types';
+import { execFile, spawnSync } from 'child_process';
+
+function nativeContextEngine<T>(request: Record<string, unknown>): T | null {
+  const executable = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+  if (!executable) return null;
+  try {
+    const result = spawnSync(executable, ['--ef-context-engine'], {
+      input: JSON.stringify(request), encoding: 'utf8', windowsHide: true, timeout: 10_000, maxBuffer: 16 * 1024 * 1024,
+    });
+    if (result.error || result.status !== 0 || !result.stdout) return null;
+    return JSON.parse(result.stdout) as T | null;
+  } catch { return null; }
+}
+
+function nativeContextEngineAsync<T>(request: Record<string, unknown>): Promise<T | null> | undefined {
+  const executable = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+  if (!executable) return;
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = (value: T | null) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    let input: string;
+    try { input = JSON.stringify(request); } catch { return finish(null); }
+    const child = execFile(executable, ['--ef-context-engine'], {
+      encoding: 'utf8', windowsHide: true, timeout: 10_000, maxBuffer: 16 * 1024 * 1024,
+    }, (error, output) => {
+      if (error) return finish(null);
+      try { finish(JSON.parse(output) as T | null); } catch { finish(null); }
+    });
+    child.stdin?.once('error', () => finish(null));
+    child.stdin?.end(input);
+  });
+}
 
 // ── Token Estimation Utilities ─────────────────────────────────────────
 
 export function estimateMessageTokens(messages: ChatMessage[]): number {
+  const native = nativeContextEngine<number>({ operation: 'estimate_messages', args: { messages } });
+  if (typeof native === 'number' && Number.isFinite(native)) return native;
+
   let total = 0;
   for (const msg of messages) {
     total += 4; // Per-message overhead (role, formatting tokens)
@@ -66,6 +105,9 @@ export function distillToolOutput(
   maxChars = 800,
   preserveErrors = true,
 ): string {
+  const native = nativeContextEngine<string>({ operation: 'distill_tool_output', args: { content, maxChars, preserveErrors } });
+  if (typeof native === 'string') return native;
+
   if (content.length <= maxChars) return content;
 
   const originalLen = content.length;
@@ -101,6 +143,9 @@ export function distillToolOutput(
  * from assistant messages to recover token capacity.
  */
 export function stripThinkingBlocks(content: string): string {
+  const native = nativeContextEngine<string>({ operation: 'strip_thinking_blocks', args: { content } });
+  if (typeof native === 'string') return native;
+
   return content
     .replace(/<(think|thought)>[\s\S]*?<\/\1>/gi, '')
     .replace(/\[thought\][\s\S]*?\[\/thought\]/gi, '')
@@ -111,6 +156,9 @@ export function stripThinkingBlocks(content: string): string {
  * Summarize older conversation history into a structured checkpoint block.
  */
 export function summarizeTurnHistory(messages: ChatMessage[]): string {
+  const native = nativeContextEngine<string>({ operation: 'summarize_turn_history', args: { messages } });
+  if (typeof native === 'string') return native;
+
   const fileActions: string[] = [];
   const commandActions: string[] = [];
   const userQueries: string[] = [];
@@ -170,6 +218,9 @@ export function summarizeTurnHistory(messages: ChatMessage[]): string {
  * Format active DAG node states into a clean markdown summary block.
  */
 export function formatDAGNodeSummary(nodes?: DAGNodeState[]): string {
+  const native = nativeContextEngine<string>({ operation: 'format_dag_summary', args: { nodes: nodes || [] } });
+  if (typeof native === 'string') return native;
+
   if (!nodes || nodes.length === 0) return '';
 
   const lines = ['### DAG Execution Graph Lineage State'];
@@ -229,6 +280,9 @@ export class CompactingContextEngine implements ContextEngine {
     options?: CompactionOptions;
     dagNodes?: DAGNodeState[];
   }): Promise<AssembleResult> {
+    const native = await nativeContextEngineAsync<AssembleResult>({ operation: 'assemble', params });
+    if (native && Array.isArray(native.messages) && typeof native.estimatedTokens === 'number') return native;
+
     const budget = params.tokenBudget ?? 100_000;
     const inputMsgs = params.messages;
     const options = params.options || {};
@@ -314,6 +368,12 @@ export class CompactingContextEngine implements ContextEngine {
     dagNodes?: DAGNodeState[];
   }): Promise<CompactResult & { messages?: ChatMessage[] }> {
     const msgs = params.messages || this.sessionTurnStores.get(params.sessionId) || [];
+    const native = await nativeContextEngineAsync<CompactResult & { messages?: ChatMessage[] }>({
+      operation: 'compact',
+      args: { messages: msgs, tokenBudget: params.tokenBudget ?? 100_000, options: params.options || {} },
+    });
+    if (native && typeof native.ok === 'boolean') return native;
+
     if (msgs.length === 0) {
       return { ok: true, compacted: false, reason: 'No messages to compact' };
     }

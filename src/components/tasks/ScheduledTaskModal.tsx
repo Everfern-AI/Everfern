@@ -55,7 +55,7 @@ const s = {
     borderRadius: 20,
     display: 'flex',
     flexDirection: 'column' as const,
-    maxHeight: 'calc(100vh - 32px)',
+    maxHeight: 'calc(var(--ef-vh) - 32px)',
     overflow: 'hidden',
   },
 
@@ -138,8 +138,6 @@ const s = {
     fontSize: 12,
     fontWeight: 600,
     color: 'var(--color-text-secondary)',
-    letterSpacing: '0.3px',
-    textTransform: 'uppercase' as const,
   },
   required: {
     color: 'var(--color-error)',

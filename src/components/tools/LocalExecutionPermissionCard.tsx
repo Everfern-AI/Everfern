@@ -150,8 +150,6 @@ export const LocalExecutionPermissionCard: React.FC<LocalExecutionPermissionCard
               border: "1px solid var(--color-border)",
               padding: "3px 10px",
               borderRadius: 20,
-              letterSpacing: "0.02em",
-              textTransform: "uppercase",
               fontFamily: "var(--font-sans)",
             }}
           >

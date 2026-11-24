@@ -1,9 +1,11 @@
+import { renderNativePrompt } from '../../lib/native-provider-config';
 import * as fs from 'fs';
 import * as path from 'path';
 import { homedir as osHomedir, userInfo as osUserInfo } from 'os';
 import { loadSkills, loadSkillsAsync, formatSkillsForPrompt } from './skills-loader';
 import { projectsStore } from '../../store/projects/projects';
 import { integrationService } from '../../integrations/integration-service';
+import { currentScope, scopePaths } from '../agent-scope';
 
 /**
  * Converts a host path to the corresponding Linux VM path.
@@ -130,7 +132,8 @@ export function resolvePromptPlaceholdersSync(
   conversationId?: string,
   sessionCreatedPaths: string[] = [],
   projectPath?: string,
-  skillsTable?: string
+  skillsTable?: string,
+  context?: { native: object; fallback: (prompt: string) => string },
 ): string {
   const safeConvId = conversationId && typeof conversationId === 'string' ? conversationId : 'current';
   
@@ -158,16 +161,27 @@ export function resolvePromptPlaceholdersSync(
           '- **target: "vm"**: Executes inside the EverFern Alpine Linux VM (Docker, musl, `apk` package manager). Working directory is `~/.everfern/workspace/` with the Python virtualenv active.'
         : '**Environment**: Linux. All commands execute natively.';
 
-  // Session File Registry
+  const pluginsTable = '_All skills are loaded dynamically above._';
+  const workspaceMounted = platform === 'win32' || platform === 'darwin' ? 'true' : 'false';
+
+  try {
+    const rendered = renderNativePrompt(template, {
+      SESSION_ID: safeConvId,
+      PROJECT_PATH: projectPath || execPath,
+      SKILLS: skillsTable || '',
+      USER_NAME: user.username,
+    }, sessionCreatedPaths, platform, homedir, context?.native);
+    if (rendered !== undefined) return rendered;
+  } catch {
+    console.warn('[SystemPrompt] Native template rendering failed');
+  }
+
   const sessionRegistry = sessionCreatedPaths.length > 0
     ? sessionCreatedPaths.map(p => `- \`${p}\``).join('\n')
     : '_No files created in this session memory yet._';
 
-  const pluginsTable = '_All skills are loaded dynamically above._';
-  const workspaceMounted = platform === 'win32' || platform === 'darwin' ? 'true' : 'false';
-
   // Replace placeholders — all paths are Linux paths
-  return template
+  const prompt = template
     .replace(/{{OS_INFO}}/g, osInfo)
     .replace(/{{HOME_DIR}}/g, linuxHome)
     .replace(/{{SESSION_ID}}/g, safeConvId)
@@ -185,6 +199,7 @@ export function resolvePromptPlaceholdersSync(
     .replace(/{{USER_NAME}}/g, user.username)
     .replace(/{{USER_EMAIL}}/g, 'noreply@everfern.app')
     .replace(/{{OTHER_TOOLS}}/g, '');
+  return context ? context.fallback(prompt) : prompt;
 }
 
 /**
@@ -198,6 +213,12 @@ export async function resolvePromptPlaceholders(
   projectId?: string,
   preloadedSkills?: any[]
 ): Promise<string> {
+  // A worker is a different agent from the chat: its prompt gets the plain placeholders only,
+  // with no chat project, host workspace, integration status, skills table or Fern persona.
+  if (currentScope() === 'worker') {
+    return resolvePromptPlaceholdersSync(template, platform, conversationId, sessionCreatedPaths, undefined, '');
+  }
+
   // Resolve skills
   const skills = preloadedSkills || await loadSkillsAsync();
   const skillsTable = formatSkillsForPrompt(skills);
@@ -229,23 +250,35 @@ export async function resolvePromptPlaceholders(
     projectPath = hostPathToLinux(osHomedir().replace(/\\/g, '/'));
   }
 
-  // Call sync helper to perform replacements
-  let finalPrompt = resolvePromptPlaceholdersSync(
-    template,
-    platform,
-    conversationId,
-    sessionCreatedPaths,
-    projectPath,
-    skillsTable
-  );
-
   // Inject Integration Status
+  let integrations: { discord: boolean; telegram: boolean } | undefined;
   try {
     const botManager = integrationService.getService<any>('bot-integration-manager');
     if (botManager) {
-      const discord = botManager.getPlatform('discord');
-      const telegram = botManager.getPlatform('telegram');
-      
+      integrations = {
+        discord: Boolean(botManager.getPlatform('discord')),
+        telegram: Boolean(botManager.getPlatform('telegram')),
+      };
+    }
+  } catch (err) {
+    console.error('[SystemPrompt] Failed to inject integration status:', err);
+  }
+
+  return resolvePromptPlaceholdersSync(template, platform, conversationId, sessionCreatedPaths, projectPath, skillsTable, {
+    native: {
+      integrations,
+      project: activeProject ? {
+        name: activeProject.name,
+        path: activeProject.path,
+        instructions: activeProject.instructions,
+      } : null,
+    },
+    fallback: appendContext,
+  });
+
+  function appendContext(finalPrompt: string): string {
+    if (integrations) {
+      const { discord, telegram } = integrations;
       const statusContext = `
 ## INTEGRATION STATUS
 - **Discord**: ${discord ? 'CONNECTED' : 'NOT CONFIGURED'}
@@ -254,13 +287,10 @@ export async function resolvePromptPlaceholders(
 If a service is NOT CONFIGURED, inform the user they can set it up in the Integration Settings if they wish to use it.
 `;
       finalPrompt += "\n" + statusContext;
-    }
-  } catch (err) {
-    console.error('[SystemPrompt] Failed to inject integration status:', err);
   }
 
-  // Add project-specific context
-  if (activeProject) {
+    // Add project-specific context
+    if (activeProject) {
     console.log(`[SystemPrompt] 📁 Injecting context for project: ${activeProject.name}`);
     const vmProjectPath = hostPathToLinux(activeProject.path.replace(/\\/g, '/'));
     const projectContext = `
@@ -324,7 +354,8 @@ CRITICAL RULES:
     console.error('[SystemPrompt] Failed to inject user tone/custom instructions:', err);
   }
 
-  return finalPrompt;
+    return finalPrompt;
+  }
 }
 
 function getAppPathSafe(): string | null {
@@ -336,28 +367,29 @@ function getAppPathSafe(): string | null {
   } catch (_) {}
   return null;
 }
+/** Where the base prompt of the current agent may live: SYSTEM_PROMPT.md for the chat, WORKER_PROMPT.md for a worker. */
 
-function getSystemPromptSearchPaths(): string[] {
+function getSystemPromptSearchPaths(file: string = scopePaths().basePrompt): string[] {
   const homedir = osHomedir();
   const appPath = getAppPathSafe();
   return [
-    path.join(homedir, '.everfern', 'prompts', 'SYSTEM_PROMPT.md'),
-    path.join(homedir, '.everfern', 'SYSTEM_PROMPT.md'),
+    path.join(homedir, '.everfern', 'prompts', file),
+    path.join(homedir, '.everfern', file),
     ...(appPath ? [
-      path.join(appPath, 'main', 'agent', 'prompts', 'SYSTEM_PROMPT.md'),
-      path.join(appPath, 'dist-electron', 'main', 'agent', 'prompts', 'SYSTEM_PROMPT.md'),
+      path.join(appPath, 'main', 'agent', 'prompts', file),
+      path.join(appPath, 'dist-electron', 'main', 'agent', 'prompts', file),
     ] : []),
     ...(process.resourcesPath ? [
-      path.join(process.resourcesPath, 'prompts', 'SYSTEM_PROMPT.md'),
-      path.join(process.resourcesPath, 'main', 'agent', 'prompts', 'SYSTEM_PROMPT.md'),
-      path.join(process.resourcesPath, 'app.asar.unpacked', 'dist-electron', 'main', 'agent', 'prompts', 'SYSTEM_PROMPT.md'),
+      path.join(process.resourcesPath, 'prompts', file),
+      path.join(process.resourcesPath, 'main', 'agent', 'prompts', file),
+      path.join(process.resourcesPath, 'app.asar.unpacked', 'dist-electron', 'main', 'agent', 'prompts', file),
     ] : []),
-    path.join(__dirname, 'prompts', 'SYSTEM_PROMPT.md'),
-    path.join(__dirname, '..', 'prompts', 'SYSTEM_PROMPT.md'),
-    path.join(__dirname, '..', 'agent', 'prompts', 'SYSTEM_PROMPT.md'),
-    path.join(__dirname, '..', '..', 'main', 'agent', 'prompts', 'SYSTEM_PROMPT.md'),
-    path.join(process.cwd(), 'main', 'agent', 'prompts', 'SYSTEM_PROMPT.md'),
-    path.join(process.cwd(), 'apps', 'desktop', 'main', 'agent', 'prompts', 'SYSTEM_PROMPT.md')
+    path.join(__dirname, 'prompts', file),
+    path.join(__dirname, '..', 'prompts', file),
+    path.join(__dirname, '..', 'agent', 'prompts', file),
+    path.join(__dirname, '..', '..', 'main', 'agent', 'prompts', file),
+    path.join(process.cwd(), 'main', 'agent', 'prompts', file),
+    path.join(process.cwd(), 'apps', 'desktop', 'main', 'agent', 'prompts', file)
   ].filter(Boolean);
 }
 
@@ -396,7 +428,7 @@ export async function getSlimSystemPromptAsync(
   }
 
   if (!promptMd) {
-    console.error('[SystemPrompt] ❌ Failed to read SYSTEM_PROMPT.md from any search path.');
+    console.error('[SystemPrompt] ❌ Failed to read the base prompt from any search path.', scopePaths().basePrompt);
     promptMd = '# EverFern System Prompt\n(Error loading full prompt file - check logs)';
   }
 
@@ -450,7 +482,7 @@ export function getSlimSystemPrompt(
   }
 
   if (!promptMd) {
-    console.error('[SystemPrompt] ❌ Failed to read SYSTEM_PROMPT.md from any search path.');
+    console.error('[SystemPrompt] ❌ Failed to read the base prompt from any search path.', scopePaths().basePrompt);
     promptMd = '# EverFern System Prompt\n(Error loading full prompt file - check logs)';
   }
 

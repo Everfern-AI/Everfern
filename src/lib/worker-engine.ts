@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Connects workers to EverFern's real agent (Warmwind OS Engine).
+ * Connects workers to EverFern's real agent.
  *
  * - planJob: one model call (acp.chat) that turns the user's job description into
  *   a short reply + concrete numbered steps.
@@ -18,15 +18,19 @@ import { ASK_ICONS, plannerPrompt, runBrief, runTask } from "@/lib/worker-prompt
 
 export { ASK_ICONS };
 
+/** A run in the main process: still going, or ended lately (done; `end` is its last chunk). */
+export type LiveRun = { conversationId: string; text: string; done: boolean; end?: string };
+
 type Acp = {
   chat: (req: any) => Promise<any>;
   stream: (req: any) => Promise<any>;
-  stop: () => Promise<any>;
+  stop: (conversationId?: string) => Promise<any>;
   onStreamChunk: (cb: (c: any) => void) => (() => void) | void;
   onToolStart: (cb: (r: any) => void) => (() => void) | void;
   onThought?: (cb: (d: any) => void) => (() => void) | void;
   onChatChunk?: (cb: (d: { streamId: string; delta?: string; thought?: string }) => void) => (() => void) | void;
   onSubAgentProgress?: (cb: (e: any) => void) => (() => void) | void;
+  active?: () => Promise<LiveRun[]>;
 };
 
 export function acp(): Acp | null {
@@ -57,7 +61,9 @@ export type Ask = { question: string; options: { label: string; icon?: string }[
 export type OpenItem = { title: string; detail: string };
 /** "do": a one-off thing to do now (runs straight away); "workflow": a repeatable job to save and schedule; "chat": just a reply. */
 export type PlanKind = "do" | "workflow" | "chat";
-export type Plan = { reply: string; steps: string[]; name?: string; live: boolean; error?: string; ask?: Ask; open?: OpenItem[]; kind: PlanKind };
+/** Which provider/model served (or failed) a call, so the UI can say so. */
+export type ModelInfo = { provider?: string; model?: string };
+export type Plan = { reply: string; steps: string[]; name?: string; live: boolean; error?: string; via?: ModelInfo; ask?: Ask; open?: OpenItem[]; kind: PlanKind };
 
 function askOf(v: any): Ask | undefined {
   const question = typeof v?.question === "string" ? v.question.trim() : "";
@@ -125,9 +131,24 @@ export async function planJob(w: Worker, job: string, ev: PlanEvents = {}, histo
   };
   const api = acp();
   if (!api) return fallback();
-  const failed = (error: string): Plan => ({ live: false, kind: "chat", steps: [], reply: "The model connection failed. Please try again; your workflow has not been changed.", error });
+  let via: ModelInfo | undefined;
+  // The model answered but not with a plan (empty, a tool call, broken JSON) is not a connection problem.
+  const failed = (error: string): Plan => ({
+    live: false, kind: "chat", steps: [], error, via,
+    reply: /unreadable plan|no steps/i.test(error)
+      ? "The model didn't send back a usable plan. Please try again; your workflow has not been changed."
+      : "The model connection failed. Please try again; your workflow has not been changed.",
+  });
   const decode = (text: string): Plan => {
-    const json = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1));
+    // Some models answer a plain question in prose instead of JSON: show it as a chat reply.
+    if (!text.includes("{") && text.trim()) return { live: true, kind: "chat", steps: [], reply: text.trim() };
+    const json = firstJsonObject(text);
+    if (!json) {
+      // Prose with a stray brace is still a chat reply, not a failure.
+      const prose = text.replace(/```[a-z]*|```/gi, "").trim();
+      if (prose && !/"steps"\s*:/.test(prose)) return { live: true, kind: "chat", steps: [], reply: prose };
+      throw new Error("The model returned an unreadable plan.");
+    }
     const steps = Array.isArray(json.steps) ? json.steps.map(String).filter(Boolean) : [];
     const ask = askOf(json.ask);
     const open = openOf(json.open);
@@ -163,6 +184,7 @@ export async function planJob(w: Worker, job: string, ev: PlanEvents = {}, histo
           ...(off && attempt === 0 ? { streamId } : {}),
           messages,
         });
+        if (res?.provider || res?.model) via = { provider: res.provider, model: res.model };
         if (res?.error) {
           // A transport may fail after the complete JSON has already arrived.
           try { return decode(raw); } catch { throw new Error(String(res.error)); }
@@ -171,6 +193,7 @@ export async function planJob(w: Worker, job: string, ev: PlanEvents = {}, histo
         return decode(raw);
       } catch (e: any) {
         const message = e?.message || String(e);
+        console.warn("[planJob] model call failed", { ...via, error: message });
         if (attempt > 0 || !/stream|premature|interrupt|network|fetch|connection|timeout|unexpected end|json/i.test(message)) return failed(message);
         raw = "";
         ev.onReply?.("");
@@ -184,26 +207,68 @@ export async function planJob(w: Worker, job: string, ev: PlanEvents = {}, histo
   }
 }
 
+/**
+ * The first {...} in `text` that parses as JSON, skipping code fences and prose around it.
+ * Braces inside strings are handled, so `{"reply": "use {name}"}` works.
+ */
+export function firstJsonObject(text: string): any | null {
+  for (let start = text.indexOf("{"); start >= 0; start = text.indexOf("{", start + 1)) {
+    let depth = 0, inStr = false, esc = false;
+    for (let i = start; i < text.length; i++) {
+      const ch = text[i];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (ch === "\\") esc = true;
+        else if (ch === '"') inStr = false;
+        continue;
+      }
+      if (ch === '"') inStr = true;
+      else if (ch === "{") depth++;
+      else if (ch === "}" && --depth === 0) {
+        try {
+          const v = JSON.parse(text.slice(start, i + 1));
+          if (v && typeof v === "object" && !Array.isArray(v)) return v;
+        } catch { /* try the next "{" */ }
+        break;
+      }
+    }
+  }
+  return null;
+}
+
+/** The reasoning effort each tier asks the model for. */
+export const TIER_REASONING: Record<Worker["tier"], "low" | "medium" | "high"> = { lite: "low", balanced: "medium", pro: "high" };
+
+/** The run each worker has going (worker id -> conversation id), so Stop ends only that one. */
+const activeRuns = new Map<string, string>();
+export const activeRunOf = (workerId: string) => activeRuns.get(workerId);
+
 export type RunEvents = {
   onText: (full: string) => void;
-  onTool: (label: string, args: Record<string, unknown>) => void;
+  onTool: (label: string, args: Record<string, unknown>, name?: string) => void;
   onThought?: (text: string) => void;
   /** A browser action the agent is taking, for the on-window AI cursor. x/y are 0..1 of the page when known. */
   /** `app` is set when the agent drives one of the worker's own windows. */
-  onAction?: (a: { label: string; x?: number; y?: number; url?: string; app?: string }) => void;
+  /** `space: "window"`: x/y are 0..1 of the whole app window (worker_click), not of the page inside it. */
+  /** `aspect`: the VM screen's width/height when x/y are on that whole screen (the window letterboxes it). */
+  onAction?: (a: { label: string; x?: number; y?: number; url?: string; app?: string; space?: "window"; aspect?: number }) => void;
 };
 
-/** Navis reports clicks in its 1280x720 viewport; computer-use tools in screen pixels. */
+/** Navis reports clicks in its 1280x720 viewport; computer-use tools in screen pixels;
+ *  worker_click in 0-1000 of the app window. */
 const NAVIS_VIEW = { w: 1280, h: 720 };
-function pointOf(coord: unknown, view = NAVIS_VIEW): { x?: number; y?: number } {
-  if (!Array.isArray(coord) || coord.length < 2) return {};
-  const [x, y] = coord.map(Number);
+const WINDOW_1000 = { w: 1000, h: 1000 };
+export function pointOf(coord: unknown, view = NAVIS_VIEW): { x?: number; y?: number } {
+  const pair = Array.isArray(coord) ? coord : coord && typeof coord === "object" ? [(coord as any).x, (coord as any).y] : null;
+  if (!pair || pair.length < 2) return {};
+  const [x, y] = pair.map(Number);
   if (!Number.isFinite(x) || !Number.isFinite(y)) return {};
-  const clamp = (v: number) => Math.min(0.97, Math.max(0.03, v));
+  // The exact spot: only keep it inside the window, no inset.
+  const clamp = (v: number) => Math.min(1, Math.max(0, v));
   return { x: clamp(x / view.w), y: clamp(y / view.h) };
 }
 
-/** Pretty label for a tool event in the Warmwind OS UI. */
+/** Pretty label for a tool event in the worker UI. */
 export function toolLabel(name: string, args: Record<string, unknown>) {
   const url = String(args.url ?? args.href ?? "");
   const host = url ? url.replace(/^https?:\/\//, "").split("/")[0] : "";
@@ -211,7 +276,7 @@ export function toolLabel(name: string, args: Record<string, unknown>) {
   const appId = String(args.app || "").trim();
   const appName = (APPS[appId]?.name ?? appId) || "app";
 
-  // Warmwind OS App Lifecycle & Window Management
+  // Worker app lifecycle & Window Management
   if (n === "open_app" || n === "switch_app") return `Switching window to ${appName}`;
   if (n === "list_apps") return "Checking desktop apps";
   if (n === "close_app") return `Minimizing ${appName}`;
@@ -220,6 +285,12 @@ export function toolLabel(name: string, args: Record<string, unknown>) {
   if (n === "worker_describe") return `Reading the ${appName} window`;
   if (n === "worker_click") return `Clicking in ${appName}`;
   if (n === "worker_type") return `Typing in ${appName}`;
+  if (n === "files_action") {
+    const f = String(args.path || "").split(/[\\/]/).pop() || "a file";
+    const verbs: Record<string, string> = { create_folder: "Creating folder", create_file: "Creating", write_file: "Writing", rename: "Renaming", move_to_trash: "Moving to Trash:", open: "Opening" };
+    return `${verbs[String(args.action)] ?? "Working on"} ${f}`;
+  }
+  if (n === "terminal_run") return `Running ${String(args.command || "").slice(0, 50)}`;
   if (n === "navis") return appId ? `Driving ${appName}` : "Driving the browser";
 
   // Sandboxed VM Workspace Operations
@@ -240,44 +311,47 @@ export function toolLabel(name: string, args: Record<string, unknown>) {
   return name.replace(/_/g, " ");
 }
 
-/** Run the worker's job on the real agent. Resolves with the final text. */
-export async function runWorker(w: Worker, steps: string[], ev: RunEvents): Promise<{ live: boolean; text: string; error?: string }> {
-  const api = acp();
-  if (!api) return { live: false, text: "" };
-  // A fresh thread per task. The agent's LangGraph checkpointer and chat history
-  // are keyed by conversationId; reusing worker-<id> made every new task resume
-  // the previous task's messages (so Navis replayed the old job). The worker's
-  // long-term memory is stored separately, so this only resets the run context.
-  const conversationId = `${conversationIdFor(w)}-run-${Date.now()}`;
-  let full = "";
+type RunResult = { live: boolean; text: string; error?: string };
+
+/** Subscribes `ev` to one conversation's events. The reply text starts from `text` (what already streamed). */
+function listen(api: Acp, conversationId: string, ev: RunEvents, text = "") {
+  let full = text;
   const offs: Array<(() => void) | void> = [];
-  const mine = (d: any) => !d?.conversationId || d.conversationId === conversationId;
+  // Only events tagged with this run. Untagged events could belong to any chat or worker.
+  const mine = (d: any) => d?.conversationId === conversationId;
 
   offs.push(api.onStreamChunk((c) => { if (mine(c) && c.delta) { full += c.delta; ev.onText(full); } }));
   offs.push(api.onToolStart((r) => {
     if (!mine(r)) return;
     const args = r.toolArgs ?? {};
     const label = toolLabel(r.toolName ?? "tool", args);
-    ev.onTool(label, args);
+    ev.onTool(label, args, r.toolName);
     const targetApp = typeof args.app === "string" ? args.app : undefined;
+    const inWindow = r.toolName === "worker_click";
     ev.onAction?.({
       label,
       app: targetApp,
       url: typeof args.url === "string" ? args.url : undefined,
-      ...pointOf(args.coordinate, { w: window.screen.width, h: window.screen.height }),
+      ...(inWindow
+        ? { ...pointOf([args.x, args.y], WINDOW_1000), space: "window" as const }
+        : pointOf(args.coordinate, { w: window.screen.width, h: window.screen.height })),
     });
   }));
 
   if (api.onSubAgentProgress && ev.onAction) {
     offs.push(api.onSubAgentProgress((e) => {
+      if (!mine(e)) return;
       const a = e?.action;
       if (!a?.description) return;
       const params = a.params ?? {};
+      // Native windows (worker_click) send {x, y} in 0-1000 of the window; Navis sends [x, y] in its view.
+      const native = a.type === "ui" && params.coordinate && !Array.isArray(params.coordinate);
       ev.onAction!({
         label: String(a.description).slice(0, 80),
         url: typeof params.url === "string" ? params.url : undefined,
         app: typeof e.workerApp === "string" ? e.workerApp : typeof params.app === "string" ? params.app : undefined,
-        ...pointOf(params.coordinate),
+        ...(native ? { ...pointOf(params.coordinate, WINDOW_1000), space: "window" as const } : pointOf(params.coordinate)),
+        ...(typeof params.aspect === "number" && params.aspect > 0 ? { aspect: params.aspect } : {}),
       });
     }));
   }
@@ -287,24 +361,98 @@ export async function runWorker(w: Worker, steps: string[], ev: RunEvents): Prom
     offs.push(api.onThought((d) => { if (mine(d) && d.content) { thought += d.content; ev.onThought!(thought); } }));
   }
 
+  return {
+    mine,
+    offs,
+    text: () => full,
+    off: () => offs.forEach((off) => typeof off === "function" && off()),
+  };
+}
+
+/** Run the worker's job on the real agent. Resolves with the final text.
+ *  `onStart` gets the run's conversation id, so the page can save it and reattach after a reload. */
+export async function runWorker(w: Worker, steps: string[], ev: RunEvents, opts: { auto?: boolean; onStart?: (conversationId: string) => void } = {}): Promise<RunResult> {
+  const api = acp();
+  if (!api) return { live: false, text: "" };
+  if (activeRuns.has(w.id)) return { live: true, text: "", error: "This worker is already running." };
+  // A fresh thread per task. The agent's LangGraph checkpointer and chat history
+  // are keyed by conversationId; reusing worker-<id> made every new task resume
+  // the previous task's messages (so Navis replayed the old job). The worker's
+  // long-term memory is stored separately, so this only resets the run context.
+  // Scheduled runs are marked "-auto-": nobody is watching, so they may not stop to ask questions.
+  const conversationId = `${conversationIdFor(w)}-${opts.auto ? "auto" : "run"}-${Date.now()}`;
+  activeRuns.set(w.id, conversationId);
+  const l = listen(api, conversationId, ev);
+  opts.onStart?.(conversationId);
+
   try {
     const res = await api.stream({
       conversationId,
       assistantMessageId: `${conversationId}-${Date.now()}`,
       operatorMode: true,
-      // The Warmwind worker operating prompt goes on top of the base agent prompt.
+      reasoningEffort: TIER_REASONING[w.tier] ?? "medium",
+      // The worker's operating prompt goes on top of the base agent prompt.
       systemPromptAppend: runBrief(w),
       messages: [{ role: "user", content: runTask(steps) }],
     });
-    if (res?.error) return { live: true, text: full, error: String(res.error) };
-    return { live: true, text: full || textOf(res) };
+    if (res?.error) return { live: true, text: l.text(), error: String(res.error) };
+    return { live: true, text: l.text() || textOf(res) };
   } catch (e: any) {
-    return { live: true, text: full, error: e?.message || String(e) };
+    return { live: true, text: l.text(), error: e?.message || String(e) };
   } finally {
-    offs.forEach((off) => typeof off === "function" && off());
+    l.off();
+    if (activeRuns.get(w.id) === conversationId) activeRuns.delete(w.id);
   }
 }
 
-export async function stopWorker() {
-  try { await acp()?.stop(); } catch { /* ignore */ }
+/** The agent runs still going in the main process. They outlive a page reload. */
+export async function liveRuns(): Promise<LiveRun[]> {
+  try { return (await acp()?.active?.()) ?? []; } catch { return []; }
+}
+
+/** The error a run ended with, from its last stream chunk ("[Error: ...]"), if any. */
+export function endError(delta: unknown): string | undefined {
+  const m = /\[Error: ([\s\S]*)\]\s*$/.exec(String(delta ?? ""));
+  return m ? m[1] : undefined;
+}
+
+/** Picks a run back up after a page reload. The agent kept going in the main process; only
+ *  the page's listeners were lost. Resolves like runWorker when the run ends. */
+export async function attachRun(w: Worker, run: LiveRun, ev: RunEvents): Promise<RunResult> {
+  const api = acp();
+  if (!api) return { live: false, text: "" };
+  const { conversationId } = run;
+  // It ended while the page was away: only its result is left to show.
+  if (run.done) { const error = endError(run.end); return { live: true, text: run.text, ...(error ? { error } : {}) }; }
+  if (activeRuns.has(w.id)) return { live: true, text: "", error: "This worker is already running." };
+  activeRuns.set(w.id, conversationId);
+  if (run.text) ev.onText(run.text);
+  const l = listen(api, conversationId, ev, run.text);
+  let poll: ReturnType<typeof setInterval> | undefined;
+  try {
+    const end = await new Promise<{ error?: string; text?: string }>((resolve) => {
+      l.offs.push(api.onStreamChunk((c) => { if (l.mine(c) && c.done) resolve({ error: endError(c.delta) }); }));
+      // The run may have ended before we subscribed, or its last chunk may be missed: check now and then.
+      const check = async () => {
+        const now = (await liveRuns()).find((r) => r.conversationId === conversationId);
+        if (!now || now.done) resolve({ error: endError(now?.end), text: now?.text });
+      };
+      poll = setInterval(check, 4000);
+      void check();
+    });
+    // Main's copy is complete; ours misses whatever streamed before we subscribed.
+    const text = end.text && end.text.length > l.text().length ? end.text : l.text();
+    return { live: true, text, ...(end.error ? { error: end.error } : {}) };
+  } finally {
+    if (poll) clearInterval(poll);
+    l.off();
+    if (activeRuns.get(w.id) === conversationId) activeRuns.delete(w.id);
+  }
+}
+
+/** Stops this worker's run only; other workers and chats keep going. */
+export async function stopWorker(workerId: string) {
+  const conversationId = activeRuns.get(workerId);
+  if (!conversationId) return;
+  try { await acp()?.stop(conversationId); } catch { /* ignore */ }
 }

@@ -817,7 +817,7 @@ export const LiveToolCallCard = ({ toolName, partialArguments, isStreaming }: Li
                         {displayName}
                     </span>
                     {isStreaming && (
-                        <span className="text-[10px] text-indigo-500 font-bold uppercase tracking-widest animate-pulse">
+                        <span className="text-[10px] text-indigo-500 font-boldst animate-pulse">
                             Constructing Tool Call
                         </span>
                     )}
@@ -847,7 +847,7 @@ export const LiveToolCallCard = ({ toolName, partialArguments, isStreaming }: Li
                     </pre>
 
                     {/* Decorative mono label */}
-                    <div className="absolute bottom-2 right-4 px-1.5 py-0.5 rounded border border-slate-100 bg-slate-50/50 text-[9px] font-mono text-slate-400 uppercase tracking-tighter opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="absolute bottom-2 right-4 px-1.5 py-0.5 rounded border border-slate-100 bg-slate-50/50 text-[9px] font-mono text-slate-400 tracking-tighter opacity-0 group-hover:opacity-100 transition-opacity">
                         JSON PARAMS
                     </div>
                 </div>

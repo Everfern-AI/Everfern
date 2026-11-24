@@ -190,7 +190,7 @@ export const PaneSection = ({
                 }}
             >
                 <span style={{ color: 'var(--color-text-tertiary)', display: 'flex', flexShrink: 0 }}>{icon}</span>
-                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.07em', flex: 1, textAlign: 'left' }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-tertiary)', flex: 1, textAlign: 'left' }}>
                     {label}
                 </span>
                 {badge !== undefined && (
@@ -464,7 +464,7 @@ export const ReasoningPane = ({
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                                     {context.completedSteps.length > 0 && (
                                         <div>
-                                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>Completed</div>
+                                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--color-text-tertiary)', marginBottom: 5 }}>Completed</div>
                                             {context.completedSteps.map((step, i) => (
                                                 <div key={i} style={{ fontSize: 12, color: '#22c55e', marginBottom: 3, display: 'flex', gap: 6, alignItems: 'flex-start' }}>
                                                     <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ flexShrink: 0, marginTop: 2 }}>
@@ -478,7 +478,7 @@ export const ReasoningPane = ({
                                     )}
                                     {context.pendingSteps.length > 0 && (
                                         <div>
-                                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>Pending</div>
+                                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--color-text-tertiary)', marginBottom: 5 }}>Pending</div>
                                             {context.pendingSteps.map((step, i) => (
                                                 <div key={i} style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginBottom: 3, display: 'flex', gap: 6, alignItems: 'flex-start' }}>
                                                     <div style={{ width: 10, height: 10, borderRadius: '50%', border: '1.5px solid #d1d5db', flexShrink: 0, marginTop: 2 }} />
@@ -489,7 +489,7 @@ export const ReasoningPane = ({
                                     )}
                                     {context.filesModified.length > 0 && (
                                         <div>
-                                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>Files</div>
+                                            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--color-text-tertiary)', marginBottom: 5 }}>Files</div>
                                             {context.filesModified.map((file, i) => (
                                                 <div key={i} style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontFamily: "'JetBrains Mono', monospace", marginBottom: 2 }}>{file}</div>
                                             ))}

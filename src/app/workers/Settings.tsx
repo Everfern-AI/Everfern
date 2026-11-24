@@ -7,6 +7,7 @@ import { User, LayoutGrid, CreditCard, Sparkles, Server, CircleHelp, LogOut, Key
 import { AppLogoCluster } from "@/components/AppLogo";
 import { ModelTab, MachineTab } from "./ModelSettings";
 import type { Worker } from '@/lib/workers';
+import { secureSession } from "@/lib/secure-session";
 
 /**
  * Settings: a light page that slides over the worker's screen.
@@ -22,7 +23,7 @@ export type SettingsSection = Tab | 'notifications';
 type WorkerLite = { id: string; name: string; tier: string; apps: string[]; status: string };
 
 function readSession(): { user?: { email?: string; name?: string; full_name?: string; fullName?: string; plan?: string } } | null {
-  try { return JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); } catch { return null; }
+  try { return JSON.parse(secureSession.getItem(SESSION_KEY) || "null"); } catch { return null; }
 }
 
 function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
@@ -51,6 +52,8 @@ function AccountTab({ initialSection = 'account' }: { initialSection?: 'account'
   const [session, setSession] = useState<ReturnType<typeof readSession>>(null);
   const [prefs, setPrefs] = useState({ email: false, push: false });
   const [saved, setSaved] = useState(true);
+  const [justSaved, setJustSaved] = useState(false);
+  useEffect(() => { if (!justSaved) return; const t = window.setTimeout(() => setJustSaved(false), 1800); return () => window.clearTimeout(t); }, [justSaved]);
   const [name, setName] = useState("");
   const [saveError, setSaveError] = useState("");
 
@@ -68,7 +71,7 @@ function AccountTab({ initialSection = 'account' }: { initialSection?: 'account'
       const current = readSession();
       if (current?.user) {
         const next = { ...current, user: { ...current.user, name: name.trim(), full_name: name.trim(), fullName: name.trim() } };
-        localStorage.setItem(SESSION_KEY, JSON.stringify(next));
+        secureSession.setItem(SESSION_KEY, JSON.stringify(next));
         setSession(next);
       }
       localStorage.setItem(NOTIFY_KEY, JSON.stringify(prefs));
@@ -76,6 +79,7 @@ function AccountTab({ initialSection = 'account' }: { initialSection?: 'account'
     } catch { setSaveError("Couldn’t save changes on this device. Please try again."); return; }
     if (prefs.push && typeof Notification !== "undefined" && Notification.permission === "default") Notification.requestPermission().catch(() => {});
     setSaved(true);
+    setJustSaved(true);
   };
 
   return (
@@ -122,7 +126,7 @@ function AccountTab({ initialSection = 'account' }: { initialSection?: 'account'
       {sub !== "passwords" && (
         <div className="st-actions">
           {saveError && <p role="alert">{saveError}</p>}
-          <button className="st-save" onClick={save} disabled={saved}><Check size={13} /> {saved ? "Saved" : "Save changes"}</button>
+          <button className="st-save" onClick={save} disabled={saved}>{justSaved ? <><Check size={13} /> Saved</> : "Save changes"}</button>
         </div>
       )}
     </>
@@ -199,7 +203,7 @@ export function SettingsSheet({ workers, onSaveWorker, onClose, onLogout, initia
             <Icon size={15} /> <span>{label}</span>
           </button>
         ))}
-        <button className="is-logout" onClick={onLogout}><LogOut size={15} /> <span>Logout</span></button>
+        <button className="is-logout" onClick={onLogout}><LogOut size={15} /> <span>Sign out</span></button>
       </nav>
       <div className="st-body">
         {tab === "account" && <AccountTab initialSection={initialTab === 'notifications' ? 'notifications' : 'account'} />}
@@ -214,5 +218,5 @@ export function SettingsSheet({ workers, onSaveWorker, onClose, onLogout, initia
 }
 
 export function logoutLocal() {
-  localStorage.removeItem(SESSION_KEY);
+  secureSession.removeItem(SESSION_KEY);
 }

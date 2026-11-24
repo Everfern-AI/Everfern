@@ -1,5 +1,6 @@
 "use client";
 
+import { CornerDownRight as LuCornerDownRight } from "lucide-react";
 import React from 'react';
 
 export interface FollowUpItem {
@@ -32,8 +33,6 @@ export const SuggestedFollowUps: React.FC<SuggestedFollowUpsProps> = ({
                 fontSize: 12,
                 fontWeight: 600,
                 color: "var(--color-text-tertiary)",
-                letterSpacing: "0.03em",
-                textTransform: "uppercase",
                 marginBottom: 4,
                 paddingLeft: 4
             }}>
@@ -89,7 +88,7 @@ export const SuggestedFollowUps: React.FC<SuggestedFollowUpsProps> = ({
                             flexShrink: 0,
                             userSelect: "none"
                         }}>
-                            {item.icon || '💬'}
+                            <LuCornerDownRight size={14} strokeWidth={1.75} />
                         </span>
                         <span style={{
                             flex: 1,

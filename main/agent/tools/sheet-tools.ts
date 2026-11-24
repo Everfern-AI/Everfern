@@ -5,7 +5,8 @@
  * replays it as a human-paced typing/clicking animation.
  */
 
-import { BrowserWindow, ipcMain } from 'electron';
+import { app as electronApp, BrowserWindow, ipcMain } from 'electron';
+import { runNativeTool } from '../../lib/native-tool';
 import type { AgentTool, ToolResult } from '../runner/types';
 import {
   getWorkerIdFromConversation,
@@ -24,6 +25,7 @@ import {
   blankSheet,
   applyFormat,
   addSheet,
+  type SheetData,
 } from './sheets-store';
 
 const workerIdOf = (runner: any): string | null =>
@@ -59,6 +61,47 @@ function emitAction(
   });
 }
 
+type SheetOp = 'read' | 'write' | 'append' | 'clear' | 'create' | 'import' | 'export' | 'format' | 'add_sheet';
+type SheetOpResult = { result: any; saved?: SheetData };
+
+/**
+ * One workbook operation. Under Tauri it runs in Rust (`--ef-sheet-op`, same file,
+ * same rules); otherwise, or if that fails, the sheets-store functions run here.
+ * `saved` is the normalized workbook for ops that write.
+ */
+async function sheetOp(workerId: string, op: SheetOp, args: Record<string, unknown> = {}): Promise<SheetOpResult> {
+  const native = await runNativeTool<SheetOpResult>('--ef-sheet-op', {
+    root: electronApp.getPath('userData'),
+    workerId,
+    op,
+    args,
+  });
+  return native ?? sheetOpInNode(workerId, op, args);
+}
+
+function sheetOpInNode(workerId: string, op: SheetOp, args: Record<string, unknown>): SheetOpResult {
+  const text = (key: string) => (typeof args[key] === 'string' ? (args[key] as string) : undefined);
+  const values = Array.isArray(args.values) ? (args.values as unknown[][]) : [];
+  if (op === 'create') return { result: null, saved: saveSheet(workerId, blankSheet(text('name'))) };
+  let data = loadSheet(workerId);
+  let result: any = null;
+  switch (op) {
+    case 'read': {
+      const { start, rows } = readRange(data, text('range'));
+      return { result: { start, rows, name: data.name, columns: data.columns, rowsAvailable: data.rows } };
+    }
+    case 'export':
+      return { result: { name: data.name, csv: sheetToCSV(data) } };
+    case 'write': result = writeRange(data, text('start') ?? 'A1', values); break;
+    case 'append': result = appendRows(data, values); break;
+    case 'clear': result = { cleared: clearRange(data, text('range')) }; break;
+    case 'format': result = { changed: applyFormat(data, text('range'), (args.patch ?? {}) as any) }; break;
+    case 'import': result = importDelimited(data, text('text') ?? ''); break;
+    case 'add_sheet': data = addSheet(data, text('name')); break;
+  }
+  return { result, saved: saveSheet(workerId, data) };
+}
+
 const noWorker = (): ToolResult => ({
   success: false,
   output: 'A worker session is required to use the native Sheets app.',
@@ -79,13 +122,15 @@ export const createSheetsReadTool = (runner: any): AgentTool => ({
   async execute(args: Record<string, unknown>): Promise<ToolResult> {
     const workerId = workerIdOf(runner);
     if (!workerId) return noWorker();
-    const data = loadSheet(workerId);
-    const { start, rows } = readRange(data, typeof args.range === 'string' ? args.range : undefined);
+    const { result } = await sheetOp(workerId, 'read', { range: args.range });
+    const { name, start, rows, columns, rowsAvailable } = result as {
+      name: string; start: string; rows: string[][]; columns: number; rowsAvailable: number;
+    };
     const tsv = rows.map((r) => r.join('\t')).join('\n');
     return {
       success: true,
-      output: tsv ? `Sheet "${data.name}" from ${start}:\n${tsv}` : `Sheet "${data.name}" is empty.`,
-      data: { name: data.name, start, rows, columns: data.columns, rowsAvailable: data.rows },
+      output: tsv ? `Sheet "${name}" from ${start}:\n${tsv}` : `Sheet "${name}" is empty.`,
+      data: { name, start, rows, columns, rowsAvailable },
     };
   },
 });
@@ -113,9 +158,7 @@ export const createSheetsWriteTool = (runner: any): AgentTool => ({
     const values = Array.isArray(args.values) ? (args.values as unknown[][]) : [];
     if (!values.length) return { success: false, output: 'No values supplied.' };
     const start = typeof args.start === 'string' && args.start.trim() ? args.start.trim() : 'A1';
-    const data = loadSheet(workerId);
-    const result = writeRange(data, start, values);
-    saveSheet(workerId, data);
+    const { result } = await sheetOp(workerId, 'write', { start, values });
     broadcast('worker:sheets', { type: 'apply', start: result.start, values }, 150);
     onUpdate?.(`Typing ${result.written} cells at ${result.start}`);
     emitAction(emitEvent, 'sheets', `Clicking cell ${result.start} and typing`);
@@ -143,9 +186,7 @@ export const createSheetsAppendTool = (runner: any): AgentTool => ({
     if (!workerId) return noWorker();
     const values = Array.isArray(args.values) ? (args.values as unknown[][]) : [];
     if (!values.length) return { success: false, output: 'No values supplied.' };
-    const data = loadSheet(workerId);
-    const result = appendRows(data, values);
-    saveSheet(workerId, data);
+    const { result } = await sheetOp(workerId, 'append', { values });
     broadcast('worker:sheets', { type: 'apply', start: result.start, values }, 150);
     onUpdate?.(`Appending ${values.length} row(s) at ${result.start}`);
     emitAction(emitEvent, 'sheets', `Appending rows at ${result.start}`);
@@ -170,9 +211,8 @@ export const createSheetsClearTool = (runner: any): AgentTool => ({
   async execute(args: Record<string, unknown>, onUpdate?, emitEvent?): Promise<ToolResult> {
     const workerId = workerIdOf(runner);
     if (!workerId) return noWorker();
-    const data = loadSheet(workerId);
-    const cleared = clearRange(data, typeof args.range === 'string' ? args.range : undefined);
-    saveSheet(workerId, data);
+    const { result } = await sheetOp(workerId, 'clear', { range: args.range });
+    const cleared: number = result.cleared;
     broadcast('worker:sheets', { type: 'clear', range: typeof args.range === 'string' ? args.range : undefined }, 150);
     onUpdate?.(`Cleared ${cleared} cell(s)`);
     emitAction(emitEvent, 'sheets', 'Clearing cells');
@@ -194,7 +234,7 @@ export const createSheetsCreateTool = (runner: any): AgentTool => ({
     const workerId = workerIdOf(runner);
     if (!workerId) return noWorker();
     const name = typeof args.name === 'string' && args.name.trim() ? args.name.trim() : 'Sheet1';
-    const data = saveSheet(workerId, blankSheet(name));
+    const { saved: data } = await sheetOp(workerId, 'create', { name });
     broadcast('worker:sheets', { type: 'load', data }, 150);
     onUpdate?.(`Created sheet "${name}"`);
     return { success: true, output: `Created sheet "${name}".`, data };
@@ -220,9 +260,7 @@ export const createSheetsImportTool = (runner: any): AgentTool => ({
     if (!filePath || filePath.includes('..')) return { success: false, output: 'Invalid file path.' };
     const read = await createWorkerReadFileTool(runner).execute({ path: filePath });
     if (!read.success) return read;
-    const data = loadSheet(workerId);
-    const summary = importDelimited(data, String(read.output || ''));
-    const saved = saveSheet(workerId, data);
+    const { result: summary, saved } = await sheetOp(workerId, 'import', { text: String(read.output || '') });
     broadcast('worker:sheets', { type: 'load', data: saved }, 150);
     onUpdate?.(`Imported ${filePath}`);
     emitAction(emitEvent, 'sheets', `Importing ${filePath}`);
@@ -250,8 +288,8 @@ export const createSheetsExportTool = (runner: any): AgentTool => ({
     if (!workerId) return noWorker();
     const filePath = String(args.path || '').trim();
     if (!filePath || filePath.includes('..')) return { success: false, output: 'Invalid file path.' };
-    const data = loadSheet(workerId);
-    const csv = sheetToCSV(data);
+    const { result: data } = await sheetOp(workerId, 'export');
+    const csv: string = data.csv;
     const write = await createWorkerWriteFileTool(runner).execute({ path: filePath, content: csv });
     if (!write.success) return write;
     onUpdate?.(`Exported to ${filePath}`);
@@ -288,9 +326,10 @@ const webAppRedirect = (app: string, tool: string): ToolResult | null =>
 export const createWorkerClickTool = (runner: any): AgentTool => ({
   name: 'worker_click',
   description:
-    'Click inside one of EverFern\'s native system windows — files, sheets or terminal — using normalized ' +
+    'Click inside EverFern\'s native Sheets window using normalized ' +
     'pixel coordinates (0-1000 on each axis, relative to the window). Never use this on web apps ' +
-    '(docs, gmail, notion, amazon, …): drive those with the navis tool, which clicks by element ref.',
+    '(docs, gmail, notion, amazon, …): drive those with the navis tool. Files and Terminal take named ops instead: ' +
+    'use files_action and terminal_run there.',
   parameters: {
     type: 'object',
     properties: {
@@ -326,8 +365,8 @@ export const createWorkerClickTool = (runner: any): AgentTool => ({
 export const createWorkerTypeTool = (runner: any): AgentTool => ({
   name: 'worker_type',
   description:
-    'Type into the focused field of a native system window (files, sheets, terminal) the way a person would. ' +
-    'Click the field first with worker_click. Never use on web apps — use the navis tool there.',
+    'Type into the focused field of the native Sheets window the way a person would. ' +
+    'Click the field first with worker_click. Never use on web apps (use navis) or on Files and Terminal (use files_action / terminal_run).',
   parameters: {
     type: 'object',
     properties: {
@@ -442,9 +481,8 @@ export const createSheetsFormatTool = (runner: any): AgentTool => ({
     if (args.align === 'left' || args.align === 'center' || args.align === 'right') patch.align = args.align;
     if (Number.isFinite(Number(args.fontSize))) patch.fs = Number(args.fontSize);
     if (args.numberFormat === 'general' || args.numberFormat === 'number' || args.numberFormat === 'currency' || args.numberFormat === 'percent') patch.fmt = args.numberFormat;
-    const data = loadSheet(workerId);
-    const changed = applyFormat(data, range, patch as any);
-    const saved = saveSheet(workerId, data);
+    const { result, saved } = await sheetOp(workerId, 'format', { range, patch });
+    const changed: number = result.changed;
     broadcast('worker:sheets', { type: 'load', data: saved }, 150);
     onUpdate?.(`Formatted ${range}`);
     emitAction(emitEvent, 'sheets', `Formatting ${range}`);
@@ -465,10 +503,9 @@ export const createSheetsAddSheetTool = (runner: any): AgentTool => ({
   async execute(args: Record<string, unknown>, onUpdate?): Promise<ToolResult> {
     const workerId = workerIdOf(runner);
     if (!workerId) return noWorker();
-    const data = addSheet(loadSheet(workerId), typeof args.name === 'string' ? args.name : undefined);
-    const saved = saveSheet(workerId, data);
+    const { saved } = await sheetOp(workerId, 'add_sheet', { name: args.name });
     broadcast('worker:sheets', { type: 'load', data: saved }, 150);
     onUpdate?.('Added a sheet tab');
-    return { success: true, output: `Added sheet "${saved.sheets[saved.active].name}".`, data: { active: saved.active } };
+    return { success: true, output: `Added sheet "${saved!.sheets[saved!.active].name}".`, data: { active: saved!.active } };
   },
 });

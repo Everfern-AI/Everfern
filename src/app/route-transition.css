@@ -1,0 +1,28 @@
+
+/* ── Workers <-> Chat route motion (see src/lib/route-transition.ts) ──
+   Workers is the desktop underneath; Chat settles just above it. Going to Chat, Workers
+   recedes and Chat arrives from slightly closer; going back runs the same path in reverse. */
+@keyframes ef-route-recede { to { opacity: 0; transform: scale(0.985); } }
+@keyframes ef-route-arrive { from { opacity: 0; transform: scale(1.015); } }
+@keyframes ef-route-lift { to { opacity: 0; transform: scale(1.015); } }
+@keyframes ef-route-settle { from { opacity: 0; transform: scale(0.985); } }
+
+/* Client-side push, inside a View Transition: old and new are snapshots, layout is untouched. */
+html[data-ef-route]::view-transition-group(root) { animation-duration: 0s; }
+html[data-ef-route="to-chat"]::view-transition-old(root) { animation: ef-route-recede 170ms cubic-bezier(0.4, 0, 1, 1) both; }
+html[data-ef-route="to-chat"]::view-transition-new(root) { animation: ef-route-arrive 300ms cubic-bezier(0.2, 0.8, 0.2, 1) 50ms both; }
+html[data-ef-route="to-workers"]::view-transition-old(root) { animation: ef-route-lift 170ms cubic-bezier(0.4, 0, 1, 1) both; }
+html[data-ef-route="to-workers"]::view-transition-new(root) { animation: ef-route-settle 300ms cubic-bezier(0.2, 0.8, 0.2, 1) 50ms both; }
+
+/* Full page load: the old page leaves, the next one arrives from its first paint (layout.tsx head script). */
+html[data-ef-route-exit="to-chat"] body { animation: ef-route-recede 170ms cubic-bezier(0.4, 0, 1, 1) forwards; pointer-events: none; }
+html[data-ef-route-exit="to-workers"] body { animation: ef-route-lift 170ms cubic-bezier(0.4, 0, 1, 1) forwards; pointer-events: none; }
+html[data-ef-enter="to-chat"] body { animation: ef-route-arrive 300ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+html[data-ef-enter="to-workers"] body { animation: ef-route-settle 300ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-ef-route]::view-transition-old(root),
+  html[data-ef-route]::view-transition-new(root) { animation: none; }
+  html[data-ef-route-exit] body,
+  html[data-ef-enter] body { animation: none; }
+}

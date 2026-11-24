@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import { execFile } from 'child_process';
 import type { AgentTool, ToolResult } from '../runner/types';
 import { translateLinuxPathToHost, translateWindowsPathToLinux, runInLinuxVM } from './linux-vm-executor';
 
@@ -95,18 +96,9 @@ export const createPresentFilesTool = (runner?: any): AgentTool => ({
     }
 
     // Helper: Search across all possible host locations
-    const findHostFile = (rawPath: string, name: string): string | null => {
+    const hostCandidates = (rawPath: string, name: string): string[] => {
       // 1. Direct and translated linux path
-      const direct = translateLinuxPathToHost(rawPath);
-      if (fs.existsSync(direct)) {
-        try { if (fs.statSync(direct).isFile()) return direct; } catch {}
-      }
-
-      // 2. Absolute resolution of raw path
-      const resolved = path.resolve(rawPath);
-      if (fs.existsSync(resolved)) {
-        try { if (fs.statSync(resolved).isFile()) return resolved; } catch {}
-      }
+      const candidates = [translateLinuxPathToHost(rawPath), path.resolve(rawPath)];
 
       // 3. Direct Windows UNC paths for WSL / Linux VM
       if (process.platform === 'win32') {
@@ -123,11 +115,7 @@ export const createPresentFilesTool = (runner?: any): AgentTool => ({
           `\\\\wsl$\\EverFern-Alpine\\root\\.everfern\\${name}`,
           `\\\\wsl$\\EverFern-Alpine\\tmp\\${name}`,
         ];
-        for (const unc of uncCandidates) {
-          if (fs.existsSync(unc)) {
-            try { if (fs.statSync(unc).isFile()) return unc; } catch {}
-          }
-        }
+        candidates.push(...uncCandidates);
       }
 
       // 4. Search common host directories
@@ -147,16 +135,10 @@ export const createPresentFilesTool = (runner?: any): AgentTool => ({
       ];
 
       for (const dir of searchDirs) {
-        if (!dir) continue;
-        const candidate = path.join(dir, name);
-        if (fs.existsSync(candidate)) {
-          try {
-            if (fs.statSync(candidate).isFile()) return candidate;
-          } catch {}
-        }
+        if (dir) candidates.push(path.join(dir, name));
       }
 
-      return null;
+      return candidates;
     };
 
     const missingFiles: string[] = [];
@@ -164,18 +146,6 @@ export const createPresentFilesTool = (runner?: any): AgentTool => ({
     // Auto-save files to the artifacts directory and verify existence
     for (const f of files) {
       if (!f.path) continue;
-
-      const ext = path.extname(f.path).toLowerCase();
-      const isScript = ['.py', '.js', '.ts', '.sh', '.bat', '.ps1'].includes(ext);
-      if (isScript && !f.type) {
-        f.type = 'code';
-      }
-
-      // Auto-populate title if missing
-      if (!f.title) {
-        const base = path.basename(f.path, ext).replace(/[_-]+/g, ' ');
-        f.title = base.charAt(0).toUpperCase() + base.slice(1);
-      }
 
       const fileName = path.basename(f.path);
       const targetPath = path.join(artifactsDir, fileName);
@@ -188,26 +158,45 @@ export const createPresentFilesTool = (runner?: any): AgentTool => ({
       let fileCopied = false;
 
       // 1. Check if the file is already available in any host path or WSL UNC path
-      const foundHost = findHostFile(f.path, fileName);
-      if (foundHost) {
+      const executable = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+      const foundHost = executable ? undefined : hostCandidates(f.path, fileName).find(candidate => {
+        try { return fs.statSync(candidate).isFile(); } catch { return false; }
+      });
+      if (executable || foundHost) {
         try {
-          fs.mkdirSync(artifactsDir, { recursive: true });
-          fs.mkdirSync(hostEverfernRoot, { recursive: true });
-          if (foundHost !== targetPath) {
-            fs.copyFileSync(foundHost, targetPath);
+          if (executable) {
+            fileCopied = await new Promise<boolean>((resolve, reject) => {
+              const child = execFile(executable, ['--ef-present-host-file'], {
+                encoding: 'utf8', windowsHide: true,
+              }, (error, stdout) => error ? reject(error) : resolve(stdout.trim() === 'true'));
+              child.stdin?.once('error', reject);
+              child.stdin?.end(JSON.stringify({
+                candidates: [path.resolve(f.path)], original: f.path, name: fileName,
+                target: targetPath, fallback: hostEverfernFallback,
+                workspace: runner?.workspaceDir, artifacts: artifactsDir, home: os.homedir(), session: sessionId,
+              }));
+            });
+          } else if (foundHost) {
+            fs.mkdirSync(artifactsDir, { recursive: true });
+            fs.mkdirSync(hostEverfernRoot, { recursive: true });
+            if (foundHost !== targetPath) {
+              fs.copyFileSync(foundHost, targetPath);
+            }
+            if (foundHost !== hostEverfernFallback && !fs.existsSync(hostEverfernFallback)) {
+              try { fs.copyFileSync(foundHost, hostEverfernFallback); } catch {}
+            }
+            fileCopied = true;
           }
-          if (foundHost !== hostEverfernFallback && !fs.existsSync(hostEverfernFallback)) {
-            try { fs.copyFileSync(foundHost, hostEverfernFallback); } catch {}
+          if (fileCopied && foundHost) {
+            console.log(`[PresentFiles] Found host/UNC file at ${foundHost}, synced to ${targetPath}`);
           }
-          fileCopied = true;
-          console.log(`[PresentFiles] Found host/UNC file at ${foundHost}, synced to ${targetPath}`);
         } catch (err) {
           console.warn(`[PresentFiles] Failed to copy host file ${foundHost}:`, err);
         }
       }
 
       // 2. If not found on host, actively search and transfer from Linux VM / WSL on Windows
-      if (!fileCopied && process.platform === 'win32') {
+      if (!fileCopied && !executable && process.platform === 'win32') {
         const wslCandidates = [
           f.path.startsWith('/') ? f.path : null,
           `/everfern/${fileName}`,
@@ -264,7 +253,7 @@ export const createPresentFilesTool = (runner?: any): AgentTool => ({
       }
 
       // 3. If not found on host, try Docker on macOS
-      if (!fileCopied && process.platform === 'darwin') {
+      if (!fileCopied && !executable && process.platform === 'darwin') {
         try {
           fs.mkdirSync(artifactsDir, { recursive: true });
           const { execFileSync } = require('child_process');
@@ -290,7 +279,7 @@ export const createPresentFilesTool = (runner?: any): AgentTool => ({
       }
 
       // 4. Also mirror to host .everfern root directory so all viewers can access it
-      if (fileCopied && fs.existsSync(targetPath)) {
+      if (!executable && fileCopied && fs.existsSync(targetPath)) {
         try {
           fs.mkdirSync(hostEverfernRoot, { recursive: true });
           if (!fs.existsSync(hostEverfernFallback)) {
@@ -328,7 +317,9 @@ export const createPresentFilesTool = (runner?: any): AgentTool => ({
                     execSync(`node "${scriptPath}"`, { cwd: cDir, timeout: 30000, stdio: 'pipe' });
                   }
                   // Check if target was produced
-                  const produced = findHostFile(path.join(cDir, fileName), fileName);
+                  const produced = hostCandidates(path.join(cDir, fileName), fileName).find(candidate => {
+                    try { return fs.statSync(candidate).isFile(); } catch { return false; }
+                  });
                   if (produced) {
                     fs.mkdirSync(artifactsDir, { recursive: true });
                     fs.copyFileSync(produced, targetPath);
@@ -353,6 +344,25 @@ export const createPresentFilesTool = (runner?: any): AgentTool => ({
       }
     }
 
+    const count = files.filter((f: any) => f && f.path).length;
+    const notifyPresentation = () => onUpdate?.(`🎁 Presenting ${count} artifact${count !== 1 ? 's' : ''} to the user...`);
+    const executable = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+    if (executable) {
+      const result = await new Promise<ToolResult | null>(resolve => {
+        const child = execFile(executable, ['--ef-present-files-result'], {
+          encoding: 'utf8', windowsHide: true, maxBuffer: 16 * 1024 * 1024,
+        }, (error, output) => {
+          if (error) return resolve(null);
+          try { resolve(JSON.parse(output)); } catch { resolve(null); }
+        });
+        child.stdin?.once('error', () => resolve(null));
+        child.stdin?.end(JSON.stringify({ files, missingFiles, title: args.title }));
+      });
+      if (result) {
+        if (result.success) notifyPresentation();
+        return result;
+      }
+    }
     if (missingFiles.length > 0 && missingFiles.length === files.length) {
       return {
         success: false,
@@ -360,7 +370,16 @@ export const createPresentFilesTool = (runner?: any): AgentTool => ({
         error: `Files not found: ${missingFiles.join(', ')}`
       };
     }
-
+    notifyPresentation();
+    for (const file of files) {
+      if (!file?.path) continue;
+      const ext = path.extname(file.path).toLowerCase();
+      if (['.py', '.js', '.ts', '.sh', '.bat', '.ps1'].includes(ext) && !file.type) file.type = 'code';
+      if (!file.title) {
+        const base = path.basename(file.path, ext).replace(/[_-]+/g, ' ');
+        file.title = base.charAt(0).toUpperCase() + base.slice(1);
+      }
+    }
     const formatted = files
       .filter((f: any) => f && f.path)
       .map((f: PresentFile) => {
@@ -368,8 +387,6 @@ export const createPresentFilesTool = (runner?: any): AgentTool => ({
         return `📄 **${desc}**\n   Path: \`${f.path}\``;
       }).join('\n\n');
 
-    const count = files.filter((f: any) => f && f.path).length;
-    onUpdate?.(`🎁 Presenting ${count} artifact${count !== 1 ? 's' : ''} to the user...`);
 
     return {
       success: true,

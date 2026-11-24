@@ -2,7 +2,7 @@ import { AgentTool, ToolResult } from '../runner/types';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { addOrUpdateMemory, loadMemoryGraph, getMemoryDir } from '../learning/memory/persistent-memory';
+import { addOrUpdateMemory, loadMemoryGraph, getMemoryDir, nativeGraphOperation, runNativeGraphOperation } from '../learning/memory/persistent-memory';
 import { getEmbeddingModel, getSystemEmbeddingConfig } from '../../lib/embeddings';
 
 export const rememberFactTool: AgentTool = {
@@ -47,6 +47,22 @@ export const recallFactTool: AgentTool = {
     try {
       const query = (args.query as string || '').trim();
       if (!query) return { success: false, output: 'No search query provided.' };
+      const native = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+      if (native) {
+        try {
+          return await runNativeGraphOperation<ToolResult>(native, { operation: 'recall-with-embedding', query });
+        } catch {
+          // Retry through the compatibility path, which can use the local model.
+        }
+        let vector: number[] | undefined;
+        try {
+          const { embeddings } = getEmbeddingModel(getSystemEmbeddingConfig());
+          vector = await embeddings.embedQuery(query);
+        } catch (error) {
+          console.warn('[recall_fact] Semantic vector search unavailable:', error);
+        }
+        return nativeGraphOperation(native, { operation: 'recall', query, vector });
+      }
 
       let results: { text: string; score: number }[] = [];
       let isVectorSearch = false;

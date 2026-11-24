@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { execFileSync } from 'child_process';
 
 export interface ToolConfig {
   mode: 'local' | 'api';
@@ -75,11 +76,23 @@ export const DEFAULT_TOOL_SETTINGS: ToolSettingsConfig = {
 
 const SETTINGS_FILE_PATH = path.join(os.homedir(), '.everfern', 'tool-settings.json');
 
+function nativeSettings<T>(channel: string, config?: ToolSettingsConfig): T | undefined {
+  const executable = process.env.EF_NATIVE_EXE;
+  if (process.env.EVERFERN_SHELL !== 'tauri' || !executable) return undefined;
+  return JSON.parse(execFileSync(executable, ['--ef-tool-settings'], {
+    encoding: 'utf8',
+    input: JSON.stringify({ channel, config }),
+    windowsHide: true,
+    maxBuffer: 4 * 1024 * 1024,
+  }));
+}
+
 export class ToolSettingsStore {
   private cache: ToolSettingsConfig;
 
   constructor() {
-    this.cache = this.load();
+    this.cache = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE
+      ? DEFAULT_TOOL_SETTINGS : this.load();
   }
 
   private load(): ToolSettingsConfig {
@@ -140,15 +153,17 @@ export class ToolSettingsStore {
   }
 
   get(): ToolSettingsConfig {
-    return this.cache;
+    return nativeSettings<ToolSettingsConfig>('tool-settings:get') ?? this.cache;
   }
 
   set(config: ToolSettingsConfig): void {
+    if (nativeSettings('tool-settings:set', config)) return;
     this.writeFile(config);
     this.cache = config;
   }
 
   reset(): void {
+    if (nativeSettings('tool-settings:reset')) return;
     this.cache = { ...DEFAULT_TOOL_SETTINGS };
     this.writeFile(this.cache);
   }

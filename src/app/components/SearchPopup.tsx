@@ -279,8 +279,6 @@ export default function SearchPopup({
                                                 fontSize: 11,
                                                 fontWeight: 600,
                                                 color: 'var(--color-text-tertiary)',
-                                                textTransform: 'uppercase',
-                                                letterSpacing: '0.06em',
                                                 marginBottom: 6,
                                                 paddingLeft: 6,
                                             }}
@@ -355,6 +353,7 @@ export default function SearchPopup({
                 </div>
             )}
         </AnimatePresence>,
-        document.body
+        // Inside the chat's glass root, so the popup takes the same theme tokens as the app.
+        (document.querySelector('.ef-chat-glass') as HTMLElement | null) ?? document.body
     );
 }

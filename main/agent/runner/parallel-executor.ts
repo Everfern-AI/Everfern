@@ -13,6 +13,7 @@
 import type { AgentTool, ToolCallRecord, ToolResult } from './types';
 import type { StreamEvent } from './state';
 import { toolCache } from './tool-cache';
+import { execFile } from 'child_process';
 
 const MAX_CONCURRENT_TOOLS = 4;
 const MAX_RESULT_OUTPUT_SIZE = 2 * 1024 * 1024; // 2MB
@@ -30,6 +31,35 @@ export interface ToolAnalysis {
     id: string;
     readOnly: boolean;
     conflicts: string[];
+}
+
+/** Use Rust to analyze dependencies and form execution groups under Tauri. */
+export function analyzeAndGroupToolDependencies(
+    tools: Array<{ name: string; args: Record<string, unknown>; id: string }>
+): Promise<{ analysis: ToolAnalysis[]; groups: ToolAnalysis[][] } | null> | undefined {
+    const executable = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+    if (!executable) return;
+
+    return new Promise(resolve => {
+        let settled = false;
+        const finish = (value: { analysis: ToolAnalysis[]; groups: ToolAnalysis[][] } | null) => {
+            if (settled) return;
+            settled = true;
+            resolve(value);
+        };
+        const child = execFile(executable, ['--ef-tool-orchestration'], {
+            encoding: 'utf8', windowsHide: true, timeout: 5000, maxBuffer: 16 * 1024 * 1024,
+        }, (error, output) => {
+            if (error) return finish(null);
+            try {
+                const result = JSON.parse(output);
+                if (!Array.isArray(result?.analysis) || !Array.isArray(result?.groups)) return finish(null);
+                finish(result as { analysis: ToolAnalysis[]; groups: ToolAnalysis[][] });
+            } catch { finish(null); }
+        });
+        child.stdin?.once('error', () => finish(null));
+        child.stdin?.end(JSON.stringify({ tools }));
+    });
 }
 
 /**

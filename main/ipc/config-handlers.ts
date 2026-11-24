@@ -1,4 +1,6 @@
 import { ipcMain } from 'electron';
+import { execFile } from 'child_process';
+import { loadNativeProviderConfig } from '../lib/native-provider-config';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -80,6 +82,8 @@ export function normalizeConfig(config: any) {
 
 export function loadConfigSync() {
   try {
+    const native = loadNativeProviderConfig<any>();
+    if (native !== undefined) return native;
     const configDir = path.join(os.homedir(), '.everfern');
     const configPath = path.join(configDir, 'config.json');
     if (fs.existsSync(configPath)) {
@@ -101,55 +105,81 @@ export function loadConfigSync() {
     }
     return null;
   } catch (err) {
-    console.error('[Config] Error loading config:', err);
+    console.error('[Config] Error loading provider configuration');
     return null;
   }
 }
 
 export function registerConfigHandlers() {
+  const applyProviderConfig = (config: ReturnType<typeof loadConfigSync>) => {
+    if (!config?.provider) return;
+    acpManager.setProvider({
+      provider: config.provider,
+      apiKey: config.apiKey,
+      model: config.model,
+      customModel: config.customModel,
+      baseUrl: config.baseUrl,
+      vlm: config.vlm,
+    });
+  };
+
+  ipcMain.handle('apply-saved-provider-config', () => {
+    try {
+      const config = loadConfigSync();
+      if (!config) return { success: false, error: 'Failed to reload saved provider configuration' };
+      applyProviderConfig(config);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
   ipcMain.handle('save-config', async (_event, config) => {
     try {
       config = normalizeConfig(config);
-      const configDir = path.join(os.homedir(), '.everfern');
-      const configPath = path.join(configDir, 'config.json');
-
-      if (!fs.existsSync(configDir)) {
-        fs.mkdirSync(configDir, { recursive: true });
-      }
-
-      if (config.apiKey && config.provider) {
-        const keysDir = path.join(configDir, 'keys');
-        if (!fs.existsSync(keysDir)) fs.mkdirSync(keysDir, { recursive: true });
-        const keyPath = path.join(keysDir, `${config.provider}.key`);
-        fs.writeFileSync(keyPath, config.apiKey.trim());
-      }
-
-      if (config.vlm?.apiKey && config.vlm?.provider) {
-        const keysDir = path.join(configDir, 'keys');
-        if (!fs.existsSync(keysDir)) fs.mkdirSync(keysDir, { recursive: true });
-        const vlmKeyPath = path.join(keysDir, `vlm-${config.vlm.provider}.key`);
-        fs.writeFileSync(vlmKeyPath, config.vlm.apiKey.trim());
-      }
-
-      const scrubbedConfig = { ...config };
-      delete scrubbedConfig.apiKey;
-      if (scrubbedConfig.vlm) {
-        const scrubbedVlm = { ...scrubbedConfig.vlm };
-        delete scrubbedVlm.apiKey;
-        scrubbedConfig.vlm = scrubbedVlm;
-      }
-      fs.writeFileSync(configPath, JSON.stringify(scrubbedConfig, null, 2));
-
-      if (config.provider) {
-        acpManager.setProvider({
-          provider: config.provider,
-          apiKey: config.apiKey,
-          model: scrubbedConfig.model,
-          customModel: scrubbedConfig.customModel,
-          baseUrl: scrubbedConfig.baseUrl,
-          vlm: config.vlm,
+      const executable = process.env.EVERFERN_SHELL === 'tauri' ? process.env.EF_NATIVE_EXE : undefined;
+      if (executable) {
+        await new Promise<void>((resolve, reject) => {
+          const child = execFile(executable, ['--ef-save-config'], { windowsHide: true }, (error, _stdout, stderr) => {
+            if (error) reject(new Error(stderr.trim() || 'Failed to save provider configuration'));
+            else resolve();
+          });
+          child.stdin?.once('error', reject);
+          child.stdin?.end(JSON.stringify(config));
         });
+      } else {
+        const configDir = path.join(os.homedir(), '.everfern');
+        const configPath = path.join(configDir, 'config.json');
+
+        if (!fs.existsSync(configDir)) {
+          fs.mkdirSync(configDir, { recursive: true });
+        }
+
+        if (config.apiKey && config.provider) {
+          const keysDir = path.join(configDir, 'keys');
+          if (!fs.existsSync(keysDir)) fs.mkdirSync(keysDir, { recursive: true });
+          const keyPath = path.join(keysDir, `${config.provider}.key`);
+          fs.writeFileSync(keyPath, config.apiKey.trim());
+        }
+
+        if (config.vlm?.apiKey && config.vlm?.provider) {
+          const keysDir = path.join(configDir, 'keys');
+          if (!fs.existsSync(keysDir)) fs.mkdirSync(keysDir, { recursive: true });
+          const vlmKeyPath = path.join(keysDir, `vlm-${config.vlm.provider}.key`);
+          fs.writeFileSync(vlmKeyPath, config.vlm.apiKey.trim());
+        }
+
+        const scrubbedConfig = { ...config };
+        delete scrubbedConfig.apiKey;
+        if (scrubbedConfig.vlm) {
+          const scrubbedVlm = { ...scrubbedConfig.vlm };
+          delete scrubbedVlm.apiKey;
+          scrubbedConfig.vlm = scrubbedVlm;
+        }
+        fs.writeFileSync(configPath, JSON.stringify(scrubbedConfig, null, 2));
       }
+
+      applyProviderConfig(config);
 
       return { success: true };
     } catch (error) {

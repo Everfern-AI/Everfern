@@ -1,9 +1,14 @@
-import { OpenAIEmbeddings } from "@langchain/openai";
-import { OllamaEmbeddings } from "@langchain/ollama";
+import type { OpenAIEmbeddings } from "@langchain/openai";
+import { execFile, execFileSync } from "child_process";
+import type { OllamaEmbeddings } from "@langchain/ollama";
+// The embedding classes pull in @langchain/core and openai (~1,400 modules); load them on first use.
+const loadOpenAIEmbeddings = (): typeof OpenAIEmbeddings => require("@langchain/openai").OpenAIEmbeddings;
+const loadOllamaEmbeddings = (): typeof OllamaEmbeddings => require("@langchain/ollama").OllamaEmbeddings;
 import fs from "fs";
 import path from "path";
 import os from "os";
 import { PROVIDER_REGISTRY } from "./providers";
+import { runNativeTool } from "./native-tool";
 import type { ProviderType } from "../acp/types";
 
 export interface EmbeddingConfig {
@@ -19,6 +24,17 @@ interface ResolvedEmbeddingModel {
 }
 
 export function getSystemEmbeddingConfig(): EmbeddingConfig {
+  const executable = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+  if (executable) {
+    try {
+      return JSON.parse(execFileSync(executable, ['--ef-embed-query'], {
+        input: JSON.stringify({ operation: 'resolve-config' }),
+        encoding: 'utf8', windowsHide: true, timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'],
+      }));
+    } catch {
+      // Retain configuration loading if the native helper is unavailable.
+    }
+  }
   const configDir = path.join(os.homedir(), '.everfern');
   const configPath = path.join(configDir, 'config.json');
 
@@ -96,7 +112,7 @@ export function getSystemEmbeddingConfig(): EmbeddingConfig {
 function getEmbeddingModelRaw(config: EmbeddingConfig): ResolvedEmbeddingModel {
   if (config.provider === 'ollama' || config.provider === 'lmstudio') {
     return {
-      embeddings: new OllamaEmbeddings({
+      embeddings: new (loadOllamaEmbeddings())({
         model: config.model || 'nomic-embed-text',
         baseUrl: config.baseUrl || 'http://localhost:11434',
       }),
@@ -279,7 +295,7 @@ function getEmbeddingModelRaw(config: EmbeddingConfig): ResolvedEmbeddingModel {
   }
 
   return {
-    embeddings: new OpenAIEmbeddings({
+    embeddings: new (loadOpenAIEmbeddings())({
       openAIApiKey: config.apiKey || 'dummy',
       modelName: config.model || "text-embedding-3-small",
       configuration: { 
@@ -328,6 +344,34 @@ function resizeAndNormalizeEmbedding(embedding: number[], targetDim = 1536): num
 
 let localPipeline: any = null;
 
+/** Where Transformers.js caches the model, so Rust can reuse it instead of downloading. */
+function transformersModelDir(): string | undefined {
+  try {
+    const root = path.dirname(path.dirname(require.resolve('@xenova/transformers')));
+    return path.join(root, '.cache', 'Xenova', 'all-MiniLM-L6-v2');
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Local fallback for a batch of texts. Under Tauri the model runs in a short-lived
+ * `--ef-embed-local` process, so its ~130 MB is freed after each call instead of
+ * staying in Node. Transformers.js runs only when that is unavailable or fails.
+ */
+async function getLocalFallbackEmbeddings(texts: string[]): Promise<number[][]> {
+  const native = await runNativeTool<{ vectors?: number[][]; error?: string }>(
+    '--ef-embed-local',
+    { texts, modelDir: transformersModelDir() },
+    { timeoutMs: 300000 },
+  );
+  if (native?.vectors && native.vectors.length === texts.length) return native.vectors;
+  if (native?.error) console.warn('[Embeddings] Native local embedding failed, using Transformers.js:', native.error);
+  const vectors: number[][] = [];
+  for (const text of texts) vectors.push(await getLocalFallbackEmbedding(text));
+  return vectors;
+}
+
 async function getLocalFallbackEmbedding(text: string): Promise<number[]> {
   try {
     if (!localPipeline) {
@@ -344,6 +388,23 @@ async function getLocalFallbackEmbedding(text: string): Promise<number[]> {
   }
 }
 
+function runNativeEmbedding<T>(executable: string, request: object): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const child = execFile(executable, ['--ef-embed-query'], {
+      encoding: 'utf8', windowsHide: true, timeout: 120000, maxBuffer: 64 * 1024 * 1024,
+    }, (error, stdout) => {
+      if (error) return reject(error);
+      try {
+        resolve(JSON.parse(stdout));
+      } catch (parseError) {
+        reject(parseError);
+      }
+    });
+    child.stdin?.on('error', reject);
+    child.stdin?.end(JSON.stringify(request));
+  });
+}
+
 export function getEmbeddingModel(config: EmbeddingConfig): ResolvedEmbeddingModel {
   const result = getEmbeddingModelRaw(config);
 
@@ -353,11 +414,15 @@ export function getEmbeddingModel(config: EmbeddingConfig): ResolvedEmbeddingMod
 
   result.embeddings.embedQuery = async (text: string) => {
     try {
+      const executable = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+      if (executable) {
+        return await runNativeEmbedding<number[]>(executable, { config, text }).catch(async () => resizeAndNormalizeEmbedding(await originalEmbedQuery(text), 1536));
+      }
       const vector = await originalEmbedQuery(text);
       return resizeAndNormalizeEmbedding(vector, 1536);
     } catch (err: any) {
       console.warn(`[Embeddings] Provider '${config.provider}' embedQuery failed. Falling back to local Transformers.js:`, err.message || err);
-      const fallbackVector = await getLocalFallbackEmbedding(text);
+      const [fallbackVector] = await getLocalFallbackEmbeddings([text]);
       return resizeAndNormalizeEmbedding(fallbackVector, 1536);
     }
   };
@@ -365,14 +430,17 @@ export function getEmbeddingModel(config: EmbeddingConfig): ResolvedEmbeddingMod
   if (originalEmbedDocuments) {
     result.embeddings.embedDocuments = async (texts: string[]) => {
       try {
+        const executable = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+        if (executable) {
+          return await runNativeEmbedding<number[][]>(executable, { config, texts })
+            .catch(async () => (await originalEmbedDocuments(texts)).map(vector => resizeAndNormalizeEmbedding(vector, 1536)));
+        }
         const vectors = await originalEmbedDocuments(texts);
         return vectors.map(v => resizeAndNormalizeEmbedding(v, 1536));
       } catch (err: any) {
         console.warn(`[Embeddings] Provider '${config.provider}' embedDocuments failed. Falling back to local Transformers.js:`, err.message || err);
-        return Promise.all(texts.map(async text => {
-          const fallbackVector = await getLocalFallbackEmbedding(text);
-          return resizeAndNormalizeEmbedding(fallbackVector, 1536);
-        }));
+        const fallbackVectors = await getLocalFallbackEmbeddings(texts);
+        return fallbackVectors.map(vector => resizeAndNormalizeEmbedding(vector, 1536));
       }
     };
   } else {

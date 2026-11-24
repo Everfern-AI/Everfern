@@ -9,7 +9,7 @@
  * - Update scripts
  */
 
-import * as cheerio from 'cheerio';
+import type * as cheerio from 'cheerio';
 import type { ParsedArtifact } from './artifact-parser';
 
 export interface EditArtifactArgs {

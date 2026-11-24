@@ -37,9 +37,11 @@ import {
     AlertTriangle,
 } from "lucide-react";
 
-import { GlassShell } from "../components/onboarding/GlassShell";
+import { GlassShell, ONBOARDING_STEPS } from "../components/onboarding/GlassShell";
+import { createPortal } from "react-dom";
 import LinuxVMSetupStep from "./LinuxVMSetupStep";
 import { useTheme } from "@/components/ThemeProvider";
+import { secureSession } from "@/lib/secure-session";
 
 // ── Provider Logos ────────────────
 
@@ -206,32 +208,18 @@ const pageVariants = {
 };
 const pageTransition: any = { duration: 0.22, ease: [0.25, 0.1, 0.25, 1] };
 
-// Reusable back button
-const BackButton = ({ onClick }: { onClick: () => void }) => (
-    <button
-        onClick={onClick}
-        style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            color: 'var(--color-text-tertiary)',
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            fontSize: 13,
-            fontWeight: 500,
-            letterSpacing: "0.01em",
-            padding: "4px 0",
-            marginBottom: 32,
-            transition: "color 0.15s",
-        }}
-        onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-text-primary)')}
-        onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-tertiary)')}
-    >
-        <ChevronLeft size={15} strokeWidth={2} />
-        Back
-    </button>
-);
+// Back sits bottom-left in the shell's bar on every onboarding screen (same chip as sign-in).
+const BackButton = ({ onClick }: { onClick: () => void }) => {
+    const [slot, setSlot] = useState<HTMLElement | null>(null);
+    useEffect(() => { setSlot(document.getElementById("ef-back-slot")); }, []);
+    if (!slot) return null;
+    return createPortal(
+        <button type="button" className="ef-chip-btn" onClick={onClick}>
+            <ChevronLeft size={14} /> Back
+        </button>,
+        slot,
+    );
+};
 
 // ── Steam animation for coffee cup ────────────────
 const steamKeyframes = `
@@ -293,7 +281,7 @@ function CoffeeBreakBanner({ currentPkg, pipPct, pipSpeed, overallPct }: {
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
                     <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>Take a coffee break</span>
                     <span style={{
-                        fontSize: 9, fontWeight: 700, textTransform: "uppercase" as const,
+                        fontSize: 9, fontWeight: 700, 
                         letterSpacing: "0.12em", background: "rgba(59,130,246,0.15)",
                         color: 'var(--color-primary)', padding: "2px 7px", borderRadius: 999,
                     }}>Installing</span>
@@ -305,7 +293,7 @@ function CoffeeBreakBanner({ currentPkg, pipPct, pipSpeed, overallPct }: {
                 {/* Overall progress */}
                 <div>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                        <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', textTransform: "uppercase" as const, letterSpacing: "0.1em", fontWeight: 600 }}>
+                        <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontWeight: 600 }}>
                             Overall Progress
                         </span>
                         <span style={{ fontSize: 10, color: 'var(--color-text-primary)', fontFamily: "monospace" }}>
@@ -410,7 +398,7 @@ function StepPills({ installStep }: { installStep: number }) {
                         <div style={{
                             fontSize: 10, fontWeight: 700,
                             color: isDone ? "#16a34a" : isActive ? 'var(--color-primary)' : 'var(--color-text-tertiary)',
-                            textTransform: "uppercase" as const, letterSpacing: "0.1em",
+                            
                         }}>{s.title}</div>
                         <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>{s.desc}</div>
                     </div>
@@ -505,7 +493,7 @@ export default function SetupPage() {
     const cloudDialogRef = useDialogFocus<HTMLDivElement>(showCloudLoginModal, () => setShowCloudLoginModal(false));
 
     const handleEverFernCloudSelect = (nextStep: number = 4) => {
-        const cloudSession = localStorage.getItem("everfern_cloud_session") || localStorage.getItem("everfern_auth_token");
+        const cloudSession = secureSession.getItem("everfern_cloud_session") || secureSession.getItem("everfern_auth_token");
         if (!cloudSession) {
             setShowCloudLoginModal(true);
             return;
@@ -666,13 +654,13 @@ export default function SetupPage() {
                 await loadLocalModels(provider || "ollama", apiKey);
                 setLocalModelTab("installed");
             } else {
-                setLocalPullLogs(prev => [...prev, `✗ Pull failed: ${res?.error || "Unknown error"}`]);
+                setLocalPullLogs(prev => [...prev, `Pull failed: ${res?.error || "Unknown error"}`]);
                 if (api.pullLocalModelTerminal) {
                     await api.pullLocalModelTerminal({ provider: curProv, modelTag });
                 }
             }
         } catch (err: any) {
-            setLocalPullLogs(prev => [...prev, `✗ Pull error: ${err?.message || String(err)}`]);
+            setLocalPullLogs(prev => [...prev, `Pull error: ${err?.message || String(err)}`]);
             if (api.pullLocalModelTerminal) {
                 await api.pullLocalModelTerminal({ provider: curProv, modelTag });
             }
@@ -782,7 +770,7 @@ export default function SetupPage() {
             let finalCloudKey = vlmCloudKey.trim() || undefined;
             if (vlmCloudProvider === 'everfern' && !finalCloudKey) {
                 try {
-                    const stored = localStorage.getItem("everfern_cloud_session");
+                    const stored = secureSession.getItem("everfern_cloud_session");
                     if (stored) {
                         const parsed = JSON.parse(stored);
                         finalCloudKey = parsed?.accessToken;
@@ -810,7 +798,7 @@ export default function SetupPage() {
         } else if (vlmMode === "everfern") {
             let cloudToken = undefined;
             try {
-                const stored = localStorage.getItem("everfern_cloud_session");
+                const stored = secureSession.getItem("everfern_cloud_session");
                 if (stored) {
                     cloudToken = JSON.parse(stored).accessToken;
                 }
@@ -826,7 +814,7 @@ export default function SetupPage() {
         // Ensure main apiKey is set for everfern engine (token lives in VLM config)
         if (engine === "everfern" && !config.apiKey) {
             try {
-                const stored = localStorage.getItem("everfern_cloud_session");
+                const stored = secureSession.getItem("everfern_cloud_session");
                 if (stored) {
                     const session = JSON.parse(stored);
                     config.apiKey = session?.accessToken;
@@ -841,7 +829,7 @@ export default function SetupPage() {
         // Mark onboarding complete via landing API (fire-and-forget — best effort)
         try {
             const LANDING_URL = process.env.NEXT_PUBLIC_LANDING_URL || "https://everfern.app";
-            const stored = localStorage.getItem("everfern_cloud_session");
+            const stored = secureSession.getItem("everfern_cloud_session");
             if (stored) {
                 const parsed = JSON.parse(stored);
                 const accessToken = parsed?.accessToken;
@@ -852,7 +840,7 @@ export default function SetupPage() {
                     });
                     // Update local session cache too
                     parsed.user.onboardingDone = true;
-                    localStorage.setItem("everfern_cloud_session", JSON.stringify(parsed));
+                    secureSession.setItem("everfern_cloud_session", JSON.stringify(parsed));
                 }
             }
         } catch {
@@ -888,9 +876,9 @@ export default function SetupPage() {
                 setOllamaInstallPct(100);
                 setOllamaInstallPhase("done");
                 setOllamaInstallDone(true);
-                setOllamaLogs(["✓ Ollama installed successfully!"]);
+                setOllamaLogs(["Ollama installed."]);
             } else {
-                setOllamaLogs(prev => [...prev, `✗ Installation failed with code ${res.code}`]);
+                setOllamaLogs(prev => [...prev, `Installation failed with code ${res.code}`]);
             }
         }
         setIsInstallingOllama(false);
@@ -935,7 +923,7 @@ export default function SetupPage() {
                 // Go to final step (save) directly since we use an Omni model
                 setTimeout(() => setStep(11), 1500);
             } else {
-                setOllamaLogs(prev => [...prev, `✗ Model pull failed with code ${res.code}`]);
+                setOllamaLogs(prev => [...prev, `Model pull failed with code ${res.code}`]);
             }
         } catch (err) {
             console.error(err);
@@ -958,7 +946,7 @@ export default function SetupPage() {
     const activeIndex = getActiveDotIndex();
 
     return (
-        <GlassShell photo="lake" progress={[activeIndex, 11]}>
+        <GlassShell photo="lake" progress={[activeIndex + 2, ONBOARDING_STEPS]}>
             <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center" }}>
                 <AnimatePresence mode="wait">
 
@@ -1271,7 +1259,7 @@ export default function SetupPage() {
                                                 <Cpu size={18} color="var(--color-text-primary)" />
                                             </div>
                                             <div style={{ minWidth: 0, overflow: "hidden" }}>
-                                                <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: "uppercase" }}>GPU & VRAM</div>
+                                                <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--color-text-tertiary)', }}>GPU & VRAM</div>
                                                 <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--color-text-primary)', whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                                                     {localHardware?.gpuName || "GPU Processor"}
                                                 </div>
@@ -1286,7 +1274,7 @@ export default function SetupPage() {
                                                 <Activity size={18} color="var(--color-text-primary)" />
                                             </div>
                                             <div style={{ minWidth: 0, overflow: "hidden" }}>
-                                                <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: "uppercase" }}>System RAM</div>
+                                                <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--color-text-tertiary)', }}>System RAM</div>
                                                 <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--color-text-primary)' }}>
                                                     {localHardware?.ramGB || 16} GB RAM
                                                 </div>
@@ -1301,7 +1289,7 @@ export default function SetupPage() {
                                                 <Server size={18} color="var(--color-text-primary)" />
                                             </div>
                                             <div style={{ minWidth: 0, overflow: "hidden" }}>
-                                                <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: "uppercase" }}>Provider Status</div>
+                                                <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--color-text-tertiary)', }}>Provider Status</div>
                                                 <div style={{ fontSize: 12, fontWeight: 600, color: localProviderRunning ? '#22c55e' : '#f59e0b', display: "flex", alignItems: "center", gap: 4 }}>
                                                     <span style={{ width: 6, height: 6, borderRadius: 999, backgroundColor: localProviderRunning ? '#22c55e' : '#f59e0b' }} />
                                                     {localProviderRunning ? "Connected" : "Offline"}
@@ -1427,7 +1415,7 @@ export default function SetupPage() {
                                                                     </span>
                                                                 </div>
                                                                 <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-                                                                    {m.size_gb ? `${m.size_gb} GB disk` : `${m.quantized_q4_vram_gb} GB VRAM`} • {m.isRunnable ? "✓ Fully Runnable" : "Heavy for specs"}
+                                                                    {m.size_gb ? `${m.size_gb} GB disk` : `${m.quantized_q4_vram_gb} GB VRAM`} • {m.isRunnable ? "Runs well" : "Heavy for specs"}
                                                                 </div>
                                                             </div>
 
@@ -1506,7 +1494,7 @@ export default function SetupPage() {
                                                                 </span>
                                                                 {isTopMatch && (
                                                                     <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 4, backgroundColor: "rgba(59, 130, 246, 0.15)", color: "#3b82f6" }}>
-                                                                        ★ Top Match
+                                                                        Top match
                                                                     </span>
                                                                 )}
                                                                 <span style={{
@@ -1544,7 +1532,7 @@ export default function SetupPage() {
                                                                             border: "1px solid rgba(34, 197, 94, 0.3)", color: "#16a34a", fontSize: 11.5, fontWeight: 600, cursor: "pointer"
                                                                         }}
                                                                     >
-                                                                        ✓ Ready
+                                                                        Ready
                                                                     </button>
                                                                 ) : (
                                                                     <button
@@ -1644,7 +1632,7 @@ export default function SetupPage() {
                                                 key={opt.id}
                                                 onClick={() => {
                                                     if (opt.id === "everfern") {
-                                                        const cloudSession = localStorage.getItem("everfern_cloud_session") || localStorage.getItem("everfern_auth_token");
+                                                        const cloudSession = secureSession.getItem("everfern_cloud_session") || secureSession.getItem("everfern_auth_token");
                                                         if (!cloudSession) {
                                                             setShowCloudLoginModal(true);
                                                             return;
@@ -1709,7 +1697,7 @@ export default function SetupPage() {
                                         {vlmMode === "cloud" && (
                                             <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 16 }}>
                                                 <div style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
-                                                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: "uppercase", letterSpacing: "0.05em" }}>Provider</label>
+                                                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-tertiary)', }}>Provider</label>
                                                     <select value={vlmCloudProvider} onChange={(e) => {
                                                         const provider = e.target.value;
                                                         setVlmCloudProvider(provider);
@@ -1727,7 +1715,7 @@ export default function SetupPage() {
                                                     </select>
                                                 </div>
                                                 <div style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
-                                                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: "uppercase", letterSpacing: "0.05em" }}>Model Name</label>
+                                                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-tertiary)', }}>Model Name</label>
                                                     <div style={{ position: "relative" }}>
                                                         {vlmCloudProvider === 'ollama' ? (
                                                             <select value={vlmCloudModel} onChange={(e) => setVlmCloudModel(e.target.value)}
@@ -1754,7 +1742,7 @@ export default function SetupPage() {
                                                 </div>
                                                 {vlmCloudProvider !== 'ollama' && vlmCloudProvider !== 'everfern' && (
                                                     <div style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
-                                                        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: "uppercase", letterSpacing: "0.05em" }}>Host URL (Optional)</label>
+                                                        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-tertiary)', }}>Host URL (Optional)</label>
                                                         <div style={{ position: "relative" }}>
                                                             <input aria-label="Optional custom base URL" type="text" placeholder="Optional custom base URL" value={vlmCloudUrl} onChange={(e) => setVlmCloudUrl(e.target.value)}
                                                                 style={{ width: "100%", padding: "14px 18px 14px 46px", backgroundColor: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, color: 'var(--color-text-primary)', fontSize: 14, fontFamily: "monospace", outline: "none", transition: "all 0.2s", boxSizing: "border-box" }}
@@ -1766,7 +1754,7 @@ export default function SetupPage() {
                                                 )}
                                                 {vlmCloudProvider !== 'everfern' && (
                                                     <div style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
-                                                        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: "uppercase", letterSpacing: "0.05em" }}>API Key</label>
+                                                        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-tertiary)', }}>API Key</label>
                                                         <div style={{ position: "relative" }}>
                                                             <input aria-label="sk-..." type="password" placeholder="sk-..." value={vlmCloudKey} onChange={(e) => setVlmCloudKey(e.target.value)}
                                                                 style={{ width: "100%", padding: "14px 18px 14px 46px", backgroundColor: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, color: 'var(--color-text-primary)', fontSize: 14, fontFamily: "monospace", outline: "none", transition: "all 0.2s", boxSizing: "border-box" }}
@@ -1915,7 +1903,7 @@ export default function SetupPage() {
                                 )}
                                 {voiceProvider === "deepgram" && (
                                     <div style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
-                                        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: "uppercase", letterSpacing: "0.05em" }}>Deepgram API Key</label>
+                                        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-tertiary)', }}>Deepgram API Key</label>
                                         <div style={{ position: "relative" }}>
                                             <input aria-label="Leave blank to use EverFern Cloud Deepgram key..." type="password" placeholder="Leave blank to use EverFern Cloud Deepgram key..." value={voiceDeepgramKey} onChange={(e) => setVoiceDeepgramKey(e.target.value)}
                                                 style={{ width: "100%", padding: "14px 18px 14px 46px", backgroundColor: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, color: 'var(--color-text-primary)', fontSize: 14, fontFamily: "monospace", outline: "none", transition: "all 0.2s", boxSizing: "border-box" }}
@@ -1927,7 +1915,7 @@ export default function SetupPage() {
                                 )}
                                 {voiceProvider === "elevenlabs" && (
                                     <div style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
-                                        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: "uppercase", letterSpacing: "0.05em" }}>ElevenLabs API Key</label>
+                                        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-tertiary)', }}>ElevenLabs API Key</label>
                                         <div style={{ position: "relative" }}>
                                             <input aria-label="sk_..." type="password" placeholder="sk_..." value={voiceElevenlabsKey} onChange={(e) => setVoiceElevenlabsKey(e.target.value)}
                                                 style={{ width: "100%", padding: "14px 18px 14px 46px", backgroundColor: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, color: 'var(--color-text-primary)', fontSize: 14, fontFamily: "monospace", outline: "none", transition: "all 0.2s", boxSizing: "border-box" }}
@@ -2157,7 +2145,7 @@ export default function SetupPage() {
                                             paddingBottom: 6,
                                             marginBottom: 2,
                                         }}>
-                                            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                                            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--color-text-tertiary)', }}>
                                                 SkyBooker
                                             </span>
                                             {/* Page control buttons */}
@@ -2479,7 +2467,7 @@ export default function SetupPage() {
                                                 boxShadow: mockStep === 5 ? "0 0 6px #10b981" : "0 0 6px #a78bfa",
                                                 animation: "pulseDot 1.5s infinite"
                                             }} />
-                                            <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.08em", color: "#a1a1aa", textTransform: "uppercase" }}>
+                                            <span style={{ fontSize: 9, fontWeight: 700, color: "#a1a1aa", }}>
                                                 Navis AI Panel
                                             </span>
                                         </div>
@@ -2491,7 +2479,7 @@ export default function SetupPage() {
                                             borderRadius: 6,
                                             padding: "6px 8px",
                                         }}>
-                                            <div style={{ fontSize: 7, color: 'var(--color-text-tertiary)', textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em", marginBottom: 2 }}>
+                                            <div style={{ fontSize: 7, color: 'var(--color-text-tertiary)', fontWeight: 700, marginBottom: 2 }}>
                                                 User Request
                                             </div>
                                             <div style={{ fontSize: 9.5, color: 'var(--color-bg-surface)', fontWeight: 500, lineHeight: 1.3 }}>

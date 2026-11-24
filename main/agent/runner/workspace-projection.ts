@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 
 const execAsync = promisify(exec);
@@ -11,6 +11,37 @@ export interface WorkspaceProjection {
   environmentInfo: string;
 }
 
+function nativeWorkspaceProjection(workspaceDir: string, historyOrFiles: any[]): Promise<WorkspaceProjection | null> | undefined {
+  const executable = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+  if (!executable) return;
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = (value: WorkspaceProjection | null) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    const child = execFile(executable, ['--ef-workspace-projection'], {
+      encoding: 'utf8', windowsHide: true, timeout: 5000, maxBuffer: 4 * 1024 * 1024,
+    }, (error, output) => {
+      if (error) return finish(null);
+      try {
+        const result = JSON.parse(output);
+        if (typeof result?.gitStatus !== 'string' || typeof result?.activeDependencies !== 'string'
+          || typeof result?.environmentInfo !== 'string') return finish(null);
+        finish(result as WorkspaceProjection);
+      } catch { finish(null); }
+    });
+    child.stdin?.once('error', () => finish(null));
+    const isFileList = historyOrFiles.every(item => typeof item === 'string');
+    child.stdin?.end(JSON.stringify({
+      workspaceDir,
+      ...(isFileList ? { activeFiles: historyOrFiles } : { history: historyOrFiles }),
+      nodeVersion: process.version,
+    }));
+  });
+}
+
 /**
  * Dynamic Workspace State Projection (DWSP)
  * 
@@ -18,7 +49,14 @@ export interface WorkspaceProjection {
  * active workspace, tracks uncommitted Git modifications, parses file import/dependency trees
  * on-the-fly, and projects a cohesive architectural context directly into the agent's mind.
  */
-export async function getWorkspaceProjection(workspaceDir: string, activeFiles: string[]): Promise<WorkspaceProjection> {
+export async function getWorkspaceProjection(workspaceDir: string, historyOrFiles: any[]): Promise<WorkspaceProjection> {
+  const native = await nativeWorkspaceProjection(workspaceDir, historyOrFiles);
+  if (native) return native;
+
+  const activeFiles = historyOrFiles.every(item => typeof item === 'string')
+    ? historyOrFiles as string[]
+    : getActiveFilesFromHistory(historyOrFiles);
+
   // 1. Get Git Status & uncommitted diff summaries
   let gitStatus = 'No active Git repository detected or git is not installed.';
   try {

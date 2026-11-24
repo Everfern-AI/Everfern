@@ -1,4 +1,5 @@
-import sqlite3 from 'sqlite3';
+import type sqlite3 from 'sqlite3';
+import { sqliteDatabaseClass } from './native-sqlite';
 import * as sqliteVec from 'sqlite-vec';
 import path from 'path';
 import fs from 'fs';
@@ -6,9 +7,13 @@ import os from 'os';
 import { runMigrations } from './migrations/runner';
 import { initializePersistenceTables, migratePersistenceSchema } from '../store/persistence-db';
 
-let instance: sqlite3.Database | null = null;
-let instancePromise: Promise<sqlite3.Database> | null = null;
-let currentVectorDims: number | null = null;
+import { type AgentScope, currentScope, runInScope, scopePaths } from '../agent/agent-scope';
+
+// One database per agent: the chat's memory.sqlite and the workers' workers.sqlite. Same
+// schema, separate files, so worker runs never land in the chat's history, checkpoints or memory.
+const instances: Partial<Record<AgentScope, sqlite3.Database>> = {};
+const instancePromises: Partial<Record<AgentScope, Promise<sqlite3.Database>>> = {};
+const vectorDims: Partial<Record<AgentScope, number>> = {};
 
 function dbRunPromise(db: sqlite3.Database, sql: string, params: any[] = []): Promise<void> {
   return new Promise((res, rej) => {
@@ -28,7 +33,12 @@ function dbExecPromise(db: sqlite3.Database, sql: string): Promise<void> {
   });
 }
 
-async function continueWithSetup(db: sqlite3.Database, resolve: (db: sqlite3.Database) => void, reject: (err: Error) => void): Promise<void> {
+/** Setup runs in the database's own scope: the migrations it runs reach the database through dbOps. */
+function continueWithSetup(scope: AgentScope, db: sqlite3.Database, resolve: (db: sqlite3.Database) => void, reject: (err: Error) => void): Promise<void> {
+  return runInScope(scope, () => setupDatabase(scope, db, resolve, reject));
+}
+
+async function setupDatabase(scope: AgentScope, db: sqlite3.Database, resolve: (db: sqlite3.Database) => void, reject: (err: Error) => void): Promise<void> {
   try {
     await dbExecPromise(db, `
       CREATE TABLE IF NOT EXISTS memory_chunks (
@@ -264,7 +274,7 @@ async function continueWithSetup(db: sqlite3.Database, resolve: (db: sqlite3.Dat
     }
 
     // Set instance before running migrations so dbOps can use it
-    instance = db;
+    instances[scope] = db;
 
     // Run database migrations
     await runMigrations();
@@ -282,19 +292,22 @@ async function continueWithSetup(db: sqlite3.Database, resolve: (db: sqlite3.Dat
   }
 }
 
-export async function initMemoryDb(): Promise<sqlite3.Database> {
-  if (instance) return instance;
+export async function initMemoryDb(scope: AgentScope = currentScope()): Promise<sqlite3.Database> {
+  const open = instances[scope];
+  if (open) return open;
 
-  const dbDir = path.join(os.homedir(), '.everfern', 'sql');
+  const dbFile = scopePaths(scope).database;
+  const dbDir = path.dirname(dbFile);
   if (!fs.existsSync(dbDir)) {
     fs.mkdirSync(dbDir, { recursive: true });
   }
 
   const isTest = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
-  const dbPath = isTest ? ':memory:' : path.join(dbDir, 'memory.sqlite');
+  const dbPath = isTest ? ':memory:' : dbFile;
 
   return new Promise((resolve, reject) => {
-    const db = new sqlite3.Database(dbPath, (err) => {
+    const Database = sqliteDatabaseClass();
+    const db = new Database(dbPath, (err) => {
       if (err) return reject(err);
 
       // Load sqlite-vec extension with serialized execution and timeout guard
@@ -303,7 +316,7 @@ export async function initMemoryDb(): Promise<sqlite3.Database> {
         if (!extLoaded) {
           extLoaded = true;
           console.warn('[Optima] sqlite-vec loadExtension timed out — continuing without vector support');
-          continueWithSetup(db, resolve, reject);
+          continueWithSetup(scope, db, resolve, reject);
         }
       }, 15000);
 
@@ -328,14 +341,14 @@ export async function initMemoryDb(): Promise<sqlite3.Database> {
             } else {
               console.log('[Optima] sqlite-vec extension loaded successfully');
             }
-            continueWithSetup(db, resolve, reject);
+            continueWithSetup(scope, db, resolve, reject);
           });
         } catch (loadErr: any) {
           clearTimeout(extTimeout);
           if (!extLoaded) {
             extLoaded = true;
             console.warn('[Optima] sqlite-vec loadExtension threw — continuing without vector support:', loadErr.message);
-            continueWithSetup(db, resolve, reject);
+            continueWithSetup(scope, db, resolve, reject);
           }
         }
       });
@@ -343,32 +356,33 @@ export async function initMemoryDb(): Promise<sqlite3.Database> {
   });
 }
 
-export function getDb(): Promise<sqlite3.Database> {
-  // Re-entrant fast path: continueWithSetup sets `instance` before running
+/** The database of the agent this call belongs to: the chat's, unless a worker run is on the stack. */
+export function getDb(scope: AgentScope = currentScope()): Promise<sqlite3.Database> {
+  // Re-entrant fast path: setup stores the instance before running
   // migrations, and those migrations call back into getDb() via dbOps.
-  if (instance) return Promise.resolve(instance);
-  if (!instancePromise) {
-    instancePromise = initMemoryDb().catch((err) => {
-      instancePromise = null;
+  const open = instances[scope];
+  if (open) return Promise.resolve(open);
+  let pending = instancePromises[scope];
+  if (!pending) {
+    pending = initMemoryDb(scope).catch((err) => {
+      delete instancePromises[scope];
       throw err;
     });
+    instancePromises[scope] = pending;
   }
-  return instancePromise;
+  return pending;
 }
 
-export function closeDb(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (instance) {
-      instance.close((err) => {
-        if (err) return reject(err);
-        instance = null;
-        instancePromise = null;
-        resolve();
-      });
-    } else {
-      resolve();
-    }
-  });
+/** Closes every open database (the chat's and the workers'). */
+export async function closeDb(): Promise<void> {
+  for (const scope of Object.keys(instances) as AgentScope[]) {
+    const db = instances[scope];
+    if (!db) continue;
+    await new Promise<void>((resolve, reject) => db.close((err) => (err ? reject(err) : resolve())));
+    delete instances[scope];
+    delete instancePromises[scope];
+    delete vectorDims[scope];
+  }
 }
 
 async function withRetry<T>(operation: () => Promise<T>, maxRetries = 5, initialDelay = 50): Promise<T> {
@@ -417,6 +431,8 @@ export const dbOps = {
 };
 
 export async function ensureVectorTable(dimensions: number) {
+  const scope = currentScope();
+  const currentVectorDims = vectorDims[scope] ?? null;
   if (currentVectorDims === dimensions) {
     return;
   }
@@ -442,5 +458,5 @@ export async function ensureVectorTable(dimensions: number) {
     );
   `);
 
-  currentVectorDims = dimensions;
+  vectorDims[scope] = dimensions;
 }

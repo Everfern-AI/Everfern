@@ -9,7 +9,7 @@ import {
   Clock, AlertTriangle, CheckCircle, Link2, ExternalLink,
   Braces, ChevronDown, AlertCircle, ArrowUpRight, Play, Pause,
   BookOpen, PanelRightOpen, File as FileIcon, Folder, Plus, Image, Brain,
-  FileText, Loader2, Code2
+  FileText, Loader2, Code2, Zap
 } from 'lucide-react';
 import { FolderOpenIcon } from '@heroicons/react/24/outline';
 import { MarkdownViewer } from '../files/FileViewerModal';
@@ -262,15 +262,13 @@ function PanelHeader({
                 alignItems: 'center',
                 gap: 4,
                 fontFamily: T.sans,
-                letterSpacing: '0.04em',
-                textTransform: 'uppercase',
               }}>
                 <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#10b981', display: 'inline-block', animation: 'pulse 1.2s infinite' }} />
                 Live
               </span>
             )}
           </div>
-          <p style={{ fontSize: 10.5, color: T.textMuted, margin: 0, letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600, fontFamily: T.sans }}>
+          <p style={{ fontSize: 10.5, color: T.textMuted, margin: 0, fontWeight: 600, fontFamily: T.sans }}>
             {label}
           </p>
         </div>
@@ -340,7 +338,7 @@ function SectionLabel({ children, right }: { children: React.ReactNode; right?: 
     }}>
       <span style={{
         fontSize: 10, fontWeight: 700, color: T.textMuted,
-        letterSpacing: '0.1em', textTransform: 'uppercase', fontFamily: T.sans,
+        fontFamily: T.sans,
       }}>
         {children}
       </span>
@@ -755,7 +753,7 @@ function NavisReportViewer({ report, isRunning }: { report: string; isRunning: b
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
         }}>
-          {codeLang && <div style={{ color: themeColors.textMuted, fontSize: 10, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>{codeLang}</div>}
+          {codeLang && <div style={{ color: themeColors.textMuted, fontSize: 10, marginBottom: 6, fontWeight: 600 }}>{codeLang}</div>}
           {codeLines.join('\n')}
         </div>
       );
@@ -1739,7 +1737,7 @@ function ResultCard({ title, url, snippet, description: initialDescription, doma
           <img src={displayFavicon} alt="" width={13} height={13} style={{ borderRadius: 3, opacity: 0.7, flexShrink: 0 }}
             onError={e => e.currentTarget.style.display = 'none'} />
         )}
-        <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: '0.07em', textTransform: 'uppercase', fontFamily: T.sans }}>
+        <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, fontFamily: T.sans }}>
           {displayDomain}
         </span>
       </div>
@@ -2400,7 +2398,7 @@ function WebSearchView({ query, results = [], totalResults = 0 }: { query: strin
       {/* Query pill */}
       <div style={{ padding: '16px 24px', background: T.surface, borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
         <div style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: T.r10, padding: '12px 16px' }}>
-          <p style={{ fontSize: 9.5, fontWeight: 700, color: T.textMuted, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 6px', fontFamily: T.sans }}>
+          <p style={{ fontSize: 9.5, fontWeight: 700, color: T.textMuted, margin: '0 0 6px', fontFamily: T.sans }}>
             Query
           </p>
           <p style={{ fontSize: 13.5, fontWeight: 500, color: T.text, margin: 0, letterSpacing: '-0.01em', lineHeight: 1.5, fontFamily: T.sans }}>
@@ -2462,7 +2460,7 @@ function McpRegistryView({ keyword, connectors = [], totalResults = 0, output }:
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       <div style={{ padding: '16px 24px', background: T.surface, borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
         <div style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: T.r10, padding: '12px 16px' }}>
-          <p style={{ fontSize: 9.5, fontWeight: 700, color: T.textMuted, letterSpacing: '0.1em', textTransform: 'uppercase', margin: '0 0 6px', fontFamily: T.sans }}>
+          <p style={{ fontSize: 9.5, fontWeight: 700, color: T.textMuted, margin: '0 0 6px', fontFamily: T.sans }}>
             MCP Registry
           </p>
           <p style={{ fontSize: 13.5, fontWeight: 500, color: T.text, margin: 0, letterSpacing: '-0.01em', lineHeight: 1.5, fontFamily: T.sans }}>
@@ -2625,8 +2623,8 @@ function MemoryView({ args, output, toolName }: { args?: any; output?: string; t
         {/* Plain-text recall blocks (recall_fact / memory_search style) */}
         {plainBlocks.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <p style={{ fontSize: 11, fontWeight: 600, color: VS.muted, textTransform: 'uppercase', margin: '4px 0 2px', fontFamily: T.sans, letterSpacing: '0.07em' }}>
-              🔍 Matches Found ({plainBlocks.length})
+            <p style={{ fontSize: 11, fontWeight: 600, color: VS.muted, margin: '4px 0 2px', fontFamily: T.sans, }}>
+              Matches found ({plainBlocks.length})
             </p>
             {plainBlocks.map((block, i) => {
               // Detect which file/source it came from
@@ -2641,7 +2639,7 @@ function MemoryView({ args, output, toolName }: { args?: any; output?: string; t
                 <div key={i} style={{ background: CLAY.card, border: `1px solid ${VS.border}`, borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6, boxShadow: CLAY.shadow }}>
                   {src && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: cardBg, color: cardColor, fontFamily: T.sans, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: cardBg, color: cardColor, fontFamily: T.sans, }}>
                         {src}
                       </span>
                     </div>
@@ -2658,16 +2656,16 @@ function MemoryView({ args, output, toolName }: { args?: any; output?: string; t
         {/* JSON structured memories (memory_consolidator style) */}
         {memoriesList.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <p style={{ fontSize: 11, fontWeight: 600, color: VS.muted, textTransform: 'uppercase', margin: '4px 0 2px', fontFamily: T.sans, letterSpacing: '0.07em' }}>
-              💾 Processed Memories ({memoriesList.length})
+            <p style={{ fontSize: 11, fontWeight: 600, color: VS.muted, margin: '4px 0 2px', fontFamily: T.sans, }}>
+              Processed memories ({memoriesList.length})
             </p>
             {memoriesList.map((mem: any, index: number) => (
               <div key={index} style={{ background: CLAY.card, border: `1px solid ${VS.border}`, boxShadow: CLAY.shadow, borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: mem.type === 'preference' ? 'rgba(99,102,241,0.1)' : mem.type === 'habit' ? 'rgba(245,158,11,0.1)' : 'rgba(34,197,94,0.1)', color: mem.type === 'preference' ? '#6366f1' : mem.type === 'habit' ? '#f59e0b' : '#22c55e', textTransform: 'uppercase', fontFamily: T.sans }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: mem.type === 'preference' ? 'rgba(99,102,241,0.1)' : mem.type === 'habit' ? 'rgba(245,158,11,0.1)' : 'rgba(34,197,94,0.1)', color: mem.type === 'preference' ? '#6366f1' : mem.type === 'habit' ? '#f59e0b' : '#22c55e', fontFamily: T.sans }}>
                     {mem.type || 'fact'}
                   </span>
-                  {mem.linkedFile && <span style={{ fontSize: 10.5, color: VS.muted, fontFamily: T.mono }}>📁 {mem.linkedFile}</span>}
+                  {mem.linkedFile && <span style={{ fontSize: 10.5, color: VS.muted, fontFamily: T.mono }}>{mem.linkedFile}</span>}
                 </div>
                 <p style={{ margin: 0, color: VS.text, fontSize: 13, lineHeight: 1.5, fontFamily: T.sans }}>{mem.value || JSON.stringify(mem)}</p>
                 {mem.category && <span style={{ fontSize: 10.5, color: VS.dim, fontFamily: T.sans }}>Category: {mem.category}</span>}
@@ -2679,7 +2677,7 @@ function MemoryView({ args, output, toolName }: { args?: any; output?: string; t
         {/* Query/args card */}
         {hasArgs && (
           <div style={{ background: CLAY.card, border: `1px solid ${VS.border}`, borderRadius: 10, padding: '12px 14px', boxShadow: CLAY.shadow }}>
-            <p style={{ fontSize: 10, fontWeight: 600, color: VS.muted, letterSpacing: '0.08em', textTransform: 'uppercase', margin: '0 0 6px', fontFamily: T.sans }}>Parameters</p>
+            <p style={{ fontSize: 10, fontWeight: 600, color: VS.muted, margin: '0 0 6px', fontFamily: T.sans }}>Parameters</p>
             <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: T.mono, fontSize: 11.5, color: VS.text }}><code>{JSON.stringify(args, null, 2)}</code></pre>
           </div>
         )}
@@ -3437,7 +3435,7 @@ function SidePanelMultiFileDiffView({ args, output }: { args: any; output?: stri
             {parsedFiles.length > 1 ? `${parsedFiles.length} Files Edited` : parsedFiles[0]?.fileName}
           </span>
         </div>
-        <div style={{ fontSize: 10, color: T.textMuted, fontFamily: T.sans, textTransform: 'uppercase', fontWeight: 600 }}>
+        <div style={{ fontSize: 10, color: T.textMuted, fontFamily: T.sans, fontWeight: 600 }}>
           MULTI-FILE EDIT ({parsedFiles.length})
         </div>
       </div>
@@ -3496,7 +3494,7 @@ function SidePanelMultiFileDiffView({ args, output }: { args: any; output?: stri
                   cursor: 'pointer',
                 }}
               >
-                <span style={{ color: isActive ? T.green : T.textMuted }}>⚡</span>
+                <Zap size={12} strokeWidth={2} color={isActive ? T.green : T.textMuted} />
                 <span>{f.fileName}</span>
                 {(f.addedCount > 0 || f.removedCount > 0) && (
                   <span style={{ display: 'flex', gap: 3, fontSize: 10 }}>
@@ -3536,7 +3534,7 @@ function SidePanelMultiFileDiffView({ args, output }: { args: any; output?: stri
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
-                <span style={{ color: T.green }}>⚡</span>
+                <Zap size={12} strokeWidth={2} color={T.green} />
                 <span style={{ fontWeight: 600, color: T.text, fontSize: 12 }}>{file.fileName}</span>
                 <span style={{ color: T.textMuted, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {file.filePath}
@@ -3682,7 +3680,7 @@ function TodoWriteView({ tasks, path, output }: { tasks: Array<{ description: st
             <span style={{ color: statusColor(task.status), fontWeight: 700, width: 18 }}>{statusMark(task.status)}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <p style={{ margin: 0, fontSize: 13, color: T.text, lineHeight: 1.45 }}>{task.description}</p>
-              <p style={{ margin: '4px 0 0', fontSize: 10.5, color: statusColor(task.status), textTransform: 'uppercase', fontWeight: 700 }}>{task.status.replace(/_/g, ' ')}</p>
+              <p style={{ margin: '4px 0 0', fontSize: 10.5, color: statusColor(task.status), fontWeight: 700 }}>{task.status.replace(/_/g, ' ')}</p>
             </div>
           </div>
         ))}

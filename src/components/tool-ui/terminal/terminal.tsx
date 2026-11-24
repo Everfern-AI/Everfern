@@ -127,7 +127,7 @@ function TerminalHeader({
           )}
           title={exitCodeInfo.label}
         >
-          {exitCode === 0 ? "✓" : "✗"} {exitCode}
+          exit {exitCode}
         </span>
         <Button
           variant="ghost"
@@ -204,7 +204,7 @@ function TerminalOutput({
             <div className="mt-3">
               <div className="flex items-center gap-2 mb-1">
                 <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                <span className="text-red-500 text-xs font-semibold uppercase tracking-wider">Stderr</span>
+                <span className="text-red-500 text-xs font-semiboldr">Stderr</span>
               </div>
               <div className="flex gap-4">
                 <div className="text-[#4a4a5a] text-xs select-none text-right leading-[1.7]">

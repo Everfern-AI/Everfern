@@ -118,12 +118,20 @@ export const createCodingSpecialistNode = (
       const termStatusTool = ((runner as any).tools || []).find((tool: any) => tool.name === 'terminal_status');
 
       const extraTools = [spawnTool, termExecTool, termStatusTool].filter(Boolean);
-      const managerTools = [...piTools, ...extraTools];
+      const managerTools: any[] = [...piTools, ...extraTools];
       const basePrompt = loadPrompt('coding-specialist.md') || '';
       const codingHandoff = buildCodingHandoff(state);
 
-      // ── Harness: phase-driven tool filtering ──
-      const alwaysAvailable = ['spawn_agent', 'ask_user_question', 'todo_write'];
+      // The graph hands this node its tool set (ask_user_question, todo_write, present_files,
+      // connected MCP servers...). These used to be dropped: the prompt told the model to use
+      // todo_write and MCP tools never reached it. Workers stay quiet: no questions to the user.
+      const have = new Set(managerTools.map((t: any) => t.name));
+      for (const t of (toolDefs || []) as any[]) {
+        if (!t?.name || have.has(t.name)) continue;
+        if (isWorkerSubagent && (t.name === 'ask_user_question' || t.name === 'spawn_agent')) continue;
+        managerTools.push(t);
+        have.add(t.name);
+      }
       const filteredTools = managerTools;
 
       const systemPrompt = `${basePrompt}
@@ -192,6 +200,7 @@ REMEMBER:
         codingComplete: isComplete,
         // Reset self loop count to 0 when complete, otherwise track active passes
         codingSpecialistSelfLoopCount: isComplete ? 0 : loopCount,
+        codingTextOnlyStreak: hasPendingTools || isComplete ? 0 : (state.codingTextOnlyStreak || 0) + 1,
       };
 
     } catch (error) {

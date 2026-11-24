@@ -76,7 +76,7 @@
 }
 .wk-card:hover { background: rgba(var(--wk-ink), 0.4); }
 .wk-card:active { transform: scale(0.985); }
-.wk-card.is-selected { background: rgba(var(--wk-ink), 0.6); border-color: rgba(255, 255, 255, 0.2); }
+.wk-card.is-selected { background: rgba(var(--wk-ink), 0.6); border-color: rgba(255, 255, 255, 0.7); box-shadow: var(--wk-edge), inset 0 0 0 1px rgba(255, 255, 255, 0.35); }
 .wk-card:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.7); outline-offset: 2px; }
 
 .wk-tier { display: flex; flex-direction: column; min-height: 168px; }
@@ -107,7 +107,7 @@
 .wk-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: rgba(255, 255, 255, 0.8); }
 .wk-tier-row { display: flex; justify-content: space-between; align-items: baseline; margin-top: auto; padding-top: 28px; }
 .wk-tier-name { font: 500 17px/1.2 "General Sans", "Satoshi", sans-serif; letter-spacing: -0.02em; }
-.wk-tier-price { font-size: 14px; letter-spacing: 0.06em; color: rgba(255, 255, 255, 0.92); }
+.wk-tier-price { font-size: 13px; color: rgba(255, 255, 255, 0.72); }
 .wk-tier-desc { font-size: 13px; color: rgba(255, 255, 255, 0.74); margin-top: 5px; line-height: 1.45; }
 .wk-note { font-size: 12.5px; color: rgba(255, 255, 255, 0.7); margin: 22px 0 18px; text-align: center; }
 
@@ -120,7 +120,7 @@
 .wk-actions { display: flex; gap: 10px; justify-content: center; margin-top: 26px; }
 
 /* ── home ──────────────────────────────────────────────────────── */
-.wk-home-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; width: 100%; }
+.wk-home-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; width: 100%; }
 .wk-wcard { display: flex; flex-direction: column; gap: 14px; min-height: 150px; }
 .wk-wcard-head { display: flex; align-items: center; gap: 10px; }
 .wk-wcard-name { font: 500 15.5px/1.2 "General Sans", "Satoshi", sans-serif; letter-spacing: -0.015em; }
@@ -425,7 +425,7 @@
 .wk-file:hover { background: #f3f3f2; }
 .wk-file svg { color: #6b6f73; flex-shrink: 0; }
 
-/* Minimized windows 3D stack: exact Warmwind OS floating 3D pills & cards */
+/* Minimized windows 3D stack: floating 3D pills & cards */
 .wk-thumbs {
   position: absolute;
   left: 18px;
@@ -438,7 +438,7 @@
   perspective: 1200px;
   perspective-origin: 0% 50%;
   pointer-events: auto;
-  max-height: calc(100vh - 120px);
+  max-height: calc(var(--ef-vh) - 120px);
   overflow-y: auto;
   overflow-x: visible;
   scrollbar-width: none;
@@ -639,14 +639,15 @@
   border-color: #ff6b76;
 }
 
-/* ── Warmwind Creation Sequence (Center Steps, Logins Modal, Created Banner) ── */
+/* ── Worker creation sequence (Center Steps, Logins Modal, Created Banner) ── */
 .wk-center-steps {
+  /* Centred with inset+margin, not translate: framer-motion owns transform here. */
   position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
+  inset: 0;
+  margin: auto;
+  height: fit-content;
   z-index: 60;
-  width: min(500px, calc(100vw - 48px));
+  width: min(500px, calc(var(--ef-vw) - 48px));
   max-height: 70vh;
   overflow-y: auto;
   scrollbar-width: none;
@@ -662,12 +663,18 @@
 }
 .wk-center-steps::-webkit-scrollbar { display: none; }
 .wk-center-steps.is-single-pill {
-  width: auto;
+  width: fit-content;
   max-width: min(580px, 92vw);
-  padding: 10px 22px;
-  border-radius: 999px;
-  background: rgba(30, 36, 42, 0.75);
+  padding: 11px 14px 9px;
+  border-radius: 14px;
+  background: rgba(150, 156, 162, 0.32);
+  border-color: rgba(255, 255, 255, 0.14);
+  -webkit-backdrop-filter: blur(22px) saturate(1.2);
+  backdrop-filter: blur(22px) saturate(1.2);
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.25), 0 16px 40px -18px rgba(0, 0, 0, 0.45);
 }
+.wk-center-steps.is-single-pill .wk-center-pill { gap: 8px; align-items: baseline; }
+.wk-center-pill-time { font-size: 10.5px; color: rgba(255, 255, 255, 0.62); white-space: nowrap; }
 .wk-center-pill {
   display: flex;
   align-items: center;
@@ -754,7 +761,7 @@
   top: 50%;
   transform: translate(-50%, -50%);
   z-index: 65;
-  width: min(440px, calc(100vw - 48px));
+  width: min(440px, calc(var(--ef-vw) - 48px));
   padding: 34px 28px 24px;
   border-radius: 28px;
   background: rgba(28, 34, 42, 0.68);
@@ -1040,9 +1047,9 @@
 .st-actions { display: flex; justify-content: flex-end; margin-top: 18px; }
 .st-save {
   display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 16px; border-radius: 999px; border: 0; cursor: pointer;
-  background: #35cb91; color: #fff; font: 500 12px/1 "Satoshi", sans-serif; transition: opacity 0.2s;
+  background: #1f1f1e; color: #fff; font: 500 12px/1 "Satoshi", sans-serif; transition: background 0.2s, color 0.2s;
 }
-.st-save:disabled { opacity: 0.55; cursor: default; }
+.st-save:disabled { background: rgba(0, 0, 0, 0.06); color: rgba(0, 0, 0, 0.45); cursor: default; }
 
 /* ── Chat view after a prompt (reference: centred column, plain AI text, plan on the right) ── */
 .wk-chat-scrim { background: radial-gradient(120% 100% at 50% 50%, rgba(8, 12, 16, 0.18) 30%, rgba(8, 12, 16, 0.5) 100%); }
@@ -1747,7 +1754,8 @@
 .wk-reason.is-live .wk-reason-head svg { color: rgba(255, 255, 255, 0.85); }
 
 /* Back + Continue under a creation step */
-.wk-step-nav { display: flex; gap: 10px; justify-content: center; }
+.wk-step-nav { display: flex; gap: 10px; justify-content: space-between; align-self: stretch; }
+.wk-step-nav > :only-child { margin-left: auto; }
 .wk-gpill.is-ghost { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.14); }
 .wk-gpill.is-ghost:hover { background: rgba(255, 255, 255, 0.16); }
 
@@ -1809,7 +1817,7 @@
 .wk-app-content { display: flex; flex: 1; flex-direction: column; min-height: 0; width: 100%; }
 .wk-app-content[inert] { pointer-events: none; }
 .wk-win.is-ai .wk-win-btn { opacity: .3; cursor: default; }
-.wk-win.is-full { position: fixed !important; left: 18px !important; top: 48px !important; width: calc(100vw - 36px) !important; height: calc(100dvh - 66px) !important; z-index: 9990 !important; transform: none !important; display: flex; flex-direction: column; }
+.wk-win.is-full { position: fixed !important; left: 18px !important; top: 48px !important; width: calc(var(--ef-vw) - 36px) !important; height: calc(var(--ef-vh) - 66px) !important; z-index: 9990 !important; transform: none !important; display: flex; flex-direction: column; }
 .wk-win.is-full .wk-win-bar { display: flex; flex-shrink: 0; }
 .wk-win.is-full .wk-win-frame { flex: 1; min-height: 0; }
 .wk-remove-overlay { position: fixed; inset: 0; z-index: 20000; display: grid; place-items: center; background: #18232370; backdrop-filter: blur(12px); padding: 24px; }
@@ -2299,7 +2307,7 @@
 
 /* ── Workflow Completed Result (Image Reference) ── */
 .wk-workflow-completed-wrap {
-  width: min(580px, calc(100vw - 360px));
+  width: min(580px, calc(var(--ef-vw) - 360px));
   position: absolute;
   left: 50%;
   top: 50%;
@@ -2621,3 +2629,408 @@
 }
 .wk-sheets-chart-head button.is-on { background: #d8f3e3; border-color: #a9dcc0; color: #0f7a3c; }
 .wk-sheets-chart-svg { width: 100%; height: auto; display: block; }
+
+/* ── End-of-run report, posted in the chat ── */
+.wk-run-report { display: flex; flex-direction: column; gap: 12px; width: min(460px, 100%); }
+.wk-run-report-head { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; }
+.wk-run-report-ok { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 99px; background: rgba(52, 211, 153, 0.2); border: 1px solid rgba(52, 211, 153, 0.4); color: #6ee7b7; }
+.wk-run-report-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.wk-run-report-stats > div { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.1); }
+.wk-run-report-stats span { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: rgba(255, 255, 255, 0.55); }
+.wk-run-report-stats b { font-size: 14px; font-weight: 600; color: #fff; }
+.wk-run-report-summary { font-size: 13px; color: rgba(255, 255, 255, 0.82); line-height: 1.55; }
+.wk-run-report-list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; font-size: 12.5px; color: rgba(255, 255, 255, 0.78); }
+.wk-run-report-list li { display: flex; gap: 6px; align-items: flex-start; }
+.wk-run-report-foot { display: flex; align-items: center; justify-content: space-between; }
+.wk-run-report-foot button { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 99px; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.16); color: #fff; font-size: 12px; cursor: pointer; }
+.wk-run-report-foot button:hover { background: rgba(255, 255, 255, 0.18); }
+
+/* AI cursor, latest look: teal glass dot, action chip above, thought bubble to the right */
+.wk-ai-cursor > svg { display: none; }
+.wk-ai-pointer {
+  position: absolute; left: -9px; top: -9px; width: 18px; height: 18px; border-radius: 99px;
+  background: radial-gradient(circle at 35% 30%, rgba(255,255,255,.85), rgba(150, 214, 210, .75) 55%, rgba(94, 178, 176, .8));
+  border: 1.5px solid rgba(255, 255, 255, .9);
+  box-shadow: 0 0 0 4px rgba(140, 210, 205, .28), 0 4px 12px rgba(20, 60, 60, .35);
+}
+.wk-ai-ping { border-color: rgba(150, 214, 210, .95); }
+.wk-ai-verb {
+  position: absolute; left: -22px; bottom: 16px; padding: 4px 11px; border-radius: 8px;
+  font: 500 13px/1 "Satoshi", sans-serif; color: #fff; white-space: nowrap;
+  background: rgba(140, 206, 202, .82); border: 1px solid rgba(255, 255, 255, .45);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  box-shadow: 0 6px 16px -6px rgba(30, 90, 90, .45);
+}
+.wk-ai-bubble {
+  left: 18px; top: -4px; bottom: auto; height: 32px; padding: 0 16px 0 12px; gap: 9px; max-width: 320px;
+  font: 500 12.5px/1 "Satoshi", sans-serif; color: rgba(255, 255, 255, .95);
+  background: linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.02)), rgba(120, 196, 192, .62);
+  border: 1px solid rgba(255, 255, 255, .4); text-shadow: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), 0 10px 26px -10px rgba(30, 90, 90, .5);
+}
+.wk-ai-bubble.is-left { left: auto; right: 18px; }
+.wk-ai-spin { width: 11px; height: 11px; border-radius: 99px; flex-shrink: 0; border: 1.5px solid rgba(255,255,255,.4); border-top-color: #fff; animation: wk-spin .8s linear infinite; }
+.wk-ai-glow { background:
+    radial-gradient(75% 42% at 50% 100%, rgba(150, 214, 210, 0.36) 0%, rgba(150, 214, 210, 0.12) 45%, transparent 100%),
+    radial-gradient(130% 120% at 50% 50%, transparent 62%, rgba(150, 214, 210, 0.14) 100%); }
+@media (prefers-reduced-motion: reduce) { .wk-ai-spin { animation: none; } }
+
+/* App logins: centred page over a blurred desktop */
+.wk-lg-backdrop { position: absolute; inset: 0; pointer-events: auto; background: rgba(20, 28, 34, .18); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); }
+.wk-lg { position: relative; width: min(360px, calc(var(--ef-vw) - 48px)); display: flex; flex-direction: column; align-items: center; text-align: center; }
+.wk-lg-title { font: 500 22px/1.2 "Satoshi", sans-serif; color: #fff; letter-spacing: -.01em; margin: 0 0 6px; }
+.wk-lg-sub { font-size: 12px; color: rgba(255, 255, 255, .7); margin: 0 0 18px; }
+.wk-lg-list { width: 100%; display: flex; flex-direction: column; gap: 6px; margin-bottom: 24px; }
+.wk-lg-row {
+  display: flex; align-items: center; gap: 9px; width: 100%; height: 30px; padding: 0 10px; border-radius: 9px; cursor: pointer;
+  background: rgba(255, 255, 255, .2); border: 1px solid rgba(255, 255, 255, .22); color: #fff;
+  -webkit-backdrop-filter: blur(16px) saturate(1.2); backdrop-filter: blur(16px) saturate(1.2);
+  box-shadow: inset 0 .5px 0 rgba(255, 255, 255, .3); transition: background .2s;
+}
+.wk-lg-row:hover { background: rgba(255, 255, 255, .28); }
+.wk-lg-name { flex: 1; text-align: left; font-size: 12px; color: rgba(255, 255, 255, .92); }
+.wk-lg-check { color: rgba(255, 255, 255, .45); }
+.wk-lg-check.is-on { color: #8de0c4; }
+.wk-lg-actions { display: flex; align-items: center; justify-content: space-between; width: 100%; }
+.wk-lg-continue {
+  width: 116px; height: 30px; border-radius: 9px; cursor: pointer; font-size: 12px; color: #fff;
+  background: rgba(255, 255, 255, .2); border: 1px solid rgba(255, 255, 255, .22);
+  -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); transition: background .2s;
+}
+.wk-lg-continue:hover { background: rgba(255, 255, 255, .3); }
+.wk-lg-divider { width: 1px; height: 22px; background: rgba(255, 255, 255, .22); }
+.wk-lg-dismiss { width: 116px; height: 30px; font-size: 12px; color: rgba(255, 255, 255, .6); cursor: pointer; background: none; border: 0; }
+.wk-lg-dismiss:hover { color: #fff; }
+
+/* Which provider/model failed, shown under the "model connection failed" reply. */
+.wk-fail { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.wk-fail-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.wk-fail-chip, .wk-fail-toggle {
+  display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px; border-radius: 999px;
+  font-size: 11px; line-height: 1; color: rgba(255, 255, 255, 0.86);
+  background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.14);
+}
+.wk-fail-chip.is-model { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10.5px; }
+.wk-fail-toggle { cursor: pointer; color: rgba(255, 214, 170, 0.92); border-color: rgba(255, 190, 130, 0.28); background: rgba(255, 170, 90, 0.10); }
+.wk-fail-toggle:hover { background: rgba(255, 170, 90, 0.18); }
+.wk-fail-err {
+  margin: 0; padding: 8px 10px; max-height: 140px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+  font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: rgba(255, 255, 255, 0.78);
+  background: rgba(0, 0, 0, 0.28); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; text-shadow: none;
+}
+
+/* ── Reasoning, latest look: left-aligned header, thought text streaming up and fading at the top ── */
+.wk-reason.is-live { align-self: stretch; align-items: stretch; gap: 8px; padding: 18px 0 4px; }
+.wk-reason.is-live .wk-reason-head { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 500; color: #fff; }
+.wk-reason.is-live .wk-reason-body {
+  position: relative; max-height: 150px; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end;
+  font-size: 14.5px; line-height: 1.55; color: rgba(255, 255, 255, .86); white-space: pre-wrap;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, rgba(0,0,0,.35) 18%, #000 42%); mask-image: linear-gradient(180deg, transparent 0, rgba(0,0,0,.35) 18%, #000 42%);
+}
+.wk-reason-stream { flex-shrink: 0; }
+
+/* ── Replies, latest look: no bubble, text straight on the wallpaper ── */
+.wk-chat .wk-msg-ai {
+  background: none; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
+  padding: 6px 0 2px; white-space: normal; font-size: 15px; line-height: 1.6; color: #fff;
+  text-shadow: 0 1px 14px rgba(0, 0, 0, .28);
+}
+.wk-chat .wk-msg-ai .wk-reply-content { display: flex; flex-direction: column; gap: 12px; }
+.wk-chat .wk-msg-ai p { margin: 0; }
+.wk-chat .wk-msg-ai .wk-r-title { margin: 6px 0 2px; font: 600 40px/1.12 "Satoshi", sans-serif; letter-spacing: -.025em; color: #fff; }
+.wk-chat .wk-msg-ai h2 { margin: 6px 0 0; font: 600 20px/1.25 "Satoshi", sans-serif; letter-spacing: -.015em; color: #fff; }
+.wk-chat .wk-msg-ai ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.wk-chat .wk-msg-ai li { position: relative; padding-left: 16px; }
+.wk-chat .wk-msg-ai li::before { content: ""; position: absolute; left: 2px; top: .7em; width: 5px; height: 5px; border-radius: 99px; background: rgba(255, 255, 255, .5); }
+.wk-r-card {
+  padding: 18px 20px; border-radius: 16px; text-shadow: none;
+  background: rgba(255, 255, 255, .16); border: 1px solid rgba(255, 255, 255, .22);
+  -webkit-backdrop-filter: blur(22px) saturate(1.2); backdrop-filter: blur(22px) saturate(1.2);
+  box-shadow: inset 0 .5px 0 rgba(255, 255, 255, .3);
+}
+.wk-r-card h3 { margin: 0 0 6px; font: 600 26px/1.2 "Satoshi", sans-serif; letter-spacing: -.02em; color: #fff; }
+.wk-r-card p { color: rgba(255, 255, 255, .9); }
+
+/* ── Markdown in worker replies ── */
+.wk-chat .wk-msg-ai strong { font-weight: 650; color: #fff; }
+.wk-chat .wk-msg-ai em { font-style: italic; }
+.wk-chat .wk-msg-ai del { opacity: .6; }
+.wk-chat .wk-msg-ai a { color: #fff; text-decoration: underline; text-decoration-color: rgba(255, 255, 255, .45); text-underline-offset: 3px; }
+.wk-chat .wk-msg-ai a:hover { text-decoration-color: #fff; }
+.wk-chat .wk-msg-ai .wk-r-sub { margin: 4px 0 0; font: 600 16px/1.3 "Satoshi", sans-serif; color: #fff; }
+.wk-chat .wk-msg-ai ol { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; }
+.wk-chat .wk-msg-ai ol > li { padding-left: 4px; }
+.wk-chat .wk-msg-ai ol > li::before { display: none; }
+.wk-chat .wk-msg-ai ol > li::marker { color: rgba(255, 255, 255, .6); font-variant-numeric: tabular-nums; }
+.wk-chat .wk-msg-ai li > ul, .wk-chat .wk-msg-ai li > ol { margin-top: 6px; }
+.wk-chat .wk-msg-ai li > p { margin: 0; }
+.wk-chat .wk-msg-ai input[type="checkbox"] { margin: 0 6px 0 0; accent-color: #fff; }
+.wk-chat .wk-msg-ai li:has(> input[type="checkbox"])::before { display: none; }
+.wk-chat .wk-msg-ai li:has(> input[type="checkbox"]) { padding-left: 0; }
+.wk-chat .wk-msg-ai hr { width: 100%; border: 0; border-top: 1px solid rgba(255, 255, 255, .2); margin: 4px 0; }
+.wk-chat .wk-msg-ai :not(pre) > code { padding: 1px 6px; border-radius: 6px; font: 500 .88em/1.4 ui-monospace, "SF Mono", Consolas, monospace; background: rgba(255, 255, 255, .14); text-shadow: none; }
+.wk-r-code {
+  margin: 0; padding: 12px 14px; border-radius: 12px; overflow-x: auto; text-shadow: none;
+  font: 13px/1.55 ui-monospace, "SF Mono", Consolas, monospace; color: rgba(255, 255, 255, .92);
+  background: rgba(0, 0, 0, .32); border: 1px solid rgba(255, 255, 255, .12);
+}
+.wk-r-quote { margin: 0; padding: 2px 0 2px 14px; border-left: 2px solid rgba(255, 255, 255, .4); color: rgba(255, 255, 255, .85); }
+.wk-r-table {
+  overflow-x: auto; border-radius: 14px; text-shadow: none;
+  background: rgba(255, 255, 255, .1); border: 1px solid rgba(255, 255, 255, .18);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2); backdrop-filter: blur(18px) saturate(1.2);
+}
+.wk-r-table table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+.wk-r-table th { text-align: left; font-weight: 600; color: rgba(255, 255, 255, .75); background: rgba(255, 255, 255, .06); }
+.wk-r-table th, .wk-r-table td { padding: 9px 14px; border-bottom: 1px solid rgba(255, 255, 255, .1); }
+.wk-r-table tr:last-child td { border-bottom: 0; }
+
+/* Glass cards the model writes with ```card / ```cards */
+.wk-r-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.wk-r-card > * + * { margin-top: 8px; }
+.wk-r-card > :first-child { margin-top: 0; }
+.wk-r-cards .wk-r-card h3 { font-size: 15px; font-weight: 600; letter-spacing: 0; color: rgba(255, 255, 255, .78); }
+.wk-r-cards .wk-r-card strong { display: inline-block; font: 600 30px/1.1 "Satoshi", sans-serif; letter-spacing: -.02em; }
+.wk-r-card ul { gap: 4px; }
+.wk-r-card.is-green { background: rgba(34, 197, 94, .16); border-color: rgba(134, 239, 172, .34); }
+.wk-r-card.is-blue { background: rgba(59, 130, 246, .16); border-color: rgba(147, 197, 253, .34); }
+.wk-r-card.is-amber { background: rgba(245, 158, 11, .16); border-color: rgba(252, 211, 77, .34); }
+.wk-r-card.is-red { background: rgba(239, 68, 68, .16); border-color: rgba(252, 165, 165, .34); }
+/* "> **Result**" callout: the leading bold line is the card title. */
+.wk-r-card.is-callout > p:first-child > strong:first-child { display: block; margin-bottom: 6px; font: 600 26px/1.2 "Satoshi", sans-serif; letter-spacing: -.02em; }
+.wk-chat .wk-msg-ai .wk-msg-time { opacity: .7; }
+
+/* Clarifying-question options: full-width stacked glass rows */
+.wk-q-opts { grid-template-columns: 1fr; }
+.wk-q-opt { min-height: 54px; justify-content: center; background: rgba(var(--wk-ink), 0.4); }
+
+/* ── Sheets v2 + Write: shared document chrome (white panel, grouped tools, blue accent) ── */
+.wk-sheets.is-v2, .wk-write {
+  --sh-accent: #3b7ddd; --sh-line: #e6e9ee; --sh-soft: #f4f6f9; --sh-ink: #1d2433; --sh-mute: #7a8494;
+  display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden;
+  background: #fff; color: var(--sh-ink); font-family: "Satoshi", "Inter", -apple-system, "Segoe UI", sans-serif;
+}
+.wk-sh-top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; padding: 10px 14px 8px; }
+.wk-sh-name {
+  justify-self: start; width: 100%; max-width: 240px; padding: 4px 6px; border: 1px solid transparent; border-radius: 8px;
+  background: transparent; color: var(--sh-ink); font: 600 16px/1.2 "Satoshi", "Inter", sans-serif; letter-spacing: -.01em;
+}
+.wk-sh-name:hover { background: var(--sh-soft); }
+.wk-sh-name:focus { outline: none; background: #fff; border-color: var(--sh-line); }
+.wk-sh-history, .wk-sh-seg { display: inline-flex; align-items: center; gap: 2px; padding: 3px; border-radius: 10px; background: var(--sh-soft); }
+.wk-sh-file { justify-self: end; display: inline-flex; align-items: center; gap: 8px; }
+.wk-sh-history button, .wk-sh-seg button, .wk-sh-group button, .wk-sh-color, .wk-sh-addtab {
+  display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 26px; padding: 0;
+  border: 0; border-radius: 7px; background: transparent; color: #4a5465; cursor: pointer; transition: background .15s, color .15s;
+}
+.wk-sh-history button:hover, .wk-sh-seg button:hover, .wk-sh-group button:hover, .wk-sh-color:hover, .wk-sh-addtab:hover { background: #fff; color: var(--sh-ink); box-shadow: 0 1px 2px rgba(20, 30, 50, .08); }
+.wk-sh-group button.is-on { background: #e4edfb; color: var(--sh-accent); }
+.wk-sh-save {
+  display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 14px; border: 0; border-radius: 10px;
+  background: var(--sh-accent); color: #fff; font: 600 12.5px/1 "Satoshi", "Inter", sans-serif; cursor: pointer;
+  box-shadow: 0 1px 2px rgba(30, 70, 140, .25), inset 0 1px 0 rgba(255, 255, 255, .2);
+}
+.wk-sh-save:hover { background: #326fcb; }
+
+.wk-sh-tabs { display: flex; align-items: center; gap: 4px; padding: 0 14px 8px; overflow-x: auto; scrollbar-width: none; flex-shrink: 0; }
+.wk-sh-tab { display: inline-flex; align-items: center; gap: 2px; height: 28px; padding: 0 4px 0 10px; border-radius: 8px; background: transparent; color: var(--sh-mute); flex-shrink: 0; }
+.wk-sh-tab.is-active { background: var(--sh-soft); color: var(--sh-ink); }
+.wk-sh-tab input { border: 0; background: transparent; color: inherit; font: 500 12.5px/1 "Satoshi", "Inter", sans-serif; padding: 0; min-width: 0; }
+.wk-sh-tab input:focus { outline: none; }
+.wk-sh-tab button { display: inline-flex; width: 18px; height: 18px; align-items: center; justify-content: center; border: 0; border-radius: 5px; background: transparent; color: var(--sh-mute); cursor: pointer; }
+.wk-sh-tab button:hover { background: #fde2e2; color: #c03535; }
+.wk-sh-addtab { width: 26px; height: 26px; color: var(--sh-mute); flex-shrink: 0; }
+
+.wk-sh-formula { display: flex; align-items: center; gap: 8px; margin: 0 14px 8px; padding: 4px; border: 1px solid var(--sh-line); border-radius: 10px; background: #fff; flex-shrink: 0; }
+.wk-sh-ref { min-width: 44px; padding: 4px 8px; border-radius: 7px; background: var(--sh-soft); color: var(--sh-ink); font: 600 12px/1.2 "Satoshi", "Inter", sans-serif; text-align: center; font-variant-numeric: tabular-nums; }
+.wk-sh-fx { color: var(--sh-mute); font: italic 600 12.5px/1 Georgia, serif; padding: 0 2px; }
+.wk-sh-formula input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--sh-ink); font: 13px/1.3 "Satoshi", "Inter", sans-serif; font-variant-numeric: tabular-nums; padding: 4px 2px; }
+.wk-sh-formula input:focus { outline: none; }
+.wk-sh-formula input::placeholder { color: #a3abb8; }
+.wk-sh-formula:focus-within { border-color: #b8cdee; box-shadow: 0 0 0 3px rgba(59, 125, 221, .12); }
+
+.wk-sh-tools { display: flex; align-items: center; gap: 6px; padding: 0 14px 10px; flex-wrap: nowrap; flex-shrink: 0; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--sh-line); }
+.wk-sh-tools::-webkit-scrollbar, .wk-sh-tabs::-webkit-scrollbar { display: none; }
+.wk-sh-group { display: inline-flex; align-items: center; gap: 1px; padding: 2px; border-radius: 9px; background: var(--sh-soft); flex-shrink: 0; }
+.wk-sh-group.is-plain { gap: 4px; }
+.wk-sh-select {
+  height: 26px; padding: 0 22px 0 8px; border: 0; border-radius: 7px; background-color: transparent; color: var(--sh-ink);
+  font: 500 12px/1 "Satoshi", "Inter", sans-serif; cursor: pointer; appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2210%22 height=%2210%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%237a8494%22 stroke-width=%222.5%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22m6 9 6 6 6-6%22/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 7px center;
+}
+.wk-sh-select:hover, .wk-sh-select:focus { outline: none; background-color: #fff; }
+.wk-sh-select.is-narrow { width: 56px; }
+.wk-sh-tools > .wk-sh-select { flex-shrink: 0; background-color: var(--sh-soft); }
+.wk-sh-color { position: relative; flex-direction: column; gap: 1px; }
+.wk-sh-color input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.wk-sh-color::after { content: ""; width: 14px; height: 3px; border-radius: 2px; background: var(--swatch); pointer-events: none; }
+.wk-sh-status { margin-left: auto; flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; padding: 0 4px; font-size: 11.5px; color: var(--sh-mute); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.wk-sh-status b { font-weight: 600; color: var(--sh-ink); display: inline-flex; align-items: center; gap: 4px; }
+.wk-sh-status b::after { content: "\00B7"; margin-left: 6px; color: var(--sh-mute); font-weight: 400; }
+.wk-sh-status b.is-ai { color: var(--sh-accent); }
+
+/* Grid, blue selection */
+.wk-sheets.is-v2 .wk-sheets-grid { background: #fff; }
+.wk-sheets.is-v2 .wk-sheets-grid table { font-family: "Satoshi", "Inter", sans-serif; }
+.wk-sheets.is-v2 .wk-sheets-grid th { background: #f7f8fa; color: #8a93a2; border-right: 1px solid var(--sh-line); border-bottom: 1px solid var(--sh-line); font-weight: 500; }
+.wk-sheets.is-v2 .wk-sheets-grid tbody th { background: #f7f8fa; border-right: 1px solid var(--sh-line); }
+.wk-sheets.is-v2 .wk-sheets-grid th.is-sel { background: #e4edfb; color: var(--sh-accent); font-weight: 600; }
+.wk-sheets.is-v2 .wk-sheets-grid .wk-sheets-corner { z-index: 3; left: 0; }
+.wk-sheets.is-v2 .wk-sheets-grid td { border-right: 1px solid #f0f2f5; border-bottom: 1px solid #f0f2f5; }
+.wk-sheets.is-v2 .wk-sheets-grid td.is-sel { outline: 2px solid var(--sh-accent); outline-offset: -2px; background: #f3f7fe; }
+.wk-sheets.is-v2 .wk-sheets-grid td.is-ai { outline: 2px solid var(--sh-accent); background: #eaf1fd; box-shadow: 0 0 14px rgba(59, 125, 221, .35); }
+.wk-sheets.is-v2 .wk-sheets-grid td.is-merged { background: #fafbfd; }
+.wk-sheets.is-v2 .wk-sheets-ghost { color: #2a63bb; }
+.wk-sheets.is-v2 .wk-sheets-caret { background: var(--sh-accent); }
+.wk-sheets.is-v2 .wk-sheets-chart-head button.is-on { background: #e4edfb; border-color: #b8cdee; color: var(--sh-accent); }
+
+/* Write: a centred page on a soft canvas */
+.wk-write-scroll { flex: 1; min-height: 0; overflow: auto; background: var(--sh-soft); padding: 22px 16px 40px; }
+.wk-write-page {
+  max-width: 760px; min-height: 100%; margin: 0 auto; padding: 48px 56px; box-sizing: border-box;
+  background: #fff; border-radius: 10px; box-shadow: 0 1px 3px rgba(20, 30, 50, .08), 0 0 0 1px rgba(20, 30, 50, .04);
+  font: 15px/1.65 "Satoshi", "Inter", sans-serif; color: var(--sh-ink); outline: none; word-wrap: break-word;
+}
+.wk-write-page:empty::before { content: attr(data-placeholder); color: #a3abb8; pointer-events: none; }
+.wk-write-page h1 { font-size: 30px; line-height: 1.2; letter-spacing: -.02em; margin: 0 0 14px; }
+.wk-write-page h2 { font-size: 21px; line-height: 1.3; letter-spacing: -.01em; margin: 18px 0 8px; }
+.wk-write-page h3 { font-size: 16.5px; margin: 14px 0 6px; }
+.wk-write-page p, .wk-write-page div { margin: 0 0 8px; }
+.wk-write-page ul, .wk-write-page ol { margin: 0 0 10px; padding-left: 24px; }
+
+/* The worker store could not be read or written. */
+.wk-store-error {
+  position: fixed; top: 52px; left: 50%; transform: translateX(-50%); z-index: 60;
+  display: flex; align-items: center; gap: 8px; max-width: min(640px, calc(var(--ef-vw) - 32px));
+  padding: 8px 10px 8px 12px; border-radius: 10px;
+  background: rgba(60, 18, 18, 0.86); border: 1px solid rgba(255, 120, 120, 0.35);
+  color: #ffd9d9; font-size: 12.5px; line-height: 1.4; backdrop-filter: blur(14px);
+}
+.wk-store-error button { display: grid; place-items: center; border: 0; background: none; color: inherit; opacity: 0.7; cursor: pointer; padding: 2px; }
+.wk-store-error button:hover { opacity: 1; }
+
+/* ── Reply rhythm ─────────────────────────────────────────────────────────
+   One spacing scale for Markdown replies: blocks sit 14px apart (the flex gap), headings
+   get extra room above and bind to what follows, and nothing adds its own outer margin,
+   so cards, tables and paragraphs never double up (older .is-document rules set 20px). */
+.wk-chat .wk-msg-ai .wk-reply-content { gap: 14px; }
+.wk-chat .wk-msg-ai .wk-reply-content > * { margin: 0; }
+.wk-chat .wk-msg-ai .wk-reply-content > :is(h2, .wk-r-sub) { margin: 14px 0 -4px; }
+.wk-chat .wk-msg-ai .wk-reply-content > .wk-r-title { margin: 0 0 2px; }
+.wk-chat .wk-msg-ai .wk-reply-content > :first-child { margin-top: 0; }
+.wk-chat .wk-msg-ai .wk-reply-content :is(p, ul, ol, blockquote) { margin-bottom: 0; }
+.wk-chat .wk-msg-ai .wk-reply-content ol { list-style: decimal; padding-left: 24px; }
+.wk-chat .wk-msg-ai .wk-reply-content ol > li { padding-left: 4px; margin: 0; }
+.wk-chat .wk-msg-ai .wk-reply-content ul > li { margin: 0; }
+.wk-chat .wk-msg-ai .wk-reply-content li > :is(ul, ol) { margin-top: 6px; }
+/* Cards: equal space top and bottom, title tight to its text. */
+.wk-chat .wk-msg-ai .wk-r-card { padding: 18px 20px; }
+.wk-chat .wk-msg-ai .wk-r-card > * { margin: 0; }
+.wk-chat .wk-msg-ai .wk-r-card > * + * { margin-top: 6px; }
+.wk-chat .wk-msg-ai .wk-r-cards .wk-r-card { padding: 16px 18px; }
+.wk-chat .wk-msg-ai .wk-r-cards .wk-r-card > * + * { margin-top: 4px; }
+/* Reply cards and tables are glass; with reduced transparency they turn solid and keep their edge. */
+@media (prefers-reduced-transparency: reduce) {
+  .wk-r-card, .wk-r-table { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgb(38, 46, 48); }
+  .wk-r-card.is-green { background: rgb(28, 64, 44); }
+  .wk-r-card.is-blue { background: rgb(30, 48, 78); }
+  .wk-r-card.is-amber { background: rgb(74, 56, 24); }
+  .wk-r-card.is-red { background: rgb(76, 34, 34); }
+}
+
+/* ── Run report: same rhythm as a reply, headings scaled to the card ── */
+.wk-run-report { gap: 14px; }
+.wk-run-report-head { gap: 10px; }
+.wk-run-report-meta { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; font-size: 12.5px; font-weight: 500; color: rgba(255, 255, 255, 0.72); font-variant-numeric: tabular-nums; }
+.wk-run-report-stats { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+.wk-run-report-stats span { color: rgba(255, 255, 255, 0.72); }
+.wk-chat .wk-msg-ai .wk-run-report-summary { font-size: 15px; line-height: 1.6; color: rgba(255, 255, 255, 0.9); }
+.wk-chat .wk-msg-ai .wk-run-report-summary > .wk-r-title { font-size: 20px; line-height: 1.25; letter-spacing: -0.015em; }
+.wk-chat .wk-msg-ai .wk-run-report-summary > :is(h2, .wk-r-sub) { margin: 10px 0 -6px; font-size: 16.5px; line-height: 1.3; letter-spacing: -0.01em; }
+.wk-chat .wk-msg-ai .wk-run-report-summary > :first-child { margin-top: 0; }
+.wk-chat .wk-msg-ai .wk-run-report-summary ul { gap: 4px; }
+.wk-run-report-foot { padding-top: 2px; }
+.wk-chat .wk-run-report { width: 100%; }
+/* Timestamps: were 10.5px at ~43% white once the extra opacity stacked; keep them quiet but readable. */
+.wk-chat .wk-msg-time, .wk-chat .wk-msg-ai .wk-msg-time { font-size: 11px; color: rgba(255, 255, 255, 0.68); opacity: 1; font-variant-numeric: tabular-nums; }
+/* Wide tables: give the column room instead of squeezing the table into a side-scroller. */
+.wk-chat.has-wide, .wk-chat.has-wide.has-plan,
+.wk.is-desktop .wk-chat.has-wide, .wk.is-desktop .wk-chat.has-wide.has-plan { width: clamp(560px, calc(100% - 460px), 900px); }
+.wk-chat .wk-r-table th { white-space: nowrap; }
+/* Reasoning label: regular weight, shimmering text. */
+.wk-chat .wk-reason-head, .wk-chat .wk-reason.is-live .wk-reason-head, .wk-chat .wk-reason:not(.is-live) .wk-reason-head { font-weight: 400; letter-spacing: 0; }
+.wk-chat .wk-reason-head .wk-shimmer { font-size: inherit; font-weight: 400; }
+@media (prefers-reduced-motion: reduce) { .wk-chat .wk-reason-head .wk-shimmer { animation: none; -webkit-mask-image: none; mask-image: none; } }
+
+/* History: the worker's past sessions, opened from the History pill. */
+.wk-hist-scrim { position: absolute; inset: 0; z-index: 89; }
+.wk-hist {
+  position: absolute; left: 16px; bottom: 76px; z-index: 90; transform-origin: 0 100%;
+  width: min(360px, calc(100% - 32px)); max-height: min(460px, calc(100% - 140px));
+  display: flex; flex-direction: column; overflow: hidden;
+  border-radius: 20px; color: #fff;
+  background: rgba(24, 28, 30, .82); border: 1px solid rgba(255, 255, 255, .12);
+  backdrop-filter: blur(28px) saturate(160%); -webkit-backdrop-filter: blur(28px) saturate(160%);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .35);
+}
+.wk-hist-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 16px 18px 10px; }
+.wk-hist-head strong { font: 600 15px/1.2 'Satoshi', sans-serif; }
+.wk-hist-head span { font-size: 12px; color: rgba(255, 255, 255, .6); font-variant-numeric: tabular-nums; }
+.wk-hist-list { list-style: none; margin: 0; padding: 0 8px 8px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.wk-hist-item {
+  width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left;
+  padding: 10px 12px; border-radius: 12px; border: 0; background: transparent; color: inherit; cursor: pointer;
+  transition: background-color 120ms ease-out;
+}
+.wk-hist-item:hover { background: rgba(255, 255, 255, .08); }
+.wk-hist-item:active { background: rgba(255, 255, 255, .12); }
+.wk-hist-item.is-on { background: rgba(255, 255, 255, .12); }
+.wk-hist-item:focus-visible { outline: 2px solid #8cd5f4; outline-offset: -2px; }
+.wk-hist-title { width: 100%; font-size: 14px; line-height: 1.35; color: rgba(255, 255, 255, .94); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.wk-hist-meta { font-size: 11.5px; color: rgba(255, 255, 255, .6); font-variant-numeric: tabular-nums; }
+.wk-hist-empty { margin: 0; padding: 4px 18px 18px; font-size: 13px; line-height: 1.5; color: rgba(255, 255, 255, .68); }
+.wk-chat-past {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin: 0 0 12px; padding: 8px 8px 8px 14px; border-radius: 12px;
+  background: rgba(255, 255, 255, .08); font-size: 12.5px; color: rgba(255, 255, 255, .78);
+}
+.wk-chat-past button { border: 0; border-radius: 999px; padding: 6px 12px; background: rgba(255, 255, 255, .14); color: #fff; font: 500 12.5px/1 'Satoshi', sans-serif; cursor: pointer; }
+.wk-chat-past button:hover { background: rgba(255, 255, 255, .22); }
+@media (prefers-reduced-transparency: reduce) { .wk-hist { background: #1b1f21; backdrop-filter: none; -webkit-backdrop-filter: none; } }
+
+/* Reasoning label at rest: same type as the shimmer, without the sweep. */
+.wk-reason-label { display: inline-flex; align-items: baseline; font-size: inherit; font-weight: 400; color: rgba(255, 255, 255, 0.72); }
+.wk-reason.is-live .wk-reason-label { color: rgba(255, 255, 255, 0.85); }
+
+/* Actions under a finished task's report: run it again, keep it as the workflow, schedule it. */
+.wk-run-report-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.wk-ask-card { cursor: pointer; }
+.wk-ask-card-icon {
+  width: 36px; height: 36px; border-radius: 999px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(255, 255, 255, 0.92); color: #111;
+  box-shadow: 0 4px 10px -4px rgba(0, 0, 0, 0.35);
+}
+
+/* Chat beside the plan column: centre it in the space left of the plan (right 16px + 330px
+   + 16px gap) instead of the whole stage, so wide replies (tables) never slide under it. */
+.wk-chat.beside-plan.has-wide,
+.wk.is-desktop .wk-chat.beside-plan.has-wide,
+.wk.is-desktop .wk-chat.beside-plan.has-wide.has-plan {
+  left: calc((100% - 362px) / 2);
+  width: min(860px, calc(100% - 362px - 48px));
+}
+@media (max-width: 1100px) {
+  .wk-chat.beside-plan.has-wide,
+  .wk.is-desktop .wk-chat.beside-plan.has-wide,
+  .wk.is-desktop .wk-chat.beside-plan.has-wide.has-plan {
+    left: calc((100% - 282px) / 2);
+    width: calc(100% - 282px - 32px);
+  }
+}
+@media (max-width: 960px) {
+  .wk-chat.beside-plan.has-wide,
+  .wk.is-desktop .wk-chat.beside-plan.has-wide,
+  .wk.is-desktop .wk-chat.beside-plan.has-wide.has-plan { left: 50%; width: calc(100% - 28px); }
+}

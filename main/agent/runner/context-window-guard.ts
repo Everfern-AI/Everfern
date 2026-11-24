@@ -5,6 +5,8 @@
  * Implements OpenClaw-style warning thresholds and hard blocks.
  */
 
+import { spawnSync } from 'child_process';
+
 export interface ContextWindowConfig {
     modelContextWindow: number;  // Max tokens for this model
     warningThreshold: number;    // Warn at this percentage (0-1)
@@ -17,6 +19,17 @@ export interface ContextUsage {
     max: number;
     percentage: number;
     available: number;
+}
+
+/** Runs the same context operation in the Tauri Rust backend. */
+function nativeContextOperation<T>(request: Record<string, unknown>): T | null {
+    const executable = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+    if (!executable) return null;
+    const result = spawnSync(executable, ['--ef-context-window'], {
+        input: JSON.stringify(request), encoding: 'utf8', windowsHide: true, timeout: 5000, maxBuffer: 4 * 1024 * 1024,
+    });
+    if (result.error || result.status !== 0 || !result.stdout) return null;
+    try { return JSON.parse(result.stdout) as T | null; } catch { return null; }
 }
 
 // Model context windows (approximate)
@@ -60,6 +73,9 @@ const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
 };
 
 export function getContextWindowForModel(model: string): number {
+    const native = nativeContextOperation<number>({ operation: 'model_window', model });
+    if (typeof native === 'number' && Number.isFinite(native)) return native;
+
     // Try exact match first
     if (MODEL_CONTEXT_WINDOWS[model]) {
         return MODEL_CONTEXT_WINDOWS[model];
@@ -112,11 +128,15 @@ export class ContextWindowGuard {
     }
 
     estimateTokens(text: string): number {
+        const native = nativeContextOperation<number>({ operation: 'estimate_text', text });
+        if (typeof native === 'number' && Number.isFinite(native)) return native;
         // Rough estimation: ~4 chars per token for English
         return Math.ceil(text.length / 4);
     }
 
     estimateMessageTokens(messages: Array<{ role: string; content: string | unknown[] }>): number {
+        const native = nativeContextOperation<number>({ operation: 'estimate_messages', messages });
+        if (typeof native === 'number' && Number.isFinite(native)) return native;
         // Base tokens per message + content tokens
         let total = 0;
         for (const msg of messages) {
@@ -135,6 +155,9 @@ export class ContextWindowGuard {
     }
 
     getUsage(tokens: number): ContextUsage {
+        const native = nativeContextOperation<ContextUsage>({ operation: 'usage', config: this.config, tokens });
+        if (native && typeof native.used === 'number' && typeof native.max === 'number'
+            && typeof native.percentage === 'number' && typeof native.available === 'number') return native;
         const effectiveMax = Math.floor(
             this.config.modelContextWindow * (1 - this.config.safetyMargin)
         );
@@ -148,16 +171,22 @@ export class ContextWindowGuard {
     }
 
     shouldWarn(tokens: number): boolean {
+        const native = nativeContextOperation<string>({ operation: 'warning_level', config: this.config, tokens });
+        if (typeof native === 'string') return native !== 'ok';
         const usage = this.getUsage(tokens);
         return usage.percentage >= this.config.warningThreshold;
     }
 
     canAccept(tokens: number): boolean {
+        const native = nativeContextOperation<{ allowed: boolean }>({ operation: 'status', config: this.config, tokens });
+        if (native && typeof native === 'object' && 'allowed' in native) return !!native.allowed;
         const usage = this.getUsage(tokens);
         return usage.percentage < this.config.hardBlockThreshold;
     }
 
     getWarningLevel(tokens: number): 'ok' | 'warning' | 'critical' {
+        const native = nativeContextOperation<'ok' | 'warning' | 'critical'>({ operation: 'warning_level', config: this.config, tokens });
+        if (native === 'ok' || native === 'warning' || native === 'critical') return native;
         const usage = this.getUsage(tokens);
         if (usage.percentage >= this.config.hardBlockThreshold) {
             return 'critical';
@@ -174,6 +203,10 @@ export class ContextWindowGuard {
         usage: ContextUsage;
         message: string;
     } {
+        const native = nativeContextOperation<{ allowed: boolean; level: 'ok' | 'warning' | 'critical'; usage: ContextUsage; message: string }>(
+            { operation: 'status', config: this.config, tokens }
+        );
+        if (native && native.usage && typeof native.usage.percentage === 'number') return native;
         const usage = this.getUsage(tokens);
         const level = this.getWarningLevel(tokens);
         const allowed = level !== 'critical';
@@ -195,6 +228,10 @@ export class ContextWindowGuard {
         message: string;
         estimatedTokens: number;
     } {
+        const native = nativeContextOperation<{ allowed: boolean; level: 'ok' | 'warning' | 'critical'; usage: ContextUsage; message: string; estimatedTokens: number }>(
+            { operation: 'check', config: this.config, messages }
+        );
+        if (native && typeof native.estimatedTokens === 'number') return native;
         const tokens = this.estimateMessageTokens(messages);
         const status = this.getStatus(tokens);
         return {
@@ -204,6 +241,8 @@ export class ContextWindowGuard {
     }
 
     compactHistory(history: any[]): any[] {
+        const native = nativeContextOperation<any[]>({ operation: 'compact_history', history });
+        if (Array.isArray(native)) return native;
         // Advanced compaction logic:
         // 1. Keep system message
         // 2. Keep last 10 messages

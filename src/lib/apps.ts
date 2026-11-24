@@ -33,6 +33,8 @@ export type AppDef = {
   icon?: string;
   /** With `icon`: draw the mark in white on this brand-colour tile instead of on white. */
   iconBg?: string;
+  /** Direct URL of a full-colour product icon (Microsoft 365 marks from Microsoft's Fluent CDN). */
+  img?: string;
   /** Page the worker's browser opens (usually the sign-in page) */
   url?: string;
   blurb: string;
@@ -48,6 +50,7 @@ export type AppDef = {
 export type AppSection = { id: string; title: string; apps: string[] };
 
 const A = (a: AppDef) => a;
+const MS = (name: string) => `https://res-1.cdn.office.net/files/fabric-cdn-prod_20230815.002/assets/brand-icons/product/svg/${name}_48x1.svg`;
 
 export const APPS: Record<string, AppDef> = Object.fromEntries(
   [
@@ -87,6 +90,12 @@ export const APPS: Record<string, AppDef> = Object.fromEntries(
       blurb: "Spreadsheets with formulas and charts", rating: 4.8, ratings: 52, category: "Productivity", developer: "EverFern",
       description: "The native EverFern Sheets app. The worker writes cells instantly with sheets_write/sheets_append, imports and exports CSV to Files, and the user watches a human-paced replay of the AI clicking and typing into each cell.",
       features: ["Fast cell/range writes with animated replay", "CSV import and export to Files", "Formulas: SUM, AVERAGE, MIN, MAX, COUNT", "Pixel-coordinate GUI automation"],
+    }),
+    A({
+      id: "write", name: "Write", tile: { icon: "doc", bg: "linear-gradient(160deg,#5aa8ff,#1d63e6)" },
+      blurb: "Documents, notes and reports", rating: 4.8, ratings: 24, category: "Productivity", developer: "EverFern",
+      description: "The native EverFern word processor. The worker drafts letters, reports and notes here, with headings, lists and basic formatting, and the document is saved with the worker.",
+      features: ["Headings, lists, bold, italic and underline", "Autosaves with the worker", "Export as plain text or HTML", "Drivable by the AI cursor"],
     }),
     A({
       id: "docs", url: "https://docs.google.com/document", icon: "googledocs", name: "Google Docs",
@@ -254,14 +263,21 @@ export const APPS: Record<string, AppDef> = Object.fromEntries(
     A({ id: "stripe", url: "https://dashboard.stripe.com/login", icon: "stripe", iconBg: "#635bff", name: "Stripe", domain: "stripe.com", blurb: "Payments dashboard and financial reports", rating: 4.9, ratings: 88, category: "Finance", developer: "Stripe, Inc.", description: "Financial infrastructure for the internet: payments, payouts, and revenue metrics.", features: ["Monthly financial statement export", "Dispute notifications", "Balance reporting"] }),
     A({ id: "figma", url: "https://www.figma.com/login", name: "Figma", domain: "figma.com", icon: "figma", blurb: "Design files and design systems", rating: 4.8, ratings: 79, category: "Design", developer: "Figma, Inc.", description: "Collaborative interface design tool for modern product teams.", features: ["File version inspections", "Asset exports", "Component specs"] }),
     A({ id: "hubspot", url: "https://app.hubspot.com/login", name: "HubSpot", domain: "hubspot.com", icon: "hubspot", iconBg: "#ff7a59", blurb: "CRM and marketing automation", rating: 4.8, ratings: 64, category: "CRM", developer: "HubSpot, Inc.", description: "Customer relationship management, sales, and inbound marketing software.", features: ["Deal updates", "Contact enrichment", "Pipeline exports"] }),
-    A({ id: "salesforce", url: "https://login.salesforce.com", name: "Salesforce", tile: { icon: "cloud", bg: "linear-gradient(160deg,#3fc3f5,#0b8fd8)" }, blurb: "CRM and enterprise sales pipelines", rating: 4.6, ratings: 58, category: "CRM", developer: "Salesforce, Inc.", description: "World's #1 customer relationship management platform.", features: ["Account management", "Opportunity updates", "Report exports"] }),
+    A({ id: "salesforce", url: "https://login.salesforce.com", domain: "salesforce.com", name: "Salesforce", tile: { icon: "cloud", bg: "linear-gradient(160deg,#3fc3f5,#0b8fd8)" }, blurb: "CRM and enterprise sales pipelines", rating: 4.6, ratings: 58, category: "CRM", developer: "Salesforce, Inc.", description: "World's #1 customer relationship management platform.", features: ["Account management", "Opportunity updates", "Report exports"] }),
     A({ id: "jira", url: "https://id.atlassian.com/login", icon: "jira", iconBg: "#0052cc", name: "Jira", domain: "atlassian.com", blurb: "Issues, sprints, and project tracking", rating: 4.5, ratings: 51, category: "Project Management", developer: "Atlassian", description: "Issue and project tracker for agile development teams.", features: ["Sprint updates", "Backlog item triage", "Status transitions"] }),
     A({ id: "airtable", url: "https://airtable.com/login", name: "Airtable", domain: "airtable.com", icon: "airtable", iconBg: "#fcb400", blurb: "Connected apps and relational databases", rating: 4.7, ratings: 44, category: "Productivity", developer: "Airtable", description: "Cloud collaboration service with relational database power.", features: ["Record creation", "View filters", "Automated sync"] }),
     A({ id: "zendesk", url: "https://www.zendesk.com/login", name: "Zendesk", domain: "zendesk.com", icon: "zendesk", iconBg: "#03363d", blurb: "Customer service and support tickets", rating: 4.6, ratings: 40, category: "Support", developer: "Zendesk, Inc.", description: "Customer service software and support ticket management.", features: ["Ticket categorization", "Macro execution", "Resolution time tracking"] }),
     A({ id: "trello", url: "https://trello.com/login", name: "Trello", domain: "trello.com", icon: "trello", iconBg: "#0079bf", blurb: "Kanban boards and workflow cards", rating: 4.6, ratings: 46, category: "Productivity", developer: "Atlassian", description: "Visual collaboration tool for organizing work into boards and cards.", features: ["Card movements", "Checklist tracking", "Due date alerts"] }),
     A({ id: "instagram", url: "https://www.instagram.com/accounts/login", name: "Instagram", domain: "instagram.com", icon: "instagram", iconBg: "#e4405f", blurb: "Social media and brand engagement", rating: 4.6, ratings: 67, category: "Social Media", developer: "Meta Platforms, Inc.", description: "Photo and video sharing social networking service.", features: ["Post scheduling", "Comment monitoring", "Direct message triage"] }),
     A({ id: "x", url: "https://x.com/login", icon: "x", iconBg: "#000000", name: "X", domain: "x.com", blurb: "Posts, replies and trend monitoring", rating: 4.5, ratings: 71, category: "Social Media", developer: "X Corp.", description: "Real-time updates, news, and conversation platform.", features: ["Post publishing", "Mention monitoring", "List curation"] }),
-    A({ id: "outlook", url: "https://outlook.live.com/mail", name: "Outlook", tile: { icon: "mail", bg: "linear-gradient(160deg,#28a8ea,#0a64d6)" }, blurb: "Microsoft mail and calendar", rating: 4.5, ratings: 53, category: "Communication", developer: "Microsoft Corporation", description: "Email client, calendar, and task manager from Microsoft.", features: ["Email sorting", "Calendar invites", "Rules automation"] }),
+
+    // ── Microsoft 365 (official Fluent product icons from Microsoft's CDN) ─
+    A({ id: "excel", url: "https://www.office.com/launch/excel", img: MS("excel"), name: "Excel", blurb: "Microsoft spreadsheets", rating: 4.0, ratings: 64, category: "Productivity", developer: "Microsoft Corporation", description: "Microsoft Excel on the web: workbooks, formulas, pivot tables and charts.", features: ["Workbook editing", "Formulas and pivot tables", "CSV and XLSX export"] }),
+    A({ id: "onedrive", url: "https://onedrive.live.com/login", img: MS("onedrive"), name: "OneDrive", blurb: "Microsoft cloud storage", rating: 4.2, ratings: 40, category: "Storage", developer: "Microsoft Corporation", description: "Store, sync and share files across devices with Microsoft OneDrive.", features: ["File uploads and downloads", "Shared folders", "Version history"] }),
+    A({ id: "outlook", url: "https://outlook.live.com/mail", img: MS("outlook"), name: "Outlook", blurb: "Microsoft mail and calendar", rating: 4.0, ratings: 53, category: "Communication", developer: "Microsoft Corporation", description: "Email client, calendar, and task manager from Microsoft.", features: ["Email sorting", "Calendar invites", "Rules automation"] }),
+    A({ id: "powerpoint", url: "https://www.office.com/launch/powerpoint", img: MS("powerpoint"), name: "PowerPoint", blurb: "Microsoft presentations", rating: 4.1, ratings: 38, category: "Productivity", developer: "Microsoft Corporation", description: "Build and edit PowerPoint decks in the browser.", features: ["Slide editing", "Templates and themes", "PPTX export"] }),
+    A({ id: "teams", url: "https://teams.microsoft.com", img: MS("teams"), name: "Teams", blurb: "Chat, meetings and channels", rating: 3.9, ratings: 47, category: "Communication", developer: "Microsoft Corporation", description: "Microsoft Teams for team chat, channels and meetings.", features: ["Channel messages", "Meeting links", "File sharing"] }),
+    A({ id: "word", url: "https://www.office.com/launch/word", img: MS("word"), name: "Word", blurb: "Microsoft documents", rating: 4.2, ratings: 58, category: "Productivity", developer: "Microsoft Corporation", description: "Write and edit Word documents in the browser.", features: ["Document editing", "Track changes", "DOCX and PDF export"] }),
   ].map((a) => [a.id, a]),
 );
 
@@ -270,15 +286,16 @@ export const APP_SECTIONS: AppSection[] = [
   {
     id: "everfern",
     title: "EverFern apps",
-    apps: ["files", "mail", "chrome", "browser", "websearch", "sheets", "slides", "pdf", "sketch", "images", "audio", "terminal"],
+    apps: ["files", "mail", "chrome", "browser", "websearch", "sheets", "write", "slides", "pdf", "sketch", "images", "audio", "terminal"],
   },
+  { id: "microsoft", title: "Microsoft Suite", apps: ["excel", "onedrive", "outlook", "powerpoint", "teams", "word"] },
   { id: "google", title: "Google Workspace", apps: ["gmail", "gsheets", "docs", "gslides", "gdrive", "gcal", "gads"] },
   {
     id: "tools",
     title: "Connect your tools",
     apps: [
       "amazon", "canva", "moss", "sap", "youtube", "spotify", "gmail", "linkedin", "whatsapp", "discord", "zoom",
-      "notion", "slack", "github", "shopify", "stripe", "figma", "hubspot", "salesforce", "jira", "airtable", "zendesk", "trello", "instagram", "x", "outlook"
+      "notion", "slack", "github", "shopify", "stripe", "figma", "hubspot", "salesforce", "jira", "airtable", "zendesk", "trello", "instagram", "x"
     ],
   },
 ];
@@ -288,4 +305,19 @@ export const APP_SECTIONS: AppSection[] = [
  * New workers get the native EverFern apps. Google Sheets is installed too,
  * but it is opt-in: the worker only opens it when the user explicitly asks.
  */
-export const DEFAULT_APPS = ["files", "sheets", "browser", "websearch", "gsheets"];
+export const DEFAULT_APPS = ["files", "terminal", "sheets", "write", "browser", "websearch", "gsheets"];
+
+/** Where each app opens when its own URL is a deeper page than its domain. */
+const START_URL: Record<string, string> = {
+  browser: "https://google.com",
+  gads: "https://adstransparency.google.com",
+  gsheets: "https://docs.google.com/spreadsheets",
+  gmail: "https://mail.google.com",
+  gdocs: "https://docs.google.com/document",
+  gcal: "https://calendar.google.com",
+  gdrive: "https://drive.google.com",
+  gslides: "https://docs.google.com/presentation",
+};
+
+/** The page an app window opens on, or null for apps with no site. */
+export const startUrlFor = (app: string) => APPS[app]?.url ?? START_URL[app] ?? (APPS[app]?.domain ? `https://${APPS[app].domain}` : null);

@@ -1,0 +1,24 @@
+[package]
+name = "everfern-native"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Native (Rust) helpers for the EverFern Electron main process"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "2", default-features = false, features = ["napi6"] }
+napi-derive = "2"
+similar = { version = "2", default-features = false }
+
+[build-dependencies]
+napi-build = "2"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

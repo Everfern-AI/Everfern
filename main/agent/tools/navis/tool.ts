@@ -18,6 +18,7 @@ import { broadcastNavisCompanionProgress, getNavisCompanionStatus, prepareNavisM
 import { bridgeServer } from '../../../lib/extension-server';
 import { pickWorkerWindow } from './core/webview-registry';
 import { WorkerWindowAdapter } from './core/worker-window-adapter';
+import { LocalVmDriver } from './core/local-vm-driver';
 
 import { checkToolPermission } from '../permission-checker';
 
@@ -48,9 +49,9 @@ function buildActionPayload(event: NavisEvent): { type: string; params: Record<s
     case 'page_navigate':
       return { type: 'navigate', params: { url: event.url }, description: `Navigating to ${event.url || '...'}` };
     case 'element_click':
-      return { type: 'left_click', params: { target: event.target, selector: event.selector, position: event.position, coordinate: event.position ? [event.position.x, event.position.y] : undefined }, description: `Clicked "${event.target || 'element'}"` };
+      return { type: 'left_click', params: { target: event.target, selector: event.selector, position: event.position, coordinate: event.position ? [event.position.x, event.position.y] : undefined, aspect: event.position?.aspect }, description: `Clicked "${event.target || 'element'}"` };
     case 'element_input':
-      return { type: 'type', params: { target: event.target, text: event.action, coordinate: event.position ? [event.position.x, event.position.y] : undefined }, description: `Typing into "${event.target || 'input'}"` };
+      return { type: 'type', params: { target: event.target, text: event.action, coordinate: event.position ? [event.position.x, event.position.y] : undefined, aspect: event.position?.aspect }, description: `Typing into "${event.target || 'input'}"` };
     case 'scroll':
       return { type: 'scroll', params: { direction: event.action }, description: `Scrolled ${event.action || 'down'}` };
     case 'tab_change':
@@ -182,7 +183,7 @@ export function createNavisTool(orchestrator: NavisOrchestrator, runner?: any): 
         // no permission prompt there. Everywhere else Navis still asks first.
         const convId = runner?.currentConversationId;
         const isWorkerRun = typeof convId === 'string' && convId.startsWith('worker-');
-        const perm = isWorkerRun ? { approved: true as const, error: undefined } : await checkToolPermission('navis', args, onUpdate, emitEvent);
+        const perm = isWorkerRun ? { approved: true as const, error: undefined, target: undefined } : await checkToolPermission('navis', args, onUpdate, emitEvent);
         if (!perm.approved) {
           return {
             success: false,
@@ -219,7 +220,25 @@ export function createNavisTool(orchestrator: NavisOrchestrator, runner?: any): 
         let currentStepNumber = -1;
 
         // A worker's run drives the browser window on the worker's desktop, so you watch it work.
-        const workerWindow = pickWorkerWindow(runner?.currentConversationId, startUrl, typeof safeArgs.app === 'string' ? safeArgs.app : undefined);
+        let workerWindow = pickWorkerWindow(runner?.currentConversationId, startUrl, typeof safeArgs.app === 'string' ? safeArgs.app : undefined);
+
+        // The user chose the EverFern VM for this chat run: drive Chromium inside the Alpine VM
+        // (the same browser workers use) instead of a browser on this PC.
+        if (!isWorkerRun && perm.target === 'vm') {
+          const vmUrl = /^https?:\/\//i.test(startUrl || '') ? String(startUrl) : 'https://duckduckgo.com';
+          try {
+            onUpdate?.('Starting the browser in the EverFern VM...');
+            const { ensureVmBrowser } = require('../../../ipc/system/environment-handlers');
+            await ensureVmBrowser(vmUrl);
+            workerWindow = { app: 'browser', driver: new LocalVmDriver(vmUrl), home: vmUrl };
+          } catch (e: any) {
+            return {
+              success: false,
+              output: `Could not start the browser in the EverFern VM: ${e?.message || e}. Nothing ran on this PC. Ask the user whether to run it on this PC instead.`,
+              data: { steps: 0, screenshots },
+            };
+          }
+        }
 
         const unsubscribe = logger.on((event: NavisEvent) => {
           if (event.type === 'screenshot' && event.screenshotKey !== undefined) {
@@ -376,12 +395,12 @@ export function createNavisTool(orchestrator: NavisOrchestrator, runner?: any): 
 
         try {
           if (workerWindow) {
-            onUpdate?.("Using the worker's own browser window.");
+            onUpdate?.(perm.target === 'vm' && !isWorkerRun ? 'Using the browser in the EverFern VM.' : "Using the worker's own browser window.");
             const windowOrchestrator = new NavisExtensionOrchestrator(
               orchestrator.getAIClient(),
               logger,
               orchestrator.getVisionClient() || undefined,
-              new WorkerWindowAdapter(workerWindow.driver, logger),
+              new WorkerWindowAdapter(workerWindow.driver, logger, { app: workerWindow.app, home: workerWindow.home }),
             );
             const r = await windowOrchestrator.run({
               task,
@@ -400,7 +419,7 @@ export function createNavisTool(orchestrator: NavisOrchestrator, runner?: any): 
             return {
               success: r.success,
               output: r.output,
-              data: { steps: r.steps, screenshots, automationMode: 'worker-window', workerApp: workerWindow.app },
+              data: { steps: r.steps, screenshots, automationMode: perm.target === 'vm' && !isWorkerRun ? 'vm' : 'worker-window', workerApp: workerWindow.app },
             };
           }
 

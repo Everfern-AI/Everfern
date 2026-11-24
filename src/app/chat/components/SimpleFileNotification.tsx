@@ -125,7 +125,7 @@ export const SimpleFileNotification: React.FC<SimpleFileNotificationProps> = ({
               {filename}
           </div>
           <div className="flex items-center gap-2">
-              <span className="text-[11px] text-[var(--color-text-secondary)] font-bold uppercase tracking-widest leading-none">
+              <span className="text-[11px] text-[var(--color-text-secondary)] font-boldst leading-none">
                   {fileDetails.subtitle}
               </span>
               <div className="w-1 h-1 bg-[var(--color-border)] rounded-full" />
@@ -152,7 +152,7 @@ export const SimpleFileNotification: React.FC<SimpleFileNotificationProps> = ({
                 <AntigravityIcon />
                 <div className="flex flex-col">
                     <span className="text-[12.5px] font-bold text-[var(--color-text-primary)] leading-tight">{appName}</span>
-                    <span className="text-[9px] text-[var(--color-text-secondary)] font-black uppercase tracking-tight leading-none">Default App</span>
+                    <span className="text-[9px] text-[var(--color-text-secondary)] font-black tracking-tight leading-none">Default App</span>
                 </div>
             </div>
             

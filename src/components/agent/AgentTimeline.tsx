@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useState, useMemo, useEffect, useRef } from "react";
+import React, { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useTheme } from "@/components/ThemeProvider";
 import type { SubAgentProgressEvent } from "../common/types";
 import type { MissionTimeline as MissionTimelineType } from "./MissionTimeline";
 import { InlineDebateProgress } from "./InlineDebateProgress";
@@ -67,922 +66,416 @@ export interface TimelineStepItem {
   toolCall?: ToolCallDisplay;
 }
 
-// ── Claude Cowork Iconic SVG Badges ──────────────────────────────────────────
+// ── Describing a tool call ────────────────────────────────────────────────────
+// Each call becomes one line in the style of Claude Code: a bold verb, the real
+// argument (path, command, query) in mono, and a one-line result underneath.
 
-function TerminalBadge({ isDark }: { isDark: boolean }) {
-  return (
-    <div
-      style={{
-        width: 17,
-        height: 17,
-        borderRadius: 4,
-        border: isDark ? "1px solid rgba(255, 255, 255, 0.22)" : "1px solid rgba(0, 0, 0, 0.25)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontSize: 9.5,
-        fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
-        fontWeight: 700,
-        color: isDark ? "rgba(255, 255, 255, 0.65)" : "rgba(0, 0, 0, 0.65)",
-        lineHeight: 1,
-        flexShrink: 0,
-        boxSizing: "border-box",
-        userSelect: "none"
-      }}
-    >
-      &gt;_
-    </div>
-  );
+const MONO = 'var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace)';
+
+function str(v: unknown): string {
+  if (v == null) return "";
+  if (typeof v === "string") return v;
+  try { return JSON.stringify(v); } catch { return String(v); }
 }
 
-function CodeBadge({ isDark }: { isDark: boolean }) {
-  return (
-    <div
-      style={{
-        width: 17,
-        height: 17,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontSize: 11,
-        fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
-        fontWeight: 600,
-        color: isDark ? "rgba(255, 255, 255, 0.6)" : "rgba(0, 0, 0, 0.6)",
-        lineHeight: 1,
-        flexShrink: 0,
-        userSelect: "none"
-      }}
-    >
-      &lt;/&gt;
-    </div>
-  );
+function stripAnsi(s: string): string {
+  // eslint-disable-next-line no-control-regex
+  return s.replace(/\u001b\[[0-9;]*[A-Za-z]/g, "");
 }
 
-function SkillBadge({ isDark }: { isDark: boolean }) {
-  return (
-    <div
-      style={{
-        width: 17,
-        height: 17,
-        borderRadius: 4,
-        border: isDark ? "1px solid rgba(255, 255, 255, 0.22)" : "1px solid rgba(0, 0, 0, 0.25)",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 2,
-        flexShrink: 0,
-        boxSizing: "border-box"
-      }}
-    >
-      <div style={{ width: 9, height: 1.5, background: isDark ? "rgba(255, 255, 255, 0.65)" : "rgba(0, 0, 0, 0.65)", borderRadius: 1 }} />
-      <div style={{ width: 6, height: 1.5, background: isDark ? "rgba(255, 255, 255, 0.65)" : "rgba(0, 0, 0, 0.65)", borderRadius: 1 }} />
-    </div>
-  );
+function firstArg(args: Record<string, unknown>, keys: string[]): string {
+  for (const k of keys) {
+    const v = args[k];
+    if (v != null && String(v).trim()) return String(v).trim();
+  }
+  return "";
 }
 
-function GlobeBadge({ isDark }: { isDark: boolean }) {
-  return (
-    <svg
-      width="17"
-      height="17"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke={isDark ? "rgba(255, 255, 255, 0.65)" : "rgba(0, 0, 0, 0.65)"}
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      style={{ flexShrink: 0 }}
-    >
-      <circle cx="12" cy="12" r="10" />
-      <line x1="2" y1="12" x2="22" y2="12" />
-      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-    </svg>
-  );
+function shortPath(p: string): string {
+  if (!p) return "";
+  const parts = p.split(/[/\\]/).filter(Boolean);
+  return parts.length > 3 ? `…/${parts.slice(-3).join("/")}` : parts.join("/") || p;
 }
 
-function SearchBadge({ isDark }: { isDark: boolean }) {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke={isDark ? "rgba(255, 255, 255, 0.65)" : "rgba(0, 0, 0, 0.65)"}
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      style={{ flexShrink: 0 }}
-    >
-      <circle cx="11" cy="11" r="8" />
-      <line x1="21" y1="21" x2="16.65" y2="16.65" />
-    </svg>
-  );
+function oneLine(s: string, max = 110): string {
+  // Tool output often opens with an emoji marker; the row already has its own status dot.
+  const line = s.replace(/\s+/g, " ").trim().replace(/^[\p{Extended_Pictographic}️‍\s]+/u, "");
+  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 }
 
-function ComputerBadge({ isDark }: { isDark: boolean }) {
-  return (
-    <svg
-      width="17"
-      height="17"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke={isDark ? "rgba(255, 255, 255, 0.65)" : "rgba(0, 0, 0, 0.65)"}
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      style={{ flexShrink: 0 }}
-    >
-      <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-      <line x1="8" y1="21" x2="16" y2="21" />
-      <line x1="12" y1="17" x2="12" y2="21" />
-    </svg>
-  );
+function toolOutput(tc: ToolCallDisplay): string {
+  return stripAnsi(str(tc.output ?? tc.data?.output ?? tc.data?.result ?? "")).trim();
 }
 
-function PresentedDocBadge({ isDark }: { isDark: boolean }) {
-  return (
-    <div
-      style={{
-        width: 17,
-        height: 17,
-        borderRadius: 4,
-        border: isDark ? "1px solid rgba(255, 255, 255, 0.22)" : "1px solid rgba(0, 0, 0, 0.25)",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 2,
-        flexShrink: 0,
-        boxSizing: "border-box"
-      }}
-    >
-      <svg
-        width="11"
-        height="11"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke={isDark ? "rgba(255, 255, 255, 0.7)" : "rgba(0, 0, 0, 0.7)"}
-        strokeWidth="2"
-      >
-        <path d="M4 7h16M4 12h16M4 17h10" />
-      </svg>
-    </div>
-  );
-}
+const PATH_KEYS = ["TargetFile", "AbsolutePath", "file_path", "filePath", "path", "file", "target", "DirectoryPath", "SearchPath", "dir"];
+const CMD_KEYS = ["CommandLine", "command", "cmd", "Command", "script"];
 
-function ConnectorLine({ isDark }: { isDark: boolean }) {
-  return (
-    <div
-      style={{
-        width: 1,
-        height: 14,
-        marginLeft: 8,
-        background: isDark ? "rgba(255, 255, 255, 0.16)" : "rgba(0, 0, 0, 0.16)",
-        marginTop: 2,
-        marginBottom: 2,
-        flexShrink: 0
-      }}
-    />
-  );
-}
-
-// ── Helpers to format tool calls to Claude Cowork steps ─────────────────────
-
-function formatStepFromToolCall(tc: ToolCallDisplay): TimelineStepItem {
-  const args = tc.args || {};
+function describeTool(tc: ToolCallDisplay): TimelineStepItem {
+  const args = (tc.args || {}) as Record<string, unknown>;
   const name = (tc.toolName || tc.displayName || "").toLowerCase();
+  const path = firstArg(args, PATH_KEYS);
+  const base = { id: tc.id, toolCall: tc };
 
-  // 1. Skill loaded
-  if (name.includes("read") || name.includes("view") || name.includes("skill")) {
-    const rawPath = String(args.TargetFile || args.AbsolutePath || args.path || args.file || "");
-    if (rawPath.toLowerCase().includes("skill")) {
-      const skillName = rawPath.split(/[/\\]/).filter((p) => p && !p.endsWith(".md")).pop() || "pdf";
-      return {
-        id: tc.id,
-        kind: "skill",
-        verb: "Loaded",
-        text: `Loaded ${skillName} skill`,
-        toolCall: tc,
-      };
-    }
+  if (name.includes("skill") || (/read|view/.test(name) && /skill/i.test(path))) {
+    const skill = firstArg(args, ["name", "skill"]) || path.split(/[/\\]/).filter((p) => p && !p.endsWith(".md")).pop() || "skill";
+    return { ...base, kind: "skill", verb: "Skill", text: skill };
   }
-
-  // 2. Presented file
   if (name.includes("present")) {
-    return {
-      id: tc.id,
-      kind: "doc",
-      verb: "Presented",
-      text: "Presented file",
-      toolCall: tc,
-    };
+    const files = Array.isArray(args.files) ? (args.files as unknown[]).map(String) : [path].filter(Boolean);
+    return { ...base, kind: "doc", verb: "Present", text: files.map(shortPath).join(", ") || "file" };
+  }
+  if (name.includes("computer") || name.includes("desktop")) {
+    return { ...base, kind: "computer", verb: "Computer", text: oneLine(firstArg(args, ["task", "instruction", "goal", "action"]) || tc.label || "task", 90) };
+  }
+  if (name.includes("navis") || name.includes("browser") || name.includes("browse")) {
+    return { ...base, kind: "globe", verb: "Browse", text: oneLine(firstArg(args, ["goal", "task", "url"]) || tc.label || "web", 90) };
+  }
+  if (name.includes("web_search") || name === "search_web" || (name.includes("search") && name.includes("web"))) {
+    return { ...base, kind: "search", verb: "Web search", text: oneLine(firstArg(args, ["query", "Query", "q"]), 90) };
+  }
+  if (name.includes("fetch") || name.includes("url") || name.includes("read_url")) {
+    return { ...base, kind: "globe", verb: "Fetch", text: oneLine(firstArg(args, ["url", "Url", "URL"]), 90) };
+  }
+  if (name.includes("grep") || name.includes("search") || name.includes("find")) {
+    const pattern = firstArg(args, ["pattern", "Pattern", "query", "Query", "regex"]);
+    const where = path ? ` in ${shortPath(path)}` : "";
+    return { ...base, kind: "search", verb: "Search", text: `${oneLine(pattern, 70)}${where}` };
+  }
+  if (name.includes("list") || name.includes("glob") || name.includes("ls")) {
+    return { ...base, kind: "search", verb: "List", text: shortPath(path || firstArg(args, ["pattern"])) || "." };
+  }
+  if (/replace|edit|modify|patch/.test(name)) {
+    return { ...base, kind: "code", verb: "Update", text: shortPath(path) || "file" };
+  }
+  if (/write|create/.test(name)) {
+    return { ...base, kind: "code", verb: "Write", text: shortPath(path) || "file" };
+  }
+  if (/read|view|open/.test(name)) {
+    return { ...base, kind: "doc", verb: "Read", text: shortPath(path) || "file" };
+  }
+  if (/command|bash|terminal|shell|exec|run|powershell/.test(name)) {
+    return { ...base, kind: "terminal", verb: "Bash", text: oneLine(firstArg(args, CMD_KEYS), 120) || "command" };
+  }
+  if (/todo|plan/.test(name)) {
+    return { ...base, kind: "generic", verb: "Update plan", text: "" };
   }
 
-  // 3. Write / Create script or document
-  if (name.includes("write") || name.includes("create")) {
-    const rawPath = String(args.TargetFile || args.AbsolutePath || args.path || args.file || "");
-    const filename = rawPath.split(/[/\\]/).pop() || "file";
-    if (filename.toLowerCase().includes("pdf") || filename.toLowerCase().includes("report") || rawPath.toLowerCase().includes(".py")) {
-      return {
-        id: tc.id,
-        kind: "code",
-        verb: "Create",
-        text: "Create the Python script that generates the global warming PDF report",
-        toolCall: tc,
-      };
-    }
-    return {
-      id: tc.id,
-      kind: "code",
-      verb: "Create",
-      text: `Create ${filename}`,
-      toolCall: tc,
-    };
-  }
-
-  // 4. Edit / Replace
-  if (name.includes("replace") || name.includes("edit") || name.includes("modify") || name.includes("patch")) {
-    const rawPath = String(args.TargetFile || args.AbsolutePath || args.path || args.file || "");
-    const filename = rawPath.split(/[/\\]/).pop() || "file";
-    return {
-      id: tc.id,
-      kind: "code",
-      verb: "Edit",
-      text: `Update ${filename}`,
-      toolCall: tc,
-    };
-  }
-
-  // 5. Computer Use / Desktop automation
-  if (name.includes("computer_use") || name.includes("computer") || name.includes("desktop")) {
-    const rawTask = String(args.task || args.instruction || args.goal || tc.label || "Computer task");
-    const cleanTask = rawTask.length > 70 ? `${rawTask.slice(0, 68)}…` : rawTask;
-    return {
-      id: tc.id,
-      kind: "computer",
-      verb: "Computer use",
-      text: cleanTask || "Computer use",
-      toolCall: tc,
-    };
-  }
-
-  // 6. Navis / Browser automation
-  if (name.includes("navis")) {
-    const rawGoal = String(args.goal || args.task || args.url || tc.label || "Navigate web");
-    const cleanGoal = rawGoal.length > 70 ? `${rawGoal.slice(0, 68)}…` : rawGoal;
-    return {
-      id: tc.id,
-      kind: "globe",
-      verb: "Navis",
-      text: cleanGoal || "Navis browser",
-      toolCall: tc,
-    };
-  }
-
-  // 7. Terminal / Commands
-  if (name.includes("command") || name.includes("bash") || name.includes("terminal") || name.includes("exec") || name.includes("run")) {
-    const cmd = String(args.CommandLine || args.command || "").trim();
-    if (/reportlab|venv|mkdir|pip\s+list/i.test(cmd)) {
-      return {
-        id: tc.id,
-        kind: "terminal",
-        verb: "Set up",
-        text: "Set up working directory and check reportlab availability",
-        toolCall: tc,
-      };
-    }
-    if (/python.*generate.*pdf|python.*reportlab/i.test(cmd)) {
-      return {
-        id: tc.id,
-        kind: "terminal",
-        verb: "Generate",
-        text: "Generate the PDF report",
-        toolCall: tc,
-      };
-    }
-    if (/python.*verify|pdfinfo|pdftotext|verify/i.test(cmd)) {
-      return {
-        id: tc.id,
-        kind: "terminal",
-        verb: "Verify",
-        text: "Verify the PDF was created correctly with expected page count",
-        toolCall: tc,
-      };
-    }
-    if (/copy|cp\s+.*output/i.test(cmd)) {
-      return {
-        id: tc.id,
-        kind: "terminal",
-        verb: "Copy",
-        text: "Copy the final PDF to outputs directory",
-        toolCall: tc,
-      };
-    }
-    if (/^git\s+status/i.test(cmd)) {
-      return { id: tc.id, kind: "terminal", verb: "Check", text: "Check git working tree status", toolCall: tc };
-    }
-    if (/^npm\s+test|^npx\s+vitest|^pytest/i.test(cmd)) {
-      return { id: tc.id, kind: "terminal", verb: "Run", text: "Run test suite", toolCall: tc };
-    }
-    if (/^npx\s+tsc/i.test(cmd)) {
-      return { id: tc.id, kind: "terminal", verb: "Type-check", text: "Type-check codebase", toolCall: tc };
-    }
-    const cleanCmd = cmd.length > 50 ? `${cmd.slice(0, 48)}…` : cmd;
-    return {
-      id: tc.id,
-      kind: "terminal",
-      verb: "Run",
-      text: cleanCmd ? `${cleanCmd}` : "Generate the report",
-      toolCall: tc,
-    };
-  }
-
-  // 6. Web search & fetch
-  if (name.includes("web") || name.includes("url") || name.includes("browse") || name.includes("fetch")) {
-    const rawQuery = String(args.query || args.Query || args.url || args.Url || "global warming causes effects solutions key facts 2024");
-    return {
-      id: tc.id,
-      kind: "globe",
-      verb: "Fetch",
-      text: `Fetch ${rawQuery}`,
-      sourceCount: 5,
-      toolCall: tc,
-    };
-  }
-
-  // 7. Read file
-  if (name.includes("read") || name.includes("view")) {
-    const rawPath = String(args.TargetFile || args.AbsolutePath || args.path || args.file || "");
-    const filename = rawPath.split(/[/\\]/).pop() || "file";
-    return {
-      id: tc.id,
-      kind: "doc",
-      verb: "Read",
-      text: `Read ${filename}`,
-      toolCall: tc,
-    };
-  }
-
-  // 8. Default
-  const verb = tc.displayName || (tc.toolName ? tc.toolName.replace(/_/g, " ") : "Execute");
-  return {
-    id: tc.id,
-    kind: "generic",
-    verb,
-    text: String(tc.label || args.name || verb),
-    toolCall: tc,
-  };
+  const pretty = (tc.displayName || tc.toolName || "Tool").replace(/[_-]+/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+  const anyArg = Object.values(args).find((v) => typeof v === "string" && v.trim()) as string | undefined;
+  return { ...base, kind: "generic", verb: pretty, text: oneLine(tc.label || anyArg || "", 90) };
 }
 
-function generateSummaryLine(steps: TimelineStepItem[]): string {
-  const execSteps = steps.filter((s) => s.kind !== "skill");
-  if (execSteps.length === 0) return "";
-
-  let commands = 0;
-  let created = 0;
-  let edited = 0;
-  let read = 0;
-  let presented = 0;
-  let computer = 0;
-  let browser = 0;
-
-  for (const s of execSteps) {
-    if (s.kind === "computer") computer++;
-    else if (s.kind === "globe" || s.verb.toLowerCase() === "navis") browser++;
-    else if (s.kind === "terminal") commands++;
-    else if (s.kind === "code" && s.verb.toLowerCase() === "create") created++;
-    else if (s.kind === "code" && s.verb.toLowerCase() === "edit") edited++;
-    else if (s.kind === "doc" && s.verb.toLowerCase() === "read") read++;
-    else if (s.kind === "doc" && s.verb.toLowerCase() === "presented") presented++;
-    else commands++;
+/** The one-line result shown under a finished call. */
+function resultLine(step: TimelineStepItem): { text: string; tone: "muted" | "error" } {
+  const tc = step.toolCall;
+  if (!tc) return { text: "", tone: "muted" };
+  const out = toolOutput(tc);
+  if (tc.status === "error") {
+    return { text: oneLine(out.split("\n").find((l) => l.trim()) || "Failed", 120), tone: "error" };
   }
+  if (tc.status === "running") return { text: "", tone: "muted" };
 
+  const args = (tc.args || {}) as Record<string, unknown>;
+  const lines = out ? out.split("\n").length : 0;
+  switch (step.verb) {
+    case "Read":
+      return { text: lines ? `Read ${lines} ${lines === 1 ? "line" : "lines"}` : "Read", tone: "muted" };
+    case "Write": {
+      const body = firstArg(args, ["FileContent", "content", "Content"]);
+      const n = body ? body.split("\n").length : 0;
+      return { text: n ? `Wrote ${n} ${n === 1 ? "line" : "lines"}` : "Written", tone: "muted" };
+    }
+    case "Update":
+      return { text: "Updated", tone: "muted" };
+    case "Bash": {
+      const first = out.split("\n").map((l) => l.trim()).filter(Boolean);
+      if (!first.length) return { text: "No output", tone: "muted" };
+      const more = first.length > 1 ? `  +${first.length - 1} ${first.length - 1 === 1 ? "line" : "lines"}` : "";
+      return { text: `${oneLine(first[0], 100)}${more}`, tone: "muted" };
+    }
+    case "Search":
+    case "List":
+      return { text: lines ? `${lines} ${lines === 1 ? "result" : "results"}` : "No matches", tone: "muted" };
+    default:
+      return { text: out ? oneLine(out.split("\n").find((l) => l.trim()) || "", 110) : "", tone: "muted" };
+  }
+}
+
+function summaryLine(steps: TimelineStepItem[]): string {
+  const count: Record<string, number> = {};
+  for (const s of steps) count[s.verb] = (count[s.verb] || 0) + 1;
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
   const parts: string[] = [];
-  if (computer > 0) {
-    parts.push(`Computer use (${computer} ${computer === 1 ? "task" : "tasks"})`);
-  }
-  if (browser > 0) {
-    parts.push(`Browsed web (${browser} ${browser === 1 ? "task" : "tasks"})`);
-  }
-  if (commands > 0) {
-    parts.push(`Ran ${commands} ${commands === 1 ? "command" : "commands"}`);
-  }
-  if (created > 0) {
-    parts.push(`created ${created === 1 ? "a file" : `${created} files`}`);
-  }
-  if (edited > 0) {
-    parts.push(`edited ${edited === 1 ? "a file" : `${edited} files`}`);
-  }
-  if (read > 0) {
-    parts.push(`read ${read === 1 ? "a file" : `${read} files`}`);
-  }
-  if (presented > 0) {
-    parts.push(`presented ${presented === 1 ? "a file" : `${presented} files`}`);
-  }
-
-  return parts.join(", ");
+  const take = (verb: string, fmt: (n: number) => string) => {
+    if (count[verb]) { parts.push(fmt(count[verb])); delete count[verb]; }
+  };
+  take("Bash", (n) => `ran ${plural(n, "command", "commands")}`);
+  take("Read", (n) => `read ${plural(n, "file", "files")}`);
+  take("Write", (n) => `wrote ${plural(n, "file", "files")}`);
+  take("Update", (n) => `edited ${plural(n, "file", "files")}`);
+  take("Search", (n) => `searched the code ${n === 1 ? "once" : `${n} times`}`);
+  take("Web search", (n) => `searched the web ${n === 1 ? "once" : `${n} times`}`);
+  take("Fetch", (n) => `fetched ${plural(n, "page", "pages")}`);
+  take("Browse", (n) => `browsed ${plural(n, "site", "sites")}`);
+  take("Computer", (n) => `used the computer ${n === 1 ? "once" : `${n} times`}`);
+  const rest = Object.values(count).reduce((a, b) => a + b, 0);
+  if (rest) parts.push(`used ${plural(rest, "other tool", "other tools")}`);
+  const line = parts.join(", ");
+  return line ? line[0].toUpperCase() + line.slice(1) : "";
 }
 
-// ── Simple Bash Syntax Highlighter ──────────────────────────────────────────
-function highlightBashCommand(cmd: string): string {
-  if (!cmd) return '';
-  
-  // Tokenize and colorize each part
-  const tokens = cmd.split(/(\s+|&&|\|\||;|'[^']*'|"[^"]*"|\/[^\s]*)/g).filter(Boolean);
-  
-  const builtins = new Set(['cd', 'ls', 'mkdir', 'rm', 'cp', 'mv', 'cat', 'echo', 'grep', 'pip', 'python3', 'npm', 'node', 'git', 'curl', 'wget', 'chmod', 'chown', 'sudo', 'apt', 'yum', 'brew', 'docker', 'kubectl', 'python', 'bash', 'sh', 'zsh']);
-  
-  return tokens.map(token => {
-    // Escape HTML
-    const esc = token.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    
-    // Whitespace
-    if (/^\s+$/.test(token)) return esc;
-    
-    // String literals
-    if (/^['"].*['"]$/.test(token)) return `<span style="color: #98c379">${esc}</span>`;
-    
-    // Paths
-    if (token.startsWith('/')) return `<span style="color: #98c379">${esc}</span>`;
-    
-    // Operators
-    if (/^(&&|\|\||;)$/.test(token)) return `<span style="color: #abb2bf">${esc}</span>`;
-    
-    // Builtins (cyan)
-    if (builtins.has(token)) return `<span style="color: #56b6c2">${esc}</span>`;
-    
-    // Arguments with flags (purple)
-    if (token.startsWith('-')) return `<span style="color: #c678dd">${esc}</span>`;
-    
-    // File extensions
-    if (/\.(py|js|ts|jsx|tsx|sh|json|txt|md|css|html)$/i.test(token)) return `<span style="color: #e5c07b">${esc}</span>`;
-    
-    return esc;
-  }).join('');
+function formatDuration(ms?: number): string {
+  if (!ms || ms < 0) return "";
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`;
+  return `${Math.floor(ms / 60_000)}m ${Math.round((ms % 60_000) / 1000)}s`;
 }
 
-// ── Collapsible Terminal View (Inline in Timeline) ─────────────────────────
-function CollapsibleTerminalView({ toolCall, isDark }: { toolCall: ToolCallDisplay; isDark: boolean }) {
-  const args = toolCall.args || {};
-  const command = String(args.command || args.cmd || args.Command || args.script || '');
-  const output = String(toolCall.output || toolCall.data?.output || '');
+// ── Pieces ────────────────────────────────────────────────────────────────────
 
+function StatusDot({ status }: { status: ToolCallDisplay["status"] }) {
+  const color =
+    status === "error" ? "var(--color-error, #ef4444)"
+    : status === "running" ? "var(--color-text-secondary)"
+    : "var(--color-success, #10b981)";
   return (
-    <div style={{ 
-      display: 'flex', 
-      flexDirection: 'column', 
-      gap: 6,
-      padding: '10px 12px',
-      borderRadius: 8,
-      background: isDark ? 'rgba(255,255,255,0.02)' : '#f8f8f8',
-      border: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)'
-    }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontFamily: '"JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, monospace' }}>
-        {/* bash label */}
-        <div style={{ fontSize: 10, color: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.4)', textTransform: 'lowercase', letterSpacing: '0.02em' }}>
-          bash
-        </div>
-        
-        {/* Command block - colored like Image */}
-        <div style={{ background: isDark ? '#141414' : '#f0f0f0', borderRadius: 6, padding: '8px 12px', overflowX: 'auto' }}>
-          <span style={{ fontSize: 12, lineHeight: 1.5 }} dangerouslySetInnerHTML={{ __html: highlightBashCommand(command) }} />
-        </div>
+    <span aria-hidden className={status === "running" ? "ef-tl-pulse" : undefined}
+      style={{ width: 7, height: 7, borderRadius: "50%", background: color, flexShrink: 0, marginTop: 7 }} />
+  );
+}
 
-        {/* Output block */}
-        {output && (
-          <>
-            <div style={{ fontSize: 10, color: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.4)', textTransform: 'none', letterSpacing: '0.02em', marginTop: 2 }}>
-              Output
-            </div>
-            <div style={{ 
-              background: isDark ? '#141414' : '#f0f0f0', 
-              borderRadius: 6,
-              padding: '8px 12px',
-              fontSize: 12, 
-              color: isDark ? '#c9d1d9' : '#2a2a2a',
-              fontFamily: '"JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, monospace',
-              whiteSpace: 'pre-wrap', 
-              wordBreak: 'break-word',
-              maxHeight: 300,
-              overflow: 'auto',
-              lineHeight: 1.5
-            }}>
-              {typeof output === 'string' ? output : JSON.stringify(output, null, 2)}
-            </div>
-          </>
-        )}
-      </div>
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden
+      style={{ flexShrink: 0, transform: open ? "rotate(90deg)" : "none", transition: "transform 160ms ease" }}>
+      <polyline points="9 18 15 12 9 6" />
+    </svg>
+  );
+}
+
+function DetailBlock({ label, body, tone = "normal" }: { label: string; body: string; tone?: "normal" | "error" }) {
+  if (!body) return null;
+  const lines = body.split("\n");
+  const clipped = lines.length > 200 ? `${lines.slice(0, 200).join("\n")}\n… ${lines.length - 200} more lines` : body;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.02em", color: "var(--color-text-tertiary)" }}>{label}</span>
+      <pre style={{
+        margin: 0, padding: "8px 10px", borderRadius: 8, maxHeight: 260, overflow: "auto",
+        background: "var(--color-bg-subtle)", border: "1px solid var(--color-border)",
+        fontFamily: MONO, fontSize: 12, lineHeight: 1.55, whiteSpace: "pre-wrap", wordBreak: "break-word",
+        color: tone === "error" ? "var(--color-error, #ef4444)" : "var(--color-text-secondary)",
+      }}>{clipped}</pre>
     </div>
   );
 }
 
-// ── Collapsible Code View (Write/Edit/Read tools) ─────────────────────────
-function CollapsibleCodeView({ toolCall, isDark }: { toolCall: ToolCallDisplay; isDark: boolean }) {
-  const args = toolCall.args || {};
-  const content = String(
-    args.FileContent || args.content || args.Content || 
-    args.newString || args.replace || args.ReplacementContent ||
-    args.oldString || args.find || args.TargetContent ||
-    args.output || toolCall.output || toolCall.data?.output ||
-    ''
-  ).trim();
-  
-  const rawPath = String(args.TargetFile || args.AbsolutePath || args.path || args.file || args.filePath || '');
-  const filename = rawPath.split(/[/\\]/).pop() || 'file';
-  const ext = filename.split('.').pop()?.toLowerCase() || '';
-  
-  if (!content) {
-    return (
-      <div style={{ padding: '8px 12px', fontSize: 12, color: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.4)' }}>
-        No content
-      </div>
-    );
+function stepInput(step: TimelineStepItem): { label: string; body: string } {
+  const tc = step.toolCall;
+  const args = (tc?.args || {}) as Record<string, unknown>;
+  if (step.verb === "Bash") return { label: "Command", body: firstArg(args, CMD_KEYS) };
+  if (step.verb === "Write") return { label: "Content", body: firstArg(args, ["FileContent", "content", "Content"]) };
+  if (step.verb === "Update") {
+    const oldS = firstArg(args, ["oldString", "old_string", "TargetContent", "find"]);
+    const newS = firstArg(args, ["newString", "new_string", "ReplacementContent", "replace"]);
+    if (oldS || newS) {
+      const diff = [
+        ...oldS.split("\n").map((l) => `- ${l}`),
+        ...newS.split("\n").map((l) => `+ ${l}`),
+      ].join("\n");
+      return { label: "Change", body: diff };
+    }
   }
-
-  const maxPreviewLines = 15;
-  const lines = content.split('\n');
-  const showMore = lines.length > maxPreviewLines;
-  const previewContent = showMore ? lines.slice(0, maxPreviewLines).join('\n') : content;
-
-  return (
-    <div style={{ 
-      display: 'flex', 
-      flexDirection: 'column', 
-      gap: 6,
-      padding: '10px 12px',
-      borderRadius: 8,
-      background: isDark ? 'rgba(255,255,255,0.02)' : '#f8f8f8',
-      border: isDark ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(0,0,0,0.06)'
-    }}>
-      <div style={{ fontSize: 10, color: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.4)', textTransform: 'lowercase', letterSpacing: '0.02em' }}>
-        {ext}
-      </div>
-      <div style={{ 
-        background: isDark ? '#141414' : '#f0f0f0', 
-        borderRadius: 6, 
-        padding: '8px 12px',
-        fontFamily: '"JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, monospace',
-        fontSize: 12,
-        lineHeight: 1.6,
-        color: isDark ? '#abb2bf' : '#2a2a2a',
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-word',
-        maxHeight: 400,
-        overflow: 'auto'
-      }}>
-        {previewContent}
-        {showMore && (
-          <div style={{ color: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.4)', marginTop: 6 }}>
-            … {lines.length - maxPreviewLines} more lines
-          </div>
-        )}
-      </div>
-    </div>
-  );
+  const keys = Object.keys(args);
+  if (!keys.length) return { label: "Input", body: "" };
+  let body = "";
+  try { body = JSON.stringify(args, null, 2); } catch { body = str(args); }
+  return { label: "Input", body: body.length > 4000 ? `${body.slice(0, 4000)}…` : body };
 }
 
-// ── Individual Execution Step Row (with expand/collapse) ────────────────
-function ExecStepRow({
-  step, toolCall, isLast, isDark, onPillClick, renderBadge
-}: {
+function ToolRow({ step, onOpen, threadBelow }: {
   step: TimelineStepItem;
-  toolCall: ToolCallDisplay | undefined;
-  isLast: boolean;
-  isDark: boolean;
-  onPillClick?: (tc: ToolCallDisplay) => void;
-  renderBadge: (kind: TimelineStepItem["kind"]) => React.ReactNode;
+  onOpen?: (tc: ToolCallDisplay) => void;
+  threadBelow: boolean;
 }) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const isTerminal = step.kind === "terminal";
-  const isCode = step.kind === "code";
+  const [open, setOpen] = useState(false);
+  const tc = step.toolCall!;
+  const result = resultLine(step);
+  const duration = formatDuration(tc.durationMs);
+  const input = stepInput(step);
+  const output = toolOutput(tc);
+  const canOpenPane = !!onOpen && (step.kind === "code" || step.kind === "doc" || step.kind === "computer" || step.kind === "globe");
+  const expandable = !!(input.body || output || tc.base64Image);
 
   return (
-    <React.Fragment>
-      <div
-        onClick={() => {
-          // Code steps open side pane; terminal expands inline
-          if (isCode) {
-            const targetTc = toolCall || null;
-            if (targetTc && onPillClick) onPillClick(targetTc);
-          } else if (isTerminal) {
-            setIsExpanded(!isExpanded);
-          } else {
-            const targetTc = toolCall || null;
-            if (targetTc && onPillClick) onPillClick(targetTc);
-          }
-        }}
-        className="hover:opacity-80 transition-opacity"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          cursor: isTerminal || isCode || onPillClick ? "pointer" : "default",
-          padding: "1px 0"
-        }}
-      >
-        {renderBadge(step.kind)}
-        <span
+    <div style={{ position: "relative", display: "flex", gap: 10, paddingBottom: 6 }}>
+      {/* Thread connecting this call to the next */}
+      {threadBelow && (
+        <span aria-hidden style={{ position: "absolute", left: 3, top: 17, bottom: -1, width: 1, background: "var(--color-border)" }} />
+      )}
+      <StatusDot status={tc.status} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <button
+          type="button"
+          aria-expanded={expandable ? open : undefined}
+          disabled={!expandable}
+          onClick={() => setOpen((v) => !v)}
+          className="ef-tl-row"
           style={{
-            fontSize: 14,
-            lineHeight: 1.45,
-            color: isDark ? "rgba(255, 255, 255, 0.65)" : "rgba(0, 0, 0, 0.7)",
-            fontWeight: 400,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            flex: 1
+            all: "unset", boxSizing: "border-box", width: "100%", display: "flex", alignItems: "baseline", gap: 8,
+            cursor: expandable ? "pointer" : "default", padding: "2px 6px", margin: "0 -6px", borderRadius: 6,
           }}
         >
-          {step.text}
-        </span>
-        {isTerminal && (
-          <motion.svg
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            animate={{ rotate: isExpanded ? 90 : 0 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-            style={{
-              color: isDark ? "rgba(255, 255, 255, 0.45)" : "rgba(0, 0, 0, 0.5)",
-            }}
-          >
-            <polyline points="9 18 15 12 9 6" />
-          </motion.svg>
+          <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--color-text-primary)", flexShrink: 0 }}>{step.verb}</span>
+          {step.text && (
+            <span title={step.text} style={{
+              fontFamily: MONO, fontSize: 12.5, color: "var(--color-text-secondary)",
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, flex: 1,
+            }}>{step.text}</span>
+          )}
+          {!step.text && <span style={{ flex: 1 }} />}
+          {duration && tc.status !== "running" && (
+            <span style={{ fontSize: 11.5, color: "var(--color-text-tertiary)", fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>{duration}</span>
+          )}
+          {expandable && <span style={{ color: "var(--color-text-tertiary)", display: "flex" }}><Chevron open={open} /></span>}
+        </button>
+
+        {/* One-line result, indented under the call */}
+        {(tc.status === "running" || result.text) && (
+          <div style={{ display: "flex", gap: 6, alignItems: "baseline", paddingLeft: 2, marginTop: 1 }}>
+            <span aria-hidden style={{
+              width: 8, height: 8, flexShrink: 0, borderLeft: "1px solid var(--color-border-strong, var(--color-border))",
+              borderBottom: "1px solid var(--color-border-strong, var(--color-border))", borderBottomLeftRadius: 3,
+              transform: "translateY(-2px)",
+            }} />
+            <span style={{
+              fontSize: 12.5, lineHeight: 1.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0,
+              fontFamily: step.verb === "Bash" && tc.status !== "running" ? MONO : undefined,
+              color: result.tone === "error" ? "var(--color-error, #ef4444)" : "var(--color-text-tertiary)",
+            }}>
+              {tc.status === "running" ? <span className="ef-tl-shimmer">Running…</span> : result.text}
+            </span>
+          </div>
         )}
-        {step.sourceCount && (
-          <span style={{ fontSize: 12, color: isDark ? "rgba(255, 255, 255, 0.45)" : "rgba(0, 0, 0, 0.5)", flexShrink: 0 }}>
-            ({step.sourceCount} sources)
-          </span>
-        )}
+
+        <AnimatePresence initial={false}>
+          {open && (
+            <motion.div
+              key="detail"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ type: "spring", bounce: 0, duration: 0.3 }}
+              style={{ overflow: "hidden" }}
+            >
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "8px 0 4px" }}>
+                <DetailBlock label={input.label} body={input.body} />
+                <DetailBlock label={tc.status === "error" ? "Error" : "Output"} body={output} tone={tc.status === "error" ? "error" : "normal"} />
+                {tc.base64Image && (
+                  <img alt="Screenshot from this step" src={tc.base64Image.startsWith("data:") ? tc.base64Image : `data:image/png;base64,${tc.base64Image}`}
+                    style={{ maxWidth: "100%", borderRadius: 8, border: "1px solid var(--color-border)" }} />
+                )}
+                {canOpenPane && (
+                  <button type="button" onClick={() => onOpen!(tc)} className="ef-tl-link"
+                    style={{ all: "unset", cursor: "pointer", fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)", alignSelf: "flex-start" }}>
+                    Open in side panel
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
-      {/* Collapsible Inline Terminal View only */}
-      <AnimatePresence>
-        {isExpanded && toolCall && isTerminal && (
-          <motion.div
-            key={`inline-${step.id}`}
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-            style={{ overflow: 'hidden' }}
-          >
-            <div style={{ margin: '8px 0 8px 27px' }}>
-              <CollapsibleTerminalView toolCall={toolCall} isDark={isDark} />
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-      {!isLast && <ConnectorLine isDark={isDark} />}
-    </React.Fragment>
+    </div>
   );
 }
 
 // ── Main AgentTimeline Component ──────────────────────────────────────────────
+
+/** How many finished calls stay visible above the live ones before older calls fold away. */
+const LIVE_TAIL = 6;
 
 export const AgentTimeline = React.memo(({
   toolCalls = [],
   thought,
   reasoningContent,
   isLive,
-  subAgentProgress,
   debateData,
   isDebating,
   debateId,
   onSkipDebate,
   onPillClick,
-  generatedTitle,
 }: AgentTimelineProps) => {
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
-  const [sourcesOpen, setSourcesOpen] = useState(false);
-  const [execExpanded, setExecExpanded] = useState(false);
+  const steps = useMemo(() => toolCalls.map(describeTool), [toolCalls]);
+  const [expanded, setExpanded] = useState(false);
 
-  // Convert toolCalls into structured steps
-  const steps = useMemo((): TimelineStepItem[] => {
-    const list: TimelineStepItem[] = [];
-    for (const tc of toolCalls) {
-      list.push(formatStepFromToolCall(tc));
-    }
-    return list;
-  }, [toolCalls]);
+  const reasoning = (reasoningContent || thought || "").trim();
+  if (steps.length === 0 && !isDebating && !debateData && !reasoning) return null;
 
-  // Separate skill loaded steps from execution steps
-  const skillSteps = useMemo(() => steps.filter(s => s.kind === "skill"), [steps]);
-  const execSteps = useMemo(() => steps.filter(s => s.kind !== "skill"), [steps]);
+  const running = steps.some((s) => s.toolCall?.status === "running");
+  const errors = steps.filter((s) => s.toolCall?.status === "error").length;
+  const summary = summaryLine(steps);
 
-  // Summary line
-  const summaryLine = useMemo(() => generateSummaryLine(steps), [steps]);
-
-  // Main Editorial Serif Heading
-  const mainHeading = useMemo(() => {
-    if (generatedTitle && generatedTitle.trim()) {
-      return generatedTitle.trim();
-    }
-    return "";
-  }, [generatedTitle, toolCalls, execSteps]);
-
-  // Pre-skill check text
-  const preSkillText = useMemo(() => {
-    if (skillSteps.length > 0) {
-      return "Checking skills before proceeding";
-    }
-    return "";
-  }, [skillSteps]);
-
-  if (steps.length === 0 && !isLive && !isDebating && !thought?.trim() && !reasoningContent?.trim()) {
-    return null;
-  }
-
-  const renderBadge = (kind: TimelineStepItem["kind"]) => {
-    switch (kind) {
-      case "computer": return <ComputerBadge isDark={isDark} />;
-      case "terminal": return <TerminalBadge isDark={isDark} />;
-      case "code": return <CodeBadge isDark={isDark} />;
-      case "skill": return <SkillBadge isDark={isDark} />;
-      case "globe": return <GlobeBadge isDark={isDark} />;
-      case "search": return <SearchBadge isDark={isDark} />;
-      case "doc": return <PresentedDocBadge isDark={isDark} />;
-      default: return <TerminalBadge isDark={isDark} />;
-    }
-  };
+  // Finished runs fold into one summary line; a live run shows its latest calls.
+  const folded = !isLive && steps.length > 3 && !expanded;
+  const hiddenLive = isLive && !expanded ? Math.max(0, steps.length - LIVE_TAIL) : 0;
+  const visible = folded ? [] : steps.slice(hiddenLive);
 
   return (
-    <div
-      style={{
-        width: "100%",
-        display: "flex",
-        flexDirection: "column",
-        padding: "4px 0 10px 0",
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
-      }}
-    >
-      {/* ── Debate Progress (if active) ── */}
+    <div className="ef-timeline" style={{ width: "100%", display: "flex", flexDirection: "column", padding: "2px 0 10px", fontFamily: "var(--font-sans)" }}>
       {(isDebating || debateData) && (
-        <div style={{ margin: "0 0 14px 0" }}>
-          <InlineDebateProgress
-            debate={debateData}
-            isDebating={!!isDebating}
-            debateId={debateId}
-            onSkipDebate={onSkipDebate}
-          />
+        <div style={{ margin: "0 0 12px" }}>
+          <InlineDebateProgress debate={debateData} isDebating={!!isDebating} debateId={debateId} onSkipDebate={onSkipDebate} />
         </div>
       )}
 
-      {/* ── 1. Pre-Skill Status (e.g. "Checking PDF creation skill before generating a PDF") ── */}
-      {preSkillText && (
-        <div style={{ marginBottom: 6 }}>
-          <p
-            style={{
-              margin: 0,
-              fontSize: 14,
-              lineHeight: 1.45,
-              color: isDark ? "rgba(255, 255, 255, 0.45)" : "rgba(0, 0, 0, 0.5)",
-              fontWeight: 500
-            }}
-          >
-            {preSkillText}
-          </p>
+      {reasoning && (
+        <div style={{ marginBottom: steps.length ? 6 : 0 }}>
+          <ReasoningBlock content={reasoning} streaming={!!isLive && !running} />
         </div>
       )}
 
-      {/* ── 2. Loaded Skill Row ── */}
-      {skillSteps.length > 0 && (
-        <div style={{ marginBottom: 18, display: "flex", flexDirection: "column", gap: 6 }}>
-          {skillSteps.map((sk) => (
-            <div
-              key={sk.id}
-              onClick={() => {
-                if (sk.toolCall && onPillClick) onPillClick(sk.toolCall);
-              }}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                cursor: onPillClick ? "pointer" : "default"
-              }}
-            >
-              <SkillBadge isDark={isDark} />
-              <span
-                style={{
-                  fontSize: 14,
-                  lineHeight: 1.45,
-                  color: isDark ? "rgba(255, 255, 255, 0.65)" : "rgba(0, 0, 0, 0.7)",
-                  fontWeight: 500
-                }}
-              >
-                {sk.text}
-              </span>
-            </div>
+      {steps.length > 0 && (folded || hiddenLive > 0 || (!isLive && steps.length > 3)) && (
+        <button
+          type="button"
+          aria-expanded={!folded && hiddenLive === 0}
+          onClick={() => setExpanded((v) => !v)}
+          className="ef-tl-row"
+          style={{
+            all: "unset", boxSizing: "border-box", display: "flex", alignItems: "center", gap: 8, cursor: "pointer",
+            padding: "3px 6px", margin: "0 -6px 6px", borderRadius: 6, alignSelf: "flex-start", maxWidth: "100%",
+            fontSize: 13, color: "var(--color-text-secondary)",
+          }}
+        >
+          <span style={{ color: "var(--color-text-tertiary)", display: "flex" }}><Chevron open={!folded && hiddenLive === 0} /></span>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {hiddenLive > 0 ? `${hiddenLive} earlier ${hiddenLive === 1 ? "step" : "steps"}` : summary || `${steps.length} steps`}
+          </span>
+          {errors > 0 && !hiddenLive && (
+            <span style={{ fontSize: 12, color: "var(--color-error, #ef4444)", flexShrink: 0 }}>
+              {errors} failed
+            </span>
+          )}
+        </button>
+      )}
+
+      {visible.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          {visible.map((step, i) => (
+            <ToolRow
+              key={`${step.id}-${i + hiddenLive}`}
+              step={step}
+              onOpen={onPillClick}
+              threadBelow={i < visible.length - 1}
+            />
           ))}
         </div>
       )}
-
-      {/* ── 3. Main Editorial Serif Heading (e.g. "Building a well-formatted PDF report on global warming now.") ── */}
-      {mainHeading && (
-        <h3
-          style={{
-            margin: "0 0 6px 0",
-            fontSize: 18,
-            lineHeight: 1.4,
-            fontWeight: 500,
-            fontFamily: 'Georgia, Charter, "Newsreader", "Source Serif Pro", serif',
-            color: isDark ? "rgba(255, 255, 255, 0.95)" : "#18181b",
-            letterSpacing: "-0.01em"
-          }}
-        >
-          {mainHeading}
-        </h3>
-      )}
-
-      {/* ── 3.5. Thinking / Reasoning Area ── */}
-      {(reasoningContent?.trim() || thought?.trim()) && (
-        <div style={{ marginBottom: 12 }}>
-          <ReasoningBlock content={(reasoningContent || thought || '').trim()} streaming={!!isLive} />
-        </div>
-      )}
-
-      {/* ── 4. Summary Action Line + Collapsible Execution Tree ── */}
-      {summaryLine && (
-        <div style={{ marginBottom: 14 }}>
-          <div
-            onClick={() => setExecExpanded(!execExpanded)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              cursor: 'pointer',
-              userSelect: 'none',
-            }}
-          >
-            <motion.svg
-              width="10"
-              height="10"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              animate={{ rotate: execExpanded ? 90 : 0 }}
-              transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-              style={{
-                color: isDark ? 'rgba(255, 255, 255, 0.3)' : 'rgba(0, 0, 0, 0.4)',
-                flexShrink: 0,
-              }}
-            >
-              <polyline points="9 18 15 12 9 6" />
-            </motion.svg>
-            <p
-              style={{
-                margin: 0,
-                fontSize: 14,
-                lineHeight: 1.45,
-                color: isDark ? 'rgba(255, 255, 255, 0.45)' : 'rgba(0, 0, 0, 0.5)',
-                fontWeight: 400,
-              }}
-            >
-              {summaryLine}
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Collapsible Execution Tree */}
-      <AnimatePresence initial={false}>
-        {execExpanded && execSteps.length > 0 && (
-          <motion.div
-            key="exec-tree"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 35, mass: 0.8 }}
-            style={{ overflow: 'hidden' }}
-          >
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              {execSteps.map((step, idx) => {
-                const isLast = idx === execSteps.length - 1;
-                return (
-                  <ExecStepRow
-                    key={`exec-step-${step.id}-${idx}`}
-                    step={step}
-                    toolCall={step.toolCall || toolCalls[idx]}
-                    isLast={isLast}
-                    isDark={isDark}
-                    onPillClick={onPillClick}
-                    renderBadge={renderBadge}
-                  />
-                );
-              })}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 });
+
+AgentTimeline.displayName = "AgentTimeline";
 
 export default AgentTimeline;

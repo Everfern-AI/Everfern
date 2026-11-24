@@ -267,7 +267,7 @@ export default function UserQuestionsPanel({ isOpen, onClose, questions, onSubmi
                                         transition: 'all 0.15s',
                                     }}
                                 >
-                                    Submit ✓
+                                    Submit
                                 </button>
                             )}
                         </div>

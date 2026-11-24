@@ -344,7 +344,7 @@ export function SubagentChatView({
       >
         {/* 1. Delegated Mission Prompt (User Bubble Style) */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: 'var(--color-text-tertiary)', }}>
             <Target size={12} color="#3b82f6" />
             <span>Delegated Mission Objective</span>
           </div>
@@ -453,7 +453,7 @@ export function SubagentChatView({
         {/* 3. Real-Time Tools & Actions Stream */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: 'var(--color-text-tertiary)', }}>
               <Terminal size={12} color="#10b981" />
               <span>Executed Actions & Tools ({actionEvents.length})</span>
             </div>
@@ -631,7 +631,7 @@ export function SubagentChatView({
                       >
                         {params && Object.keys(params).length > 0 && (
                           <div>
-                            <div style={{ fontSize: 9.5, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', marginBottom: 4 }}>
+                            <div style={{ fontSize: 9.5, fontWeight: 700, color: 'var(--color-text-tertiary)', marginBottom: 4 }}>
                               Input Arguments
                             </div>
                             <pre
@@ -655,7 +655,7 @@ export function SubagentChatView({
 
                         {result !== undefined && (
                           <div>
-                            <div style={{ fontSize: 9.5, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', marginBottom: 4 }}>
+                            <div style={{ fontSize: 9.5, fontWeight: 700, color: 'var(--color-text-tertiary)', marginBottom: 4 }}>
                               Result / Output
                             </div>
                             <pre
@@ -688,7 +688,7 @@ export function SubagentChatView({
         {/* 4. Subagent Final Findings / Streamed Output */}
         {effectiveOutput && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: 'var(--color-text-tertiary)', }}>
               <Bot size={13} color="#3b82f6" />
               <span>Sub-agent Output & Findings</span>
             </div>

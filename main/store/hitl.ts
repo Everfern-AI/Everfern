@@ -7,6 +7,17 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { execFileSync } from 'child_process';
+
+function writeNativeHitl(operation: 'request' | 'response', record: HitlRequest | HitlResponse): boolean {
+  const executable = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+  if (!executable) return false;
+  execFileSync(executable, ['--ef-hitl-write'], {
+    input: JSON.stringify({ operation, record }),
+    windowsHide: true, timeout: 10000, stdio: ['pipe', 'ignore', 'pipe'],
+  });
+  return true;
+}
 
 export interface HitlRequest {
   id: string;
@@ -57,6 +68,7 @@ const getConversationHitlDir = (conversationId: string): string => {
  */
 export function saveHitlRequest(request: HitlRequest): void {
   try {
+    if (writeNativeHitl('request', request)) return;
     const dir = getConversationHitlDir(request.conversationId);
     const filePath = path.join(dir, `${request.id}.json`);
     
@@ -77,6 +89,7 @@ export function saveHitlRequest(request: HitlRequest): void {
  */
 export function saveHitlResponse(response: HitlResponse): void {
   try {
+    if (writeNativeHitl('response', response)) return;
     const dir = getConversationHitlDir(response.conversationId);
     const filePath = path.join(dir, `${response.requestId}.json`);
     
@@ -116,6 +129,13 @@ export function saveHitlResponse(response: HitlResponse): void {
  */
 export function getHitlRecord(conversationId: string, requestId: string): HitlRecord | null {
   try {
+    const executable = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+    if (executable) {
+      return JSON.parse(execFileSync(executable, ['--ef-hitl-write'], {
+        input: JSON.stringify({ operation: 'get', conversationId, requestId }),
+        encoding: 'utf8', windowsHide: true, timeout: 10000, maxBuffer: 16 * 1024 * 1024,
+      }));
+    }
     const dir = getConversationHitlDir(conversationId);
     const filePath = path.join(dir, `${requestId}.json`);
     
@@ -136,6 +156,13 @@ export function getHitlRecord(conversationId: string, requestId: string): HitlRe
  */
 export function listHitlRecords(conversationId: string): HitlRecord[] {
   try {
+    const executable = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+    if (executable) {
+      return JSON.parse(execFileSync(executable, ['--ef-hitl-write'], {
+        input: JSON.stringify({ operation: 'list', conversationId }),
+        encoding: 'utf8', windowsHide: true, timeout: 10000, maxBuffer: 16 * 1024 * 1024,
+      }));
+    }
     const dir = getConversationHitlDir(conversationId);
     const files = fs.readdirSync(dir).filter(f => f.endsWith('.json'));
     
@@ -182,6 +209,14 @@ export function getHitlStats(conversationId: string): {
  */
 export function deleteConversationHitl(conversationId: string): void {
   try {
+    const executable = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+    if (executable) {
+      execFileSync(executable, ['--ef-hitl-write'], {
+        input: JSON.stringify({ operation: 'delete', conversationId }),
+        windowsHide: true, timeout: 10000, stdio: ['pipe', 'ignore', 'pipe'],
+      });
+      return;
+    }
     const dir = getConversationHitlDir(conversationId);
     if (fs.existsSync(dir)) {
       fs.rmSync(dir, { recursive: true, force: true });

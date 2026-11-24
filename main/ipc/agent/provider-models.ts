@@ -1,4 +1,5 @@
 import { ipcMain } from 'electron';
+import { execFile } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -29,6 +30,14 @@ function scopedLocalModelId(provider: string, model: string): string {
 
 export function registerProviderModelHandlers(): void {
   ipcMain.handle('acp:list-providers', () => acpManager.listProviders());
+  if (process.env.EVERFERN_SHELL === 'tauri') {
+    ipcMain.handle('acp:model-picker-config', () => {
+      const active = acpManager.getActiveConfig();
+      if (!active) return null;
+      const { provider, model, baseUrl, customModel } = active as typeof active & { customModel?: string };
+      return { provider, model, baseUrl, customModel };
+    });
+  }
 
   ipcMain.handle('screenshot:load', async (_event, filePath: string) => {
     try {
@@ -61,7 +70,27 @@ export function registerProviderModelHandlers(): void {
     return acpManager.setProvider(config);
   });
 
-  ipcMain.handle('acp:health-check', async () => acpManager.healthCheck());
+  ipcMain.handle('acp:health-check', async () => {
+    const active = acpManager.getActiveConfig();
+    const executable = process.env.EVERFERN_SHELL === 'tauri' ? process.env.EF_NATIVE_EXE : undefined;
+    const client = acpManager.getClient();
+    if (!executable || !active || !client) {
+      return acpManager.healthCheck();
+    }
+    try {
+      const { provider, baseUrl, apiKey } = client.providerHealthConfig();
+      return await new Promise((resolve, reject) => {
+        const child = execFile(executable, ['--ef-local-health'], { windowsHide: true, timeout: 10000 }, (error, output) => {
+          if (error) return reject(error);
+          try { resolve(JSON.parse(output)); } catch (parseError) { reject(parseError); }
+        });
+        child.stdin?.once('error', reject);
+        child.stdin?.end(JSON.stringify({ provider, baseUrl, apiKey }));
+      });
+    } catch {
+      return { ok: false, provider: active.provider, error: 'Native provider health check failed' };
+    }
+  });
 
   ipcMain.handle('acp:list-tools', async () => {
     try {
@@ -88,6 +117,7 @@ export function registerProviderModelHandlers(): void {
     }
   });
 
+  if (process.env.EVERFERN_SHELL === 'tauri') return;
   ipcMain.handle('acp:list-models', async () => {
     try {
       const config = { ...loadConfigSync(), ...acpManager.getActiveConfig() };
@@ -109,10 +139,12 @@ export function registerProviderModelHandlers(): void {
         }
       }
 
+      const listLocalModels = (provider: 'ollama' | 'lmstudio' | 'llamacpp', options: { baseUrl?: string; apiKey?: string } = {}) =>
+        new AIClient({ provider, ...options }).listModels();
+
       let ollamaModels: FlatModelEntry[] = [];
       try {
-        const ollamaClient = new AIClient({ provider: 'ollama' });
-        const rawOllama = await ollamaClient.listModels();
+        const rawOllama = await listLocalModels('ollama');
         ollamaModels = rawOllama.map((m: string) => ({
           id: scopedLocalModelId('ollama', m),
           name: m,
@@ -128,8 +160,7 @@ export function registerProviderModelHandlers(): void {
 
       let lmstudioModels: FlatModelEntry[] = [];
       try {
-        const lmClient = new AIClient({ provider: 'lmstudio' });
-        const rawLm = await lmClient.listModels();
+        const rawLm = await listLocalModels('lmstudio');
         lmstudioModels = rawLm.map((m: string) => ({
           id: scopedLocalModelId('lmstudio', m),
           name: m,
@@ -143,15 +174,13 @@ export function registerProviderModelHandlers(): void {
         lmstudioModels.push({ id: 'lmstudio-error', name: 'LM Studio is not running/installed', provider: 'LM Studio', providerType: 'lmstudio' as any });
       }
 
-      const merged = [...activeModels];
       let llamacppModels: FlatModelEntry[] = [];
       try {
-        const client = new AIClient({
-          provider: 'llamacpp',
+        const models = await listLocalModels('llamacpp', {
           baseUrl: (config?.provider === 'llamacpp' ? config.baseUrl : undefined) || (config as any)?.baseUrls?.llamacpp,
           apiKey: (config as any)?.keys?.llamacpp || (config?.provider === 'llamacpp' ? config.apiKey : undefined),
         });
-        llamacppModels = (await client.listModels()).map(id => ({
+        llamacppModels = models.map(id => ({
           id: scopedLocalModelId('llamacpp', id), name: id, provider: 'llama.cpp', providerType: 'llamacpp',
         }));
       } catch { /* A local server is optional. */ }
@@ -161,7 +190,10 @@ export function registerProviderModelHandlers(): void {
         llamacppModels.push({ id: scopedLocalModelId('llamacpp', model), name: model, provider: 'llama.cpp', providerType: 'llamacpp' });
       }
 
-      for (const om of [...ollamaModels, ...lmstudioModels, ...llamacppModels]) {
+      const localModels = [...ollamaModels, ...lmstudioModels, ...llamacppModels];
+      const catalog = await getOpenRouterCatalog();
+      const merged = [...activeModels];
+      for (const om of localModels) {
          if (!merged.find(m => m.id === om.id && m.providerType === om.providerType)) merged.push(om);
       }
 
@@ -169,7 +201,6 @@ export function registerProviderModelHandlers(): void {
         merged.push({ id: 'everfern-1', name: 'Fern-1', provider: 'EverFern Cloud', providerType: 'everfern' as any });
       }
 
-      const catalog = await getOpenRouterCatalog();
       return { success: true, models: applyOpenRouterCapabilities(merged, catalog) };
     } catch (error) {
       console.error('[acp:list-models] Error:', error);

@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { execFile, execFileSync } from 'child_process';
 import { getEmbeddingModel, getSystemEmbeddingConfig } from '../../../lib/embeddings';
 
 export interface GraphNode {
@@ -37,6 +38,15 @@ export function getGraphPath(): string {
 }
 
 export function loadMemoryGraph(): MemoryGraph {
+  const native = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+  if (native) {
+    try {
+      return nativeGraphOperation(native, { operation: 'load' });
+    } catch (error) {
+      console.error('Failed to load memory graph:', error);
+      return { nodes: [], edges: [] };
+    }
+  }
   const filePath = getGraphPath();
   if (!fs.existsSync(filePath)) {
     return { nodes: [], edges: [] };
@@ -51,12 +61,36 @@ export function loadMemoryGraph(): MemoryGraph {
 }
 
 export function saveMemoryGraph(graph: MemoryGraph): void {
-  const filePath = getGraphPath();
   try {
-    fs.writeFileSync(filePath, JSON.stringify(graph, null, 2), 'utf-8');
+    const native = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+    if (native) {
+      nativeGraphOperation(native, { operation: 'save', graph });
+      return;
+    }
+    fs.writeFileSync(getGraphPath(), JSON.stringify(graph, null, 2), 'utf-8');
   } catch (err) {
     console.error('Failed to save memory graph:', err);
   }
+}
+
+export function nativeGraphOperation(executable: string, request: object): any {
+  return JSON.parse(execFileSync(executable, ['--ef-memory-graph'], {
+    input: JSON.stringify(request), encoding: 'utf8', windowsHide: true,
+    timeout: 10000, maxBuffer: 64 * 1024 * 1024,
+  }));
+}
+
+export function runNativeGraphOperation<T>(executable: string, request: object): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const child = execFile(executable, ['--ef-memory-graph'], {
+      encoding: 'utf8', windowsHide: true, timeout: 120000, maxBuffer: 64 * 1024 * 1024,
+    }, (error, output) => {
+      if (error) return reject(error);
+      try { resolve(JSON.parse(output)); } catch (parseError) { reject(parseError); }
+    });
+    child.stdin?.on('error', reject);
+    child.stdin?.end(JSON.stringify(request));
+  });
 }
 
 export async function addOrUpdateMemory(
@@ -66,9 +100,20 @@ export async function addOrUpdateMemory(
   linkedFile: string,
   metadata: Record<string, any> = {}
 ): Promise<void> {
-  const graph = loadMemoryGraph();
+  const native = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+  const graph = native ? undefined : loadMemoryGraph();
   const memoryDir = getMemoryDir();
   const now = new Date().toISOString();
+  const nativeMemory = native ? {
+    id: `${type}_${category.toLowerCase()}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    type, category, value, linkedFile, metadata, timestamp: now,
+  } : undefined;
+  if (native && nativeMemory) {
+    const result = await runNativeGraphOperation<{ embedded: boolean }>(native, {
+      operation: 'upsert-with-embedding', memory: nativeMemory,
+    });
+    if (result.embedded) return;
+  }
 
   // Generate 1536-dimensional embedding vector
   let embedding: number[] | undefined = undefined;
@@ -80,66 +125,71 @@ export async function addOrUpdateMemory(
     console.warn('[PersistentMemory] Failed to generate embedding for memory value:', err);
   }
 
-  // Find if there is an existing node of same type and category
-  const existingNodeIndex = graph.nodes.findIndex(
-    n => n.type === type && n.category.toLowerCase() === category.toLowerCase()
-  );
+  if (native && nativeMemory) {
+    await runNativeGraphOperation(native, { operation: 'upsert', memory: { ...nativeMemory, embedding } });
+    return;
+  } else if (graph) {
+    // Find if there is an existing node of same type and category
+    const existingNodeIndex = graph.nodes.findIndex(
+      n => n.type === type && n.category.toLowerCase() === category.toLowerCase()
+    );
 
-  let id: string;
-  if (existingNodeIndex !== -1) {
-    const oldNode = graph.nodes[existingNodeIndex];
-    oldNode.value = value;
-    oldNode.metadata = {
-      ...oldNode.metadata,
-      ...metadata,
-      embedding: embedding || oldNode.metadata?.embedding,
-      lastUpdated: now
-    };
-    id = oldNode.id;
-    console.log(`[PersistentMemory] Updated existing memory node: ${id}`);
-  } else {
-    id = `${type}_${category.toLowerCase()}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const newNode: GraphNode = {
-      id,
-      type,
-      category,
-      name: `${category} ${type}`,
-      value,
-      linkedFile,
-      metadata: {
+    let id: string;
+    if (existingNodeIndex !== -1) {
+      const oldNode = graph.nodes[existingNodeIndex];
+      oldNode.value = value;
+      oldNode.metadata = {
+        ...oldNode.metadata,
         ...metadata,
-        embedding,
-        created: now,
+        embedding: embedding || oldNode.metadata?.embedding,
         lastUpdated: now
-      }
-    };
-    graph.nodes.push(newNode);
-
-    // Ensure there is a node representing the linked markdown file
-    const fileNodeId = `file_${linkedFile.toLowerCase()}`;
-    let fileNode = graph.nodes.find(n => n.id === fileNodeId);
-    if (!fileNode) {
-      fileNode = {
-        id: fileNodeId,
-        type: 'file',
-        category: 'file',
-        name: linkedFile,
-        value: path.join(memoryDir, linkedFile)
       };
-      graph.nodes.push(fileNode);
+      id = oldNode.id;
+      console.log(`[PersistentMemory] Updated existing memory node: ${id}`);
+    } else {
+      id = `${type}_${category.toLowerCase()}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const newNode: GraphNode = {
+        id,
+        type,
+        category,
+        name: `${category} ${type}`,
+        value,
+        linkedFile,
+        metadata: {
+          ...metadata,
+          embedding,
+          created: now,
+          lastUpdated: now
+        }
+      };
+      graph.nodes.push(newNode);
+
+      // Ensure there is a node representing the linked markdown file
+      const fileNodeId = `file_${linkedFile.toLowerCase()}`;
+      let fileNode = graph.nodes.find(n => n.id === fileNodeId);
+      if (!fileNode) {
+        fileNode = {
+          id: fileNodeId,
+          type: 'file',
+          category: 'file',
+          name: linkedFile,
+          value: path.join(memoryDir, linkedFile)
+        };
+        graph.nodes.push(fileNode);
+      }
+
+      // Add edge linking memory to file node
+      graph.edges.push({
+        source: id,
+        target: fileNodeId,
+        type: 'linked_to'
+      });
+
+      console.log(`[PersistentMemory] Added new memory node: ${id}`);
     }
 
-    // Add edge linking memory to file node
-    graph.edges.push({
-      source: id,
-      target: fileNodeId,
-      type: 'linked_to'
-    });
-
-    console.log(`[PersistentMemory] Added new memory node: ${id}`);
+    saveMemoryGraph(graph);
   }
-
-  saveMemoryGraph(graph);
 
   // Write/append to the corresponding markdown file
   const filePath = path.join(memoryDir, linkedFile);
@@ -171,6 +221,14 @@ export interface SensitiveMatch {
 }
 
 export function findMatchingSensitivePreference(query: string): SensitiveMatch | null {
+  const native = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+  if (native) {
+    try {
+      return nativeGraphOperation(native, { operation: 'sensitive-preference', query });
+    } catch (error) {
+      console.warn('[PersistentMemory] Native sensitive preference lookup failed:', error);
+    }
+  }
   const graph = loadMemoryGraph();
   if (!graph.nodes || graph.nodes.length === 0) return null;
 
@@ -212,6 +270,11 @@ export function findMatchingSensitivePreference(query: string): SensitiveMatch |
 }
 
 export function deleteMemoryNode(id: string): void {
+  const native = process.env.EVERFERN_SHELL === 'tauri' && process.env.EF_NATIVE_EXE;
+  if (native) {
+    nativeGraphOperation(native, { operation: 'delete', id });
+    return;
+  }
   const graph = loadMemoryGraph();
   const nodeToDelete = graph.nodes.find(n => n.id === id);
   if (!nodeToDelete) return;

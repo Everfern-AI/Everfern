@@ -8,7 +8,7 @@ vi.mock('next/image', () => ({ default: ({ priority, ...props }: any) => <img {.
 vi.mock('../Settings', () => ({ SettingsSheet: ({ onClose }: any) => <section role="dialog" aria-label="Settings"><button onClick={onClose}>Close settings</button></section>, logoutLocal: vi.fn() }));
 vi.mock('../ModelSettings', () => ({ CloudGate: () => null, PaywallView: () => null, useCloudAuth: () => ({}) }));
 vi.mock('../Desktop', () => ({ WorkerDesktop: () => null, windowsForApps: () => [{ id: 'chrome', app: 'chrome', z: 1 }] }));
-vi.mock('@/lib/worker-engine', () => ({ hasAgent: () => true, parseSteps: (text: string) => text ? [text] : [], stopWorker: vi.fn(), runWorker: vi.fn(), planJob: async () => ({ live: true, kind: 'reply', reply: '# Two plans, one space\n\nCurrent status:\n\n- A daily weather briefing.\n- A recurring task.\n\nWhich job should this space run?', steps: [] }) }));
+vi.mock('@/lib/worker-engine', () => ({ hasAgent: () => true, parseSteps: (text: string) => text ? [text] : [], stopWorker: vi.fn(), runWorker: vi.fn(), activeRunOf: () => undefined, liveRuns: vi.fn(async () => []), attachRun: vi.fn(), planJob: async () => ({ live: true, kind: 'reply', reply: '# Two plans, one space\n\nCurrent status:\n\n- A daily weather briefing.\n- A recurring task.\n\nWhich job should this space run?', steps: [] }) }));
 vi.mock('framer-motion', async () => {
   const React = await import('react');
   const cache = new Map();
@@ -44,10 +44,10 @@ it('keeps the reference navigation, dock and marketplace connected to real actio
   fireEvent.change(screen.getByLabelText('Describe your task'), { target: { value: 'Plan my day' } });
   fireEvent.click(screen.getByLabelText('Send message'));
   await screen.findByText('Two plans, one space');
-  expect(container.querySelector('.wk-msg-ai.is-document h2')).toBeTruthy();
+  expect(container.querySelector('.wk-msg-ai.is-document h1.wk-r-title')).toBeTruthy();
   mkdirSync('scratch', { recursive: true });
   writeFileSync('scratch/reference-source-expanded.html', container.innerHTML);
-  fireEvent.click(screen.getByRole('button', { name: 'Chrome (minimized)' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Chrome (closed)' }));
   fireEvent.click(screen.getByRole('button', { name: 'Hide chat' }));
   expect(screen.getByLabelText('Expand conversation')).toBeVisible();
   expect(screen.getByLabelText('Expand conversation').textContent).toContain('Two plans, one space');

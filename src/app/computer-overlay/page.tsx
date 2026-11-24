@@ -210,7 +210,7 @@ function GradientOverlayBar({ task, active, exiting }: { task: string; active: b
           textOverflow: 'ellipsis',
           opacity: isVisible ? 1 : 0,
           transform: isVisible ? 'translateY(0) scale(1)' : 'translateY(12px) scale(0.96)',
-          transition: 'opacity 0.35s ease, transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)',
+          transition: 'opacity 0.35s ease, transform 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
         }}>
           {/* Pulsing Fern dot */}
           <div style={{
@@ -344,8 +344,8 @@ export default function ComputerOverlayPage() {
         html, body {
           overflow: hidden;
           background: transparent !important;
-          width: 100vw;
-          height: 100vh;
+          width: var(--ef-vw);
+          height: var(--ef-vh);
         }
         #__next { background: transparent !important; }
 

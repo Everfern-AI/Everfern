@@ -23,8 +23,8 @@ export default function OverlayLayout({
           padding: 0,
           background: 'transparent',
           overflow: 'hidden',
-          width: '100vw',
-          height: '100vh',
+          width: 'var(--ef-vw)',
+          height: 'var(--ef-vh)',
         }}
       >
         {children}

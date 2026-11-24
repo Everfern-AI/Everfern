@@ -1,12 +1,14 @@
 import { app, BrowserWindow, screen, ipcMain } from 'electron';
 import * as path from 'path';
+import { hasNativeKeyHook, startNativeKeyHook } from './lib/native-keyhook';
 
 // ── uiohook-napi is a native module that must be rebuilt per Electron ABI. ──
 // Lazy-require with try/catch so a rebuild failure doesn't crash the main process
 // on Linux/macOS (same pattern used for @jitsi/robotjs in computer-use.ts).
+// Under the Tauri shell on Windows the shell watches the keys instead (lib/native-keyhook).
 let uIOhook: any = null;
 let UiohookKey: any = null;
-try {
+if (!hasNativeKeyHook()) try {
   const mod = require('uiohook-napi');
   uIOhook = mod.uIOhook;
   UiohookKey = mod.UiohookKey;
@@ -208,6 +210,24 @@ export class VoiceOverlayManager {
   }
 
   private setupHook() {
+    if (hasNativeKeyHook()) {
+      startNativeKeyHook((key, down) => {
+        if (key === 'ctrl') {
+          this.isCtrlDown = down;
+          if (!down) this.otherKeyPressed = false;
+        } else if (key === 'alt') {
+          this.isAltDown = down;
+          if (!down) this.otherKeyPressed = false;
+        } else if (down) {
+          this.otherKeyPressed = true;
+        } else {
+          return; // uiohook's handler ignored other keys going up, too.
+        }
+        this.checkState();
+      });
+      console.log('[VoiceOverlay] Native key hook started.');
+      return;
+    }
     if (!uIOhook) {
       console.warn('[VoiceOverlay] Skipping hook setup — uiohook-napi not available on this platform/build.');
       return;

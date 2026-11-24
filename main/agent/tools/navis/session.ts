@@ -13,21 +13,22 @@ import { NavisLogger } from './logger';
 import { findChromiumExecutable, ensurePlaywrightChromium } from '../../../lib/playwright-setup';
 import { getAvailableBrowsers, type BrowserInfo } from '../../../lib/browser-detector';
 
-let pwChromium: any = null;
-let pwFirefox: any = null;
-try {
-  const pw = require('playwright');
-  pwChromium = pw.chromium;
-  pwFirefox = pw.firefox;
-} catch {
+// Playwright is ~1,100 modules; load it on the first browser launch, not at import.
+let pwLoaded: { chromium: any; firefox: any } | null = null;
+function loadPlaywright(): { chromium: any; firefox: any } {
+  if (pwLoaded) return pwLoaded;
+  pwLoaded = { chromium: null, firefox: null };
   try {
-    const pwCore = require('playwright-core');
-    pwChromium = pwCore.chromium;
-    pwFirefox = pwCore.firefox;
-  } catch {}
+    const pw = require('playwright');
+    pwLoaded = { chromium: pw.chromium, firefox: pw.firefox };
+  } catch {
+    try {
+      const pwCore = require('playwright-core');
+      pwLoaded = { chromium: pwCore.chromium, firefox: pwCore.firefox };
+    } catch {}
+  }
+  return pwLoaded;
 }
-
-const chromium = pwChromium;
 
 export interface SessionConfig {
   headless?: boolean;
@@ -775,7 +776,7 @@ export class BrowserSession {
           fs.mkdirSync(firefoxProfileDir, { recursive: true });
 
           try {
-            this.context = await pwFirefox.launchPersistentContext(firefoxProfileDir, {
+            this.context = await loadPlaywright().firefox.launchPersistentContext(firefoxProfileDir, {
               headless,
               executablePath,
               args: [
@@ -797,7 +798,7 @@ export class BrowserSession {
             console.log(`[Navis] ✅ Firefox launched with Navis tab group extension`);
           } catch (firefoxExtErr: any) {
             console.warn(`[Navis] Firefox with extension failed (${firefoxExtErr.message}), falling back to basic Playwright Firefox`);
-            this.browser = await pwFirefox.launch({
+            this.browser = await loadPlaywright().firefox.launch({
               headless,
               args: ['--no-remote'],
             });
@@ -817,7 +818,7 @@ export class BrowserSession {
             `--load-extension=${extensionPath}`,
           ];
 
-          this.context = await chromium.launchPersistentContext('', {
+          this.context = await loadPlaywright().chromium.launchPersistentContext('', {
             headless,
             executablePath,
             args: profileLaunchArgs,
