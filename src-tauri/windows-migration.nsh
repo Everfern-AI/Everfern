@@ -23,6 +23,23 @@ Var EfFromElectron
       MessageBox MB_ICONSTOP "Open the EverFern bridge update once to prepare your saved data, then retry this update." /SD IDOK
       Abort
     ef_migration_ready:
+
+    ; electron-updater starts this installer before the bridge has exited, so the old
+    ; EverFern.exe can still be locked; a silent NSIS install then skips it and leaves
+    ; an Electron binary without its runtime. Windows lets a running image be renamed,
+    ; so move it aside (retrying while it exits) before the new binary is written.
+    Delete "$INSTDIR\${MAINBINARYNAME}.exe.old"
+    StrCpy $R2 0
+    ef_rename_retry:
+    IfFileExists "$INSTDIR\${MAINBINARYNAME}.exe" 0 ef_exe_free
+      ClearErrors
+      Rename "$INSTDIR\${MAINBINARYNAME}.exe" "$INSTDIR\${MAINBINARYNAME}.exe.old"
+      IfErrors 0 ef_exe_free
+      IntOp $R2 $R2 + 1
+      IntCmp $R2 40 ef_exe_free
+      Sleep 250
+      Goto ef_rename_retry
+    ef_exe_free:
   ${EndIf}
 !macroend
 
@@ -65,6 +82,7 @@ Var EfFromElectron
     Delete "$INSTDIR\LICENSE.electron.txt"
     Delete "$INSTDIR\LICENSES.chromium.html"
     Delete "$INSTDIR\Uninstall EverFern.exe"
+    Delete /REBOOTOK "$INSTDIR\${MAINBINARYNAME}.exe.old"
 
     ; electron-updater starts this installer with "--updated /S --force-run" and
     ; expects it to reopen the app; Tauri's template only relaunches its own updates.

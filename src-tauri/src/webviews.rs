@@ -116,14 +116,12 @@ pub async fn ef_webview(app: AppHandle, id: u32, op: String, args: Value) -> Res
     };
     let ok = |r: tauri::Result<()>| r.map(|_| json!(true)).map_err(|e| e.to_string());
     match op.as_str() {
-        "bounds" => ok(wv
-            .set_position(LogicalPosition::new(num(&args, "x"), num(&args, "y")))
-            .and_then(|_| {
-                wv.set_size(LogicalSize::new(
-                    num(&args, "width").max(1.0),
-                    num(&args, "height").max(1.0),
-                ))
-            })),
+        // One call, so the view never shows a frame at the new place with the old size.
+        "bounds" => ok(wv.set_bounds(tauri::Rect {
+            position: LogicalPosition::new(num(&args, "x"), num(&args, "y")).into(),
+            size: LogicalSize::new(num(&args, "width").max(1.0), num(&args, "height").max(1.0))
+                .into(),
+        })),
         "show" => ok(wv.show()),
         "hide" => ok(wv.hide()),
         "focus" => ok(wv.set_focus()),

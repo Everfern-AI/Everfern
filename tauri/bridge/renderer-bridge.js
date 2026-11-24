@@ -768,10 +768,30 @@
       st.visible = visible;
       st.rect = [r.left, r.top, r.width, r.height].join(',');
     }
+    // The native view draws over everything, so treat it as covered when the centre or
+    // any corner is under another element (a menu, a dialog, an overlapping window).
     function covered(el, r) {
-      var x = Math.min(Math.max(r.left + r.width / 2, 0), innerWidth - 1), y = Math.min(Math.max(r.top + r.height / 2, 0), innerHeight - 1);
-      var hit = document.elementFromPoint(x, y);
-      return hit !== el && !(hit && el.contains(hit));
+      var inset = Math.min(8, r.width / 4, r.height / 4);
+      var points = [[r.left + r.width / 2, r.top + r.height / 2],
+        [r.left + inset, r.top + inset], [r.right - inset, r.top + inset],
+        [r.left + inset, r.bottom - inset], [r.right - inset, r.bottom - inset]];
+      for (var i = 0; i < points.length; i++) {
+        var x = points[i][0], y = points[i][1];
+        if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) continue;
+        var hit = document.elementFromPoint(x, y);
+        if (hit !== el && !(hit && el.contains(hit))) return true;
+      }
+      return false;
+    }
+    // One bounds call in flight per view; later boxes replace the queued one, so a
+    // window animation never builds a backlog that replays after it has finished.
+    function sendBounds(st, box) {
+      st.pendingBox = box;
+      if (st.sending) return;
+      st.sending = true;
+      var next = st.pendingBox; st.pendingBox = null;
+      st.call('bounds', next).then(done, done);
+      function done() { st.sending = false; if (st.pendingBox) sendBounds(st, st.pendingBox); }
     }
     function sync() {
       live.forEach(function (el) {
@@ -786,13 +806,16 @@
         var visible = r.width > 1 && r.height > 1 && document.visibilityState !== 'hidden' && !covered(el, r);
         if (!st.created && !st.creating) { if (r.width > 1 && r.height > 1) create(el, st, r, visible); return; }
         var key = [r.left, r.top, r.width, r.height].join(',');
-        if (visible && key !== st.rect) { st.rect = key; st.call('bounds', { x: r.left, y: r.top, width: r.width, height: r.height }); }
+        if (visible && key !== st.rect) { st.rect = key; sendBounds(st, { x: r.left, y: r.top, width: r.width, height: r.height }); }
         if (visible !== st.visible) { st.visible = visible; st.call(visible ? 'show' : 'hide'); }
       });
     }
     var queued = false;
     function schedule() { if (queued) return; queued = true; requestAnimationFrame(function () { queued = false; sync(); }); }
-    setInterval(sync, 250);
+    // Follow the element every frame while a pane exists: windows move with layout
+    // animations and drags that fire no resize or scroll events. Only changes cross IPC.
+    (function frame() { if (live.size) sync(); requestAnimationFrame(frame); })();
+    setInterval(function () { if (document.visibilityState === 'hidden') sync(); }, 500);
     window.addEventListener('resize', schedule);
     document.addEventListener('scroll', schedule, true);
     document.addEventListener('visibilitychange', schedule);

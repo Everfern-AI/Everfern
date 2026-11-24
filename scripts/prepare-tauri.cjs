@@ -75,8 +75,19 @@ for (const [source, target] of [
   [path.join(root, 'main/agent/prompts'), 'prompts/'],
   [path.join(root, 'public'), 'public/'],
 ]) resources[source] = target;
+// Ship only what main/agent/tools/navis/companion-extension.ts reads. The source checkout
+// also holds .git (read-only objects that break the next build's resource copy), node_modules
+// and build scripts, none of which belong in the installer.
 const extension = path.resolve(root, '../extension-navis');
-if (fs.existsSync(extension)) resources[extension] = 'extension-navis/';
+if (fs.existsSync(extension)) {
+  const stagedExtension = path.join(staging, 'extension-navis');
+  fs.rmSync(stagedExtension, { recursive: true, force: true });
+  for (const name of ['manifest.chrome.json', 'manifest.firefox.json', 'src', 'dist', 'logos']) {
+    const from = path.join(extension, name);
+    if (fs.existsSync(from)) fs.cpSync(from, path.join(stagedExtension, name), { recursive: true });
+  }
+  resources[stagedExtension] = 'extension-navis/';
+}
 // Updater public key: env, then the local key pair, then the copy committed for CI.
 const publicFile = [path.join(os.homedir(), '.everfern/keys/tauri-updater.key.pub'), path.join(root, 'src-tauri/updater.pub')].find((f) => fs.existsSync(f));
 const publicKey = process.env.EVERFERN_UPDATER_PUBLIC_KEY || (publicFile ? fs.readFileSync(publicFile, 'utf8').trim() : '');

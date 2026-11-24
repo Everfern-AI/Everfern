@@ -209,12 +209,35 @@ const BUILT_IN_SHORTCUTS: [&str; 3] = [
     "Alt+CommandOrControl+H",
 ];
 
+/// Tauri canonicalizes the executable path, so on Windows `resource_dir()` is a verbatim
+/// `\\?\C:\...` path. Node cannot load a main script from one (EISDIR on 'C:'), and
+/// children inherit it as their working directory, so always hand out the plain form.
+pub(crate) fn resource_dir(app: &AppHandle) -> Option<PathBuf> {
+    app.path().resource_dir().ok().map(plain_path)
+}
+
+pub(crate) fn plain_path(path: PathBuf) -> PathBuf {
+    #[cfg(windows)]
+    {
+        let text = path.to_string_lossy();
+        if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+            return PathBuf::from(format!(r"\\{rest}"));
+        }
+        if let Some(rest) = text.strip_prefix(r"\\?\") {
+            if rest.as_bytes().get(1) == Some(&b':') {
+                return PathBuf::from(rest);
+            }
+        }
+    }
+    path
+}
+
 /// Where the app's package.json, dist-electron/ and node_modules/ live.
 fn app_root(app: &AppHandle) -> PathBuf {
     if let Ok(p) = std::env::var("EF_APP_PATH") {
         return PathBuf::from(p);
     }
-    if let Ok(dir) = app.path().resource_dir() {
+    if let Some(dir) = resource_dir(app) {
         let bundled = dir.join("app");
         if bundled.join("tauri/sidecar/boot.js").is_file() {
             return bundled;
@@ -223,10 +246,9 @@ fn app_root(app: &AppHandle) -> PathBuf {
     if cfg!(debug_assertions) {
         return PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
     }
-    app.path()
-        .resource_dir()
+    resource_dir(app)
         .map(|d| d.join("app"))
-        .unwrap_or_else(|_| PathBuf::from("."))
+        .unwrap_or_else(|| PathBuf::from("."))
 }
 
 fn node_binary(app: &AppHandle) -> PathBuf {
@@ -234,7 +256,7 @@ fn node_binary(app: &AppHandle) -> PathBuf {
         return PathBuf::from(p);
     }
     let exe = if cfg!(windows) { "node.exe" } else { "node" };
-    if let Ok(dir) = app.path().resource_dir() {
+    if let Some(dir) = resource_dir(app) {
         let bundled = dir.join("node").join(exe);
         if bundled.exists() {
             return bundled;
@@ -247,9 +269,7 @@ fn node_binary(app: &AppHandle) -> PathBuf {
 fn start_sidecar(app: &AppHandle) -> Result<(Child, u16, String), String> {
     let root = app_root(app);
     let packaged = !cfg!(debug_assertions)
-        || app
-            .path()
-            .resource_dir()
+        || resource_dir(app)
             .map(|dir| dir.join("app") == root)
             .unwrap_or(false);
     let mut cmd = Command::new(node_binary(app));
@@ -266,7 +286,7 @@ fn start_sidecar(app: &AppHandle) -> Result<(Child, u16, String), String> {
         .stdin(Stdio::piped()) // the sidecar exits when this closes
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit());
-    if let Ok(dir) = app.path().resource_dir() {
+    if let Some(dir) = resource_dir(app) {
         cmd.env("EF_RESOURCES_PATH", dir);
     }
     #[cfg(windows)]
@@ -359,10 +379,11 @@ fn ef_exit(app: AppHandle, code: i32) {
 }
 
 fn main() {
-    // Software rendering by default: the WebView2 GPU process alone costs 150-250 MB.
-    // EF_GPU=1 turns it back on.
+    // GPU rendering by default: in software the blur panels and window animations are
+    // redrawn on the CPU every frame and the UI stutters. EF_GPU=0 trades that for the
+    // 150-250 MB the WebView2 GPU process costs (for machines with broken drivers).
     if std::env::var_os("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS").is_none()
-        && std::env::var("EF_GPU").as_deref() != Ok("1")
+        && std::env::var("EF_GPU").as_deref() == Ok("0")
     {
         std::env::set_var(
             "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",

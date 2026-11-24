@@ -778,7 +778,7 @@ pub async fn upsert_memory_tool(
 /// The skills shipped with the app: bundled under resources/skills, or main/skills in a dev build.
 fn builtin_skills_dir(app: Option<&AppHandle>) -> Option<PathBuf> {
     let bundled = app
-        .and_then(|app| app.path().resource_dir().ok())
+        .and_then(crate::resource_dir)
         .map(|dir| dir.join("skills"))
         .filter(|dir| dir.is_dir());
     bundled.or_else(|| {

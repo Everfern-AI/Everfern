@@ -101,7 +101,13 @@ jobs:
           # strip cannot read newer ELF sections in the staged Node addons.
           APPIMAGE_EXTRACT_AND_RUN: 1
           NO_STRIP: true
-        run: npm run tauri:package -- --bundles ${{ matrix.bundles }} --verbose
+        # macOS runners sometimes time out detaching the dmg ("DiskArbitration expired");
+        # the second attempt reuses the compiled binary, so it only redoes the bundling.
+        run: |
+          npm run tauri:package -- --bundles ${{ matrix.bundles }} --verbose && exit 0
+          [ "$RUNNER_OS" = macOS ] || exit 1
+          hdiutil info | awk '/^\/dev\/disk/ {print $1}' | xargs -n1 hdiutil detach -force 2>/dev/null || true
+          npm run tauri:package -- --bundles ${{ matrix.bundles }} --verbose
 
       - name: Collect release files
         shell: bash
