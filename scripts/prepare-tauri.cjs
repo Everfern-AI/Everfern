@@ -37,6 +37,32 @@ runtimeLock.packages[''].dependencies = runtimePackage.dependencies;
 delete runtimeLock.packages[''].devDependencies;
 fs.writeFileSync(path.join(app, 'package-lock.json'), JSON.stringify(runtimeLock, null, 2));
 execFileSync(process.execPath, [npm, 'prune', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: app, stdio: 'inherit' });
+// Drop native prebuilds for other platforms (prebuilds/android-x64, onnxruntime bin/napi-v3/linux/arm64, ...).
+// They are dead weight, and linuxdeploy aborts when ldd cannot read a foreign binary.
+const OSES = new Set(['aix', 'android', 'darwin', 'freebsd', 'ios', 'linux', 'linuxmusl', 'netbsd', 'openbsd', 'sunos', 'win32']);
+const ARCHES = new Set(['arm', 'arm64', 'armhf', 'armv7', 'ia32', 'loong64', 'mips64el', 'ppc64', 'riscv64', 's390x', 'universal', 'x64', 'x86']);
+const keepArch = (arch) => arch === process.arch || arch === 'universal' || (process.platform === 'darwin' && arch.includes(process.arch));
+let pruned = 0;
+const prune = (dir) => {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
+    const full = path.join(dir, entry.name);
+    const [os_, ...rest] = entry.name.split(/[-_]/);
+    const arch = rest.join('-');
+    const parent = path.basename(dir);
+    let foreign = false;
+    if (OSES.has(os_) && rest.length && [...ARCHES].some((a) => arch === a || arch.startsWith(a + '-') || arch.includes('+'))) {
+      foreign = os_ !== process.platform || !keepArch(arch);
+    } else if (/^napi-v\d+$/.test(parent) && OSES.has(entry.name)) {
+      foreign = entry.name !== process.platform;
+    } else if (OSES.has(parent) && ARCHES.has(entry.name) && /^napi-v\d+$/.test(path.basename(path.dirname(dir)))) {
+      foreign = !keepArch(entry.name);
+    }
+    if (foreign) { fs.rmSync(full, { recursive: true, force: true }); pruned++; } else prune(full);
+  }
+};
+prune(path.join(app, 'node_modules'));
+console.log(`Removed ${pruned} foreign-platform prebuild folders`);
 const resources = {};
 for (const [source, target] of [
   [app, 'app/'], [node, 'node/'],
