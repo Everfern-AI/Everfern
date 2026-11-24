@@ -235,7 +235,7 @@ export class SecurityMonitor extends EventEmitter {
           now: Date.now(),
         })
       : null;
-    if (!nativeEvent) await this.writeEventToLog(event, false);
+    if (!nativeEvent) await this.writeEventToLog(event);
 
     // Emit event
     this.emit('security-event', event);

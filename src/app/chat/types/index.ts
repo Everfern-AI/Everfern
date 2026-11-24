@@ -72,6 +72,8 @@ export interface ModelOption {
     logo: any;
     size?: number;
     parameterSize?: string;
+    /** Provider-declared capabilities (see model-capabilities.ts). */
+    capabilities?: { reasoning?: boolean; imageGeneration?: boolean };
 }
 
 // Sub-agent progress streaming types
@@ -100,6 +102,13 @@ export interface SubAgentProgressEvent {
     type: string;
     params: Record<string, unknown>;
     description: string;
+    status?: 'pending' | 'running' | 'completed' | 'failed';
+    result?: string | {
+      success?: boolean;
+      output?: unknown;
+      error?: unknown;
+      [key: string]: unknown;
+    };
   };
   screenshot?: {
     base64: string;
