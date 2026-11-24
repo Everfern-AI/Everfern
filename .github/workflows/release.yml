@@ -4,11 +4,7 @@ permissions:
   contents: write
 
 on:
-  push:
-    branches:
-      - main
-    tags:
-      - 'v*'
+  # Electron builds are manual since v2: Tauri ships from tauri-release.yml.
   workflow_dispatch:
     inputs:
       upload_release:

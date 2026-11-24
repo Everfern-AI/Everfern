@@ -1,0 +1,117 @@
+name: Tauri Release (Linux, macOS)
+
+# Builds the Tauri v2 app for Linux and macOS and uploads it to the GitHub
+# release for the tag. Windows is built and uploaded from a local machine.
+# Each job also uploads a small feed-<name>.json (file, sha512, size, updater
+# signature) that scripts/merge-release-feeds.cjs turns into latest.json,
+# latest-mac.yml and latest-linux.yml.
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - 'v2.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to upload to (for example v2.0.0)'
+        required: true
+        type: string
+
+concurrency:
+  group: tauri-release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Tauri ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            name: linux-x86_64
+            bundles: appimage,deb
+          - os: macos-14
+            name: darwin-aarch64
+            bundles: app,dmg
+          - os: macos-15-intel
+            name: darwin-x86_64
+            bundles: app,dmg
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      NEXT_TELEMETRY_DISABLED: 1
+      # Same public URLs as the local .env.local (not committed).
+      NEXT_PUBLIC_LANDING_URL: https://everfern.app
+      NEXT_PUBLIC_API_URL: https://api.everfern.app
+      NEXT_PUBLIC_LOGO_DEV_TOKEN: ${{ secrets.NEXT_PUBLIC_LOGO_DEV_TOKEN }}
+      # The public updater key is committed (src-tauri/updater.pub); the private half is a secret.
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
+            libxdo-dev libssl-dev patchelf file build-essential pkg-config python3 \
+            libx11-dev libxtst-dev libxkbfile-dev libxinerama-dev libxrandr-dev libxss-dev libxt-dev \
+            libpng-dev libvips-dev
+          sudo apt-get install -y libfuse2 || sudo apt-get install -y libfuse2t64 || true
+
+      - name: Install Node modules
+        run: npm ci --no-audit --no-fund
+
+      - name: Build frontend and compatibility backend
+        run: |
+          npm run build:next
+          npm run build:electron-ts
+
+      - name: Check updater signing key
+        shell: bash
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "::warning::TAURI_SIGNING_PRIVATE_KEY is not set; building without updater payloads."
+            echo "EVERFERN_ALLOW_UNSIGNED=1" >> "$GITHUB_ENV"
+          fi
+
+      - name: Stage Tauri runtime
+        run: npm run tauri:prepare
+
+      - name: Build Tauri bundles
+        shell: bash
+        run: npm run tauri:package -- --bundles ${{ matrix.bundles }}
+
+      - name: Collect release files
+        shell: bash
+        run: node scripts/collect-tauri-bundles.cjs "${{ matrix.name }}" "src-tauri/target/release/bundle" dist-release
+
+      - name: Upload to release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --draft --title "EverFern $TAG" --notes "Draft"
+          gh release upload "$TAG" dist-release/* --clobber
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tauri-${{ matrix.name }}
+          path: dist-release/*
+          if-no-files-found: error

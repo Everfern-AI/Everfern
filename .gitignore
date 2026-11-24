@@ -61,3 +61,7 @@ src-tauri/gen/
 tauri/staging/
 build/electron-bridge.json
 generate_*.py
+
+# Release outputs (Electron bridge, CI-collected Tauri bundles)
+/release-bridge/
+/dist-release/

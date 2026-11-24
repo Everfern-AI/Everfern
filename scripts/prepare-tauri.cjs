@@ -46,9 +46,13 @@ for (const [source, target] of [
 ]) resources[source] = target;
 const extension = path.resolve(root, '../extension-navis');
 if (fs.existsSync(extension)) resources[extension] = 'extension-navis/';
-const publicFile = path.join(os.homedir(), '.everfern/keys/tauri-updater.key.pub');
-const publicKey = process.env.EVERFERN_UPDATER_PUBLIC_KEY || (fs.existsSync(publicFile) ? fs.readFileSync(publicFile, 'utf8').trim() : '');
-const config = { bundle: { resources, ...(publicKey ? { createUpdaterArtifacts: true } : {}) } };
+// Updater public key: env, then the local key pair, then the copy committed for CI.
+const publicFile = [path.join(os.homedir(), '.everfern/keys/tauri-updater.key.pub'), path.join(root, 'src-tauri/updater.pub')].find((f) => fs.existsSync(f));
+const publicKey = process.env.EVERFERN_UPDATER_PUBLIC_KEY || (publicFile ? fs.readFileSync(publicFile, 'utf8').trim() : '');
+// Without the private key (EVERFERN_ALLOW_UNSIGNED=1) the app still embeds the public key,
+// so it accepts later signed updates; only this build's updater payloads are skipped.
+const signUpdates = Boolean(publicKey) && process.env.EVERFERN_ALLOW_UNSIGNED !== '1';
+const config = { bundle: { resources, ...(publicKey ? { createUpdaterArtifacts: signUpdates } : {}) } };
 if (publicKey) config.plugins = { updater: { pubkey: publicKey } };
 fs.writeFileSync(path.join(staging, 'tauri.release.json'), JSON.stringify(config, null, 2));
 console.log('Runtime staged. Build with the generated tauri/staging/tauri.release.json configuration override.');

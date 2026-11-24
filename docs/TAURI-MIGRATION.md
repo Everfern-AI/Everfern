@@ -31,3 +31,22 @@ For packaging, first build the frontend and compatibility backend, then run `npm
 Installer hooks preserve the legacy per-user install directory, require the bridge export, and remove the superseded Electron uninstall registry entry only after installation succeeds. Machine-wide legacy installations need separate installer validation.
 
 Do not publish the new feed until these checks pass. macOS and Linux require their own migration artifacts and installation tests.
+
+## Releasing v2 (Electron users move to Tauri)
+
+Everything goes into one GitHub release (tag `v2.0.0`), created as a draft. Electron clients and the Tauri updater only see it once it is published.
+
+| Feed | Read by | Points to |
+| --- | --- | --- |
+| `latest.yml` | Electron 1.x on Windows | Electron bridge `EverFern.Setup.1.4.0.exe` (exports DPAPI data first) |
+| `tauri-transition.yml` | The 1.4.0 bridge | Tauri NSIS installer 2.0.0 |
+| `latest-mac.yml` | Electron 1.x on macOS | Tauri `.app` zipped per arch |
+| `latest-linux.yml` | Electron 1.x AppImage | Tauri AppImage |
+| `latest.json` | Tauri 2.x | Signed Tauri updater payloads for every platform |
+
+1. Windows, locally: `npm run build:next`, `npm run build:electron-ts`, `npm run tauri:prepare`, `npm run tauri:package`, then `node scripts/build-electron-bridge.cjs 1.4.0`. Generate `tauri-transition.yml` and the Windows `latest.json` with `scripts/tauri-release-manifests.cjs`.
+2. Linux and macOS: pushing a `v2.*` tag runs `.github/workflows/tauri-release.yml`. Each job uploads its bundles plus `feed-<platform>.json`. Set the `TAURI_SIGNING_PRIVATE_KEY` (and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` if the key has one) repository secret first; without it the jobs still build installers but not the signed updater payloads.
+3. Download the `feed-*.json` files beside the Windows `latest.json` and run `node scripts/merge-release-feeds.cjs v2.0.0 <dir>`. Upload `latest.json`, `latest-mac.yml` and `latest-linux.yml`, then delete the `feed-*.json` assets.
+4. The Electron workflows (`release.yml`, `build-linux.yml`, `build-macos.yml`) no longer run on push; they would overwrite these feeds.
+
+The macOS and Linux framework switch keeps the same data folder (`EverFern` under the OS config dir) and `~/.everfern`, but the renderer `localStorage` export is Windows-only (DPAPI). The 1.x macOS builds are ad-hoc signed, so Squirrel.Mac may refuse the update; those users install the dmg by hand.
