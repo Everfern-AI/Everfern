@@ -19,13 +19,17 @@ const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 const config = {
   ...pkg.build,
   extraMetadata: { version },
+  // build.win.files holds only "!" patterns, which electron-builder treats as "**/*" minus
+  // those, packing the whole project (src-tauri/target, .next, release folders) into app.asar.
+  files: [...pkg.build.files, ...(pkg.build.win?.files || [])],
+  win: { ...pkg.build.win, files: undefined },
   directories: { output: 'release-bridge' },
   extraResources: [...pkg.build.extraResources, { from: helper, to: 'native/everfern.exe' }],
 };
-const file = path.join(root, 'tauri/staging/electron-bridge.json');
-fs.mkdirSync(path.dirname(file), { recursive: true });
+// Keep the config in the project root: electron-builder resolves `files` against it.
+const file = path.join(root, 'electron-bridge.json');
 fs.writeFileSync(file, JSON.stringify(config, null, 2));
 const cli = path.join(root, 'node_modules/electron-builder/cli.js');
-const result = spawnSync(process.execPath, [cli, '--win', '--x64', '--publish', 'never', '--config', file], { cwd: root, stdio: 'inherit' });
+const result = spawnSync(process.execPath, [cli, '--win', ...(process.env.BRIDGE_DIR_ONLY ? ['dir'] : []), '--x64', '--publish', 'never', '--config', file], { cwd: root, stdio: 'inherit' });
 if (result.error) throw result.error;
 process.exit(result.status ?? 1);
