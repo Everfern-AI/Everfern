@@ -50,8 +50,13 @@ const prune = (dir) => {
     const [os_, ...rest] = entry.name.split(/[-_]/);
     const arch = rest.join('-');
     const parent = path.basename(dir);
+    // Platform packages: @img/sharp-libvips-linuxmusl-x64, sqlite-vec-linux-x64, @scope/pkg-linux-x64-gnu, ...
+    const tag = entry.name.match(/-(aix|android|darwin|freebsd|linux|linuxmusl|netbsd|openbsd|sunos|win32)-(arm64|arm|ia32|loong64|ppc64|riscv64|s390x|x64|universal)(?:-(gnu|gnueabihf|musl|musleabihf|msvc))?$/);
     let foreign = false;
-    if (OSES.has(os_) && rest.length && [...ARCHES].some((a) => arch === a || arch.startsWith(a + '-') || arch.includes('+'))) {
+    if (tag) {
+      const musl = tag[1] === 'linuxmusl' || /^musl/.test(tag[3] || '');
+      foreign = (musl ? 'linux' : tag[1]) !== process.platform || musl || !keepArch(tag[2]);
+    } else if (OSES.has(os_) && rest.length && [...ARCHES].some((a) => arch === a || arch.startsWith(a + '-') || arch.includes('+'))) {
       foreign = os_ !== process.platform || !keepArch(arch);
     } else if (/^napi-v\d+$/.test(parent) && OSES.has(entry.name)) {
       foreign = entry.name !== process.platform;
