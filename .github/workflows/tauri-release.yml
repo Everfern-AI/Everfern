@@ -96,7 +96,12 @@ jobs:
 
       - name: Build Tauri bundles
         shell: bash
-        run: npm run tauri:package -- --bundles ${{ matrix.bundles }}
+        env:
+          # linuxdeploy is itself an AppImage (no FUSE on runners), and its bundled
+          # strip cannot read newer ELF sections in the staged Node addons.
+          APPIMAGE_EXTRACT_AND_RUN: 1
+          NO_STRIP: true
+        run: npm run tauri:package -- --bundles ${{ matrix.bundles }} --verbose
 
       - name: Collect release files
         shell: bash
