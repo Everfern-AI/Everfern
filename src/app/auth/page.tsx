@@ -179,7 +179,7 @@ export default function AuthPage() {
                     console.error("Failed to auto-save config:", err);
                 }
             }
-            router.push("/workers");
+            router.push("/chat");
         } else {
             router.push("/setup");
         }

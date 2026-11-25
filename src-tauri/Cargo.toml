@@ -1,6 +1,6 @@
 [package]
 name = "everfern"
-version = "2.0.1"
+version = "2.0.2"
 description = "EverFern desktop (Tauri shell)"
 edition = "2021"
 publish = false

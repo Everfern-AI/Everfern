@@ -116,6 +116,7 @@ fn ensure_sidecar(app: &AppHandle) -> Result<(u16, String), String> {
             Some(Ok(Some(status))) => {
                 guard.take();
                 drop(guard);
+                log_line(&format!("background process exited: {status}; closing the app"));
                 watcher.exit(status.code().unwrap_or(0));
                 break;
             }
@@ -265,6 +266,37 @@ fn node_binary(app: &AppHandle) -> PathBuf {
     PathBuf::from(exe)
 }
 
+/// `<user data>/logs/everfern.log`: the sidecar's output and any Rust panic. An app opened
+/// from Finder, the Dock or the Start menu has no console, so without this a crash leaves
+/// nothing behind. The previous run's file is kept as everfern.old.log.
+static LOG: std::sync::OnceLock<Mutex<std::fs::File>> = std::sync::OnceLock::new();
+
+fn open_log(app: &AppHandle) {
+    let Ok(root) = store::root(app) else { return };
+    let dir = root.join("logs");
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let path = dir.join("everfern.log");
+    let _ = std::fs::rename(&path, dir.join("everfern.old.log"));
+    if let Ok(file) = std::fs::File::create(&path) {
+        let _ = LOG.set(Mutex::new(file));
+        log_line(&format!("EverFern {} on {}", app.package_info().version, std::env::consts::OS));
+    }
+}
+
+pub(crate) fn log_line(line: &str) {
+    if let Some(file) = LOG.get() {
+        if let Ok(mut file) = file.lock() {
+            let secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let _ = writeln!(file, "[{secs}] {line}");
+        }
+    }
+}
+
 /// Starts the sidecar and returns (child, port, token) once it is listening.
 fn start_sidecar(app: &AppHandle) -> Result<(Child, u16, String), String> {
     let root = app_root(app);
@@ -285,7 +317,7 @@ fn start_sidecar(app: &AppHandle) -> Result<(Child, u16, String), String> {
         .env("EF_PACKAGED", if packaged { "1" } else { "0" })
         .stdin(Stdio::piped()) // the sidecar exits when this closes
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit());
+        .stderr(Stdio::piped());
     if let Some(dir) = resource_dir(app) {
         cmd.env("EF_RESOURCES_PATH", dir);
     }
@@ -299,6 +331,15 @@ fn start_sidecar(app: &AppHandle) -> Result<(Child, u16, String), String> {
         .spawn()
         .map_err(|e| format!("could not start Node ({e}). Is Node.js installed?"))?;
     let stdout = child.stdout.take().ok_or("no sidecar stdout")?;
+    if let Some(stderr) = child.stderr.take() {
+        std::thread::spawn(move || {
+            let err = std::io::stderr();
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                log_line(&line);
+                let _ = writeln!(err.lock(), "{line}");
+            }
+        });
+    }
     let (tx, rx) = mpsc::channel::<(u16, String)>();
 
     // Pass the sidecar's log through, and pick out the ready line.
@@ -315,8 +356,10 @@ fn start_sidecar(app: &AppHandle) -> Result<(Child, u16, String), String> {
                 }
                 continue;
             }
+            log_line(&line);
             let _ = writeln!(out.lock(), "{line}");
         }
+        log_line("background process output closed (it exited or crashed)");
     });
 
     match rx.recv_timeout(Duration::from_secs(300)) {
@@ -1403,6 +1446,13 @@ fn main() {
         ])
         .setup(|app| {
             let handle = app.handle().clone();
+            open_log(&handle);
+            let default_hook = std::panic::take_hook();
+            std::panic::set_hook(Box::new(move |info| {
+                log_line(&format!("panic: {info}
+{}", std::backtrace::Backtrace::force_capture()));
+                default_hook(info);
+            }));
             store::recover_workers(&handle)?;
             if let Err(error) = data::home().and_then(|home| data::personality::initialize(&home.join(".everfern"))) {
                 eprintln!("[everfern] Could not initialize personality files: {error}");
@@ -1485,11 +1535,22 @@ fn main() {
             } else {
                 WebviewUrl::App("index.html".into())
             };
-            WebviewWindowBuilder::new(app, "main", start_url)
+            let main_window = WebviewWindowBuilder::new(app, "main", start_url)
                 .title("EverFern")
                 .inner_size(1400.0, 900.0)
-                .min_inner_size(560.0, 520.0)
-                .decorations(false)
+                .min_inner_size(560.0, 520.0);
+            // macOS keeps the native frame (traffic lights, rounded corners, shadow) with the
+            // page drawn under a transparent title bar, as Electron's titleBarStyle 'hidden' did.
+            // The page hides its own caption buttons on macOS and pads for the traffic lights.
+            #[cfg(target_os = "macos")]
+            let main_window = main_window
+                .decorations(true)
+                .title_bar_style(tauri::TitleBarStyle::Overlay)
+                .hidden_title(true)
+                .traffic_light_position(tauri::LogicalPosition::new(16.0, 16.0));
+            #[cfg(not(target_os = "macos"))]
+            let main_window = main_window.decorations(false);
+            main_window
                 .auto_resize() // stays full size once worker webviews are added as children
                 .center()
                 // Launched at login (see data/autostart.rs): stay in the tray until opened.
@@ -1564,9 +1625,12 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("failed to start EverFern");
 
-    app.run(|handle, event| {
-        if let RunEvent::Exit = event {
-            stop_sidecar(handle);
-        }
+    app.run(|handle, event| match event {
+        RunEvent::Exit => stop_sidecar(handle),
+        // Closing the window only hides it (see CloseRequested), so clicking the Dock icon
+        // has to bring it back; macOS sends nothing else for that.
+        #[cfg(target_os = "macos")]
+        RunEvent::Reopen { .. } => show_main(handle),
+        _ => {}
     });
 }

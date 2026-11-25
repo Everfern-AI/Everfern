@@ -29,7 +29,7 @@ export default function OnboardingPage() {
         ]);
         if (!active) return;
         if (res.success && (res as any).config) {
-          router.push("/workers");
+          router.push("/chat");
           return;
         }
       }
@@ -53,7 +53,7 @@ export default function OnboardingPage() {
               await (window as any).electronAPI.saveConfig(config);
             }
             if (!active) return;
-            router.push("/workers");
+            router.push("/chat");
             return;
           }
         } catch { }

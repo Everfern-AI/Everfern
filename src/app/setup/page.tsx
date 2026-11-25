@@ -847,7 +847,7 @@ export default function SetupPage() {
             // Not signed in as cloud user — skip silently
         }
 
-        setTimeout(() => router.push("/workers"), 800);
+        setTimeout(() => router.push("/chat"), 800);
     };
 
     const handleInstallOllama = async () => {
