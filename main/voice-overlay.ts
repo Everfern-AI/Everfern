@@ -1,4 +1,4 @@
-import { app, BrowserWindow, screen, ipcMain } from 'electron';
+import { app, BrowserWindow, screen, ipcMain, systemPreferences } from 'electron';
 import * as path from 'path';
 import { hasNativeKeyHook, startNativeKeyHook } from './lib/native-keyhook';
 
@@ -231,6 +231,25 @@ export class VoiceOverlayManager {
     if (!uIOhook) {
       console.warn('[VoiceOverlay] Skipping hook setup — uiohook-napi not available on this platform/build.');
       return;
+    }
+    if (process.platform === 'darwin') {
+      // libuiohook prints "Accessibility API is disabled!" and calls abort() when the
+      // permission is missing. A native abort cannot be caught in JavaScript, and it
+      // takes the sidecar down with it — so ask the shell first and skip the hook.
+      let trusted = false;
+      try {
+        trusted = systemPreferences.isTrustedAccessibilityClient(false);
+      } catch {
+        trusted = false;
+      }
+      if (!trusted) {
+        console.warn(
+          '[VoiceOverlay] Skipping the global key hook — macOS Accessibility permission is not granted. ' +
+          'Enable EverFern in System Settings → Privacy & Security → Accessibility, then restart. ' +
+          'Starting it now would abort the background process and close the app.'
+        );
+        return;
+      }
     }
     console.log('[VoiceOverlay] Setting up uIOhook...');
     

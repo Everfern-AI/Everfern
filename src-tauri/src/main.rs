@@ -13,6 +13,7 @@
 //! page calls something the Rust side does not handle (`ef_sidecar`).
 
 use std::io::{BufRead, BufReader, Read, Write};
+mod accessibility;
 mod capture;
 mod cloud;
 mod data;
@@ -435,6 +436,12 @@ fn main() {
     }
     // Monitor layout and screenshots for the sidecar's `screen` / `desktopCapturer`.
     match std::env::args().nth(1).as_deref() {
+        // The sidecar asks whether macOS Accessibility is granted before it
+        // starts the global key hook; libuiohook aborts the process otherwise.
+        Some("--ef-accessibility") => {
+            accessibility::serve();
+            return;
+        }
         Some("--ef-mcp-daemon") => {
             mcp_runtime::run_daemon();
             return;
