@@ -740,7 +740,19 @@ const powerSaveBlocker = { start: () => 1, stop() {}, isStarted: () => false };
 const systemPreferences = Object.assign(new EventEmitter(), {
   getMediaAccessStatus: () => 'granted',
   askForMediaAccess: async () => true,
-  isTrustedAccessibilityClient: () => true,
+  isTrustedAccessibilityClient: () => {
+    if (process.platform !== 'darwin') return true;
+    if (!process.env.EF_NATIVE_EXE) return false;
+    try {
+      const out = execFileSync(process.env.EF_NATIVE_EXE, ['--ef-accessibility'], {
+        windowsHide: true, timeout: 5000, encoding: 'utf8',
+      });
+      return JSON.parse(out).trusted === true;
+    } catch {
+      // Unknown must mean "do not start the hook": the failure it prevents is fatal.
+      return false;
+    }
+  },
   getAccentColor: () => '0078d4ff',
   getColor: () => '#000000',
   isDarkMode: () => true,
